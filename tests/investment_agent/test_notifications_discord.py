@@ -113,6 +113,22 @@ class DiscordTest(unittest.TestCase):
             "url": "https://www.sec.gov/Archives/edgar/data/1067983/x.txt",
         }]})
 
+    def test_an_embed_may_carry_a_thumbnail(self):
+        """전략 카드 2종(dmsr·gtaa5)이 QuickChart를 thumbnail로 건다.
+
+        허용 목록에 없던 동안 그 두 장은 매번 거절됐고, 나머지 4장만 나가서
+        "일부는 오니까 되는 줄" 알기 쉬웠다. url과 같은 부류의 결함이다.
+        """
+        validate_message({"embeds": [{
+            "title": "GTAA-5",
+            "thumbnail": {"url": "https://quickchart.io/chart?c=x"},
+        }]})
+
+    def test_thumbnail_is_checked_like_image(self):
+        for media in ({"url": ""}, {"url": "x", "width": 1}, "https://x", {"url": "https://" + "x" * 2100}):
+            with self.subTest(media=str(media)[:40]), self.assertRaises(ValueError):
+                validate_message({"embeds": [{"title": "t", "thumbnail": media}]})
+
     def test_an_embed_url_must_be_a_real_web_link(self):
         """producer가 넣은 문자열이 그대로 링크가 되는 자리다."""
         for url in ("javascript:alert(1)", "data:text/html,x", "sec.gov/x", 123, "https://" + "x" * 2100):

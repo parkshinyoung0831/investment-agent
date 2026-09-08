@@ -32,10 +32,19 @@ class GuardrailTest(unittest.TestCase):
         key = make_case_key("AAPL", when, 20, ShadowPolicy())
         self.assertEqual(key, "AAPL__2026-08-20__20d__evidence-first-v1")
 
-    def test_spy_is_price_only_reference(self):
-        self.assertEqual(REFERENCE_PRICE_TICKERS, ("SPY",))
+    def test_reference_tickers_are_price_only(self):
+        """벤치마크는 시세만 들고 있는 대상이다 — 판단 유니버스에 섞이지 않는다.
+
+        목록을 정확한 튜플로 못박으면 벤치마크를 하나 늘릴 때마다 이 검사가 막는다.
+        실제로 자산배분 전략이 쓰는 ETF 21종을 넣을 때 그렇게 걸렸다. 지켜야 할 것은
+        목록의 내용이 아니라 "시세 대상에만 더해지고 판단 대상은 그대로"라는 성질이다.
+        """
+        self.assertIn("SPY", REFERENCE_PRICE_TICKERS)
         with mock.patch.object(market_db, "universe_company_tickers", return_value=["AAPL"]):
-            self.assertEqual(market_db.universe_tracked(), ["AAPL", "SPY"])
+            tracked = market_db.universe_tracked()
+        # 시세 대상 = 판단 대상 + 벤치마크. 그 차이가 정확히 벤치마크여야 한다.
+        self.assertEqual(sorted({"AAPL", *REFERENCE_PRICE_TICKERS}), tracked)
+        self.assertEqual(set(REFERENCE_PRICE_TICKERS), set(tracked) - {"AAPL"})
 
 
 if __name__ == "__main__":

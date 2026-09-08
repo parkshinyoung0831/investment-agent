@@ -47,6 +47,7 @@ def validate_message(message: dict[str, Any]) -> dict[str, Any]:
     for embed in embeds:
         if not isinstance(embed, dict) or set(embed) - {
             "title", "description", "fields", "footer", "color", "image", "url",
+            "thumbnail",
         }:
             raise ValueError("unsupported discord embed fields")
         if "color" in embed and (
@@ -64,15 +65,18 @@ def validate_message(message: dict[str, Any]) -> dict[str, Any]:
             or len(url) > 2048
         ):
             raise ValueError("invalid discord embed url")
-        image = embed.get("image")
-        if image is not None and (
-            not isinstance(image, dict)
-            or set(image) - {"url"}
-            or not isinstance(image.get("url"), str)
-            or not image["url"]
-            or len(image["url"]) > 2048
-        ):
-            raise ValueError("invalid discord embed image")
+        # image는 카드 아래 큰 그림, thumbnail은 오른쪽 위 작은 그림이다. 모양이
+        # 같으므로 같은 규칙으로 본다 — 전략 카드가 thumbnail로 QuickChart를 건다.
+        for key in ("image", "thumbnail"):
+            media = embed.get(key)
+            if media is not None and (
+                not isinstance(media, dict)
+                or set(media) - {"url"}
+                or not isinstance(media.get("url"), str)
+                or not media["url"]
+                or len(media["url"]) > 2048
+            ):
+                raise ValueError(f"invalid discord embed {key}")
         for key, limit in (("title", 256), ("description", 4096)):
             value = embed.get(key, "")
             if not isinstance(value, str) or len(value) > limit:
