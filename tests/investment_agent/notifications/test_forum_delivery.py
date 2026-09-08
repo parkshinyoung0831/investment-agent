@@ -182,3 +182,48 @@ class OutboxCarriesForumDestinationTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ThreadIdentityTest(unittest.TestCase):
+    """스레드를 다시 찾는 키는 표시명이 바뀌어도 같아야 한다.
+
+    제목 전체를 키로 쓰던 동안, 한글명을 채우자 `AAPL · Apple Inc. · 실적 기록`
+    옆에 `AAPL · 애플 · 실적 기록`이 새로 생겨 종목마다 스레드가 둘이 됐다.
+    카드는 정상 발송되므로 오류로는 드러나지 않고, 포럼을 열어야 보인다.
+    """
+
+    EXISTING = {"threads": [
+        {"id": "555", "name": "AAPL · Apple Inc. · 실적 기록", "parent_id": "123"},
+    ]}
+
+    def setUp(self) -> None:
+        self.calls: list[dict] = []
+
+    def _send(self, thread_name: str) -> None:
+        def post(url, **kwargs):
+            self.calls.append({"url": url, **kwargs})
+            return _Response()
+
+        def get(url, **kwargs):
+            return _Response(payload=self.EXISTING)
+
+        DiscordChannel(_config(), post=post, get=get).send(
+            target="123", message={"content": "hi"}, thread_name=thread_name,
+        )
+
+    def test_a_renamed_company_keeps_its_thread(self) -> None:
+        self._send("AAPL · 애플 · 실적 기록")
+        # 새 스레드를 만들지 않고 기존 스레드 안에 이어 붙인다.
+        self.assertTrue(self.calls[0]["url"].endswith("/channels/555/messages"))
+        self.assertNotIn("name", self.calls[0]["json"])
+
+    def test_a_different_ticker_still_gets_its_own_thread(self) -> None:
+        self._send("MSFT · 마이크로소프트 · 실적 기록")
+        self.assertTrue(self.calls[0]["url"].endswith("/channels/123/threads"))
+
+    def test_the_match_key_drops_the_display_name(self) -> None:
+        from investment_agent.notifications.channels.discord import _thread_match_key
+        self.assertEqual("aapl", _thread_match_key("AAPL · Apple Inc. · 실적 기록"))
+        self.assertEqual("aapl", _thread_match_key("AAPL · 애플 · 실적 기록"))
+        # 거장 포럼은 사람 이름이 곧 첫 마디다.
+        self.assertEqual("워런 버핏", _thread_match_key("워런 버핏 · 13F 기록"))

@@ -136,10 +136,24 @@ def fetch_guild_channels(config: Config, *, get: Callable[..., Any] | None = Non
     return payload
 
 
+def _thread_match_key(thread_name: str) -> str:
+    """스레드를 다시 찾을 때 쓰는 안정된 키.
+
+    제목 전체를 키로 쓰면 표시명이 바뀌는 순간 같은 대상의 이력이 조용히 갈라진다.
+    실제로 한글명을 채우자 `AAPL · Apple Inc. · 실적 기록` 옆에
+    `AAPL · 애플 · 실적 기록`이 새로 생겨 종목마다 스레드가 둘이 됐다.
+
+    제목의 첫 마디는 그 스레드가 무엇에 대한 것인지다(실적은 ticker, 거장은 사람
+    이름). 표시명은 뒤에 오고 바뀔 수 있으므로 키에서 뺀다.
+    """
+    head = str(thread_name).strip().split("·", 1)[0]
+    return head.strip().lower()[:100]
+
+
 def fetch_forum_threads(
     config: Config, channel_id: str, *, get: Callable[..., Any] | None = None,
 ) -> dict[str, str]:
-    """포럼 채널의 스레드 제목 -> 스레드 ID (활성 + 공개 보관).
+    """포럼 채널의 스레드 매칭 키(`_thread_match_key`) -> 스레드 ID (활성 + 공개 보관).
 
     포럼은 "종목 1개 = 스레드 1개에 공시를 누적"이 설계다. 그런데 `/threads`는
     부를 때마다 **새 스레드를 만든다** — 그대로 두면 같은 종목의 분기 공시가
@@ -166,7 +180,7 @@ def fetch_forum_threads(
         for thread in threads or []:
             if filter_parent and str(thread.get("parent_id") or "") != str(channel_id):
                 continue
-            name = str(thread.get("name") or "").strip().lower()
+            name = _thread_match_key(thread.get("name") or "")
             thread_id = str(thread.get("id") or "")
             # 먼저 본 것을 남긴다 — 활성 스레드가 보관된 동명보다 우선이다.
             if name and thread_id.isdigit():
@@ -190,7 +204,7 @@ class DiscordChannel:
     ) -> tuple[str, bool]:
         """(POST 대상 채널 ID, 새 스레드를 만들어야 하는가).
 
-        같은 제목의 스레드가 이미 있으면 그 안에 이어 붙인다. 없을 때만 만든다 —
+        같은 스레드가 이미 있으면 그 안에 이어 붙인다. 없을 때만 만든다 —
         `/threads`를 매번 부르면 같은 종목의 공시가 제목만 같은 별개 스레드로
         흩어져 "누적해 읽는다"는 포럼의 이유가 사라진다.
 
@@ -198,7 +212,6 @@ class DiscordChannel:
         카드가 아예 안 나가는 것보다 낫다.
         """
         key = str(target)
-        wanted = str(thread_name).strip().lower()[:100]
         cached = self._threads.get(key)
         if cached is None:
             try:
@@ -207,13 +220,12 @@ class DiscordChannel:
                 log.warning("discord forum thread lookup failed", extra={"channel": key})
                 cached = {}
             self._threads[key] = cached
-        existing = cached.get(wanted)
+        existing = cached.get(_thread_match_key(thread_name))
         return (existing, False) if existing else (key, True)
 
     def _remember_thread(self, target: str, thread_name: str, thread_id: str) -> None:
         """같은 실행 안에서 두 번째 카드가 방금 만든 스레드를 다시 찾게 한다."""
-        wanted = str(thread_name).strip().lower()[:100]
-        self._threads.setdefault(str(target), {})[wanted] = str(thread_id)
+        self._threads.setdefault(str(target), {})[_thread_match_key(thread_name)] = str(thread_id)
 
 
     def send(
