@@ -5,7 +5,9 @@ Playwright Chromium을 사용해 렌더링된 HTML을 2x 해상도 PNG로 캡처
 """
 from __future__ import annotations
 
+import os
 import pathlib
+import shutil
 import tempfile
 
 from investment_agent.platform.logging import get_logger
@@ -59,3 +61,25 @@ async def capture_html_to_png(
 
     log.info("png shot: %s (%d bytes)", out, out.stat().st_size)
     return str(out)
+
+
+def persist_png(png_path: str, *, kind: str, name: str) -> str:
+    """임시 캡처를 dispatcher가 다시 열 수 있는 안정적인 경로로 옮긴다.
+
+    dispatch는 enqueue보다 나중이고, 재시도는 그보다도 더 나중이다 — 그 사이에
+    OS가 임시 디렉터리를 비우면 첨부가 사라진다. 옮길 때 `.tmp`를 거쳐 `os.replace`로
+    바꾸는 것은 같은 카드를 다시 만들 때 dispatcher가 반쯤 쓰인 파일을 열지 않게 하기
+    위해서다(같은 경로를 덮어쓴다).
+    """
+    source = pathlib.Path(png_path)
+    if not source.is_file():
+        raise FileNotFoundError(png_path)
+    target = pathlib.Path("artifacts") / "notifications" / kind / f"{name}.png"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_suffix(".tmp")
+    try:
+        shutil.copyfile(source, temporary)
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return str(target)

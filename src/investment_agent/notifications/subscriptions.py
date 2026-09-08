@@ -37,11 +37,19 @@ class SubscriptionConfigurationError(RuntimeError):
     """알림 종류에 대해 전송 가능한 Discord 채널이 구성되지 않았다."""
 
 
-def discord_targets(kind: str, *, config: Config | None = None) -> tuple[str, ...]:
-    """``kind``에 적용되는 Discord target을 환경변수에서 읽는다.
+def discord_target(
+    kind: str, *, config: Config | None = None, override: str | None = None,
+) -> str:
+    """``kind``가 보낼 Discord 채널 하나를 환경변수에서 읽는다.
 
-    채널이 구성되지 않으면 조용히 건너뛰지 않고 실패한다.
+    kind 하나에 채널은 하나다 — env가 값 하나를 갖고, 여러 채널로 부채질하는 알림은
+    없다. 그래서 호출부가 개수를 다시 세지 않는다.
+
+    ``override``는 테스트·CLI가 채널을 직접 지정하는 자리다. 채널이 구성되지 않으면
+    조용히 건너뛰지 않고 실패한다.
     """
+    if override is not None:
+        return override
     try:
         env_name = KIND_ENV[kind]
     except KeyError as exc:
@@ -52,7 +60,7 @@ def discord_targets(kind: str, *, config: Config | None = None) -> tuple[str, ..
         raise SubscriptionConfigurationError(
             f"no active Discord subscription for notification kind {kind!r}"
         ) from exc
-    return (target,)
+    return target
 
 
-__all__ = ["KIND_ENV", "SubscriptionConfigurationError", "discord_targets"]
+__all__ = ["KIND_ENV", "SubscriptionConfigurationError", "discord_target"]

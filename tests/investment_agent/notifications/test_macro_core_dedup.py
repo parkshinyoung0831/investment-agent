@@ -25,11 +25,11 @@ class CoreDedupTest(unittest.TestCase):
         with mock.patch.dict(macro_core.os.environ, env, clear=False), \
              mock.patch.object(macro_core, "load_config", return_value=_Config()), \
              mock.patch.object(macro_core, "shoot", new=mock.AsyncMock(return_value="card.png")), \
-             mock.patch.object(macro_core, "_persist_png", return_value="card.png"):
+             mock.patch.object(macro_core, "persist_png", return_value="card.png"):
             if not force:
                 macro_core.os.environ.pop("MACRO_NOTIFY_FORCE", None)
             asyncio.run(macro_core.run(
-                store=store, channel=channel, service=service, targets=("123",)
+                store=store, channel=channel, service=service, target="123"
             ))
         channel.service = service
         return channel

@@ -6,27 +6,19 @@ import sys
 from collections.abc import Iterable
 
 from investment_agent.config import Config, load_config
-from investment_agent.notifications.subscriptions import KIND_ENV, discord_targets
+from investment_agent.notifications.subscriptions import KIND_ENV, discord_target
 from investment_agent.platform.logging import configure_logging, get_logger
 
 log = get_logger(__name__)
 
 
 def validate(config: Config, kinds: Iterable[str] | None = None) -> dict[str, str]:
-    """각 kind에 정확히 하나의 Discord target 환경변수가 설정돼 있는지 확인한다."""
+    """각 kind의 Discord 채널 환경변수가 실제로 설정돼 있는지 확인한다."""
     selected = tuple(kinds) if kinds is not None else tuple(KIND_ENV)
     unknown = sorted(set(selected) - set(KIND_ENV))
     if unknown:
         raise ValueError(f"unknown subscription kind(s): {', '.join(unknown)}")
-    targets: dict[str, str] = {}
-    for kind in selected:
-        resolved = discord_targets(kind, config=config)
-        if len(resolved) != 1:
-            raise RuntimeError(
-                f"notification kind {kind!r} requires exactly one Discord subscription target"
-            )
-        targets[kind] = resolved[0]
-    return targets
+    return {kind: discord_target(kind, config=config) for kind in selected}
 
 
 def run(*, config: Config | None = None, kinds: Iterable[str] | None = None) -> dict[str, str]:

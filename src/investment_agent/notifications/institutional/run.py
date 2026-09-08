@@ -2,14 +2,13 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Sequence
 
 from investment_agent.config import load_config
 from investment_agent.notifications.channels.discord import DiscordChannel
 from investment_agent.notifications.channels.routing import guru_tag_ids, guru_thread_title
 from investment_agent.notifications.outbox import Outbox
 from investment_agent.notifications.service import NotificationService
-from investment_agent.notifications.subscriptions import discord_targets
+from investment_agent.notifications.subscriptions import discord_target
 from investment_agent.platform.clock import utc_now
 from investment_agent.platform.logging import get_logger
 from investment_agent.reporting.notifications.institutional import db
@@ -22,15 +21,11 @@ log = get_logger(__name__)
 
 
 def run(*, service: NotificationService | None = None,
-        targets: Sequence[str] | None = None) -> int:
+        target: str | None = None) -> int:
     """최신 분기의 신규 제출과 종합 카드를 outbox에 등록하고 전송한다."""
     config = load_config()
     database = configured_database(config)
-    target_ids = tuple(targets) if targets is not None else discord_targets(
-        "institutional", config=config
-    )
-    if len(target_ids) != 1:
-        raise RuntimeError("institutional notifications require exactly one Discord subscription target")
+    summary_id = discord_target("institutional", config=config, override=target)
     if service is None:
         service = NotificationService(
             Outbox(database), DiscordChannel(config), clock=utc_now,
@@ -51,7 +46,7 @@ def run(*, service: NotificationService | None = None,
         ctx = card.build_filing(data, str(filing["name"]))
         key = filing_key(str(ctx["accession_no"]))
         target, thread_name, thread_tags = _filing_destination(
-            ctx, summary_target=target_ids[0], config=config)
+            ctx, summary_target=summary_id, config=config)
         result = service.enqueue(
             producer="institutional", notification_key=key, kind="filing",
             target=target,
@@ -67,7 +62,7 @@ def run(*, service: NotificationService | None = None,
         quarterly = card.build_quarterly(data)
         result = service.enqueue(
             producer="institutional", notification_key=summary_key, kind="quarterly",
-            target=target_ids[0], message={"embeds": [embeds.build_quarterly(quarterly)]},
+            target=summary_id, message={"embeds": [embeds.build_quarterly(quarterly)]},
             entity_key=f"period:{period}", period_end=period,
         )
         if result.status != "error":
@@ -97,7 +92,7 @@ def _filing_destination(
     if not manager_cik or not name:
         return summary_target, None, ()
     try:
-        target, = discord_targets("gurus_forum", config=config)
+        target = discord_target("gurus_forum", config=config)
     except Exception as exc:  # noqa: BLE001 - 목적지 미설정이 발송을 막지 않는다
         log.warning(
             "guru forum is not configured; falling back to the summary channel",

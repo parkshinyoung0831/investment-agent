@@ -2,14 +2,13 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Sequence
 
 from investment_agent.config import load_config
 from investment_agent.notifications.channels.discord import DiscordChannel
 from investment_agent.notifications.outbox import Outbox
 from investment_agent.notifications.channels import routing
 from investment_agent.notifications.service import NotificationService
-from investment_agent.notifications.subscriptions import discord_targets
+from investment_agent.notifications.subscriptions import discord_target
 from investment_agent.platform.clock import utc_now
 from investment_agent.platform.logging import get_logger
 from investment_agent.reporting.notifications.connections import configured_database
@@ -99,21 +98,15 @@ def _enqueue_batch(
 
 
 def run(*, service: NotificationService | None = None,
-        summary_targets: Sequence[str] | None = None,
-        targets: Sequence[str] | None = None) -> int:
+        summary_target: str | None = None,
+        target: str | None = None) -> int:
     """대기 중인 전략 배분을 outbox에 등록하고 전송한다."""
     if service is None:
         service, config = _service()
     else:
         config = load_config()
-    summary_ids = tuple(summary_targets) if summary_targets is not None else discord_targets(
-        "strategy_summary", config=config
-    )
-    target_ids = tuple(targets) if targets is not None else discord_targets(
-        "strategy", config=config
-    )
-    if len(summary_ids) != 1 or len(target_ids) != 1:
-        raise RuntimeError("strategy notifications require one summary and one allocation target")
+    summary_id = discord_target("strategy_summary", config=config, override=summary_target)
+    forum_id = discord_target("strategy", config=config, override=target)
     total_batches = 0
     total_sent = 0
     # 전송 실패·중복은 로컬 완료 시각을 바꾸지 않는다. 한 snapshot만 순회해야
@@ -129,7 +122,7 @@ def run(*, service: NotificationService | None = None,
         cards, allocations = _build_cards(rows)
         sent = _enqueue_batch(
             rows, cards, allocations, service=service,
-            summary_target=summary_ids[0], target=target_ids[0],
+            summary_target=summary_id, target=forum_id,
         )
         total_sent += sent
         log.info("strategy notification batch finished apply_date=%s sent=%d", rows[0]["apply_date"], sent)

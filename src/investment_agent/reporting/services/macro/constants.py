@@ -7,7 +7,7 @@ Dashboard와 매일 알림(core), 평일 알림(watch)이 함께 가져다 쓴�
 from __future__ import annotations
 
 from investment_agent.reporting.services.macro.palette import (
-    ALERT, CAUTION, MUTED, PRIMARY, SEMANTIC_DOWN, SEMANTIC_UP, STALE, WATCH,
+    ALERT, CAUTION, PRIMARY, STALE, WATCH,
 )
 
 # 경고 등급 순서: 빨강 > 노랑 > 초록 (센 것부터).

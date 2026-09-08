@@ -3,41 +3,24 @@ from __future__ import annotations
 
 import asyncio
 import argparse
-import os
-import shutil
 from collections.abc import Sequence
 from datetime import date
-from pathlib import Path
 
 from investment_agent.config import load_config
 from investment_agent.notifications.earnings_calendar.candidates import collect, force_resend
 from investment_agent.notifications.earnings_calendar.render import render, shoot_png
+from investment_agent.notifications.playwright import persist_png
 from investment_agent.reporting.notifications.earnings_calendar import EarningsCalendarStore
 from investment_agent.notifications.channels.discord import DiscordChannel
 from investment_agent.notifications.earnings_calendar import card
 from investment_agent.notifications.outbox import Outbox
 from investment_agent.notifications.service import NotificationService
-from investment_agent.notifications.subscriptions import discord_targets
+from investment_agent.notifications.subscriptions import discord_target
 from investment_agent.notifications.channels import routing
 from investment_agent.platform.clock import utc_now
 from investment_agent.platform.logging import configure_logging, get_logger
 
 log = get_logger(__name__)
-
-
-def _persist_png(png_path: str, iso_week: str) -> str:
-    source = Path(png_path)
-    if not source.is_file():
-        raise FileNotFoundError(png_path)
-    target = Path("artifacts") / "notifications" / "earnings_calendar" / f"{iso_week}.png"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_suffix(".tmp")
-    try:
-        shutil.copyfile(source, temporary)
-        os.replace(temporary, target)
-    finally:
-        temporary.unlink(missing_ok=True)
-    return str(target)
 
 
 def _schedule_embed(row: dict) -> dict:
@@ -79,7 +62,7 @@ async def _post_schedules(rows: list[dict], *, config, service, today: date) -> 
     없이 떨어진다. 같은 사실을 두 곳에 쓰는 것이 아니라, 읽는 방향이 둘이다.
     """
     try:
-        target, = discord_targets("fundamentals_schedule", config=config)
+        target = discord_target("fundamentals_schedule", config=config)
     except Exception:  # noqa: BLE001 - 예정 안내 실패가 주간 카드를 막지 않는다
         log.warning("calendar: 실적 포럼 목적지를 찾지 못해 종목별 예정 안내를 건너뛴다")
         return 0
@@ -120,7 +103,7 @@ def _schedule_tags(target: str, config) -> tuple[str, ...]:
 
 async def run(*, store: EarningsCalendarStore | None = None,
               service: NotificationService | None = None,
-              targets: Sequence[str] | None = None) -> int:
+              target: str | None = None) -> int:
     config = load_config()
     if store is None:
         store = EarningsCalendarStore.configured(config)
@@ -133,11 +116,12 @@ async def run(*, store: EarningsCalendarStore | None = None,
         log.info("calendar: %s 주는 이미 outbox에 등록됨 — 종료", week)
         return 0
 
-    target_ids = tuple(targets) if targets is not None else discord_targets("fundamentals_calendar", config=config)
-    if len(target_ids) != 1:
-        raise RuntimeError("fundamentals_calendar requires exactly one Discord subscription target")
+    target_id = discord_target("fundamentals_calendar", config=config, override=target)
     ctx, caption = card.build(rows, today, snapshot_date)
-    png_path = _persist_png(await shoot_png(render("calendar.html.j2", ctx)), week)
+    png_path = persist_png(
+        await shoot_png(render("calendar.html.j2", ctx)),
+        kind="earnings_calendar", name=week,
+    )
     channel = DiscordChannel(config)
     if service is None:
         service = NotificationService(Outbox(store.database), channel, clock=utc_now)
@@ -146,7 +130,7 @@ async def run(*, store: EarningsCalendarStore | None = None,
         producer="fundamentals",
         notification_key=key,
         kind="fundamentals_calendar",
-        target=target_ids[0],
+        target=target_id,
         message={"content": caption},
         period_end=today,
         attachment_path=png_path,

@@ -24,7 +24,7 @@ from investment_agent.notifications.channels.discord import DiscordChannel
 from investment_agent.notifications.macro import embeds
 from investment_agent.notifications.outbox import Outbox
 from investment_agent.notifications.service import NotificationService
-from investment_agent.notifications.subscriptions import discord_targets
+from investment_agent.notifications.subscriptions import discord_target
 from investment_agent.platform.clock import utc_now
 from investment_agent.reporting.services.macro.thresholds import eval_row
 
@@ -47,7 +47,7 @@ def eval_thresholds(rows):
 
 
 def run(*, store: MacroNotificationStore | None = None, service: NotificationService | None = None,
-        targets: Sequence[str] | None = None) -> None:
+        target: str | None = None) -> None:
     if store is None:
         store = MacroNotificationStore.configured(load_config())
     if service is None:
@@ -61,15 +61,13 @@ def run(*, store: MacroNotificationStore | None = None, service: NotificationSer
         return
     notified, checked = eval_thresholds(rows)
     if notified:
-        target_ids = tuple(targets) if targets is not None else discord_targets("macro_watch")
-        if len(target_ids) != 1:
-            raise RuntimeError("macro_watch requires exactly one Discord subscription target")
+        target_id = discord_target("macro_watch", override=target)
         message = {"embeds": [embeds.build_watch(notified)]}
         result = service.enqueue(
             producer="macro",
             notification_key=f"watch:{notified[0]['obs_date']}",
             kind="macro_watch",
-            target=target_ids[0],
+            target=target_id,
             message=message,
             entity_key=None,
             period_end=str(notified[0]["obs_date"]),

@@ -15,7 +15,7 @@ class StrategyProgressTest(unittest.TestCase):
                 patch.object(service, "_build_cards", return_value=([], {})), \
                 patch.object(service, "_enqueue_batch", return_value=0) as enqueue, \
                 patch.object(service.time, "sleep"):
-            self.assertEqual(0, service.run(service=Mock(), summary_targets=["123"], targets=["456"]))
+            self.assertEqual(0, service.run(service=Mock(), summary_target="123", target="456"))
         load.assert_called_once_with()
         self.assertEqual(2, enqueue.call_count)
 

@@ -57,14 +57,14 @@ class PortfolioRunnerTest(unittest.TestCase):
         service = _service()
         with mock.patch.dict("os.environ", _ENV, clear=False), \
              mock.patch.object(run_portfolio.db, "latest_portfolio", return_value=_PORTFOLIO):
-            self.assertEqual(run_portfolio.run(service=service, targets=("111",)), 1)
+            self.assertEqual(run_portfolio.run(service=service, target="111"), 1)
         self.assertEqual(service.enqueue.call_args.kwargs["notification_key"], "portfolio:proposal_abc")
         self.assertEqual(service.enqueue.call_args.kwargs["target"], "111")
 
     def test_nothing_to_report_sends_nothing(self):
         service = _service()
         with mock.patch.object(run_portfolio.db, "latest_portfolio", return_value=None):
-            self.assertEqual(run_portfolio.run(service=service, targets=("111",)), 0)
+            self.assertEqual(run_portfolio.run(service=service, target="111"), 0)
         service.enqueue.assert_not_called()
 
     def test_duplicate_outbox_item_is_not_counted_as_new_send(self):
@@ -74,7 +74,7 @@ class PortfolioRunnerTest(unittest.TestCase):
         )[1]
         with mock.patch.dict("os.environ", _ENV, clear=False), \
              mock.patch.object(run_portfolio.db, "latest_portfolio", return_value=_PORTFOLIO):
-            self.assertEqual(run_portfolio.run(service=service, targets=("111",)), 0)
+            self.assertEqual(run_portfolio.run(service=service, target="111"), 0)
 
     def test_dispatch_failure_is_propagated_for_operations_alerting(self):
         service = _service()
@@ -82,7 +82,7 @@ class PortfolioRunnerTest(unittest.TestCase):
         with mock.patch.dict("os.environ", _ENV, clear=False), \
              mock.patch.object(run_portfolio.db, "latest_portfolio", return_value=_PORTFOLIO), \
              self.assertRaises(RuntimeError):
-            run_portfolio.run(service=service, targets=("111",))
+            run_portfolio.run(service=service, target="111")
 
 
 class CandidateRunnerTest(unittest.TestCase):
@@ -92,7 +92,7 @@ class CandidateRunnerTest(unittest.TestCase):
         with mock.patch.dict("os.environ", _ENV, clear=False), \
              mock.patch.object(run_candidates.db, "latest_portfolio", return_value=_PORTFOLIO), \
              mock.patch.object(run_candidates.db, "top_candidates", return_value=[_CANDIDATE, second]):
-            self.assertEqual(run_candidates.run(service=service, targets=("111",)), 2)
+            self.assertEqual(run_candidates.run(service=service, target="111"), 2)
         keys = [call.kwargs["notification_key"] for call in service.enqueue.call_args_list]
         self.assertEqual(keys, ["candidate:case_a", "candidate:case_b"])
 
@@ -102,7 +102,7 @@ class CandidateRunnerTest(unittest.TestCase):
         with mock.patch.dict("os.environ", {**_ENV, "AI_INVESTOR_REPORT_TOP_N": "3"}, clear=False), \
              mock.patch.object(run_candidates.db, "latest_portfolio", return_value=_PORTFOLIO), \
              mock.patch.object(run_candidates.db, "top_candidates", queried):
-            self.assertEqual(run_candidates.run(service=service, targets=("111",)), 0)
+            self.assertEqual(run_candidates.run(service=service, target="111"), 0)
         self.assertEqual(queried.call_args.kwargs["limit"], 3)
 
     def test_no_run_to_report_sends_nothing(self):
@@ -117,7 +117,7 @@ class TradeRunnerTest(unittest.TestCase):
         service = _service()
         with mock.patch.dict("os.environ", _ENV, clear=False), \
              mock.patch.object(run_trades.db, "recent_orders", return_value=[_TRADE]):
-            self.assertEqual(run_trades.run(service=service, targets=("222",)), 1)
+            self.assertEqual(run_trades.run(service=service, target="222"), 1)
         call = service.enqueue.call_args
         self.assertEqual(call.kwargs["notification_key"], "trade:order_1")
         self.assertEqual(call.kwargs["target"], "222")

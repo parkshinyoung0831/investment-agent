@@ -13,10 +13,8 @@ from __future__ import annotations
 import argparse
 import os
 import asyncio
-import shutil
 from collections.abc import Sequence
 from datetime import date
-from pathlib import Path
 from typing import Any
 
 from investment_agent.config import load_config
@@ -24,13 +22,14 @@ from investment_agent.reporting.notifications.macro import MacroNotificationStor
 from investment_agent.notifications.channels.discord import DiscordChannel
 from investment_agent.notifications.outbox import Outbox
 from investment_agent.notifications.service import NotificationService
-from investment_agent.notifications.subscriptions import discord_targets
+from investment_agent.notifications.subscriptions import discord_target
 from investment_agent.platform.clock import utc_now
 from investment_agent.reporting.services.macro.constants import CORE_LAYOUT, STALE_COLOR, TONE_ALIAS
 from investment_agent.reporting.services.macro.format import (
     base_card, color_for, fng_color, fng_label, short_of, tier_badge,
 )
 from investment_agent.notifications.macro.render import render, shoot_png
+from investment_agent.notifications.playwright import persist_png
 from investment_agent.reporting.services.macro.thresholds import eval_row, stronger
 
 from investment_agent.platform.logging import get_logger
@@ -150,25 +149,9 @@ async def shoot(rows: list[dict[str, Any]]) -> str:
     return await shoot_png(render("core.html.j2", _build_ctx(rows)))
 
 
-def _persist_png(png_path: str, send_date: str) -> str:
-    """임시 캡처를 dispatcher가 다시 열 수 있는 안정적인 경로에 보관한다."""
-    source = Path(png_path)
-    if not source.is_file():
-        raise FileNotFoundError(png_path)
-    target = Path("artifacts") / "notifications" / "macro_core" / f"{send_date}.png"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_suffix(".tmp")
-    try:
-        shutil.copyfile(source, temporary)
-        os.replace(temporary, target)
-    finally:
-        temporary.unlink(missing_ok=True)
-    return str(target)
-
-
 async def run(*, store: MacroNotificationStore | None = None, channel: Any | None = None,
               service: NotificationService | None = None,
-              targets: Sequence[str] | None = None) -> None:
+              target: str | None = None) -> None:
     # 코어는 하루 한 장짜리 묶음이라 load 단계에서 걸러낼 축이 없다 — 발송 기록을
     # 직접 보고 막는다. ETL 워크플로 뒤에 붙는 경로와 안전망 cron이 같은 날 겹친다.
     send_date = date.today().isoformat()
@@ -184,17 +167,15 @@ async def run(*, store: MacroNotificationStore | None = None, channel: Any | Non
     if not rows:
         log.info("core: no rows from macro v1 observation reader (CORE_SERIES) — silent skip (stale)")
         return
-    target_ids = tuple(targets) if targets is not None else discord_targets("macro_core", config=config)
-    if len(target_ids) != 1:
-        raise RuntimeError("macro_core requires exactly one Discord subscription target")
-    png_path = _persist_png(await shoot(rows), send_date)
+    target_id = discord_target("macro_core", config=config, override=target)
+    png_path = persist_png(await shoot(rows), kind="macro_core", name=send_date)
     if service is None:
         service = NotificationService(Outbox(store.database), channel, clock=utc_now)
     result = service.enqueue(
         producer="macro",
         notification_key=f"core:{send_date}",
         kind="macro_core",
-        target=target_ids[0],
+        target=target_id,
         message={"content": "📊 매크로 코어 (Stack 1)"},
         period_end=send_date,
         attachment_path=png_path,

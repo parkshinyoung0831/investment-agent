@@ -24,11 +24,11 @@ class EarningsCalendarRoutingTest(unittest.TestCase):
             patch.object(run, "force_resend", return_value=False),
             patch.object(run.card, "build", return_value=({}, "caption")),
             patch.object(run, "render", return_value="<html />"),
-            patch.object(run, "_persist_png", return_value="calendar.png"),
+            patch.object(run, "persist_png", return_value="calendar.png"),
             patch.object(run, "shoot_png", new=AsyncMock(return_value="rendered.png")),
             patch.object(run, "DiscordChannel"),
         ):
-            result = asyncio.run(run.run(store=store, service=service, targets=("123",)))
+            result = asyncio.run(run.run(store=store, service=service, target="123"))
 
         self.assertEqual(result, 0)
         self.assertEqual(service.enqueue.call_args.kwargs["target"], "123")

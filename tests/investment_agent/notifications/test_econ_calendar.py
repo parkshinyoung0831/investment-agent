@@ -45,7 +45,7 @@ class NotificationLedgerTest(unittest.TestCase):
             patch.object(run.store, "load_pending", return_value=rows),
             patch.object(run, "NotificationService", return_value=service),
         ):
-            self.assertEqual(run.run(targets=("123",)), 1)
+            self.assertEqual(run.run(target="123"), 1)
         service.enqueue.assert_called_once()
         service.run_pending.assert_called_once()
 

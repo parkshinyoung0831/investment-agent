@@ -41,7 +41,7 @@ class ReleaseDedupTest(unittest.TestCase):
              mock.patch.object(release_run.store, "load_pending", return_value=rows), \
              mock.patch.object(release_run, "NotificationService") as service:
             service.return_value.run_pending.return_value = [SimpleNamespace(status="sent")]
-            self.assertEqual(release_run.run(targets=("123",)), 1)
+            self.assertEqual(release_run.run(target="123"), 1)
         service.return_value.enqueue.assert_called_once()
 
     def test_send_failure_leaves_the_row_unmarked(self):
@@ -53,7 +53,7 @@ class ReleaseDedupTest(unittest.TestCase):
              mock.patch.object(release_run.store, "load_pending", return_value=rows), \
              mock.patch.object(release_run, "NotificationService") as service:
             service.return_value.run_pending.return_value = [SimpleNamespace(status="unknown")]
-            self.assertEqual(release_run.run(targets=("123",)), 0)
+            self.assertEqual(release_run.run(target="123"), 0)
         service.return_value.enqueue.assert_called_once()
 
 
@@ -65,7 +65,7 @@ class WatchDedupTest(unittest.TestCase):
 
     def test_no_pending_obs_sends_nothing(self):
         self.store.load_watch_pending.return_value = []
-        macro_watch.run(store=self.store, service=self.service, targets=("123",))
+        macro_watch.run(store=self.store, service=self.service, target="123")
         self.service.enqueue.assert_not_called()
         self.service.run_pending.assert_not_called()
 
@@ -73,7 +73,7 @@ class WatchDedupTest(unittest.TestCase):
         rows = [_row("A", "2026-08-12"), _row("B", "2026-08-12")]
         self.store.load_watch_pending.return_value = rows
         with mock.patch.object(macro_watch, "eval_row", return_value=(None, None)):
-            macro_watch.run(store=self.store, service=self.service, targets=("123",))
+            macro_watch.run(store=self.store, service=self.service, target="123")
         self.service.enqueue.assert_not_called()
 
     def test_thresholded_rows_are_enqueued_as_one_card(self):
@@ -84,7 +84,7 @@ class WatchDedupTest(unittest.TestCase):
              mock.patch.object(macro_watch.embeds, "build_watch", return_value={"fields": []}), \
              mock.patch.object(macro_watch, "load_config") as config:
             config.return_value.require.return_value = ("123",)
-            macro_watch.run(store=self.store, service=self.service, targets=("123",))
+            macro_watch.run(store=self.store, service=self.service, target="123")
         self.service.enqueue.assert_called_once()
         self.assertEqual("macro_watch", self.service.enqueue.call_args.kwargs["kind"])
         self.service.run_pending.assert_called_once()

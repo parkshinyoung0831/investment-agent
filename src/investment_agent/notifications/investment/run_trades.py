@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 
 from investment_agent.platform.logging import get_logger
@@ -10,7 +9,7 @@ from investment_agent.config import load_config
 from investment_agent.notifications.channels.discord import DiscordChannel
 from investment_agent.notifications.outbox import Outbox
 from investment_agent.notifications.service import NotificationService
-from investment_agent.notifications.subscriptions import discord_targets
+from investment_agent.notifications.subscriptions import discord_target
 from investment_agent.platform.clock import utc_now
 from . import embeds
 from investment_agent.reporting.notifications.investment import db
@@ -34,7 +33,7 @@ def _lookback_hours() -> int:
 
 
 def run(*, service: NotificationService | None = None,
-        targets: Sequence[str] | None = None) -> int:
+        target: str | None = None) -> int:
     """되돌아본 구간에서 아직 보고하지 않은 주문을 카드로 보낸다."""
     since = datetime.now(timezone.utc) - timedelta(hours=_lookback_hours())
     trades = db.recent_orders(since_at=since.isoformat())
@@ -43,12 +42,7 @@ def run(*, service: NotificationService | None = None,
         return 0
 
     config = load_config()
-    target_ids = tuple(targets) if targets is not None else discord_targets(
-        "investment_trades", config=config
-    )
-    if len(target_ids) != 1:
-        raise RuntimeError("investment_trades requires exactly one Discord subscription target")
-    channel_id = target_ids[0]
+    channel_id = discord_target("investment_trades", config=config, override=target)
     if service is None:
         service = NotificationService(
             Outbox(configured_database(config)), DiscordChannel(config), clock=utc_now,

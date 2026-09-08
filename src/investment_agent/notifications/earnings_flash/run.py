@@ -11,7 +11,7 @@ from investment_agent.notifications.channels.discord import DiscordChannel
 from investment_agent.notifications.earnings_flash.embeds import build_flash_embed
 from investment_agent.notifications.outbox import Outbox
 from investment_agent.notifications.service import NotificationService
-from investment_agent.notifications.subscriptions import discord_targets
+from investment_agent.notifications.subscriptions import discord_target
 from investment_agent.notifications.channels import routing
 from investment_agent.platform.clock import utc_now
 from investment_agent.platform.logging import configure_logging, get_logger
@@ -25,7 +25,7 @@ def run(
     tickers: set[str] | None = None,
     store: EarningsFlashStore | None = None,
     service: NotificationService | None = None,
-    targets: Sequence[str] | None = None,
+    target: str | None = None,
 ) -> int:
     """미발송 8-K 속보를 v1 outbox에 등록하고 디스패치한다."""
     config = load_config()
@@ -37,15 +37,9 @@ def run(
         log.info("flash: 발송할 신규 8-K 실적 속보 없음")
         return 0
 
-    if target_channel_id:
-        target_ids = (target_channel_id,)
-    elif targets is not None:
-        target_ids = tuple(targets)
-    else:
-        target_ids = discord_targets("fundamentals_flash", config=config)
-    if len(target_ids) != 1:
-        raise RuntimeError("fundamentals_flash requires exactly one Discord subscription target")
-    channel_id = target_ids[0]
+    channel_id = discord_target(
+        "fundamentals_flash", config=config, override=target_channel_id or target,
+    )
     if service is None:
         service = NotificationService(Outbox(store.database), DiscordChannel(config), clock=utc_now)
 

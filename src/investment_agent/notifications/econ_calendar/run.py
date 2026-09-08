@@ -11,14 +11,14 @@ from investment_agent.notifications.channels.discord import DiscordChannel
 from investment_agent.notifications.econ_calendar import embeds
 from investment_agent.notifications.outbox import Outbox
 from investment_agent.notifications.service import NotificationService
-from investment_agent.notifications.subscriptions import discord_targets
+from investment_agent.notifications.subscriptions import discord_target
 from investment_agent.platform.clock import utc_now
 from investment_agent.reporting.notifications.connections import configured_database
 
 log = get_logger(__name__)
 
 
-def run(event_keys: list[str] | None = None, *, targets: Sequence[str] | None = None) -> int:
+def run(event_keys: list[str] | None = None, *, target: str | None = None) -> int:
     config = load_config()
     database = configured_database(config)
     outbox = Outbox(database)
@@ -27,9 +27,7 @@ def run(event_keys: list[str] | None = None, *, targets: Sequence[str] | None = 
     if not rows:
         log.info("econ release: no pending releases — silent skip")
         return 0
-    target_ids = tuple(targets) if targets is not None else discord_targets("econ_calendar_release", config=config)
-    if len(target_ids) != 1:
-        raise RuntimeError("econ_calendar_release requires exactly one Discord subscription target")
+    target_id = discord_target("econ_calendar_release", config=config, override=target)
     service = NotificationService(outbox, DiscordChannel(config), clock=utc_now)
     for offset in range(0, len(rows), 5):
         batch = rows[offset:offset + 5]
@@ -38,7 +36,7 @@ def run(event_keys: list[str] | None = None, *, targets: Sequence[str] | None = 
             producer=store.PRODUCER,
             notification_key=store.notification_key(key),
             kind=store.KIND,
-            target=target_ids[0],
+            target=target_id,
             entity_key=key,
             period_end=str(batch[0].get("ref_period") or "") or None,
             message={"content": "", "embeds": [embeds.build(batch)]},

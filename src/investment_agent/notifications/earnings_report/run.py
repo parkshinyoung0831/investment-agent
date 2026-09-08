@@ -20,7 +20,7 @@ from investment_agent.reporting.services.earnings import valuation_history as hi
 from investment_agent.notifications.channels.discord import DiscordChannel
 from investment_agent.notifications.outbox import Outbox
 from investment_agent.notifications.service import NotificationService
-from investment_agent.notifications.subscriptions import discord_targets
+from investment_agent.notifications.subscriptions import discord_target
 from investment_agent.notifications.channels import routing
 from investment_agent.notifications.channels.directory import guild_directory
 from investment_agent.platform.clock import utc_now
@@ -115,7 +115,7 @@ async def run(
     *,
     tickers: set[str] | None = None,
     service: NotificationService | None = None,
-    targets: Sequence[str] | None = None,
+    target: str | None = None,
 ) -> int:
     """미발송 정밀 카드를 보낸다.
 
@@ -130,18 +130,13 @@ async def run(
     log.info("fundamentals: 신규 공시 %d건 발송 시작", len(items))
     extras = _extras_by_ticker(sorted({item["row"]["ticker"] for item in items}))
     config = load_config()
-    target_ids = tuple(targets) if targets is not None else discord_targets(
-        "fundamentals_earnings", config=config
-    )
-    if len(target_ids) != 1:
-        raise RuntimeError("fundamentals_earnings requires exactly one Discord subscription target")
+    forum = discord_target("fundamentals_earnings", config=config, override=target)
     if service is None:
         service = NotificationService(
             Outbox(db.database_for_config(config)),
             DiscordChannel(config),
             clock=utc_now,
         )
-    target = target_ids[0]
     enqueued = 0
     for item in items:
         row = item["row"]

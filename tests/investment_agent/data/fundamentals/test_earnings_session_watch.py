@@ -204,7 +204,7 @@ class EarningsFlashOutbox(unittest.TestCase):
             mock.patch.object(flash_run, "load_pending_flash", return_value=[item]),
             mock.patch.object(flash_run, "build_flash_embed", return_value={}),
         ):
-            flash_run.run(store=mock.Mock(database=mock.Mock()), service=service, targets=("1",))
+            flash_run.run(store=mock.Mock(database=mock.Mock()), service=service, target="1")
         self.assertEqual(order, ["enqueue", "dispatch"])
 
     def test_failed_send_releases_the_claim(self):
@@ -223,7 +223,7 @@ class EarningsFlashOutbox(unittest.TestCase):
             mock.patch.object(flash_run, "load_pending_flash", return_value=[item]),
             mock.patch.object(flash_run, "build_flash_embed", return_value={}),
         ):
-            sent = flash_run.run(store=mock.Mock(database=mock.Mock()), service=service, targets=("1",))
+            sent = flash_run.run(store=mock.Mock(database=mock.Mock()), service=service, target="1")
         self.assertEqual(sent, 0)
         service.enqueue.assert_called_once()
         service.run_pending.assert_called_once()
