@@ -18,6 +18,10 @@ log = get_logger(__name__)
 # 첫 실행이 10년치 과거 공시를 한꺼번에 쏟아내지 않도록 하는 최근성 가드(일).
 _DEFAULT_LOOKBACK_DAYS = 7
 _WAIT_FOR_SEGMENT_STATES = ("processing", "failed")
+# 세그먼트를 기다리는 기한(일). 기한이 없으면 "늦게 보낸다"가 아니라 "영영 안
+# 보낸다"가 된다 — 세그먼트는 SEC의 분기 데이터셋에서 오고 그것은 한 분기 늦게
+# 공개되므로, 갓 접수된 공시는 몇 달 동안 status=processing에 머문다.
+_DEFAULT_SEGMENT_WAIT_DAYS = 3
 
 
 def _lookback_days() -> int:
@@ -25,6 +29,13 @@ def _lookback_days() -> int:
         return int(os.environ.get("FUNDAMENTALS_NOTIFY_LOOKBACK_DAYS", _DEFAULT_LOOKBACK_DAYS))
     except ValueError:
         return _DEFAULT_LOOKBACK_DAYS
+
+
+def _segment_wait_days() -> int:
+    try:
+        return int(os.environ.get("FUNDAMENTALS_SEGMENT_WAIT_DAYS", _DEFAULT_SEGMENT_WAIT_DAYS))
+    except ValueError:
+        return _DEFAULT_SEGMENT_WAIT_DAYS
 
 
 def _cutoff() -> str:
@@ -89,10 +100,29 @@ def _selected_members(tickers: set[str] | None = None) -> list[dict]:
     return [member for member in members if str(member.get("ticker") or "") in tickers]
 
 
-def is_report_ready(segment_state: dict | None) -> bool:
-    """세그먼트 적재가 끝난 공시만 정밀 카드 발송 대상으로 허용한다."""
+def is_report_ready(
+    segment_state: dict | None,
+    *,
+    filed_at: str = "",
+    today: date | None = None,
+) -> bool:
+    """정밀 카드를 지금 보낼지 판정한다.
+
+    세그먼트가 아직이면 잠깐 기다린다 — 축이 붙은 카드가 더 낫고, 한 번 보내면
+    같은 공시로 다시 보낼 기회가 없기 때문이다. **다만 기다림에는 기한이 있다.**
+    세그먼트는 SEC의 분기 데이터셋에서 오고 그것은 한 분기 늦게 공개되므로, 기한이
+    없으면 갓 접수된 공시일수록 오래 묶여 결국 아무것도 못 받는다.
+
+    기한이 지나면 세그먼트 없이 내보낸다. 세그먼트는 본 카드가 아니라 같은
+    메시지에 얹는 별도 embed라, 없으면 그 자리만 비고 재무 카드는 온전하다.
+    """
     status = str((segment_state or {}).get("status") or "processing")
-    return status not in _WAIT_FOR_SEGMENT_STATES
+    if status not in _WAIT_FOR_SEGMENT_STATES:
+        return True
+    if not filed_at:
+        return False
+    deadline = (today or date.today()) - timedelta(days=_segment_wait_days())
+    return str(filed_at)[:10] <= deadline.isoformat()
 
 
 def pending_state(tickers: set[str] | None = None) -> dict[str, int | bool]:
@@ -169,14 +199,23 @@ def load_pending(tickers: set[str] | None = None) -> list[dict]:
             ticker, str(row["accession_no"]), int(row["fiscal_year"]), str(row["fiscal_period"]),
         )
         segment_state = segment_states.get(segment_key, {"status": "empty", "axes": []})
-        if not is_report_ready(segment_state):
+        filed_at = str(row.get("filed_at") or "")
+        if not is_report_ready(segment_state, filed_at=filed_at):
             # 세그먼트는 별도 workflow_run에서 늦게 끝날 수 있다. 여기서 선점하면 축 없는
             # 카드가 확정돼 재발송 기회를 잃으므로, 다음 알림 주기에 다시 판단한다.
             log.info(
-                "fundamentals: 세그먼트 적재 대기 ticker=%s accession_no=%s status=%s",
+                "fundamentals: 세그먼트 적재 대기 ticker=%s accession_no=%s status=%s "
+                "filed_at=%s wait_days=%d",
                 ticker, row["accession_no"], segment_state.get("status"),
+                filed_at or "-", _segment_wait_days(),
             )
             continue
+        if segment_state.get("status") in _WAIT_FOR_SEGMENT_STATES:
+            log.info(
+                "fundamentals: 세그먼트 대기 기한 초과 — 재무 카드만 보낸다 "
+                "ticker=%s accession_no=%s filed_at=%s",
+                ticker, row["accession_no"], filed_at or "-",
+            )
         out.append({
             "row": row,
             "prev": by_key.get((ticker, row["fiscal_year"] - 1, row["fiscal_period"])),

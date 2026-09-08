@@ -43,6 +43,7 @@ Actions secrets/variables(CI)에 주입하며, 이 파일에는 이름·용도·
 | `INVESTMENT_AGENT_MARKET_ARCHIVE_DIR` | Yahoo 원본 daily Parquet archive의 **영속** 루트. 기본 `artifacts/market_history`; CI에서는 runner 밖의 영속 볼륨을 지정한다 |
 | `GURUS_SHADOW_PARSER` | `on`이면 edgartools로 13F를 다시 파싱해 직접 파서 결과와 사후 대조한다. 불일치는 JSON 로그와 Discord 시스템 로그로 진단하며, 기본 off·운영 적재는 항상 직접 파서다 |
 | `FUNDAMENTALS_INDEX_LOOKBACK_DAYS`, `FUNDAMENTALS_NOTIFY_LOOKBACK_DAYS` | 증분 창 조정 |
+| `FUNDAMENTALS_SEGMENT_WAIT_DAYS` | 정밀 카드가 세그먼트를 기다리는 기한(기본 3일). 넘기면 재무 카드만 보낸다 — 세그먼트는 SEC 분기 데이터셋에서 와 한 분기 늦다 |
 | `FUNDAMENTALS_EXPECTATIONS_WORKERS` | Yahoo 예상치 동시 수집 수(기본 4, 1~16). Actions는 명시적으로 4 사용 |
 | `FUNDAMENTALS_FAST_LEAD_DAYS`, `FUNDAMENTALS_FAST_LAG_DAYS`, `FUNDAMENTALS_FAST_STALE_DAYS` | fast path 시즌 창(기본 5·10·7일). `.env.example`의 빈 값은 코드 기본값을 사용 |
 | `FUNDAMENTALS_CALENDAR_FORCE` | 발표 예정 카드를 같은 주에 다시 보낼 때(수동 재발송) |

@@ -166,6 +166,31 @@ class SegmentHighlightsTest(unittest.TestCase):
         self.assertTrue(candidates.is_report_ready({"status": "unsupported", "axes": []}))
         self.assertTrue(candidates.is_report_ready({"status": "verified", "axes": []}))
 
+    def test_the_wait_for_segments_has_a_deadline(self):
+        """기한이 없으면 "늦게 보낸다"가 아니라 "영영 안 보낸다"가 된다.
+
+        세그먼트는 SEC의 분기 데이터셋에서 오고 그것은 한 분기 늦게 공개된다.
+        실제로 관심종목 47건이 status=processing에 몇 달째 묶여 카드가 한 장도
+        나가지 않았다. 기한이 지나면 재무 카드만이라도 내보낸다 — 세그먼트는 본
+        카드가 아니라 같은 메시지에 얹는 별도 embed라 없으면 그 자리만 빈다.
+        """
+        today = date(2026, 9, 8)
+        waiting = {"status": "processing", "axes": []}
+        # 갓 접수된 공시는 축이 붙기를 기다린다.
+        self.assertFalse(
+            candidates.is_report_ready(waiting, filed_at="2026-09-07", today=today))
+        # 기한을 넘기면 세그먼트 없이 내보낸다.
+        self.assertTrue(
+            candidates.is_report_ready(waiting, filed_at="2026-06-30", today=today))
+        self.assertTrue(
+            candidates.is_report_ready({"status": "failed", "axes": []},
+                                       filed_at="2026-06-30", today=today))
+
+    def test_a_filing_without_a_filed_date_keeps_waiting(self):
+        """접수일을 모르면 기한을 잴 수 없다. 그때는 보내지 않는 쪽이 안전하다."""
+        self.assertFalse(
+            candidates.is_report_ready({"status": "processing", "axes": []}, filed_at=""))
+
     def test_pending_report_is_deferred_until_segment_sync_finishes(self):
         """후속 알림 잡도 processing/failed 공시를 선점하지 않는다."""
         row = {
