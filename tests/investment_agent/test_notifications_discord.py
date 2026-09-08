@@ -101,6 +101,24 @@ class DiscordTest(unittest.TestCase):
         self.assertEqual({"parse": []}, validate_message(source)["allowed_mentions"])
         self.assertEqual(["everyone"], source["allowed_mentions"]["parse"])
 
+    def test_an_embed_may_link_its_title_to_the_source(self):
+        """거장 카드는 제목을 SEC 원문으로 잇는다.
+
+        `url`이 허용 목록에 없던 동안 그 카드 6장이 매번 거절됐고, 실패는
+        `notification_enqueue_failed` 경고 한 줄로 삼켜져 `sent=0`으로 끝났다 —
+        보내지 못했다는 사실이 오류처럼 보이지 않았다.
+        """
+        validate_message({"embeds": [{
+            "title": "워런 버핏 · 버크셔 해서웨이",
+            "url": "https://www.sec.gov/Archives/edgar/data/1067983/x.txt",
+        }]})
+
+    def test_an_embed_url_must_be_a_real_web_link(self):
+        """producer가 넣은 문자열이 그대로 링크가 되는 자리다."""
+        for url in ("javascript:alert(1)", "data:text/html,x", "sec.gov/x", 123, "https://" + "x" * 2100):
+            with self.subTest(url=str(url)[:40]), self.assertRaises(ValueError):
+                validate_message({"embeds": [{"title": "t", "url": url}]})
+
 
 class ReportRendererTest(unittest.TestCase):
     def test_preserves_zero_missing_and_stored_weights(self):
