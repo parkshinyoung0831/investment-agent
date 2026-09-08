@@ -177,15 +177,33 @@ def fetch_forum_threads(
             raise RuntimeError(f"discord_forum_threads_http_{response.status_code}")
         payload = response.json()
         threads = payload.get("threads") if isinstance(payload, dict) else None
+        newest: dict[str, tuple[str, str]] = {}
         for thread in threads or []:
             if filter_parent and str(thread.get("parent_id") or "") != str(channel_id):
                 continue
             name = _thread_match_key(thread.get("name") or "")
             thread_id = str(thread.get("id") or "")
-            # 먼저 본 것을 남긴다 — 활성 스레드가 보관된 동명보다 우선이다.
-            if name and thread_id.isdigit():
-                found.setdefault(name, thread_id)
+            if not name or not thread_id.isdigit():
+                continue
+            # 같은 키에 스레드가 둘 이상이면 **가장 최근에 만들어진 것**을 쓴다.
+            # 표시명이 바뀌어 스레드가 갈라진 적이 있는데, 그때 어느 쪽에 쌓일지가
+            # Discord 응답 순서에 달려 있었다 — 실행마다 목적지가 달라진다.
+            # 최신 스레드에 최신 카드가 있으므로 그쪽으로 모은다.
+            created = str(
+                (thread.get("thread_metadata") or {}).get("create_timestamp") or ""
+            ) or _snowflake_order(thread_id)
+            previous = newest.get(name)
+            if previous is None or created > previous[0]:
+                newest[name] = (created, thread_id)
+        # 활성 스레드가 보관된 동명보다 우선이다 — 보관된 곳에는 글을 못 붙인다.
+        for name, (_created, thread_id) in newest.items():
+            found.setdefault(name, thread_id)
     return found
+
+
+def _snowflake_order(thread_id: str) -> str:
+    """생성 시각이 없을 때 쓰는 순서. snowflake는 시간순으로 커진다."""
+    return thread_id.zfill(24)
 
 
 class DiscordChannel:

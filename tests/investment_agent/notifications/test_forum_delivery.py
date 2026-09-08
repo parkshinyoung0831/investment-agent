@@ -227,3 +227,47 @@ class ThreadIdentityTest(unittest.TestCase):
         self.assertEqual("aapl", _thread_match_key("AAPL · 애플 · 실적 기록"))
         # 거장 포럼은 사람 이름이 곧 첫 마디다.
         self.assertEqual("워런 버핏", _thread_match_key("워런 버핏 · 13F 기록"))
+
+
+class DuplicateThreadResolutionTest(unittest.TestCase):
+    """이미 갈라진 스레드가 있을 때 어디에 쌓일지가 정해져 있어야 한다.
+
+    먼저 본 것을 쓰면 목적지가 Discord 응답 순서에 달린다 — 실행마다 달라지고,
+    카드가 두 스레드에 번갈아 들어간다. 최신 스레드에 최신 카드가 있으므로
+    그쪽으로 모은다.
+    """
+
+    def _threads(self, order: list[dict]) -> dict:
+        return {"threads": order}
+
+    OLD = {"id": "100", "name": "AAPL · Apple Inc. · 실적 기록", "parent_id": "123",
+           "thread_metadata": {"create_timestamp": "2026-09-08T06:00:00Z"}}
+    NEW = {"id": "200", "name": "AAPL · 애플 · 실적 기록", "parent_id": "123",
+           "thread_metadata": {"create_timestamp": "2026-09-08T13:00:00Z"}}
+
+    def _resolve(self, order: list[dict]) -> str:
+        calls: list[dict] = []
+
+        def post(url, **kwargs):
+            calls.append({"url": url, **kwargs})
+            return _Response()
+
+        def get(url, **kwargs):
+            return _Response(payload=self._threads(order))
+
+        DiscordChannel(_config(), post=post, get=get).send(
+            target="123", message={"content": "hi"},
+            thread_name="AAPL · 애플 · 실적 기록",
+        )
+        return calls[0]["url"]
+
+    def test_the_newest_thread_wins_regardless_of_response_order(self) -> None:
+        for order in ([self.OLD, self.NEW], [self.NEW, self.OLD]):
+            with self.subTest(order=[t["id"] for t in order]):
+                self.assertTrue(self._resolve(order).endswith("/channels/200/messages"))
+
+    def test_a_missing_timestamp_falls_back_to_the_snowflake(self) -> None:
+        """생성 시각이 없어도 순서는 정해진다 — snowflake는 시간순으로 커진다."""
+        bare_old = {"id": "100", "name": "AAPL · A · 실적 기록", "parent_id": "123"}
+        bare_new = {"id": "200", "name": "AAPL · B · 실적 기록", "parent_id": "123"}
+        self.assertTrue(self._resolve([bare_new, bare_old]).endswith("/channels/200/messages"))
