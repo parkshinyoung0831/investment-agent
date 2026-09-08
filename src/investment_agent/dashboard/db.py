@@ -1528,15 +1528,10 @@ def load_earnings_discord_support(ticker: str, *, section: str = "all") -> DataR
                 failures.append(dataset)
 
 
-        # v1에서는 TTM·밸류에이션을 저장된 과거 view로 읽지 않는다. 필요한
-        # 원장은 canonical 테이블에서 확인하고, 파생 화면은 별도 계산 계층이
-        # 제공할 때만 노출한다.
-        if "metrics" in requested:
-            payload["metrics"] = []
-        if "ttm" in requested:
-            payload["ttm"] = []
-        if "valuation" in requested:
-            payload["valuation"] = []
+        # metrics·ttm·valuation은 v1에 저장 view가 없다. 셋 다 선언에서 이미 빈
+        # 목록이고 여기서 채우지 않는다 — 조회를 빠뜨린 것이 아니라, 공시 시점
+        # 배수와 TTM을 굳혀 둔 표가 v1에 없어서다. 화면은 그 사실을 빈 상태 문구로
+        # 알린다. 파생 계산 계층이 그 계약을 갖추면 그때 여기에 연결한다.
         if "price_history" in requested:
             payload["price_history"] = _canonical_price_rows(gateway, [symbol])
         if "shares_outstanding_history" in requested:
@@ -1714,12 +1709,10 @@ def load_earnings_extended(ticker: str, *, section: str = "all") -> DataResult:
         if "industry" in requested:
             payload["industry"] = canonical_rows
         # 재계산 가능한 Research feature는 Supabase production schema가 아니라
-        # 로컬 DuckDB가 owner다. 비재귀 지표는 현재 이 화면의 저장 계약에 없으므로
-        # 빈 결과를 반환하고, 존재하지 않는 production view를 호출하지 않는다.
+        # 로컬 DuckDB가 owner다. tech_view·oscillators는 이 화면의 저장 계약에 없어
+        # 선언의 빈 목록 그대로 둔다 — 없는 production view를 부르지 않기 위해서다.
         if "tech_daily" in requested:
             payload["tech_daily"] = load_local_features(symbol, limit=520)
-        payload["tech_view"] = []
-        payload["oscillators"] = []
         # 전 축·다기간 추이. 카드는 대표 축 하나만 그리지만 여기서는 전부 본다.
         if "segment_all" in requested:
             payload["segment_all"] = enrich_segment_rows(

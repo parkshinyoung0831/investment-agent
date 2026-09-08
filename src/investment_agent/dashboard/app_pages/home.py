@@ -24,12 +24,17 @@ from investment_agent.dashboard.components.ui import display_number, format_time
 from investment_agent.reporting.services.strategy_labels import mode_label, strategy_label
 
 
-_MARKETS = (
+# (가격 저장소 ticker, 표시명, 매크로 series_id).
+# 첫 칸이 None인 것은 가격 저장소가 담지 않는 지표다 — VIX와 원/달러는 종목이 아니라
+# macro 관측이다. 이 둘을 가격 조회에 섞으면 reader가 종목 코드 형식 검사에서 질의
+# **전체**를 blocked로 돌려보내고, 그러면 SPY·QQQ 카드까지 함께 조용히 빈다.
+_MARKETS: tuple[tuple[str | None, str, str], ...] = (
     ("SPY", "S&P 500", "SPY"),
     ("QQQ", "나스닥 100", "QQQ"),
-    ("^VIX", "변동성", "VIX"),
-    ("KRW=X", "달러/원", "USDKRW"),
+    (None, "변동성", "VIX"),
+    (None, "달러/원", "USDKRW"),
 )
+_PRICE_TICKERS = tuple(ticker for ticker, _, _ in _MARKETS if ticker)
 _TIER_ORDER = {"alert": 0, "caution": 1, "watch": 2, "": 3}
 _TIER_LABEL = {"alert": "위험", "caution": "주의", "watch": "관심", "": "일반"}
 _COUNTRY = {"US": "미국", "KR": "한국"}
@@ -58,15 +63,10 @@ def _tier_key(value: Any) -> str:
     return next((key for key in ("alert", "caution", "watch") if key in text), "")
 
 
-def _market_value(symbol: str, value: Any) -> str:
+def _market_value(value: Any) -> str:
+    """저장 종가는 달러 표기다 — 이 경로에 오는 것은 가격 저장소의 종목뿐이다."""
     number = finite_number(value)
-    if number is None:
-        return "—"
-    if symbol == "KRW=X":
-        return display_number(number, digits=2, suffix="원")
-    if symbol == "^VIX":
-        return display_number(number, digits=2)
-    return f"${number:,.2f}"
+    return "—" if number is None else f"${number:,.2f}"
 
 
 def _market_snapshot(
@@ -77,10 +77,10 @@ def _market_snapshot(
 
     stored = {str(row.get("series_id")): row for row in indicators}
     cards: list[dict[str, Any]] = []
-    for live_symbol, label, stored_id in _MARKETS:
+    for price_ticker, label, stored_id in _MARKETS:
         series = (
-            close[live_symbol].dropna()
-            if live_symbol in close.columns
+            close[price_ticker].dropna()
+            if price_ticker and price_ticker in close.columns
             else pd.Series(dtype="float64")
         )
         if not series.empty:
@@ -94,11 +94,11 @@ def _market_snapshot(
             cards.append(
                 {
                     "label": f"{label} · {stored_id}",
-                    "value": _market_value(live_symbol, latest),
+                    "value": _market_value(latest),
                     "delta": f"{change_pct:+.2f}%" if change_pct is not None else None,
                     "spark": series.tail(20).tolist(),
                     "source": "저장 가격",
-                    "inverse": live_symbol == "^VIX",
+                    "inverse": stored_id == "VIX",
                 }
             )
             continue
@@ -255,7 +255,7 @@ def _page_link(page: str, label: str) -> None:
 macro_result = load_macro_window("all")
 econ_result = load_econ_upcoming(14)
 strategy_result = load_strategy_data()
-price_result = load_price_history(tuple(item[0] for item in _MARKETS), period="1mo")
+price_result = load_price_history(_PRICE_TICKERS, period="1mo")
 
 macro_rows = list(result_payload(macro_result, default=[]) or [])
 indicators = macro_indicator_rows(macro_rows)

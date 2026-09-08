@@ -87,7 +87,11 @@ def load_econ_calendar_window(start_at: str, end_at: str) -> DataResult:
 @cache_data(ttl="10m", max_entries=2)
 def load_econ_series() -> DataResult:
     from investment_agent.reporting.services.economic_releases import enriched_series
-    series, measures = _read("macro_series"), _read("macro_measures")
+    # macro.series에는 발표 지표와 시장 관측 지표가 함께 산다(30 + 32). 이 화면은
+    # 발표만 다루고, 코드의 발표 카탈로그도 그 30개만 안다 — 걸러내지 않으면
+    # 시장 지표 첫 행에서 "unknown ECON series"로 화면 전체가 죽는다.
+    series = _read("macro_series", equals={"domain": "economic_release"})
+    measures = _read("macro_measures")
     if series.status not in {"ok", "empty"}:
         return series
     if measures.status not in {"ok", "empty"}:
@@ -123,28 +127,6 @@ def load_econ_detail(event_key: str) -> DataResult:
         return actuals
     payload = {"forecasts": forecasts.rows, "actuals": actuals.rows}
     return DataResult.empty(value=payload, source=f"{SOURCE} · reporting.macro_release", message="선택한 발표의 저장 데이터가 없습니다.") if not any(payload.values()) else DataResult.ok(value=payload, source=f"{SOURCE} · reporting.macro_release")
-
-
-@cache_data(ttl="15m", max_entries=32)
-def load_earnings_overview(ticker: str | None = None) -> DataResult:
-    """실적 화면의 reporting-only 기본 read model.
-
-    아직 reporting view로 공개되지 않은 filing audit·raw consensus는 의도적으로
-    포함하지 않는다. 그 데이터는 view 계약이 준비될 때까지 Dashboard가 우회 조회하지
-    않도록 별도 reader로 추가한다.
-    """
-    symbol = str(ticker or "").strip().upper()
-    if symbol and not re.fullmatch(r"[A-Z0-9][A-Z0-9.-]{0,14}", symbol):
-        return DataResult.blocked(source=SOURCE, message="유효한 종목 코드가 필요합니다.")
-    filters = {"ticker": symbol} if symbol else None
-    financials = _read("company_financials_latest", **({"equals": filters} if filters else {}))
-    schedule = _read("earnings_schedule", **({"equals": filters} if filters else {}))
-    surprise = _read("earnings_surprise", **({"equals": filters} if filters else {}))
-    for result in (financials, schedule, surprise):
-        if result.status not in {"ok", "empty"}:
-            return result
-    payload = {"financials": financials.rows, "schedule": schedule.rows, "surprise": surprise.rows}
-    return DataResult.empty(value=payload, source=f"{SOURCE} · reporting earnings", message="저장된 실적 read model이 없습니다.") if not any(payload.values()) else DataResult.ok(value=payload, source=f"{SOURCE} · reporting earnings")
 
 
 @cache_data(ttl="2m", max_entries=32)
@@ -255,6 +237,6 @@ def load_execution_data() -> DataResult:
 
 __all__ = [
     "load_econ_calendar_window", "load_econ_detail", "load_econ_recent_results",
-    "load_econ_series", "load_econ_series_history", "load_econ_upcoming", "load_earnings_overview",
+    "load_econ_series", "load_econ_series_history", "load_econ_upcoming",
     "load_execution_data", "load_guru_data", "load_macro_window", "load_price_history", "load_strategy_data", "load_tickers",
 ]

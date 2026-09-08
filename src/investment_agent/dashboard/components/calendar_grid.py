@@ -15,7 +15,9 @@ DAY_CELL_MIN_HEIGHT = 270
 DEFAULT_EVENT_LIMIT = 3
 NARROW_EVENT_LIMIT = 2
 COMPACT_CELL_WIDTH = 150
-_ASSET_DIR = Path(__file__).with_name("assets")
+# 국기 SVG는 화면 전체가 공유하므로 dashboard 뿌리에 있다 — components 옆이 아니다.
+# 이 경로가 어긋나면 st.image가 MediaFileStorageError로 캘린더를 통째로 죽인다.
+_ASSET_DIR = Path(__file__).resolve().parents[1] / "assets"
 COUNTRY_FLAG_ASSETS = {
     "US": _ASSET_DIR / "flag-us.svg",
     "KR": _ASSET_DIR / "flag-kr.svg",

@@ -59,10 +59,15 @@ class UnfilteredViewCallsAreReadableTest(unittest.TestCase):
         self.assertEqual([], offenders)
 
     def test_the_scan_actually_finds_the_known_call_sites(self) -> None:
-        """검사 대상을 못 찾으면 위 테스트는 공허하게 통과한다."""
+        """검사 대상을 못 찾으면 위 테스트는 공허하게 통과한다.
+
+        여기서 특정 뷰를 이름으로 붙잡는 것은 `macro_measures` 하나뿐이다 — 그것은
+        시간 컬럼이 없어 **필터 없이 읽는 것이 유일한 용법**이라 앞으로도 이 모양이
+        유지된다. 다른 뷰는 필터가 생기면 이 목록에서 정당하게 빠지므로(실제로
+        `macro_series`가 발표 도메인 필터를 얻으며 그랬다) 이름으로 고정하지 않는다.
+        """
         found = _unfiltered_view_calls()
         self.assertIn("macro_measures", found)
-        self.assertIn("macro_series", found)
         self.assertGreaterEqual(len(found["macro_measures"]), 1)
 
 

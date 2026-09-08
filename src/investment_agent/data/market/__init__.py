@@ -8,12 +8,16 @@ from __future__ import annotations
 
 DAILY_ROLLING_DAYS = 7
 BACKFILL_YEARS = 10
-# S&P 500 구성종목이 아니지만 시세를 들고 있어야 하는 벤치마크들. 자산배분 전략이
-# 읽는 자산군·섹터 ETF가 여기 있다 — SEC의 company_tickers에는 이 티커들이 없어서
+# S&P 500 구성종목이 아니지만 시세를 들고 있어야 하는 벤치마크들. 대부분은 자산배분
+# 전략이 읽는 자산군·섹터 ETF다 — SEC의 company_tickers에는 그 티커들이 없어서
 # universe의 상장 동기화로는 들어오지 않고, 빠지면 전략 계산이 "market has unknown
 # strategy securities"로 멈춘다.
+#
+# QQQ는 전략 자산이 아니라 **화면이 비교 대상으로 읽는** 벤치마크다. SEC에 있어서
+# universe에는 들어오지만 is_tracked=False라 수집 대상이 아니었고, 그 결과 홈의
+# 상대성과 비교가 SPY 한 줄만 갖고 조용히 비어 있었다.
 REFERENCE_PRICE_TICKERS = (
-    "SPY", "DBC",
+    "SPY", "QQQ", "DBC",
     "AGG", "BIL", "IEF", "TIP", "TLT",
     "EEM", "EFA", "IWM", "SCZ", "VNQ",
     "XLB", "XLC", "XLE", "XLF", "XLI",
