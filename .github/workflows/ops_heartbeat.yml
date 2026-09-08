@@ -1,0 +1,78 @@
+name: ops_heartbeat
+
+# 하루 한 번 "살아 있다"를 보낸다. 지금까지 운영 알림은 실패했을 때만 울어서
+# 침묵이 '보낼 게 없음'과 '죽음'을 동시에 뜻했다 — 이 카드가 안 오는 것 자체를
+# 신호로 만든다. 그날 체인의 마지막(notify_fundamentals 05:20 UTC) 뒤에 돈다.
+on:
+  schedule:
+    - cron: "40 6 * * *" # 15:40 KST 매일
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: "점검 구간(시간)"
+        required: false
+        default: "24"
+
+permissions:
+  contents: read
+  actions: read # 워크플로 실행 이력 조회에 필요하다
+
+concurrency:
+  group: ops_heartbeat
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONUNBUFFERED: "1"
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      DISCORD_WEBHOOK_OPS_ACTIONS: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}
+      # 대기 상태 카운터용. 게이트가 '정상적으로' 0건을 내는 날은 이것만이 잡는다.
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      # 외부 dead-man's switch(선택). 비어 있으면 아무 일도 하지 않는다 —
+      # 하트비트 자체가 죽으면 이 저장소 안의 무엇도 그걸 알릴 수 없다.
+      OPS_HEARTBEAT_PING_URL: ${{ secrets.OPS_HEARTBEAT_PING_URL }}
+      # 채널 도착 확인용. 워크플로가 초록이어도 카드가 채널에 없을 수 있고,
+      # 그건 도착지를 직접 읽어야만 보인다(2026-08-18 실측).
+      DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+      DISCORD_CHANNEL_MACRO_DAILY: ${{ secrets.DISCORD_CHANNEL_MACRO_DAILY }}
+      DISCORD_CHANNEL_ECON_CALENDAR_RELEASE: ${{ secrets.DISCORD_CHANNEL_ECON_CALENDAR_RELEASE }}
+      DISCORD_CHANNEL_MACRO_ALERT: ${{ secrets.DISCORD_CHANNEL_MACRO_ALERT }}
+      DISCORD_CHANNEL_EARNINGS: ${{ secrets.DISCORD_CHANNEL_EARNINGS }}
+      DISCORD_CHANNEL_EARNINGS_CALENDAR: ${{ secrets.DISCORD_CHANNEL_EARNINGS_CALENDAR }}
+      DISCORD_CHANNEL_GURUS: ${{ secrets.DISCORD_CHANNEL_GURUS }}
+      # 거장 공시는 포럼 하나에 사람마다 스레드 하나로 쌓인다.
+      DISCORD_CHANNEL_GURU_FORUM: ${{ secrets.DISCORD_CHANNEL_GURU_FORUM }}
+      # 거장 채널은 ID를 시크릿으로 받지 않는다. 봇이 길드에서 이름으로 찾는다.
+      DISCORD_GUILD_ID: ${{ secrets.DISCORD_GUILD_ID }}
+      DISCORD_CHANNEL_STRATEGY_MONTHLY: ${{ secrets.DISCORD_CHANNEL_STRATEGY_MONTHLY }}
+      DISCORD_CHANNEL_STRATEGY_FORUM: ${{ secrets.DISCORD_CHANNEL_STRATEGY_FORUM }}
+      # 운영 채널은 실패가 난 곳으로 가른다 — 하트비트는 넷 다 확인한다.
+      DISCORD_CHANNEL_OPS_DIGEST: ${{ secrets.DISCORD_CHANNEL_OPS_DIGEST }}
+      DISCORD_CHANNEL_OPS_ACTIONS: ${{ secrets.DISCORD_CHANNEL_OPS_ACTIONS }}
+      DISCORD_CHANNEL_OPS_LOCAL: ${{ secrets.DISCORD_CHANNEL_OPS_LOCAL }}
+      DISCORD_CHANNEL_OPS_DELIVERY: ${{ secrets.DISCORD_CHANNEL_OPS_DELIVERY }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/python-job
+        with:
+          group: core
+          # 하트비트는 Discord 도착 확인과 대기 카운터를 함께 읽는다.
+          require-env: DISCORD_WEBHOOK_OPS_ACTIONS SUPABASE_URL SUPABASE_SERVICE_KEY
+      - name: Send heartbeat
+        run: python -m investment_agent.operations.commands.heartbeat --hours "${{ inputs.hours || '24' }}"
+
+  notify-error:
+    if: ${{ failure() || cancelled() }}
+    needs: run
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/ops_failure_report.yml
+    with:
+      source_conclusion: ${{ needs.run.result }}
+    secrets:
+      discord_webhook_ops: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}

@@ -1,0 +1,54 @@
+name: econ_calendar_revision_audit
+
+# Daily는 짧은 overlap만 본다. 이 job만 넓은 ALFRED vintage window를 확인해
+# 과거 값을 overwrite하지 않고 revision row로 append한다.
+on:
+  schedule:
+    - cron: "25 2 * * 0"
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "revision audit lookback days"
+        required: false
+        default: "3650"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: econ-calendar-revision-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: ${{ vars.ECON_CALENDAR_KILL != 'on' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PYTHONUNBUFFERED: "1"
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+      ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+      EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
+      DISCORD_WEBHOOK_OPS_ACTIONS: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/python-job
+        with:
+          group: data
+          require-env: "SUPABASE_URL SUPABASE_SERVICE_KEY FRED_API_KEY"
+      - name: Append revisions only
+        run: python -m investment_agent.data.macro.commands.econ_calendar_revision_audit --days "${{ inputs.days || '3650' }}"
+
+  notify-error:
+    if: ${{ failure() || cancelled() }}
+    needs: audit
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/ops_failure_report.yml
+    with:
+      source_conclusion: ${{ needs.audit.result }}
+    secrets:
+      discord_webhook_ops: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}

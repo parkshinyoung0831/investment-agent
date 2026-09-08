@@ -1,0 +1,904 @@
+{
+  "US_CPI": {
+    "actual_provider": "fred",
+    "schedule_provider": "fred_release_calendar",
+    "revision_provider": "alfred",
+    "fallback_provider": null,
+    "collection_status": "ok",
+    "forecast_measure_id": "US_CPI.MOM",
+    "source_contract": {
+      "actual": {
+        "provider": "fred",
+        "code": "CPIAUCSL",
+        "unit": "index"
+      },
+      "schedule": {
+        "provider": "fred_release_calendar",
+        "release_id": 10,
+        "time": "08:30",
+        "timezone": "America/New_York",
+        "confidence": "exact"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "provider": "alfred",
+        "output_type": 3
+      },
+      "license": "FRED/ALFRED attribution"
+    }
+  },
+  "US_CORE_CPI": {
+    "actual_provider": "fred",
+    "schedule_provider": "fred_release_calendar",
+    "revision_provider": "alfred",
+    "fallback_provider": null,
+    "collection_status": "ok",
+    "forecast_measure_id": "US_CORE_CPI.MOM",
+    "source_contract": {
+      "actual": {
+        "provider": "fred",
+        "code": "CPILFESL",
+        "unit": "index"
+      },
+      "schedule": {
+        "provider": "fred_release_calendar",
+        "release_id": 10,
+        "time": "08:30",
+        "timezone": "America/New_York",
+        "confidence": "exact"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "provider": "alfred",
+        "output_type": 3
+      },
+      "license": "FRED/ALFRED attribution"
+    }
+  },
+  "US_PPI": {
+    "actual_provider": "fred",
+    "schedule_provider": "fred_release_calendar",
+    "revision_provider": "alfred",
+    "fallback_provider": null,
+    "collection_status": "ok",
+    "forecast_measure_id": "US_PPI.MOM",
+    "source_contract": {
+      "actual": {
+        "provider": "fred",
+        "code": "PPIFIS",
+        "unit": "index"
+      },
+      "schedule": {
+        "provider": "fred_release_calendar",
+        "release_id": 46,
+        "time": "08:30",
+        "timezone": "America/New_York",
+        "confidence": "exact"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "provider": "alfred",
+        "output_type": 3
+      },
+      "license": "FRED/ALFRED attribution"
+    }
+  },
+  "US_CORE_PPI": {
+    "actual_provider": "fred",
+    "schedule_provider": "fred_release_calendar",
+    "revision_provider": "alfred",
+    "fallback_provider": null,
+    "collection_status": "ok",
+    "forecast_measure_id": "US_CORE_PPI.MOM",
+    "source_contract": {
+      "actual": {
+        "provider": "fred",
+        "code": "PPIFES",
+        "unit": "index"
+      },
+      "schedule": {
+        "provider": "fred_release_calendar",
+        "release_id": 46,
+        "time": "08:30",
+        "timezone": "America/New_York",
+        "confidence": "exact"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "provider": "alfred",
+        "output_type": 3
+      },
+      "license": "FRED/ALFRED attribution"
+    }
+  },
+  "US_PCE": {
+    "actual_provider": "fred",
+    "schedule_provider": "fred_release_calendar",
+    "revision_provider": "alfred",
+    "fallback_provider": null,
+    "collection_status": "ok",
+    "forecast_measure_id": "US_PCE.MOM",
+    "source_contract": {
+      "actual": {
+        "provider": "fred",
+        "code": "PCEPI",
+        "unit": "index"
+      },
+      "schedule": {
+        "provider": "fred_release_calendar",
+        "release_id": 54,
+        "time": "08:30",
+        "timezone": "America/New_York",
+        "confidence": "exact"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "provider": "alfred",
+        "output_type": 3
+      },
+      "license": "FRED/ALFRED attribution"
+    }
+  },
+  "US_CORE_PCE": {
+    "actual_provider": "fred",
+    "schedule_provider": "fred_release_calendar",
+    "revision_provider": "alfred",
+    "fallback_provider": null,
+    "collection_status": "ok",
+    "forecast_measure_id": "US_CORE_PCE.MOM",
+    "source_contract": {
+      "actual": {
+        "provider": "fred",
+        "code": "PCEPILFE",
+        "unit": "index"
+      },
+      "schedule": {
+        "provider": "fred_release_calendar",
+        "release_id": 54,
+        "time": "08:30",
+        "timezone": "America/New_York",
+        "confidence": "exact"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "provider": "alfred",
+        "output_type": 3
+      },
+      "license": "FRED/ALFRED attribution"
+    }
+  },
+  "KR_CPI": {
+    "actual_provider": "ecos",
+    "schedule_provider": "official_rule",
+    "revision_provider": "none",
+    "fallback_provider": null,
+    "collection_status": "degraded",
+    "forecast_measure_id": "KR_CPI.MOM",
+    "source_contract": {
+      "actual": {
+        "provider": "ecos",
+        "statistic": "901Y009",
+        "item": "0",
+        "unit": "index"
+      },
+      "schedule": {
+        "provider": "official_rule",
+        "rule": "monthly_first_business_day",
+        "time": "08:00",
+        "timezone": "Asia/Seoul",
+        "confidence": "rule"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "provider": "none"
+      },
+      "license": "ECOS; historical vintage unavailable"
+    }
+  },
+  "KR_CORE_CPI": {
+    "actual_provider": "ecos",
+    "schedule_provider": "official_rule",
+    "revision_provider": "none",
+    "fallback_provider": null,
+    "collection_status": "degraded",
+    "forecast_measure_id": "KR_CORE_CPI.MOM",
+    "source_contract": {
+      "actual": {
+        "provider": "ecos",
+        "statistic": "901Y010",
+        "item": "20",
+        "unit": "index"
+      },
+      "schedule": {
+        "provider": "official_rule",
+        "rule": "monthly_first_business_day",
+        "time": "08:00",
+        "timezone": "Asia/Seoul",
+        "confidence": "rule"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "provider": "none"
+      },
+      "license": "ECOS; historical vintage unavailable"
+    }
+  },
+  "US_NFP": {
+    "actual_provider": "fred",
+    "schedule_provider": "fred_release_calendar",
+    "revision_provider": "alfred",
+    "fallback_provider": null,
+    "collection_status": "ok",
+    "forecast_measure_id": "US_NFP.MONTHLY_CHANGE",
+    "source_contract": {
+      "actual": {
+        "provider": "fred",
+        "code": "PAYEMS",
+        "unit": "thousand_persons"
+      },
+      "schedule": {
+        "provider": "fred_release_calendar",
+        "release_id": 50,
+        "time": "08:30",
+        "timezone": "America/New_York",
+        "confidence": "exact"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "provider": "alfred",
+        "output_type": 3
+      },
+      "license": "FRED/ALFRED attribution"
+    }
+  },
+  "US_UNEMPLOYMENT": {
+    "actual_provider": "fred",
+    "schedule_provider": "fred_release_calendar",
+    "revision_provider": "alfred",
+    "fallback_provider": null,
+    "collection_status": "ok",
+    "forecast_measure_id": "US_UNEMPLOYMENT.LEVEL",
+    "source_contract": {
+      "actual": {
+        "provider": "fred",
+        "code": "UNRATE",
+        "unit": "percent"
+      },
+      "schedule": {
+        "provider": "fred_release_calendar",
+        "release_id": 50,
+        "time": "08:30",
+        "timezone": "America/New_York",
+        "confidence": "exact"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "provider": "alfred",
+        "output_type": 3
+      },
+      "license": "FRED/ALFRED attribution"
+    }
+  },
+  "US_AHE": {
+    "actual_provider": "fred",
+    "schedule_provider": "fred_release_calendar",
+    "revision_provider": "alfred",
+    "fallback_provider": null,
+    "collection_status": "ok",
+    "forecast_measure_id": "US_AHE.MOM",
+    "source_contract": {
+      "actual": {
+        "provider": "fred",
+        "code": "CES0500000003",
+        "unit": "usd"
+      },
+      "schedule": {
+        "provider": "fred_release_calendar",
+        "release_id": 50,
+        "time": "08:30",
+        "timezone": "America/New_York",
+        "confidence": "exact"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "provider": "alfred",
+        "output_type": 3
+      },
+      "license": "FRED/ALFRED attribution"
+    }
+  },
+  "US_JOLTS_OPENINGS": {
+    "actual_provider": "fred",
+    "schedule_provider": "fred_release_calendar",
+    "revision_provider": "alfred",
+    "fallback_provider": null,
+    "collection_status": "ok",
+    "forecast_measure_id": "US_JOLTS_OPENINGS.LEVEL",
+    "source_contract": {
+      "actual": {
+        "provider": "fred",
+        "code": "JTSJOL",
+        "unit": "thousand_jobs"
+      },
+      "schedule": {
+        "provider": "fred_release_calendar",
+        "release_id": 192,
+        "time": "10:00",
+        "timezone": "America/New_York",
+        "confidence": "exact"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "provider": "alfred",
+        "output_type": 3
+      },
+      "license": "FRED/ALFRED attribution"
+    }
+  },
+  "US_INITIAL_CLAIMS": {
+    "actual_provider": "fred",
+    "schedule_provider": "fred_release_calendar",
+    "revision_provider": "alfred",
+    "fallback_provider": null,
+    "collection_status": "ok",
+    "forecast_measure_id": "US_INITIAL_CLAIMS.LEVEL",
+    "source_contract": {
+      "actual": {
+        "provider": "fred",
+        "code": "ICSA",
+        "unit": "thousand_persons",
+        "scale": 0.001
+      },
+      "schedule": {
+        "provider": "fred_release_calendar",
+        "release_id": 180,
+        "time": "08:30",
+        "timezone": "America/New_York",
+        "confidence": "exact"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "provider": "alfred",
+        "output_type": 3
+      },
+      "license": "FRED/ALFRED attribution"
+    }
+  },
+  "US_CONTINUING_CLAIMS": {
+    "actual_provider": "fred",
+    "schedule_provider": "fred_release_calendar",
+    "revision_provider": "alfred",
+    "fallback_provider": null,
+    "collection_status": "ok",
+    "forecast_measure_id": "US_CONTINUING_CLAIMS.LEVEL",
+    "source_contract": {
+      "actual": {
+        "provider": "fred",
+        "code": "CCSA",
+        "unit": "thousand_persons",
+        "scale": 0.001
+      },
+      "schedule": {
+        "provider": "fred_release_calendar",
+        "release_id": 180,
+        "time": "08:30",
+        "timezone": "America/New_York",
+        "confidence": "exact"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "provider": "alfred",
+        "output_type": 3
+      },
+      "license": "FRED/ALFRED attribution"
+    }
+  },
+  "US_GDP": {
+    "actual_provider": "fred",
+    "schedule_provider": "fred_release_calendar",
+    "revision_provider": "alfred",
+    "fallback_provider": "atlanta_gdpnow",
+    "collection_status": "ok",
+    "forecast_measure_id": "US_GDP.QOQ_ANNUALIZED",
+    "source_contract": {
+      "actual": {
+        "provider": "fred",
+        "code": "A191RL1Q225SBEA",
+        "unit": "percent_annualized"
+      },
+      "schedule": {
+        "provider": "fred_release_calendar",
+        "release_id": 53,
+        "time": "08:30",
+        "timezone": "America/New_York",
+        "confidence": "exact"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "nowcast": {
+        "provider": "atlanta_gdpnow"
+      },
+      "revision": {
+        "provider": "alfred",
+        "output_type": 3
+      },
+      "license": "FRED/ALFRED, Atlanta Fed provenance"
+    }
+  },
+  "KR_GDP": {
+    "actual_provider": "ecos",
+    "schedule_provider": "official_rule",
+    "revision_provider": "none",
+    "fallback_provider": null,
+    "collection_status": "degraded",
+    "forecast_measure_id": "KR_GDP.QOQ",
+    "source_contract": {
+      "actual": {
+        "provider": "ecos",
+        "statistic": "200Y102",
+        "item": "10111",
+        "unit": "percent"
+      },
+      "schedule": {
+        "provider": "official_rule",
+        "rule": "quarterly_advance_estimate",
+        "timezone": "Asia/Seoul",
+        "confidence": "date_only"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "provider": "none"
+      },
+      "license": "ECOS; historical vintage unavailable"
+    }
+  },
+  "US_RETAIL_SALES": {
+    "actual_provider": "fred",
+    "schedule_provider": "fred_release_calendar",
+    "revision_provider": "alfred",
+    "fallback_provider": null,
+    "collection_status": "ok",
+    "forecast_measure_id": "US_RETAIL_SALES.MOM",
+    "source_contract": {
+      "actual": {
+        "provider": "fred",
+        "code": "RSAFS",
+        "unit": "million_usd"
+      },
+      "schedule": {
+        "provider": "fred_release_calendar",
+        "release_id": 9,
+        "time": "08:30",
+        "timezone": "America/New_York",
+        "confidence": "exact"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "provider": "alfred",
+        "output_type": 3
+      },
+      "license": "FRED/ALFRED attribution"
+    }
+  },
+  "US_INDUSTRIAL_PRODUCTION": {
+    "actual_provider": "fred",
+    "schedule_provider": "fred_release_calendar",
+    "revision_provider": "alfred",
+    "fallback_provider": null,
+    "collection_status": "ok",
+    "forecast_measure_id": "US_INDUSTRIAL_PRODUCTION.MOM",
+    "source_contract": {
+      "actual": {
+        "provider": "fred",
+        "code": "INDPRO",
+        "unit": "index"
+      },
+      "schedule": {
+        "provider": "fred_release_calendar",
+        "release_id": 13,
+        "time": "09:15",
+        "timezone": "America/New_York",
+        "confidence": "exact"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "provider": "alfred",
+        "output_type": 3
+      },
+      "license": "FRED/ALFRED attribution"
+    }
+  },
+  "US_ISM_MANUFACTURING": {
+    "actual_provider": "unsupported",
+    "schedule_provider": "unsupported",
+    "revision_provider": "unsupported",
+    "fallback_provider": null,
+    "collection_status": "unsupported",
+    "forecast_measure_id": "US_ISM_MANUFACTURING.PMI",
+    "source_contract": {
+      "actual": {
+        "provider": "unsupported"
+      },
+      "schedule": {
+        "provider": "unsupported",
+        "time": "10:00",
+        "timezone": "America/New_York",
+        "confidence": "date_only"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "provider": "unsupported"
+      },
+      "license": "ISM terms prohibit automated collection, copying, archiving, or data streams without written permission; no scraper"
+    }
+  },
+  "US_ISM_SERVICES": {
+    "actual_provider": "unsupported",
+    "schedule_provider": "unsupported",
+    "revision_provider": "unsupported",
+    "fallback_provider": null,
+    "collection_status": "unsupported",
+    "forecast_measure_id": "US_ISM_SERVICES.PMI",
+    "source_contract": {
+      "actual": {
+        "provider": "unsupported"
+      },
+      "schedule": {
+        "provider": "unsupported",
+        "time": "10:00",
+        "timezone": "America/New_York",
+        "confidence": "date_only"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "provider": "unsupported"
+      },
+      "license": "ISM terms prohibit automated collection, copying, archiving, or data streams without written permission; no scraper"
+    }
+  },
+  "US_MICHIGAN_SENTIMENT": {
+    "actual_provider": "fred",
+    "schedule_provider": "fred_release_calendar",
+    "revision_provider": "alfred",
+    "fallback_provider": null,
+    "collection_status": "degraded",
+    "forecast_measure_id": "US_MICHIGAN_SENTIMENT.LEVEL",
+    "source_contract": {
+      "actual": {
+        "provider": "fred",
+        "code": "UMCSENT",
+        "unit": "index",
+        "availability": "FRED delayed"
+      },
+      "schedule": {
+        "provider": "fred_release_calendar",
+        "release_id": 91,
+        "time": "10:00",
+        "timezone": "America/New_York",
+        "confidence": "date_only"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "provider": "alfred",
+        "output_type": 3
+      },
+      "license": "University of Michigan proprietary; attribution and internal use only"
+    }
+  },
+  "US_FOMC_FED_FUNDS": {
+    "actual_provider": "fred",
+    "schedule_provider": "fomc_official_calendar",
+    "revision_provider": "none",
+    "fallback_provider": null,
+    "collection_status": "degraded",
+    "forecast_measure_id": "US_FOMC_FED_FUNDS.UPPER_BOUND",
+    "source_contract": {
+      "actual": {
+        "provider": "fred",
+        "code": "DFEDTARU",
+        "unit": "percent",
+        "event_ref_period_offset_days": -1
+      },
+      "schedule": {
+        "provider": "fomc_official_calendar",
+        "time": "14:00",
+        "timezone": "America/New_York",
+        "confidence": "rule"
+      },
+      "watch": {
+        "additional_window_hours": 36
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "provider": "none",
+        "reason": "target-rate observation is effective-date based; no canonical FOMC first-print vintage feed"
+      },
+      "license": "Federal Reserve official calendar dates; FRED attribution; raw provider date retained in provenance"
+    }
+  },
+  "KR_BASE_RATE": {
+    "actual_provider": "ecos",
+    "schedule_provider": "official_calendar",
+    "revision_provider": "none",
+    "fallback_provider": null,
+    "collection_status": "degraded",
+    "forecast_measure_id": "KR_BASE_RATE.LEVEL",
+    "source_contract": {
+      "actual": {
+        "provider": "ecos",
+        "statistic": "722Y001",
+        "item": "0101000",
+        "unit": "percent"
+      },
+      "schedule": {
+        "provider": "official_calendar",
+        "calendar": "BOK Monetary Policy Board",
+        "time": "09:50",
+        "timezone": "Asia/Seoul",
+        "confidence": "exact"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "provider": "none"
+      },
+      "license": "BOK/ECOS; official calendar seed only"
+    }
+  },
+  "US_MORTGAGE_30Y": {
+    "actual_provider": "fred",
+    "schedule_provider": "fred_release_calendar",
+    "revision_provider": "alfred",
+    "fallback_provider": null,
+    "collection_status": "ok",
+    "forecast_measure_id": "US_MORTGAGE_30Y.LEVEL",
+    "source_contract": {
+      "actual": {
+        "provider": "fred",
+        "code": "MORTGAGE30US",
+        "unit": "percent"
+      },
+      "schedule": {
+        "provider": "fred_release_calendar",
+        "release_id": 190,
+        "time": "12:00",
+        "timezone": "America/New_York",
+        "confidence": "exact"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "provider": "alfred",
+        "output_type": 3
+      },
+      "license": "FRED/ALFRED attribution"
+    }
+  },
+  "US_NEW_HOME_SALES": {
+    "actual_provider": "fred",
+    "schedule_provider": "fred_release_calendar",
+    "revision_provider": "alfred",
+    "fallback_provider": null,
+    "collection_status": "ok",
+    "forecast_measure_id": "US_NEW_HOME_SALES.LEVEL",
+    "source_contract": {
+      "actual": {
+        "provider": "fred",
+        "code": "HSN1F",
+        "unit": "thousand_units"
+      },
+      "schedule": {
+        "provider": "fred_release_calendar",
+        "release_id": 97,
+        "time": "10:00",
+        "timezone": "America/New_York",
+        "confidence": "exact"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "provider": "alfred",
+        "output_type": 3
+      },
+      "license": "FRED/ALFRED attribution"
+    }
+  },
+  "US_EXISTING_HOME_SALES": {
+    "actual_provider": "fred",
+    "schedule_provider": "unsupported",
+    "revision_provider": "none",
+    "fallback_provider": null,
+    "collection_status": "degraded",
+    "forecast_measure_id": "US_EXISTING_HOME_SALES.LEVEL",
+    "source_contract": {
+      "actual": {
+        "provider": "fred",
+        "code": "EXHOSLUSM495S",
+        "unit": "thousand_units"
+      },
+      "schedule": {
+        "provider": "unsupported",
+        "reason": "FRED release 291 returns no usable dates; no verified lawful official calendar adapter"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "provider": "none",
+        "reason": "series is available in FRED but not ALFRED"
+      },
+      "license": "FRED attribution; raw history only until an approved schedule source exists"
+    }
+  },
+  "US_M2": {
+    "actual_provider": "fred",
+    "schedule_provider": "fred_release_calendar",
+    "revision_provider": "alfred",
+    "fallback_provider": null,
+    "collection_status": "ok",
+    "forecast_measure_id": "US_M2.YOY",
+    "source_contract": {
+      "actual": {
+        "provider": "fred",
+        "code": "M2SL",
+        "unit": "usd_billions"
+      },
+      "schedule": {
+        "provider": "fred_release_calendar",
+        "release_id": 21,
+        "timezone": "America/New_York",
+        "confidence": "date_only"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "provider": "alfred",
+        "output_type": 3
+      },
+      "license": "FRED/ALFRED attribution"
+    }
+  },
+  "FED_NET_LIQUIDITY": {
+    "actual_provider": "fred_components",
+    "schedule_provider": "fred_release_calendar",
+    "revision_provider": "none",
+    "fallback_provider": null,
+    "collection_status": "degraded",
+    "forecast_measure_id": "FED_NET_LIQUIDITY.CHANGE_4W",
+    "source_contract": {
+      "actual": {
+        "provider": "fred_components",
+        "codes": [
+          "WALCL",
+          "WTREGEN",
+          "RRPONTSYD"
+        ],
+        "formula": "WALCL-WTREGEN-RRPONTSYD",
+        "unit": "usd_billions"
+      },
+      "schedule": {
+        "provider": "fred_release_calendar",
+        "release_id": 20,
+        "time": "16:30",
+        "timezone": "America/New_York",
+        "confidence": "rule"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "status": "degraded",
+        "reason": "component-level ALFRED vintage reconstruction is not yet implemented"
+      },
+      "license": "FRED component provenance"
+    }
+  },
+  "KR_EXPORT": {
+    "actual_provider": "ecos",
+    "schedule_provider": "official_rule",
+    "revision_provider": "none",
+    "fallback_provider": null,
+    "collection_status": "degraded",
+    "forecast_measure_id": "KR_EXPORT.YOY",
+    "source_contract": {
+      "actual": {
+        "provider": "ecos",
+        "statistic": "301Y013",
+        "item": "110000",
+        "unit": "billion_usd",
+        "scale": 0.001
+      },
+      "schedule": {
+        "provider": "official_rule",
+        "rule": "monthly_first_business_day",
+        "time": "09:00",
+        "timezone": "Asia/Seoul",
+        "confidence": "rule"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "provider": "none"
+      },
+      "license": "ECOS; historical vintage unavailable"
+    }
+  },
+  "EIA_CRUDE_OIL_INVENTORIES": {
+    "actual_provider": "eia",
+    "schedule_provider": "official_rule",
+    "revision_provider": "none",
+    "fallback_provider": null,
+    "collection_status": "degraded",
+    "forecast_measure_id": "EIA_CRUDE_OIL_INVENTORIES.WEEKLY_CHANGE",
+    "source_contract": {
+      "actual": {
+        "provider": "eia",
+        "route": "pet/wceim/wstk.w",
+        "series": "WCESTUS1",
+        "unit": "thousand_barrels"
+      },
+      "schedule": {
+        "provider": "official_rule",
+        "rule": "weekly_wednesday",
+        "time": "10:30",
+        "timezone": "America/New_York",
+        "confidence": "rule"
+      },
+      "survey": {
+        "status": "unsupported"
+      },
+      "revision": {
+        "provider": "none"
+      },
+      "license": "EIA Open Data; holidays shift publication"
+    }
+  }
+}

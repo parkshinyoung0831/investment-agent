@@ -1,0 +1,49 @@
+name: macro_backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      backfill_from:
+        description: "Backfill start date (YYYY-MM-DD)."
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macro-etl
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # 잡이 타임아웃으로 죽으면 버퍼에 남은 로그가 통째로 사라져 원인을 못 본다.
+      PYTHONUNBUFFERED: "1"
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+      ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+      DISCORD_WEBHOOK_OPS_ACTIONS: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/python-job
+        with:
+          group: data
+          require-env: "SUPABASE_URL SUPABASE_SERVICE_KEY FRED_API_KEY ECOS_API_KEY"
+      - name: Run macro backfill
+        run: python -m investment_agent.data.macro.commands.macro_refresh --backfill-from ${{ inputs.backfill_from }}
+
+  notify-error:
+    if: ${{ failure() || cancelled() }}
+    needs: run
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/ops_failure_report.yml
+    with:
+      source_conclusion: ${{ needs.run.result }}
+    secrets:
+      discord_webhook_ops: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}

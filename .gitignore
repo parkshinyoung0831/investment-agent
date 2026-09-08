@@ -1,0 +1,52 @@
+# Secrets — 절대 커밋 금지
+.env
+.env.*
+!.env.example
+
+# Runtime & Local Artifacts (절대 커밋 금지)
+artifacts/
+scratch/
+.superpowers/
+*.log
+data/local/*.duckdb
+data/local/*.duckdb.*
+data/local/*.wal
+data/local/*.sqlite3*
+data/local/*manifest*.json
+data/local/**/*.duckdb
+data/local/**/*.duckdb.*
+data/local/**/*.wal
+data/local/**/*.sqlite3*
+data/local/**/*manifest*.json
+data/local/**/parquet/
+data/local/artifacts/storage-migration/
+data/parquet/
+
+# graphify 캐시·중간 산출물·로컬 학습 상태·날짜별 아카이브 제외
+# 최종 graph.json, graph.html, GRAPH_REPORT.md, manifest.json만 Git 추적
+graphify-out/cache/
+graphify-out/20*/
+graphify-out/.graphify_*
+graphify-out/.needs_update
+graphify-out/.vocab.txt
+graphify-out/memory/
+graphify-out/reflections/
+
+# 개발 도구의 개인 PC 전용 훅 설정
+.claude/settings.json
+.codex/hooks.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/

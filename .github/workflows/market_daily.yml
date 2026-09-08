@@ -1,0 +1,48 @@
+name: market_daily
+
+on:
+  schedule:
+    - cron: "30 23 * * 1-5" # 08:30 KST Tue-Sat, after final US price revisions
+  workflow_dispatch:
+    inputs:
+      lookback_days:
+        description: "Overlapping calendar days to inspect."
+        required: false
+        default: "7"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: market-etl
+  cancel-in-progress: false
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      DISCORD_WEBHOOK_OPS_ACTIONS: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/python-job
+        with:
+          group: data
+      - name: Run incremental market ETL
+        run: |
+          python -m investment_agent.data.market.commands.market_daily \
+            --lookback-days "${{ inputs.lookback_days || '7' }}"
+
+  notify-error:
+    if: ${{ failure() || cancelled() }}
+    needs: daily
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/ops_failure_report.yml
+    with:
+      source_conclusion: ${{ needs.daily.result }}
+    secrets:
+      discord_webhook_ops: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}

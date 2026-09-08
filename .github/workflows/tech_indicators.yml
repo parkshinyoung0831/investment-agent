@@ -1,0 +1,74 @@
+name: tech_indicators
+
+on:
+  workflow_run:
+    workflows: ["market_daily"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # 지난 실행의 feature store를 되찾으려면 artifact를 읽어야 한다.
+  actions: read
+
+concurrency:
+  group: tech-indicators-etl
+  cancel-in-progress: false
+
+jobs:
+  compute:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion != 'cancelled' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      # 되찾기·계산·보존 세 단계가 같은 자리를 보게 한다.
+      RESEARCH_DB: data/local/research/research.duckdb
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/python-job
+        with:
+          group: research
+      # 계산은 증분이다(`etl.run`이 `latest_indicator_date()`부터 돈다). 저장소가
+      # 없으면 보관 구간 전체를 매일 다시 계산한다 — 러너는 상태가 없으므로
+      # 지난 실행이 남긴 것을 먼저 되찾아 그 출발점을 준다.
+      #
+      # 못 되찾아도 멈추지 않는다. 전체 재계산은 느릴 뿐 결과가 같고, 여기서
+      # 실패시키면 지표가 아예 갱신되지 않는다.
+      - name: Restore the previous feature store
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$(dirname "$RESEARCH_DB")"
+          run_id="$(gh run list --workflow tech_indicators.yml --branch main             --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+          if [ -z "$run_id" ]; then
+            echo "이전 성공 실행이 없다 — 전 구간을 계산한다"
+            exit 0
+          fi
+          gh run download "$run_id" --name research-features             --dir "$(dirname "$RESEARCH_DB")"             || echo "artifact를 못 받았다(만료·삭제) — 전 구간을 계산한다"
+          ls -la "$(dirname "$RESEARCH_DB")" || true
+      - name: Compute tech indicators
+        run: python -m investment_agent.research.features.daily
+      - name: Preserve research features
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-features
+          path: ${{ env.RESEARCH_DB }}
+          if-no-files-found: error
+          # 되찾기의 출발점이므로 주말·연휴로 며칠 건너뛰어도 남아 있어야 한다.
+          retention-days: 30
+          overwrite: true
+
+  notify-error:
+    if: ${{ failure() || cancelled() }}
+    needs: compute
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/ops_failure_report.yml
+    with:
+      source_conclusion: ${{ needs.compute.result }}
+    secrets:
+      discord_webhook_ops: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}

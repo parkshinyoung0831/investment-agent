@@ -1,0 +1,71 @@
+name: fundamentals_integrity
+
+# 적재 결과의 불변조건을 주기적으로 점검한다.
+#
+# 왜 필요한가: 수집 성공 여부만으로는 저장된 행의 완전성과 파생 조회의 신뢰성을
+# 보장할 수 없다. 스키마 계약, filing 상태, 매핑·EPS 품질, 파생 뷰의 최신성을
+# 독립적으로 확인해 조용한 데이터 손상을 즉시 드러낸다.
+#
+# 실패는 공통 리포터가, 경고는 점검 코드가 구조화된 Discord 카드로 알린다.
+# 오류·경고 이력은 DB에 저장하지 않는다.
+on:
+  schedule:
+    # 09:00 UTC = 18:00 KST 매일. 그날의 수집·알림 체인이 모두 끝난 뒤다
+    # (daily 03:30 -> dimensions -> notify 05:20 안전망까지 여유 있게 지난 시각).
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+    inputs:
+      strict:
+        description: "경고도 실패로 올린다."
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
+permissions:
+  contents: read
+
+# ETL 중에는 mapping version과 processing 상태가 일시적으로 혼합된다. 같은
+# concurrency group에서 적재가 끝난 뒤 점검해 transient 상태를 장애로 오인하지 않는다.
+concurrency:
+  group: fundamentals-etl
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    # 킬 스위치가 켜져 있어도 점검은 돈다 — 멈춰 있는 동안 상태를 보는 것이
+    # 이 잡의 목적이다.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      DISCORD_WEBHOOK_OPS_ACTIONS: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}
+      LOG_LEVEL: INFO
+      PYTHONUNBUFFERED: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/python-job
+        with:
+          group: core
+
+      - name: Verify fundamentals integrity
+        run: >-
+          python -m investment_agent.data.fundamentals.commands.verify_integrity
+          ${{ inputs.strict == 'true' && '--strict' || '' }}
+
+      # 취소도 잡는다. 점검이 안 돈 것과 통과한 것은 로그에서 똑같이 조용하다.
+
+  notify-error:
+    if: ${{ failure() || cancelled() }}
+    needs: verify
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/ops_failure_report.yml
+    with:
+      source_conclusion: ${{ needs.verify.result }}
+    secrets:
+      discord_webhook_ops: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}

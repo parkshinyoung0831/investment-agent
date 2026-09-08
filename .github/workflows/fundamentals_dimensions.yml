@@ -1,0 +1,71 @@
+name: fundamentals_dimensions
+
+# 기업 전체 재무가 끝난 뒤에만 세그먼트 차원을 계산하도록 순서를 고정한다.
+on:
+  workflow_run:
+    workflows: ["fundamentals_daily"]
+    types: [completed]
+    branches: [main]
+  schedule:
+    # 안전망. workflow_run이 발화하지 않아도 하루 한 번은 돈다.
+    - cron: "10 4 * * 2-6" # 13:10 KST Tue-Sat
+  workflow_dispatch:
+    inputs:
+      lookback_days:
+        description: "Overlapping SEC daily-index days."
+        required: false
+        default: "7"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fundamentals-etl
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    # ETL이 무관한 CIK 하나로 exit 1 하는 일이 잦아 conclusion == 'success'로 잠그면
+    # 부분 적재된 종목의 차원 수집까지 통째로 묻힌다. 취소만 걸러낸다.
+    if: >-
+      ${{ vars.FUNDAMENTALS_KILL != 'on'
+      && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion != 'cancelled') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      EDGAR_USER_AGENT: ${{ secrets.EDGAR_USER_AGENT || vars.EDGAR_USER_AGENT }}
+      FUNDAMENTALS_SEGMENT_LOOKBACK_DAYS: ${{ inputs.lookback_days || '7' }}
+      LOG_LEVEL: INFO
+      PYTHONUNBUFFERED: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/python-job
+        with:
+          group: data
+          require-env: "SUPABASE_URL SUPABASE_SERVICE_KEY EDGAR_USER_AGENT"
+      - name: Validate secret formats
+        run: |
+          printf '%s' "$EDGAR_USER_AGENT" | grep -qiE '[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}'
+
+      - name: Collect quarterly dimensions
+        run: python -m investment_agent.data.fundamentals.commands.sync_filings --content segments --period quarter
+
+      - name: Collect annual dimensions
+        run: python -m investment_agent.data.fundamentals.commands.sync_filings --content segments --period annual
+
+  notify-error:
+    if: ${{ failure() || cancelled() }}
+    needs: collect
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/ops_failure_report.yml
+    with:
+      source_conclusion: ${{ needs.collect.result }}
+    secrets:
+      discord_webhook_ops: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}

@@ -1,0 +1,69 @@
+name: econ_calendar_watch
+
+# 발표 직후를 잡는 watcher. wake-up마다 현재 schedule version의 예정시각을 조회하고
+# due event가 없으면 즉시 끝난다. 로컬 harness도 같은 watch_releases entrypoint를 더
+# 짧은 간격으로 부를 수 있다.
+#
+# 창을 UTC 12~15시 평일로 좁힌 이유는 비용이다. `*/5 * * * *`는 한 달에 8,766번
+# 도는데, 이 저장소의 Actions 할당은 2,000분이라 이 워크플로 하나가 할당을 8배
+# 넘긴다(`python scripts/actions_budget.py`).
+#
+# 좁혀도 잃는 게 거의 없다. 시드에 있는 미국 지표 24개 중 21개가 ET 08:30·09:15·
+# 10:00·10:30에 나오고, 그 넷은 서머타임 양쪽에서 모두 UTC 12~15시 안에 든다.
+# 이 창 밖(ET 12:00·14:00·16:30, 한국 지표)은 속보가 늦을 뿐 유실되지 않는다 —
+# econ_calendar_daily가 하루 안에 같은 actual을 잡는다.
+on:
+  schedule:
+    - cron: "*/15 12-15 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: econ-calendar-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    if: ${{ vars.ECON_CALENDAR_KILL != 'on' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONUNBUFFERED: "1"
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+      ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+      EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
+      DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+      DISCORD_CHANNEL_ECON_CALENDAR_RELEASE: ${{ secrets.DISCORD_CHANNEL_ECON_CALENDAR_RELEASE }}
+      DISCORD_WEBHOOK_OPS_ACTIONS: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/python-job
+        with:
+          group: data
+      - name: Validate notification subscription
+        if: env.DISCORD_BOT_TOKEN != ''
+        run: python -m investment_agent.operations.commands.validate_subscriptions --kind econ_calendar_release
+      - name: Watch due releases with bounded polling
+        shell: bash
+        run: |
+          ARGS=(--poll-attempts 4 --poll-interval-seconds 20)
+          if [ -n "$DISCORD_BOT_TOKEN" ]; then
+            ARGS+=(--notify)
+          fi
+          python -m investment_agent.operations.commands.econ_calendar_watch_releases "${ARGS[@]}"
+
+  notify-error:
+    if: ${{ failure() || cancelled() }}
+    needs: watch
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/ops_failure_report.yml
+    with:
+      source_conclusion: ${{ needs.watch.result }}
+    secrets:
+      discord_webhook_ops: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}

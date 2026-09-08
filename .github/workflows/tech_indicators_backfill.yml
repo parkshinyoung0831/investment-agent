@@ -1,0 +1,59 @@
+name: tech_indicators_backfill
+
+# 시세 백필 직후 새 종목을 포함한 최근 730일 저장 구간을 시딩한다.
+# 계산은 750거래일의 고정 워밍업을 포함하므로 재실행 결과가 결정적이다.
+on:
+  workflow_run:
+    workflows: ["market_backfill"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      backfill_from:
+        description: "YYYY-MM-DD. 비우면 기본 2년 백필 기간 사용."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tech-indicators-etl
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion != 'cancelled' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      LOG_LEVEL: INFO
+      PYTHONUNBUFFERED: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/python-job
+        with:
+          group: research
+      - name: Run tech indicators backfill
+        shell: bash
+        run: |
+          ARGS=()
+          if [ -n "${{ inputs.backfill_from }}" ]; then
+            ARGS+=(--backfill-from "${{ inputs.backfill_from }}")
+          fi
+          python -m investment_agent.research.features.backfill "${ARGS[@]}"
+
+  notify-error:
+    if: ${{ failure() || cancelled() }}
+    needs: backfill
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/ops_failure_report.yml
+    with:
+      source_conclusion: ${{ needs.backfill.result }}
+    secrets:
+      discord_webhook_ops: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}

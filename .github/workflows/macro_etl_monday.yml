@@ -1,0 +1,67 @@
+name: macro_etl_monday
+
+# macro_etl은 화~토(KST)만 돌기 때문에 월요일 하루가 비고, 이 잡이 그 구멍을 메운다.
+# 실행 명령도 트리거하는 알림도 macro_etl과 같다 — 다른 건 cron 요일뿐이다.
+# (월요일 코어 카드는 미국장이 쉰 주말을 사이에 두므로 토요일과 값이 겹칠 수 있다.
+#  그래도 보내는 쪽을 택했다 — 카드가 아예 없으면 파이프라인이 죽은 것과 구분되지 않는다.)
+on:
+  schedule:
+    - cron: "25 0 * * 1" # 월 09:25 KST
+  workflow_dispatch:
+    inputs:
+      lookback_days:
+        description: "Daily-series overlap days."
+        required: false
+        default: "14"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macro-etl
+  cancel-in-progress: false
+
+jobs:
+  run:
+    name: fetch + merge + upsert (Monday gap fill)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # 잡이 타임아웃으로 죽으면 버퍼에 남은 로그가 통째로 사라져 원인을 못 본다.
+      PYTHONUNBUFFERED: "1"
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+      ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+      DISCORD_WEBHOOK_OPS_ACTIONS: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/python-job
+        with:
+          group: data
+          require-env: "SUPABASE_URL SUPABASE_SERVICE_KEY FRED_API_KEY ECOS_API_KEY"
+      - name: Run macro ETL (Monday gap fill)
+        run: |
+          set +e
+          python -m investment_agent.data.macro.commands.macro_refresh --lookback-days "${{ inputs.lookback_days || '14' }}"
+          code=$?
+          set -e
+          # 2 = 성공한 지표는 저장하고 일부만 실패. 구조화된 Discord 경고가 나가므로
+          # 여기서 잡을 빨갛게 만들지 않는다.
+          if [ "$code" -eq 2 ]; then
+            echo "::warning title=macro partial::일부 지표 수집 실패 — Discord 시스템 로그 확인"
+            exit 0
+          fi
+          exit "$code"
+
+  notify-error:
+    if: ${{ failure() || cancelled() }}
+    needs: run
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/ops_failure_report.yml
+    with:
+      source_conclusion: ${{ needs.run.result }}
+    secrets:
+      discord_webhook_ops: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}

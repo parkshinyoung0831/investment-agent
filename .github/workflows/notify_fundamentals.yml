@@ -1,0 +1,119 @@
+name: notify_fundamentals
+
+on:
+  # ETL 완료 이벤트를 기준으로 즉시 확인하고, 이벤트 누락에 대비해 정기 안전망도 둔다.
+  workflow_run:
+    workflows: ["fundamentals_daily", "fundamentals_watchlist_fast", "fundamentals_earnings_watch"]
+    types: [completed]
+    branches: [main]
+  schedule:
+    # 안전망. workflow_run이 어떤 이유로든 발화하지 않아도 하루 한 번은 확인한다.
+    - cron: "20 5 * * 2-6" # 14:20 KST Tue-Sat
+  workflow_dispatch:
+    inputs:
+      lookback_days:
+        description: "Number of recent filing days to inspect."
+        required: false
+        default: "7"
+
+permissions:
+  contents: read
+
+concurrency:
+  # fast path와 일별 체인이 같은 그룹을 공유해야 한다. 두 실행이 겹치면 둘 다
+  # notifications.outbox를 읽은 뒤 같은 accession을 보낼 수 있다.
+  group: notify-fundamentals
+  cancel-in-progress: false
+
+jobs:
+  run:
+    # 무관한 CIK 하나로 ETL이 exit 1 하는 일이 잦아(최근 4회 중 2회) conclusion == 'success'로
+    # 잠그면 부분 적재된 관심종목까지 통째로 묻힌다. 보낼 게 있는지는 preflight가 판단하므로
+    # 여기서는 취소된 실행만 걸러낸다.
+    if: >-
+      ${{ vars.FUNDAMENTALS_KILL != 'on'
+      && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion != 'cancelled') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      DISCORD_CHANNEL_EARNINGS: ${{ secrets.DISCORD_CHANNEL_EARNINGS }}
+      FUNDAMENTALS_NOTIFY_LOOKBACK_DAYS: ${{ inputs.lookback_days || '7' }}
+      LOG_LEVEL: INFO
+      PYTHONUNBUFFERED: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/python-job
+        with:
+          group: notifications
+
+      - name: Validate Supabase secrets
+        run: |
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_KEY"
+
+      - name: Install preflight dependencies
+        run: true # dependency group prepared above
+
+      - name: Check pending notifications
+        id: pending
+        run: >-
+          python -m investment_agent.operations.commands.fundamentals_pending
+          --github-output "$GITHUB_OUTPUT"
+
+      - name: Validate Discord secrets
+        if: steps.pending.outputs.should_notify == 'true' || steps.pending.outputs.should_flash == 'true'
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+        run: |
+          test -n "$DISCORD_BOT_TOKEN"
+
+      - name: Validate flash notification subscription
+        if: steps.pending.outputs.should_flash == 'true'
+        run: python -m investment_agent.operations.commands.validate_subscriptions --kind fundamentals_flash
+
+      - name: Validate detailed notification subscription
+        if: steps.pending.outputs.should_notify == 'true'
+        run: python -m investment_agent.operations.commands.validate_subscriptions --kind fundamentals_earnings
+
+      # 사전 점검도 속보 대기 여부를 계산하므로 requests를 별도로 설치한다.
+      # 카드(PNG)는 Playwright·폰트까지 필요해 카드 대기가 있을 때만 추가 설치한다.
+      - name: Install send dependencies
+        if: steps.pending.outputs.should_notify == 'true' || steps.pending.outputs.should_flash == 'true'
+        run: true # dependency group prepared above
+
+      - name: Install card render dependencies
+        if: steps.pending.outputs.should_notify == 'true'
+        run: true # dependency group prepared above
+
+      - uses: ./.github/actions/card-render
+        if: steps.pending.outputs.should_notify == 'true'
+        with:
+          cache-key: uv.lock
+
+      - name: Send 8-K flash notifications
+        if: steps.pending.outputs.should_flash == 'true'
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+        run: python -m investment_agent.operations.commands.notify --kind fundamentals_flash
+
+      - name: Send detailed fundamentals notifications
+        if: steps.pending.outputs.should_notify == 'true'
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+        run: python -m investment_agent.operations.commands.notify --kind fundamentals_earnings
+
+  notify-error:
+    if: ${{ failure() || cancelled() }}
+    needs: run
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/ops_failure_report.yml
+    with:
+      source_conclusion: ${{ needs.run.result }}
+    secrets:
+      discord_webhook_ops: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}

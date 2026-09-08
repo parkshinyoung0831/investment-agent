@@ -1,0 +1,63 @@
+name: macro_etl
+
+on:
+  schedule:
+    - cron: "25 0 * * 2-6" # Tue-Sat 09:25 KST, after Market Daily (US close snapshot)
+  workflow_dispatch:
+    inputs:
+      lookback_days:
+        description: "Daily-series overlap days."
+        required: false
+        default: "14"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macro-etl
+  cancel-in-progress: false
+
+jobs:
+  run:
+    name: fetch + merge + upsert
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # 잡이 타임아웃으로 죽으면 버퍼에 남은 로그가 통째로 사라져 원인을 못 본다.
+      PYTHONUNBUFFERED: "1"
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+      ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+      DISCORD_WEBHOOK_OPS_ACTIONS: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/python-job
+        with:
+          group: data
+          require-env: "SUPABASE_URL SUPABASE_SERVICE_KEY FRED_API_KEY ECOS_API_KEY"
+      - name: Run macro ETL
+        run: |
+          set +e
+          python -m investment_agent.data.macro.commands.macro_refresh --lookback-days "${{ inputs.lookback_days || '14' }}"
+          code=$?
+          set -e
+          # 2 = 성공한 지표는 저장하고 일부만 실패. 구조화된 Discord 경고가 나가므로
+          # 여기서 잡을 빨갛게 만들지 않는다.
+          if [ "$code" -eq 2 ]; then
+            echo "::warning title=macro partial::일부 지표 수집 실패 — Discord 시스템 로그 확인"
+            exit 0
+          fi
+          exit "$code"
+
+  notify-error:
+    if: ${{ failure() || cancelled() }}
+    needs: run
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/ops_failure_report.yml
+    with:
+      source_conclusion: ${{ needs.run.result }}
+    secrets:
+      discord_webhook_ops: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}

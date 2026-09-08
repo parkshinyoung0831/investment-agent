@@ -1,0 +1,56 @@
+name: notify_econ_calendar_release
+
+on:
+  # econ_calendar_watch가 이미 같은 러너 안에서 `--notify`로 보낸다. 거기에
+  # workflow_run을 걸면 watch가 돌 때마다 러너가 한 번 더 떠서, 아무것도 보내지 않는
+  # 실행에까지 비용을 두 번 낸다. 여기 남는 것은 그 속보가 실패했을 때를 위한
+  # 안전망뿐이다 — 중복 발송은 notifications.outbox가 막는다.
+  schedule:
+    # 6시간 안전망. 명시적 UTC 시각으로 두어 운영 가이드/드리프트 검사가
+    # GitHub Actions cron을 그대로 재현할 수 있게 한다(12:20 KST 기준).
+    - cron: "20 3 * * *"
+    - cron: "20 9 * * *"
+    - cron: "20 15 * * *"
+    - cron: "20 21 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: notify_econ_calendar_release
+  cancel-in-progress: false
+
+jobs:
+  run:
+    if: ${{ vars.ECON_CALENDAR_KILL != 'on' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONUNBUFFERED: "1"
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+      DISCORD_CHANNEL_ECON_CALENDAR_RELEASE: ${{ secrets.DISCORD_CHANNEL_ECON_CALENDAR_RELEASE }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/python-job
+        with:
+          group: notifications
+          require-env: "SUPABASE_URL SUPABASE_SERVICE_KEY DISCORD_BOT_TOKEN"
+      - name: Validate notification subscription
+        run: python -m investment_agent.operations.commands.validate_subscriptions --kind econ_calendar_release
+      - name: Dispatch notify
+        run: python -m investment_agent.operations.commands.notify --kind econ_calendar_release
+
+  notify-error:
+    if: ${{ failure() || cancelled() }}
+    needs: run
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/ops_failure_report.yml
+    with:
+      source_conclusion: ${{ needs.run.result }}
+    secrets:
+      discord_webhook_ops: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}

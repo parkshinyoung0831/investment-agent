@@ -1,0 +1,95 @@
+name: institutional_13f
+
+on:
+  schedule:
+    - cron: "40 4 * * 2-6" # 13:40 KST Tue-Sat, after prior-day SEC filings
+  workflow_dispatch:
+    inputs:
+      lookback_days:
+        description: "Overlapping SEC polling days."
+        required: false
+        default: "7"
+      force_notify:
+        description: "Resend every latest-quarter manager card and summary."
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: institutional-etl
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    if: ${{ vars.GURUS_KILL != 'on' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      EDGAR_USER_AGENT: ${{ secrets.EDGAR_USER_AGENT || vars.EDGAR_USER_AGENT }}
+      OPENFIGI_API_KEY: ${{ secrets.OPENFIGI_API_KEY }}
+      DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+      DISCORD_CHANNEL_GURUS: ${{ secrets.DISCORD_CHANNEL_GURUS }}
+      # 거장 공시는 포럼 하나에 사람마다 스레드 하나로 쌓인다.
+      DISCORD_CHANNEL_GURU_FORUM: ${{ secrets.DISCORD_CHANNEL_GURU_FORUM }}
+      # 거장별 포럼 채널은 이름으로 찾는다 — 사람마다 시크릿을 늘리지 않는다.
+      DISCORD_GUILD_ID: ${{ secrets.DISCORD_GUILD_ID }}
+      GURUS_NOTIFY_FORCE: ${{ inputs.force_notify || 'false' }}
+      GURUS_SHADOW_PARSER: ${{ vars.GURUS_SHADOW_PARSER }}
+      LOG_LEVEL: INFO
+      PYTHONUNBUFFERED: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/python-job
+        with:
+          group: notifications
+          require-env: "SUPABASE_URL SUPABASE_SERVICE_KEY EDGAR_USER_AGENT"
+      - name: Validate secret formats
+        run: |
+          printf '%s' "$EDGAR_USER_AGENT" | grep -qiE '[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}'
+
+      - name: Run institutional 13F ETL
+        run: >-
+          python -m investment_agent.data.institutional.commands.institutional_daily
+          --lookback-days "${{ inputs.lookback_days || '7' }}"
+
+      - name: Check pending notifications
+        id: pending
+        run: |
+          python -m investment_agent.operations.commands.institutional_pending \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Validate Discord secrets
+        if: steps.pending.outputs.should_notify == 'true' || inputs.force_notify == true
+        run: |
+          test -n "$DISCORD_BOT_TOKEN"
+      - name: Validate notification subscription
+        if: steps.pending.outputs.should_notify == 'true' || inputs.force_notify == true
+        run: python -m investment_agent.operations.commands.validate_subscriptions --kind institutional
+
+      - name: Install notification dependencies
+        if: steps.pending.outputs.should_notify == 'true' || inputs.force_notify == true
+        run: ":" # dependency group prepared above
+
+      - name: Send new 13F notifications
+        if: steps.pending.outputs.should_notify == 'true' || inputs.force_notify == true
+        run: python -m investment_agent.operations.commands.notify --kind gurus_13f
+
+  notify-error:
+    if: ${{ failure() || cancelled() }}
+    needs: collect
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/ops_failure_report.yml
+    with:
+      source_conclusion: ${{ needs.collect.result }}
+    secrets:
+      discord_webhook_ops: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}

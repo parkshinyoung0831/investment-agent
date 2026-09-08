@@ -1,0 +1,71 @@
+name: notify_macro_core
+
+on:
+  # 월요일(KST)은 macro_etl이 아니라 macro_etl_monday가 ETL을 돌린다 — 둘 다 듣지
+  # 않으면 월요일에 코어 카드가 통째로 빠진다. 같은 날 둘이 겹쳐도 core.run()의
+  # notifications.outbox 검사가 두 번째를 버린다.
+  workflow_run:
+    workflows: ["macro_etl", "macro_etl_monday"]
+    types: [completed]
+    branches: [main]
+  schedule:
+    # 안전망. workflow_run이 어떤 이유로든 발화하지 않아도 하루 한 번은 확인한다.
+    - cron: "20 3 * * 1-6" # 12:20 KST Mon-Sat
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "오늘 이미 보냈어도 다시 보낸다."
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: notify_macro_core
+  cancel-in-progress: false
+
+jobs:
+  run:
+    # ETL은 53개 지표 중 3개만 실패해도 exit 1 한다 — 한 소스(ECOS 15종)의 키가
+    # 만료되면 미국 지표는 멀쩡히 적재됐는데도 카드가 통째로 묻힌다. 취소만 거른다.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion != 'cancelled' }}
+    runs-on: ubuntu-latest
+    # 실제 발송은 2분이면 끝나지만 apt가 변덕스럽다 — fonts-noto-cjk(61MB)를 249kB/s로
+    # 받아 install 스텝이 혼자 7분을 쓴 날이 있었고, 15분 캡에 걸려 카드가 통째로 날아갔다.
+    # 캡은 폭주를 막는 안전장치지 성능 목표가 아니다. gurus_13f와 같은 30분으로 맞춘다.
+    timeout-minutes: 30
+    env:
+      # 잡이 타임아웃으로 죽으면 버퍼에 남은 로그가 통째로 사라져 원인을 못 본다.
+      PYTHONUNBUFFERED: "1"
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+      DISCORD_CHANNEL_MACRO_DAILY: ${{ secrets.DISCORD_CHANNEL_MACRO_DAILY }}
+      MACRO_NOTIFY_FORCE: ${{ inputs.force || 'false' }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/python-job
+        with:
+          group: notifications
+          require-env: "SUPABASE_URL SUPABASE_SERVICE_KEY DISCORD_BOT_TOKEN"
+      - name: Validate notification subscription
+        run: python -m investment_agent.operations.commands.validate_subscriptions --kind macro_core
+      - uses: ./.github/actions/card-render
+        with:
+          cache-key: uv.lock
+      - name: Dispatch notify
+        run: python -m investment_agent.notifications.macro.core
+
+  notify-error:
+    if: ${{ failure() || cancelled() }}
+    needs: run
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/ops_failure_report.yml
+    with:
+      source_conclusion: ${{ needs.run.result }}
+    secrets:
+      discord_webhook_ops: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.investment-agent.toss-holdings</string>
+
+  <!-- 아래 두 경로의 YOU를 실제 macOS 사용자명과 설치 경로로 바꾼다. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/YOU/investment-agent/.venv/bin/python</string>
+    <string>-m</string>
+    <string>investment_agent.data.universe.watchlists.toss_holdings</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/YOU/investment-agent</string>
+
+  <!-- 보유종목 변경을 30분 안에 반영한다. 비밀값은 plist가 아닌 저장소의 .env에 둔다. -->
+  <key>StartInterval</key>
+  <integer>1800</integer>
+  <key>RunAtLoad</key>
+  <true/>
+</dict>
+</plist>

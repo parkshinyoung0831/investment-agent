@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<style>
+  /* 한 주에 발표가 몇 건 없다(관측상 주 1~4건). 그래서 대시보드가 아니라 목록이다 —
+     행 하나 = 종목 하나, 왼쪽에 날짜, 가운데에 회사, 오른쪽에 컨센서스와 작년 실제.
+     예정일은 확정이 아니므로 배지로 등급을 달고, 색은 강조 하나(Brand Blue)만 쓴다. */
+  :root {
+    --primary: {{ tokens.primary }};
+    --ink: {{ tokens.ink }};
+    --body: {{ tokens.body }};
+    --muted: {{ tokens.muted }};
+    --muted-soft: {{ tokens.muted_soft }};
+    --hairline: {{ tokens.hairline }};
+    --canvas: {{ tokens.canvas }};
+    --surface-strong: {{ tokens.surface_strong }};
+    --surface-dark: {{ tokens.surface_dark }};
+    --surface-dark-elevated: {{ tokens.surface_dark_elevated }};
+    --on-dark: {{ tokens.on_dark }};
+    --on-dark-soft: {{ tokens.on_dark_soft }};
+    --accent-yellow: {{ tokens.accent_yellow }};
+    --radius-card: 24px;
+    --radius-pill: 100px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 1080px;
+    background: var(--surface-dark);
+    color: var(--on-dark);
+    font-family: Inter, "Noto Sans CJK KR", "Apple SD Gothic Neo", "Pretendard", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body { padding: 40px; }
+  .mono, .value {
+    font-family: "JetBrains Mono", "Geist Mono", "Noto Sans Mono CJK KR", monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .hero { padding: 8px 4px 28px; }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 5px 12px; border-radius: var(--radius-pill);
+    background: var(--surface-dark-elevated); color: var(--on-dark-soft);
+    font-size: 12px; font-weight: 600;
+  }
+  .eyebrow-dot { width: 7px; height: 7px; border-radius: 9999px; background: var(--primary); }
+  /* display는 weight 400. 굵게 하면 브랜드 목소리가 바뀐다. */
+  .title { margin-top: 18px; font-size: 44px; font-weight: 400; letter-spacing: -1px; line-height: 1.09; }
+  .subtitle { margin-top: 10px; font-size: 16px; color: var(--on-dark-soft); }
+
+  .list { display: flex; flex-direction: column; gap: 12px; }
+  .row {
+    display: grid;
+    grid-template-columns: 132px minmax(0, 1fr) 210px 190px;
+    gap: 24px; align-items: center;
+    background: var(--surface-dark-elevated);
+    border-radius: var(--radius-card);
+    padding: 24px 28px;
+  }
+  .when-day { font-size: 26px; font-weight: 500; letter-spacing: -0.4px; }
+  .when-until { margin-top: 4px; font-size: 12px; color: var(--on-dark-soft); }
+
+  .who-name { font-size: 18px; font-weight: 600; line-height: 1.33; }
+  .who-meta { margin-top: 5px; font-size: 13px; color: var(--on-dark-soft); }
+  .badge {
+    display: inline-block; margin-left: 8px; padding: 3px 10px;
+    border-radius: var(--radius-pill); background: var(--surface-strong);
+    color: var(--ink); font-size: 12px; font-weight: 600; vertical-align: middle;
+  }
+  .note { margin-top: 6px; font-size: 12px; color: var(--muted-soft); }
+
+  .cell-label { font-size: 11px; font-weight: 600; letter-spacing: 0.02em; color: var(--muted); }
+  .cell-value { margin-top: 5px; font-size: 16px; font-weight: 500; }
+  .cell-sub { margin-top: 3px; font-size: 12px; color: var(--on-dark-soft); }
+  .empty { color: var(--muted-soft); }
+
+  .footer {
+    margin-top: 28px; padding: 22px 28px;
+    border-radius: var(--radius-card); background: var(--surface-dark-elevated);
+    font-size: 13px; line-height: 1.62; color: var(--on-dark-soft);
+  }
+  .footer strong { color: var(--on-dark); font-weight: 600; }
+</style>
+</head>
+<body>
+  <div class="hero">
+    <span class="eyebrow"><span class="eyebrow-dot"></span>실적 발표 예정</span>
+    <div class="title">이번 주 {{ rows|length }}개 종목</div>
+    <div class="subtitle">{{ window_label }} · 컨센서스 {{ snapshot_label }} 기준</div>
+  </div>
+
+  <div class="list">
+    {% for row in rows %}
+    <div class="row">
+      <div class="when">
+        <div class="when-day mono">{{ row.expected_label }}</div>
+        <div class="when-until">
+          {% if row.days_until > 0 %}D-{{ row.days_until }}{% elif row.days_until == 0 %}오늘{% else %}D+{{ -row.days_until }}{% endif %}
+        </div>
+      </div>
+
+      <div class="who">
+        <div class="who-name">
+          {{ row.name }}
+          <span class="badge">{{ row.confidence_label }}</span>
+        </div>
+        <div class="who-meta">
+          {{ row.ticker }}{% if row.sector %} · {{ row.sector }}{% endif %}{% if row.target_label %} · {{ row.target_label }} 실적{% endif %}
+        </div>
+        {% if row.previous_expected %}
+        <div class="note">이전 예정 {{ row.previous_label }} → {{ row.expected_label }}로 변경</div>
+        {% endif %}
+      </div>
+
+      <div class="cell">
+        <div class="cell-label">컨센서스</div>
+        <div class="cell-value mono">
+          {% if row.eps_label %}EPS {{ row.eps_label }}{% else %}<span class="empty">—</span>{% endif %}
+        </div>
+        <div class="cell-sub">
+          {% if row.revenue_avg %}매출 {{ row.revenue_avg }}{% endif %}
+          {%- if row.eps_analysts %} · 애널리스트 {{ row.eps_analysts }}인{% endif %}
+        </div>
+      </div>
+
+      <div class="cell">
+        <div class="cell-label">작년 같은 분기 실제</div>
+        <div class="cell-value mono">
+          {% if row.prior_filed_label %}{{ row.prior_filed_label }} 제출{% else %}<span class="empty">기록 없음</span>{% endif %}
+        </div>
+        {% if row.prior_period %}
+        <div class="cell-sub">{{ row.prior_period }}</div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="footer">
+    <strong>날짜는 확정이 아닙니다.</strong> 출처(yfinance 캘린더)는 회사 공지 전에는 추정치를 싣고,
+    공지 뒤에도 바뀝니다. 값이 바뀐 적 있으면 <strong>변경됨</strong>, 기준 스냅샷이 오래됐으면
+    <strong>기준 오래됨</strong>으로 표시했습니다.<br>
+    또한 이 날짜는 <strong>실적 발표(보도자료)</strong> 예정일이고, 실적 카드는
+    <strong>10-Q/10-K 제출</strong> 시점에 나갑니다. 둘은 대체로 며칠 안에 붙어 있지만 같은 날은 아닙니다 —
+    이 카드는 "이 주에 발표가 있다"까지만 말합니다.
+  </div>
+</body>
+</html>

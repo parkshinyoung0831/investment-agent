@@ -1,0 +1,37 @@
+name: ops_failure_report
+
+on:
+  workflow_call:
+    inputs:
+      source_conclusion:
+        description: "호출 워크플로의 결론"
+        required: true
+        type: string
+    secrets:
+      discord_webhook_ops:
+        required: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  report:
+    name: Discord failure report
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PYTHONUNBUFFERED: "1"
+      GITHUB_TOKEN: ${{ github.token }}
+      # 이 워크플로는 Actions 안에서만 돈다 — 목적지도 #액션-실패다.
+      DISCORD_WEBHOOK_OPS_ACTIONS: ${{ secrets.discord_webhook_ops }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/python-job
+        with:
+          group: core
+          require-env: DISCORD_WEBHOOK_OPS_ACTIONS
+      - name: Build and send Discord incident
+        run: >-
+          python -m investment_agent.operations.commands.workflow_failure
+          --conclusion "${{ inputs.source_conclusion }}"

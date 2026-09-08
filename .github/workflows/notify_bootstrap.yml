@@ -1,0 +1,107 @@
+name: notify_bootstrap
+
+# 초기 구축(또는 DB 재적재) 직후 한 번, 정규 요일·시간과 무관하게 카드를 내보낸다.
+# cron이 없다 — 수동 실행 전용이고, 정규 스케줄에는 아무 영향을 주지 않는다.
+#
+# 중복 발송 규칙은 종류마다 다르다:
+#   - 한 장짜리 묶음(macro_core, fundamentals_calendar)은 force로 그날 기록을 무시한다.
+#   - 건별 카드(fundamentals_earnings/_flash, gurus_13f, econ_calendar_release)는
+#     force를 걸지 않는다 — 밀린 공시가 한꺼번에 수십 장 쏟아진다.
+on:
+  workflow_dispatch:
+    inputs:
+      kinds:
+        description: "보낼 알림(쉼표 구분). 비우면 아래 기본 순서 전부."
+        required: false
+        type: string
+        default: ""
+      force_single_card:
+        description: "한 장짜리 카드(macro_core·fundamentals_calendar)를 이미 보냈어도 다시 보낸다."
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: notify_bootstrap
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      PYTHONUNBUFFERED: "1"
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+      DISCORD_CHANNEL_MACRO_DAILY: ${{ secrets.DISCORD_CHANNEL_MACRO_DAILY }}
+      DISCORD_CHANNEL_MACRO_ALERT: ${{ secrets.DISCORD_CHANNEL_MACRO_ALERT }}
+      DISCORD_CHANNEL_ECON_CALENDAR_RELEASE: ${{ secrets.DISCORD_CHANNEL_ECON_CALENDAR_RELEASE }}
+      DISCORD_CHANNEL_EARNINGS: ${{ secrets.DISCORD_CHANNEL_EARNINGS }}
+      DISCORD_CHANNEL_EARNINGS_CALENDAR: ${{ secrets.DISCORD_CHANNEL_EARNINGS_CALENDAR }}
+      DISCORD_CHANNEL_GURUS: ${{ secrets.DISCORD_CHANNEL_GURUS }}
+      # 거장 공시는 포럼 하나에 사람마다 스레드 하나로 쌓인다.
+      DISCORD_CHANNEL_GURU_FORUM: ${{ secrets.DISCORD_CHANNEL_GURU_FORUM }}
+      DISCORD_CHANNEL_STRATEGY_MONTHLY: ${{ secrets.DISCORD_CHANNEL_STRATEGY_MONTHLY }}
+      DISCORD_CHANNEL_STRATEGY_FORUM: ${{ secrets.DISCORD_CHANNEL_STRATEGY_FORUM }}
+      DISCORD_CHANNEL_AI_REPORTS: ${{ secrets.DISCORD_CHANNEL_AI_REPORTS }}
+      DISCORD_CHANNEL_AI_TRADES: ${{ secrets.DISCORD_CHANNEL_AI_TRADES }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/python-job
+        with:
+          group: notifications
+          require-env: "SUPABASE_URL SUPABASE_SERVICE_KEY DISCORD_BOT_TOKEN"
+      - uses: ./.github/actions/card-render
+        with:
+          cache-key: uv.lock
+
+      - name: Dispatch first notifications
+        env:
+          FORCE_SINGLE: ${{ inputs.force_single_card }}
+        run: |
+          set -u
+          # 데이터가 얕은 순서가 아니라 '읽는 사람이 보기 좋은 순서'로 보낸다.
+          DEFAULT="macro_core,econ_calendar_release,fundamentals_calendar,fundamentals_flash,fundamentals_earnings,gurus_13f,strategy,macro_watch"
+          KINDS="${{ inputs.kinds }}"
+          [ -z "$KINDS" ] && KINDS="$DEFAULT"
+
+          failed=""
+          IFS=',' read -ra LIST <<< "$KINDS"
+          for kind in "${LIST[@]}"; do
+            kind="$(echo "$kind" | xargs)"
+            [ -z "$kind" ] && continue
+            args=""
+            case "$kind" in
+              macro_core|fundamentals_calendar)
+                [ "$FORCE_SINGLE" = "true" ] && args="--force" ;;
+            esac
+            echo "::group::notify --kind $kind $args"
+            # 하나가 실패해도 나머지는 계속 보낸다 — 첫 발송이 통째로 비는 쪽이 더 나쁘다.
+            if ! python -m investment_agent.operations.commands.notify --kind "$kind" $args; then
+              echo "FAILED: $kind"
+              failed="$failed $kind"
+            fi
+            echo "::endgroup::"
+          done
+
+          if [ -n "$failed" ]; then
+            echo "실패한 알림:$failed"
+            exit 1
+          fi
+          echo "부트스트랩 발송 완료: $KINDS"
+
+  notify-error:
+    if: ${{ failure() || cancelled() }}
+    needs: run
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/ops_failure_report.yml
+    with:
+      source_conclusion: ${{ needs.run.result }}
+    secrets:
+      discord_webhook_ops: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}

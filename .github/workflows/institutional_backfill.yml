@@ -1,0 +1,63 @@
+name: institutional_backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      backfill_from:
+        description: "YYYY-MM-DD. Leave empty for the canonical 2014-01-01 history."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: institutional-etl
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    if: ${{ vars.GURUS_KILL != 'on' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      EDGAR_USER_AGENT: ${{ secrets.EDGAR_USER_AGENT || vars.EDGAR_USER_AGENT }}
+      OPENFIGI_API_KEY: ${{ secrets.OPENFIGI_API_KEY }}
+      # 재구축은 직접 parser와 같은 원문을 EdgarTools로 전수 감사한다.
+      GURUS_SHADOW_PARSER: ${{ vars.GURUS_SHADOW_PARSER || 'on' }}
+      LOG_LEVEL: INFO
+      PYTHONUNBUFFERED: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/python-job
+        with:
+          group: data
+          require-env: "SUPABASE_URL SUPABASE_SERVICE_KEY EDGAR_USER_AGENT"
+      - name: Validate secret formats
+        run: |
+          printf '%s' "$EDGAR_USER_AGENT" | grep -qiE '[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}'
+
+      - name: Run institutional 13F backfill
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.backfill_from }}" ]; then
+            ARGS="$ARGS --backfill-from ${{ inputs.backfill_from }}"
+          fi
+          python -m investment_agent.data.institutional.commands.institutional_backfill $ARGS
+
+  notify-error:
+    if: ${{ failure() || cancelled() }}
+    needs: backfill
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/ops_failure_report.yml
+    with:
+      source_conclusion: ${{ needs.backfill.result }}
+    secrets:
+      discord_webhook_ops: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}

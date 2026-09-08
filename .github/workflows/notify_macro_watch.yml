@@ -1,0 +1,60 @@
+name: notify_macro_watch
+
+on:
+  # ETL 직후 한 번(새 관측치를 가장 빨리 잡는다) + 장중 매시 한 번.
+  # 워치는 임계 돌파 감시라 하루 1회로는 늦다. 같은 (series_id, obs_date)는
+  # load_watch_pending()이 notifications.outbox로 걸러내므로 겹쳐도 재발송되지 않는다.
+  workflow_run:
+    workflows: ["macro_etl", "macro_etl_monday"]
+    types: [completed]
+    branches: [main]
+  schedule:
+    # macro.observation_versions는 macro_etl이 하루 한 번만 갱신한다. 같은 관측치를
+    # 다시 평가해도 (series_id, obs_date) 중복방지에 걸려 반드시 0건이므로
+    # 상류 workflow_run 뒤 한 번만 더 확인하는 안전망으로 둔다.
+    - cron: "50 0 * * 1-6" # 09:50 KST 월~토, macro_etl 25분 뒤
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: notify_macro_watch
+  cancel-in-progress: false
+
+jobs:
+  run:
+    # ETL은 53개 지표 중 3개만 실패해도 exit 1 한다 — 한 소스(ECOS 15종)의 키가
+    # 만료되면 미국 지표는 멀쩡히 적재됐는데도 카드가 통째로 묻힌다. 취소만 거른다.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion != 'cancelled' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # 잡이 타임아웃으로 죽으면 버퍼에 남은 로그가 통째로 사라져 원인을 못 본다.
+      PYTHONUNBUFFERED: "1"
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+      DISCORD_CHANNEL_MACRO_ALERT: ${{ secrets.DISCORD_CHANNEL_MACRO_ALERT }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/python-job
+        with:
+          group: notifications
+          require-env: "SUPABASE_URL SUPABASE_SERVICE_KEY DISCORD_BOT_TOKEN"
+      - name: Validate notification subscription
+        run: python -m investment_agent.operations.commands.validate_subscriptions --kind macro_watch
+      - name: Dispatch notify
+        run: python -m investment_agent.notifications.macro.watch
+
+  notify-error:
+    if: ${{ failure() || cancelled() }}
+    needs: run
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/ops_failure_report.yml
+    with:
+      source_conclusion: ${{ needs.run.result }}
+    secrets:
+      discord_webhook_ops: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}

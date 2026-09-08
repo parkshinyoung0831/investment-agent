@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dashboard",
+      "runtimeExecutable": ".venv/Scripts/streamlit.exe",
+      "runtimeArgs": [
+        "run",
+        "src/investment_agent/dashboard/app.py",
+        "--server.port",
+        "8511",
+        "--server.headless",
+        "true"
+      ],
+      "port": 8511
+    }
+  ]
+}

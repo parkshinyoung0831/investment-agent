@@ -1,0 +1,120 @@
+"""Discord 계약과 renderer를 가짜 HTTP로 검증한다. 실제 메시지는 보내지 않는다."""
+from __future__ import annotations
+
+from types import SimpleNamespace
+import unittest
+from unittest.mock import Mock
+
+from investment_agent.config import Config
+from investment_agent.notifications.channels.discord import (
+    DeliveryRejected, DeliveryUnknown, DiscordChannel, validate_message,
+)
+from investment_agent.notifications.renderers.reports import render_report
+from investment_agent.reporting.models import DataResult
+
+
+def response(status, body=None, headers=None):
+    return SimpleNamespace(status_code=status, json=lambda: body, headers=headers or {})
+
+
+class DiscordTest(unittest.TestCase):
+    def setUp(self):
+        self.post = Mock(return_value=response(200, {"id": "456"}))
+        self.config = Config(env={"DISCORD_BOT_TOKEN": "fake-token"}, dotenv_path=None, dotenv_loaded=False)
+        self.channel = DiscordChannel(self.config, post=self.post)
+
+    def send(self):
+        return self.channel.send(target="123", message={"content": "내용"})
+
+    def test_one_post_has_fixed_host_timeout_and_no_mentions(self):
+        self.assertEqual("456", self.send())
+        self.post.assert_called_once()
+        args, kwargs = self.post.call_args
+        self.assertEqual(("https://discord.com/api/v10/channels/123/messages",), args)
+        self.assertEqual(30, kwargs["timeout"])
+        self.assertFalse(kwargs["allow_redirects"])
+        self.assertEqual({"parse": []}, kwargs["json"]["allowed_mentions"])
+
+    def test_rate_limit_returns_server_delay_without_sleep_or_retry(self):
+        self.post.return_value = response(429, {"retry_after": 123.5}, {"Retry-After": "120"})
+        with self.assertRaises(DeliveryRejected) as caught:
+            self.send()
+        self.assertTrue(caught.exception.is_retryable)
+        self.assertEqual(123.5, caught.exception.retry_after)
+        self.post.assert_called_once()
+
+    def test_timeout_and_server_error_do_not_retry(self):
+        for status in (301, 500, 502, 503):
+            with self.subTest(status=status):
+                self.post.reset_mock()
+                self.post.return_value = response(status)
+                with self.assertRaises(DeliveryUnknown):
+                    self.send()
+                self.post.assert_called_once()
+        self.post.side_effect = TimeoutError("secret")
+        with self.assertRaises(DeliveryUnknown) as caught:
+            self.send()
+        self.assertNotIn("secret", str(caught.exception))
+
+    def test_client_errors_are_terminal(self):
+        for status in (400, 401, 403, 404):
+            self.post.return_value = response(status)
+            with self.assertRaises(DeliveryRejected) as caught:
+                self.send()
+            self.assertFalse(caught.exception.is_retryable)
+
+    def test_missing_response_id_is_unknown(self):
+        for body in ({}, {"id": ""}, {"id": "not-an-id"}, None, []):
+            self.post.return_value = response(200, body)
+            with self.assertRaises(DeliveryUnknown):
+                self.send()
+
+    def test_invalid_rate_limit_interval_is_held(self):
+        for interval in (-1, "nan", "inf", "bad"):
+            self.post.return_value = response(429, {"retry_after": interval})
+            with self.assertRaises(DeliveryUnknown):
+                self.send()
+
+    def test_missing_config_and_invalid_target_never_post(self):
+        channel = DiscordChannel(Config(env={}, dotenv_path=None, dotenv_loaded=False), post=self.post)
+        with self.assertRaises(DeliveryRejected):
+            channel.send(target="123", message={"content": "hello"})
+        for target in ("", "https://other.example", "123/../456", "１２３"):
+            with self.assertRaises(DeliveryRejected):
+                self.channel.send(target=target, message={"content": "hello"})
+        self.post.assert_not_called()
+
+    def test_message_size_and_field_validation(self):
+        invalid = [
+            {}, {"content": "x" * 2001}, {"embeds": [{}] * 11},
+            {"embeds": [{"title": "x" * 257}]},
+            {"embeds": [{"description": "x" * 4097}]},
+            {"embeds": [{"fields": [{"name": "n", "value": "v"}] * 26}]},
+            {"embeds": [{"fields": [{"name": "n", "value": "x" * 1025}]}]},
+            {"embeds": [{"description": "x" * 4000}] * 2},
+            {"content": "x", "components": []},
+        ]
+        for message in invalid:
+            with self.subTest(message=str(message)[:40]), self.assertRaises(ValueError):
+                validate_message(message)
+        source = {"content": "@everyone", "allowed_mentions": {"parse": ["everyone"]}}
+        self.assertEqual({"parse": []}, validate_message(source)["allowed_mentions"])
+        self.assertEqual(["everyone"], source["allowed_mentions"]["parse"])
+
+
+class ReportRendererTest(unittest.TestCase):
+    def test_preserves_zero_missing_and_stored_weights(self):
+        report = DataResult.ok(source="reporting.portfolio_decisions", rows=[{"zero": 0, "missing": None, "approved_weights": {"A": 0.3, "CASH": 0.7}}])
+        message = render_report(report, title="포트폴리오", fields={"zero": "실제 0", "missing": "미확인", "approved_weights": "승인 비중"})
+        fields = message["embeds"][0]["fields"]
+        self.assertEqual(["0", "—", '{"A":0.3,"CASH":0.7}'], [f["value"] for f in fields])
+        self.assertEqual("reporting.portfolio_decisions", message["embeds"][0]["footer"]["text"])
+        validate_message(message)
+
+    def test_failed_and_empty_reports_are_not_success_messages(self):
+        for status in ("empty", "offline", "unconfigured", "blocked", "error"):
+            report = DataResult(status=status, source="reporting.test")
+            with self.assertRaises(ValueError):
+                render_report(report, title="보고서", fields={"x": "값"})
+        with self.assertRaises(ValueError):
+            render_report(DataResult.ok(source="reporting.test", rows=[{"x": 1}]), title="보고서", fields={"missing": "값"})

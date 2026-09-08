@@ -1,0 +1,100 @@
+name: fundamentals_watchlist_fast
+
+# 관심종목만 SEC submissions JSON으로 실시간 훑는 fast path.
+#
+# 왜 따로 있나: fundamentals_daily는 SEC **일별 인덱스**로 변경 CIK를 찾는데, 그 인덱스는
+# 야간(ET 22~23시)에야 확정된다. 그래서 03:30 UTC(=23:30 ET)에 돌 수밖에 없고, 장 마감
+# 직후(16:30 ET) 제출된 공시가 카드로 나가기까지 7~9시간이 걸린다. submissions JSON은
+# 실시간이라 관심종목 CIK만 직접 보면 인덱스를 기다릴 필요가 없다 — 요청 수는 종목 수만큼뿐.
+#
+# 차원 재무는 같은 fundamentals.filing_processing을 content_type='segments'로 공유한다. 차원 수집을
+# 건너뛰고 먼저 보내면 그 행이 아직 processing이라 축 카드가 빈 채로 나가고,
+# notifications.outbox에 기록돼 다시 보낼 수 없다.
+on:
+  schedule:
+    # 21:30 UTC = 06:30 KST(익일) = 17:30 ET. 미국 장 마감 후 제출이 몰리는 16:30 ET
+    # 직후를 잡는다. GitHub cron은 정시를 보장하지 않으므로(실측 최대 25분 지연) 이 시각은
+    # 하한이 아니라 목표다 — 늦어져도 03:30 UTC의 fundamentals_daily가 안전망이다.
+    - cron: "30 21 * * 1-5" # 17:30 ET Mon-Fri (= 06:30 KST Tue-Sat)
+  workflow_dispatch:
+    inputs:
+      ignore_season:
+        description: "발표 예정 구간이 아니어도 강제로 수집한다."
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fundamentals-etl
+  cancel-in-progress: false
+
+jobs:
+  fast:
+    if: ${{ vars.FUNDAMENTALS_KILL != 'on' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      EDGAR_USER_AGENT: ${{ secrets.EDGAR_USER_AGENT || vars.EDGAR_USER_AGENT }}
+      LOG_LEVEL: INFO
+      PYTHONUNBUFFERED: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: uv.lock
+      - name: Install dependency group
+        run: |
+          python -m pip install uv==0.12.10
+          uv sync --locked --no-dev --group core
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
+
+      - name: Validate Supabase secrets
+        run: |
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_KEY"
+
+      - name: Install preflight dependencies
+        run: true # dependency group prepared above
+
+      # "지금이 실적 시즌인가"를 먼저 묻는다. 판단 근거가 없거나 비어 있으면 fail-open이다.
+      # 발표 예정일 스냅샷 표는 흡수 과정에서 사라졌고 대체 원천이 아직 없어, 현재 이 게이트는
+      # 항상 fail-open으로 통과한다 — 원천이 생기기 전까지 비용 절감 효과는 없다.
+      - name: Check earnings season
+        id: season
+        run: >-
+          python -m investment_agent.data.fundamentals.commands.check_earnings_season
+          --github-output "$GITHUB_OUTPUT"
+
+      - name: Validate SEC user agent
+        if: steps.season.outputs.in_season == 'true' || inputs.ignore_season == 'true'
+        run: test -n "$EDGAR_USER_AGENT"
+
+      - name: Install collection dependencies
+        if: steps.season.outputs.in_season == 'true' || inputs.ignore_season == 'true'
+        run: uv sync --locked --no-dev --group data
+
+      - name: Collect watchlist fundamentals
+        if: steps.season.outputs.in_season == 'true' || inputs.ignore_season == 'true'
+        run: python -m investment_agent.data.fundamentals.commands.sync_filings --content company --watchlist-only
+
+  notify-error:
+    if: ${{ failure() || cancelled() }}
+    needs: fast
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/ops_failure_report.yml
+    with:
+      source_conclusion: ${{ needs.fast.result }}
+    secrets:
+      discord_webhook_ops: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}

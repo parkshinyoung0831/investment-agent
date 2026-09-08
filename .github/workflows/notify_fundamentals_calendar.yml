@@ -1,0 +1,97 @@
+name: notify_fundamentals_calendar
+
+# "이번 주 관심종목 발표 예정" 카드. 주 1회, 월요일 아침 KST.
+#
+# 관측상 관심종목 공시는 104주 중 34주에만 있다 — 나머지 주는 preflight에서 끝나고
+# Playwright·폰트를 설치하지 않는다.
+on:
+  schedule:
+    # 23:10 UTC 일요일 = 08:10 KST 월요일. 한 주가 시작되기 전에 손에 들어온다.
+    # (KST는 UTC+9라 일요일 밤 UTC가 월요일 아침 KST다.)
+    - cron: "10 23 * * 0" # 08:10 KST Mon
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "이미 보낸 주도 다시 보낸다."
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: notify-fundamentals-calendar
+  cancel-in-progress: false
+
+jobs:
+  run:
+    if: ${{ vars.FUNDAMENTALS_KILL != 'on' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      DISCORD_CHANNEL_EARNINGS_CALENDAR: ${{ secrets.DISCORD_CHANNEL_EARNINGS_CALENDAR }}
+      FUNDAMENTALS_CALENDAR_FORCE: ${{ inputs.force || 'false' }}
+      LOG_LEVEL: INFO
+      PYTHONUNBUFFERED: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/python-job
+        with:
+          group: notifications
+
+      - name: Validate Supabase secrets
+        run: |
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_KEY"
+
+      - name: Install preflight dependencies
+        run: true # dependency group prepared above
+
+      - name: Check upcoming reports
+        id: pending
+        run: >-
+          python -m investment_agent.notifications.earnings_calendar.pending
+          --github-output "$GITHUB_OUTPUT"
+
+      - name: Validate Discord secrets
+        if: steps.pending.outputs.should_notify == 'true'
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+        run: |
+          test -n "$DISCORD_BOT_TOKEN"
+      - name: Validate notification subscription
+        if: steps.pending.outputs.should_notify == 'true'
+        run: python -m investment_agent.operations.commands.validate_subscriptions --kind fundamentals_calendar
+
+      - name: Install notification dependencies
+        if: steps.pending.outputs.should_notify == 'true'
+        run: true # dependency group prepared above
+
+      - uses: ./.github/actions/card-render
+        if: steps.pending.outputs.should_notify == 'true'
+        with:
+          cache-key: uv.lock
+
+      - name: Send upcoming earnings card
+        if: steps.pending.outputs.should_notify == 'true'
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+        run: python -m investment_agent.operations.commands.notify --kind fundamentals_calendar
+
+  notify-error:
+    if: ${{ failure() || cancelled() }}
+    needs: run
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/ops_failure_report.yml
+    with:
+      source_conclusion: ${{ needs.run.result }}
+    secrets:
+      discord_webhook_ops: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}

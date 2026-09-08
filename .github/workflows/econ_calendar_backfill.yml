@@ -1,0 +1,79 @@
+name: econ_calendar_backfill
+
+# 명시적으로 실행하는 PIT 재구축. ALFRED first print/revision과 공개 historical raw만
+# 적재하며, 없는 survey consensus는 만들어 내지 않는다.
+on:
+  workflow_dispatch:
+    inputs:
+      backfill_from:
+        description: "조회 시작일 (YYYY-MM-DD). 비우면 10년 전."
+        required: false
+        default: ""
+      series:
+        description: "특정 family만 (공백 구분). 비우면 전체."
+        required: false
+        default: ""
+      no_revisions:
+        description: "ALFRED revision 단계 생략"
+        required: false
+        type: boolean
+        default: false
+      no_forecasts:
+        description: "PIT-safe own model/GDPNow 단계 생략"
+        required: false
+        type: boolean
+        default: false
+      dry_run:
+        description: "외부 조회만 하고 DB에 쓰지 않음"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: econ-calendar-backfill
+  cancel-in-progress: false
+
+jobs:
+  run:
+    if: ${{ vars.ECON_CALENDAR_KILL != 'on' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      PYTHONUNBUFFERED: "1"
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+      ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+      EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
+      DISCORD_WEBHOOK_OPS_ACTIONS: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/python-job
+        with:
+          group: data
+          require-env: "SUPABASE_URL SUPABASE_SERVICE_KEY FRED_API_KEY"
+      - name: Backfill ECON release history
+        shell: bash
+        run: |
+          ARGS=()
+          if [ -n "${{ inputs.backfill_from }}" ]; then ARGS+=(--backfill-from "${{ inputs.backfill_from }}"); fi
+          if [ -n "${{ inputs.series }}" ]; then ARGS+=(--series ${{ inputs.series }}); fi
+          [ "${{ inputs.no_revisions }}" = "true" ] && ARGS+=(--no-revisions)
+          [ "${{ inputs.no_forecasts }}" = "true" ] && ARGS+=(--no-forecasts)
+          [ "${{ inputs.dry_run }}" = "true" ] && ARGS+=(--dry-run)
+          python -m investment_agent.data.macro.commands.econ_calendar_backfill "${ARGS[@]}"
+
+  notify-error:
+    if: ${{ failure() || cancelled() }}
+    needs: run
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/ops_failure_report.yml
+    with:
+      source_conclusion: ${{ needs.run.result }}
+    secrets:
+      discord_webhook_ops: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}

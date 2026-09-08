@@ -1,0 +1,102 @@
+name: notify_strategy
+
+on:
+  workflow_run:
+    workflows: ["strategy_monthly"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "strategy_monthly run ID whose snapshot should be sent"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: notify_strategy
+  cancel-in-progress: false
+
+jobs:
+  run:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion != 'cancelled' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+      DISCORD_CHANNEL_STRATEGY_MONTHLY: ${{ secrets.DISCORD_CHANNEL_STRATEGY_MONTHLY }}
+      DISCORD_CHANNEL_STRATEGY_FORUM: ${{ secrets.DISCORD_CHANNEL_STRATEGY_FORUM }}
+    steps:
+      - name: Decide whether to run
+        id: gate
+        env:
+          SOURCE_CREATED_AT: ${{ github.event.workflow_run.created_at }}
+        run: |
+          KST_DAY=$(TZ=Asia/Seoul date -d "${SOURCE_CREATED_AT:-now}" +%d)
+          if [ "$KST_DAY" = "01" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.gate.outputs.should_run == 'true'
+        uses: actions/checkout@v6
+      - if: steps.gate.outputs.should_run == 'true'
+        uses: ./.github/actions/python-job
+        with:
+          group: notifications
+          require-env: SUPABASE_URL SUPABASE_SERVICE_KEY DISCORD_BOT_TOKEN
+      - name: Validate notification subscriptions
+        if: steps.gate.outputs.should_run == 'true'
+        run: >-
+          python -m investment_agent.operations.commands.validate_subscriptions
+          --kind strategy_summary --kind strategy
+      - name: Validate source run
+        if: steps.gate.outputs.should_run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id || inputs.source_run_id }}
+        run: |
+          [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID" > "$RUNNER_TEMP/strategy-run.json"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          run = json.loads((Path(os.environ["RUNNER_TEMP"]) / "strategy-run.json").read_text())
+          if not (
+              run["path"] == ".github/workflows/strategy_monthly.yml"
+              and run["head_branch"] == "main"
+              and run["head_repository"]["full_name"] == os.environ["GITHUB_REPOSITORY"]
+              and run["event"] in {"schedule", "workflow_dispatch"}
+              and run["status"] == "completed"
+              and run["conclusion"] == "success"
+          ):
+              raise SystemExit("source must be a successful main strategy_monthly run")
+          PY
+      - name: Download the exact strategy snapshot
+        if: steps.gate.outputs.should_run == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: research-strategy
+          path: data/local/research
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id || inputs.source_run_id }}
+      - name: Send strategy monthly alerts
+        if: steps.gate.outputs.should_run == 'true'
+        run: python -m investment_agent.operations.commands.notify --kind strategy
+
+  notify-error:
+    if: ${{ failure() || cancelled() }}
+    needs: run
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/ops_failure_report.yml
+    with:
+      source_conclusion: ${{ needs.run.result }}
+    secrets:
+      discord_webhook_ops: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}

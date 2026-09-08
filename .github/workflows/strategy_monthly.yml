@@ -1,0 +1,72 @@
+name: strategy_monthly
+
+on:
+  schedule:
+    - cron: "0 22 28-31 * *"
+  workflow_dispatch:
+    inputs:
+      mark_sent:
+        description: "Mark generated allocation as sent."
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: strategy-etl
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+    steps:
+      - name: Decide whether to run
+        id: gate
+        run: |
+          KST_DAY=$(TZ=Asia/Seoul date +%d)
+          echo "KST day = $KST_DAY"
+          if [ "$KST_DAY" = "01" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.gate.outputs.should_run == 'true'
+        uses: actions/checkout@v6
+      - if: steps.gate.outputs.should_run == 'true'
+        uses: ./.github/actions/python-job
+        with:
+          group: research
+      - name: Run strategy compute
+        if: steps.gate.outputs.should_run == 'true'
+        run: |
+          if [ "${{ inputs.mark_sent }}" = "true" ]; then
+            python -m investment_agent.research.strategies.etl --mark-sent
+          else
+            python -m investment_agent.research.strategies.etl
+          fi
+      - name: Preserve strategy snapshot
+        if: steps.gate.outputs.should_run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-strategy
+          path: data/local/research/research.duckdb
+          if-no-files-found: error
+          retention-days: 90
+
+  notify-error:
+    if: ${{ failure() || cancelled() }}
+    needs: run
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/ops_failure_report.yml
+    with:
+      source_conclusion: ${{ needs.run.result }}
+    secrets:
+      discord_webhook_ops: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<style>
+{% include "_styles.html.j2" %}
+  .tone { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 17px; }
+  .tone-item { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+  .tone-arrow { font-family: "JetBrains Mono", monospace; font-size: 13px; }
+  .tone-arrow.up { color: var(--semantic-up); }
+  .tone-arrow.down { color: var(--semantic-down); }
+  .tone-arrow.flat { color: var(--muted); }
+  .regime { display: grid; grid-template-columns: 2.2fr 1fr; gap: 16px; margin-bottom: 24px; }
+  .regime-card { padding: 24px; }
+  .regime-head { display: flex; justify-content: space-between; align-items: baseline; gap: 20px; }
+  .regime-label { color: var(--on-dark-soft); font-size: 13px; }
+  .regime-value { font-size: 20px; font-weight: 500; }
+  .regime-track { position: relative; height: 6px; margin-top: 20px; border-radius: var(--radius-pill); background: rgba(238, 240, 243, 0.14); }
+  .regime-marker { position: absolute; top: 50%; width: 12px; height: 12px; border: 2px solid var(--surface-dark-elevated); border-radius: 9999px; transform: translate(-50%, -50%); }
+  .regime-scale { display: flex; justify-content: space-between; margin-top: 9px; color: var(--body); font-size: 10px; }
+  .vix-main { margin-top: 14px; }
+  .vix-main .metric-value { font-size: 28px; }
+  .stale { color: var(--stale); }
+</style>
+</head>
+<body>
+  <header class="hero">
+    <div>
+      <div class="eyebrow">
+        <span class="status-pill"><span class="status-dot" style="background:{{ side_color }};"></span>MACRO · STACK 1</span>
+        <span class="kicker">DAILY MARKET REGIME</span>
+      </div>
+      <h1>매크로 코어</h1>
+      <div class="hero-sub">시장의 방향, 스트레스, 유동성을 한 장으로 읽습니다.</div>
+      <div class="tone">
+        {% for t in tone_chips %}
+        {% set cls = 'up' if t.arrow == '↗' else 'down' if t.arrow == '↘' else 'flat' %}
+        <span class="tone-item">{{ t.label }} <b class="tone-arrow {{ cls }}">{{ t.arrow }}</b></span>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="hero-meta"><span class="date">{{ today }}</span><br>발송일 · 카드별 기준일 표시</div>
+  </header>
+
+  <section class="regime">
+    <div class="card regime-card">
+      <div class="regime-head">
+        <span class="regime-label">공포 · 탐욕 지수</span>
+        {% if fng %}<span class="regime-value mono" style="color:{{ fng.color }};">{{ fng.value }} · {{ fng.label }}</span>{% endif %}
+      </div>
+      <div class="regime-track">{% if fng %}<span class="regime-marker" style="left:{{ fng.pct }}%; background:{{ fng.color }};"></span>{% endif %}</div>
+      <div class="regime-scale"><span>극단공포</span><span>공포</span><span>중립</span><span>탐욕</span><span>극단탐욕</span></div>
+    </div>
+    {% if vix %}
+    <div class="card regime-card">
+      <div class="metric-top"><span class="regime-label">VIX 심리</span>{% if vix.level %}<span class="tier-dot {{ vix.level }}"></span>{% endif %}</div>
+      <div class="metric-main vix-main">
+        <span class="metric-value">{{ vix.value }}</span>
+        {% if vix.change %}<span class="metric-change {{ vix.dir }}">{{ vix.change }}</span>{% endif %}
+      </div>
+      {% if vix.spark %}<div class="spark-wrap">{{ vix.spark }}</div>{% endif %}
+    </div>
+    {% endif %}
+  </section>
+
+  <div class="summary">
+    <span class="summary-pill"><span class="tier-dot alert"></span>위험 <span class="mono">{{ strong_counts.alert }}</span></span>
+    <span class="summary-pill"><span class="tier-dot caution"></span>주의 <span class="mono">{{ strong_counts.caution }}</span></span>
+    <span class="summary-pill"><span class="tier-dot watch"></span>관심 <span class="mono">{{ strong_counts.watch }}</span></span>
+    {% if stale_count %}<span class="summary-pill stale">지연 지표 {{ stale_count }}개{% if stale_oldest %} · 최장 {{ stale_oldest }} 기준{% endif %}</span>{% endif %}
+  </div>
+
+  {% for sec in sections %}
+  <section class="section">
+    <div class="section-head"><div class="section-title">{{ sec.icon }} {{ sec.name }}</div><div class="section-note">{{ sec.cards|length }}개 지표</div></div>
+    <div class="grid grid-4">
+      {% for c in sec.cards %}
+      <div class="card">
+        <div class="metric-top">
+          <span class="metric-name">{{ c.name }}{% if c.kr %} <span class="tag">KR</span>{% endif %}</span>
+          {% if c.level %}<span class="tier-dot {{ c.level }}"></span>{% endif %}
+        </div>
+        <div class="metric-main">
+          <span class="metric-value">{{ c.value }}</span>
+          {% if c.change %}<span class="metric-change {{ c.dir }}">{{ c.change }}</span>{% endif %}
+        </div>
+        {% if c.spark %}<div class="spark-wrap">{{ c.spark }}</div>{% endif %}
+        {% if c.as_of %}<div class="metric-sub {{ c.freshness }}">{{ c.as_of }}</div>{% endif %}
+        {% if c.meta %}<div class="metric-meta">{{ c.meta }}</div>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+
+  <footer class="footer">이상 신호는 Stack 2 워치에서 별도 발송 · 비일간 발표는 Stack 3 릴리스<br>{{ code_map }}</footer>
+</body>
+</html>

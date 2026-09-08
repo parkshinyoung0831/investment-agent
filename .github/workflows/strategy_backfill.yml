@@ -1,0 +1,49 @@
+name: strategy_backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      backfill_from:
+        description: "Backfill start apply_date (YYYY-MM). 비우면 src/investment_agent/research/strategies/__init__.py의 BACKFILL_FROM 사용."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: strategy-etl
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/python-job
+        with:
+          group: research
+      - name: Run strategy backfill
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.backfill_from }}" ]; then
+            python -m investment_agent.research.strategies.etl --backfill-from "${{ inputs.backfill_from }}"
+          else
+            python -m investment_agent.research.strategies.etl --backfill-from
+          fi
+
+  notify-error:
+    if: ${{ failure() || cancelled() }}
+    needs: run
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/ops_failure_report.yml
+    with:
+      source_conclusion: ${{ needs.run.result }}
+    secrets:
+      discord_webhook_ops: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}

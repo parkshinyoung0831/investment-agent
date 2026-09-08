@@ -1,0 +1,1 @@
+"""Macro application orchestration boundary."""

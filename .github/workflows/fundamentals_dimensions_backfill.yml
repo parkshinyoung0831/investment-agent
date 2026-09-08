@@ -1,0 +1,118 @@
+name: fundamentals_dimensions_backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      period:
+        description: "Backfill period."
+        required: true
+        default: both
+        type: choice
+        options: [both, quarter, annual]
+      scope:
+        description: "missing=신규 종목, gaps=미완료 공시(실패 자동 재시도), all=전체 재계산"
+        required: true
+        default: gaps
+        type: choice
+        options: [missing, gaps, all]
+      backfill_from:
+        description: "YYYY-MM-DD. Leave empty for the default eight-year window."
+        required: false
+        default: ""
+      tickers:
+        description: "Optional comma-separated tracked tickers for a bounded rerun."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fundamentals-etl
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    if: ${{ vars.FUNDAMENTALS_KILL != 'on' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      EDGAR_USER_AGENT: ${{ secrets.EDGAR_USER_AGENT || vars.EDGAR_USER_AGENT }}
+      LOG_LEVEL: INFO
+      PYTHONUNBUFFERED: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/python-job
+        with:
+          group: data
+          require-env: SUPABASE_URL SUPABASE_SERVICE_KEY EDGAR_USER_AGENT
+
+      # 값이 있는지는 action이 본다. 여기서는 그 값이 SEC가 요구하는 연락처 형식인지만 본다.
+      - name: Validate EDGAR contact format
+        run: printf '%s' "$EDGAR_USER_AGENT" | grep -qiE '[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}'
+
+      - name: Compute SEC cache quarter
+        id: q
+        run: echo "q=$(date -u +%Y)Q$(( ($(date -u +%-m)-1)/3 + 1 ))" >> "$GITHUB_OUTPUT"
+
+      - name: Cache SEC bulk data
+        uses: actions/cache@v4
+        with:
+          path: ~/secfsdstools/data
+          key: secfsds-data-${{ steps.q.outputs.q }}
+          restore-keys: secfsds-data-
+
+      - name: Install dependencies
+        run: true # dependency group prepared above
+
+      - name: Write secfsdstools config
+        run: |
+          EMAIL=$(printf '%s' "$EDGAR_USER_AGENT" | grep -oiE '[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}' | head -1)
+          D="$HOME/secfsdstools/data"
+          mkdir -p "$D"
+          {
+            echo "[DEFAULT]"
+            echo "DownloadDirectory = $D/dld"
+            echo "DbDirectory = $D/db"
+            echo "ParquetDirectory = $D/parquet"
+            echo "UserAgentEmail = $EMAIL"
+            echo "AutoUpdate = True"
+            echo "KeepZipFiles = False"
+            echo "NoParallelProcessing = False"
+          } > "$HOME/.secfsdstools.cfg"
+
+      - name: Backfill dimensions
+        shell: bash
+        run: |
+          PERIOD="${{ inputs.period || 'both' }}"
+          SCOPE="${{ github.event_name == 'workflow_dispatch' && inputs.scope || 'missing' }}"
+          EXTRA=()
+          if [ -n "${{ inputs.backfill_from }}" ]; then
+            EXTRA+=(--backfill-from "${{ inputs.backfill_from }}")
+          fi
+          if [ -n "${{ inputs.tickers }}" ]; then
+            EXTRA+=(--tickers "${{ inputs.tickers }}")
+          fi
+          if [ "$PERIOD" = "both" ] || [ "$PERIOD" = "quarter" ]; then
+            python -m investment_agent.data.fundamentals.commands.backfill_history --content segments --period quarter --scope "$SCOPE" "${EXTRA[@]}"
+          fi
+          if [ "$PERIOD" = "both" ] || [ "$PERIOD" = "annual" ]; then
+            python -m investment_agent.data.fundamentals.commands.backfill_history --content segments --period annual --scope "$SCOPE" "${EXTRA[@]}"
+          fi
+
+  notify-error:
+    if: ${{ failure() || cancelled() }}
+    needs: backfill
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/ops_failure_report.yml
+    with:
+      source_conclusion: ${{ needs.backfill.result }}
+    secrets:
+      discord_webhook_ops: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}

@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<style>
+  /* 블록 하나 = 질문 하나. 제목은 단일 명사다("수익성", "현금흐름").
+     행마다 비율이 다르다 — 표가 넓어야 하는 블록에 폭을 준다.
+       1행 2:1   [밸류에이션 + 주가]        : [주주환원 + 수익성 + 추정치 방향]
+       2행 1:1   [손익 구조]                : [실적 추이]
+       3행 1:1   [현금흐름]                 : [현금흐름 추이]
+       4행 1:1:1 [EPS] : [유동성·부채] : [재무건전성]
+     컨센서스는 자기 블록을 갖지 않는다 — 실제와 예상은 같은 그림에서 읽어야 하므로
+     EPS·실적 추이 차트 아래 숫자 줄로 붙고, 추정치 방향만 1행 오른쪽에 묶인다.
+     열 수는 실제로 있는 블록 수로 정한다 — 은행처럼 재무건전성이 없으면 4행이 1:1이 된다.
+     배당·자사주가 없으면 1행 오른쪽이 통째로 비므로, 블록은 한 덩어리로 두되 폭을 다 쓰고
+     주가와 수익성이 그 안에서 자리를 1:1로 나눈다. */
+  :root {
+    --primary: {{ tokens.primary }};
+    --primary-active: {{ tokens.primary_active }};
+    --ink: {{ tokens.ink }};
+    --body: {{ tokens.body }};
+    --muted: {{ tokens.muted }};
+    --muted-soft: {{ tokens.muted_soft }};
+    --hairline: {{ tokens.hairline }};
+    --hairline-soft: {{ tokens.hairline_soft }};
+    --canvas: {{ tokens.canvas }};
+    --surface-soft: {{ tokens.surface_soft }};
+    --surface-strong: {{ tokens.surface_strong }};
+    --surface-dark: {{ tokens.surface_dark }};
+    --surface-dark-elevated: {{ tokens.surface_dark_elevated }};
+    --on-dark: {{ tokens.on_dark }};
+    --on-dark-soft: {{ tokens.on_dark_soft }};
+    --semantic-up: {{ tokens.semantic_up }};
+    --semantic-down: {{ tokens.semantic_down }};
+    --accent-yellow: {{ tokens.accent_yellow }};
+    --radius-card: 24px;
+    --radius-pill: 100px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 1080px;
+    background: var(--surface-dark);
+    color: var(--on-dark);
+    font-family: Inter, "Noto Sans CJK KR", "Apple SD Gothic Neo", "Pretendard", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body { padding: 40px; }
+  .mono, .value, .amount, svg text {
+    font-family: "JetBrains Mono", "Geist Mono", "Noto Sans Mono CJK KR", monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  .hero { padding: 8px 4px 30px; }
+  /* 맨 윗줄: 등급·공시정보는 왼쪽, 결론은 오른쪽 끝. */
+  .hero-top { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+  .hero-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 32px;
+    align-items: end;
+  }
+  .status {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 12px;
+    border-radius: var(--radius-pill);
+    background: var(--surface-dark-elevated);
+    color: var(--on-dark-soft);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .status-dot { width: 7px; height: 7px; border-radius: 9999px; background: {{ accent }}; }
+  .period { color: var(--muted-soft); font-size: 13px; }
+  h1 { font-size: 48px; line-height: 1; font-weight: 400; letter-spacing: -1.2px; }
+  .ticker-tag { font-size: 22px; font-weight: 500; color: var(--muted-soft); letter-spacing: 0; margin-left: 13px; vertical-align: baseline; }
+  .name-en { margin-top: 9px; color: var(--muted); font-size: 16px; font-weight: 400; letter-spacing: -0.2px; }
+  .hero-summary {
+    margin-left: auto;
+    color: var(--on-dark);
+    font-size: 17px;
+    font-weight: 500;
+    letter-spacing: -0.2px;
+  }
+  .quote { min-width: 230px; text-align: right; }
+  .quote-price { font-size: 30px; font-weight: 500; line-height: 1.1; }
+  .quote-meta { margin-top: 8px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+
+  .card {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 24px;
+    border: 1px solid rgba(222, 225, 230, 0.08);
+    border-radius: var(--radius-card);
+    background: var(--surface-dark-elevated);
+  }
+  /* 한 블록 안의 두 주제를 가르는 선. 앞에 제목·표가 오는 경우가 있어 인접 선택자로는
+     못 잡는다 — 카드의 첫 요소일 때만 선을 뺀다. */
+  .card-block { margin-top: 22px; padding-top: 20px; border-top: 1px solid rgba(222, 225, 230, 0.08); }
+  .card-block:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+  /* 같은 행의 블록은 높이를 맞춘다(stretch가 기본). 남는 세로는 그림이 가운데를
+     차지해 메우고, 표는 행 간격이 벌어져 메운다 — 아래에 빈칸이 남지 않게. */
+  .chart-fill { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+  .waterfall.grow { flex: 1; justify-content: space-evenly; }
+  .grid { display: grid; gap: 16px; margin-bottom: 16px; }
+  .grid-1 { grid-template-columns: minmax(0, 1fr); }
+  .grid-21 { grid-template-columns: 2fr 1fr; }
+  /* 한 블록 안에서 두 주제가 자리를 반씩 나눌 때. */
+  .split-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 34px; align-items: start; }
+  .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  /* 한 칸에 블록 둘을 세로로 쌓는다(1행의 각 열). */
+  .stack { display: grid; gap: 16px; align-items: start; min-width: 0; }
+  .pane { min-width: 0; }
+  .pane-title {
+    margin-bottom: 12px;
+    color: var(--on-dark-soft);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .pane + .pane-block { margin-top: 22px; }
+  .pane-block {
+    margin-top: 22px;
+    padding-top: 18px;
+    border-top: 1px solid rgba(222, 225, 230, 0.08);
+  }
+
+  /* 범례가 길어지면 제목이 두 줄로 쪼개지는 대신 범례가 아래로 내려간다
+     (1:1:1 행처럼 칸이 좁을 때). */
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    margin-bottom: 18px;
+  }
+  .section-title { font-size: 17px; line-height: 1.3; font-weight: 600; white-space: nowrap; }
+  .section-note { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .legend { color: var(--muted); font-size: 11px; line-height: 1.6; }
+  .legend-key { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; }
+  .legend-line { width: 13px; height: 2px; display: inline-block; background: var(--primary); }
+  .legend-line.gray { background: var(--muted-soft); }
+  .legend-line.white { background: var(--on-dark); }
+  .legend-line.dashed { height: 0; border-top: 2px dashed var(--muted-soft); background: transparent; }
+  .legend-line.dotted { height: 0; border-top: 2px dotted var(--on-dark); background: transparent; }
+  /* 채운 점 = 조정 실제, 빈 점 = 예상. 선(GAAP)과 기준이 달라 모양으로 구분한다. */
+  .legend-dot { width: 6px; height: 6px; border-radius: 9999px; display: inline-block; background: var(--on-dark); }
+  .legend-dot.hollow { background: transparent; border: 1px solid var(--muted-soft); }
+  .legend.compact { font-size: 10px; white-space: nowrap; }
+  .legend.compact .legend-key { margin-left: 6px; }
+  .pane-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .valuation-head { display: grid; grid-template-columns: 1fr 210px; gap: 16px; align-items: start; margin-bottom: 18px; }
+  .valuation-rows { display: flex; flex-direction: column; gap: 11px; }
+  .valuation-row {
+    display: grid;
+    grid-template-columns: 82px 66px 1fr 158px;
+    gap: 9px;
+    align-items: center;
+    font-size: 13px;
+  }
+  .valuation-name { color: var(--on-dark-soft); }
+  .value { color: var(--on-dark); font-size: 13px; }
+  .range-track {
+    height: 7px;
+    position: relative;
+    border-radius: var(--radius-pill);
+    background: rgba(238, 240, 243, 0.10);
+  }
+  .range-band { position: absolute; top: 0; height: 7px; border-radius: var(--radius-pill); background: rgba(238, 240, 243, 0.16); }
+  .range-mid { position: absolute; top: -3px; width: 1px; height: 13px; background: var(--muted-soft); }
+  .range-marker { position: absolute; top: -4px; width: 3px; height: 15px; border-radius: 2px; }
+  .windows {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 5px;
+    text-align: right;
+    color: var(--muted);
+    font-size: 11px;
+    font-family: "JetBrains Mono", "Geist Mono", monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  .valuation-colhead { align-items: center; }
+  .valuation-colhead > span { color: var(--muted); font-size: 10px; white-space: nowrap; }
+  .windows-head { text-align: right; }
+  .val-cell { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .range-scale { display: flex; justify-content: space-between; color: var(--muted); font-size: 10px; line-height: 1; }
+  .range-scale .mid { color: var(--on-dark-soft); }
+
+  .waterfall { display: flex; flex-direction: column; gap: 10px; }
+  .waterfall-row {
+    display: grid;
+    grid-template-columns: 92px minmax(60px, 1fr) 82px 54px 64px;
+    gap: 9px;
+    align-items: center;
+    font-size: 12px;
+  }
+  .waterfall-columns {
+    display: grid;
+    grid-template-columns: 92px minmax(60px, 1fr) 82px 54px 64px;
+    gap: 9px;
+    margin-bottom: 2px;
+    color: var(--muted);
+    font-size: 11px;
+    text-align: right;
+  }
+  /* 브릿지는 매출 대비 칸이 없어 네 열이다. */
+  .waterfall-row.bridge, .waterfall-columns.bridge { grid-template-columns: 104px minmax(70px, 1fr) 92px 72px; }
+  .waterfall-label { color: var(--on-dark-soft); }
+  .bar-track { height: 9px; border-radius: var(--radius-pill); background: rgba(238, 240, 243, 0.07); overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: var(--radius-pill); background: var(--muted); }
+  .bar-fill.primary { background: var(--primary); }
+  .bar-fill.light { background: var(--muted-soft); }
+  /* 헤더가 우측 정렬이라 값도 맞춰야 열이 선다. 모노스페이스 + tabular-nums라
+     우측 정렬하면 자릿수까지 떨어진다. */
+  .amount { color: var(--on-dark); font-size: 12px; white-space: nowrap; text-align: right; }
+  .pct, .yoy {
+    color: var(--on-dark-soft);
+    font-family: "JetBrains Mono", "Geist Mono", monospace;
+    font-size: 12px;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  /* 그림 아래 결과 줄 — 실제는 이름표 없이 숫자만, 그 뒤에 예상과 차이.
+     색은 차이 부호에만 쓴다(텍스트 전용). 두 줄로 나눠 폭이 좁아도 안 뭉갠다. */
+  .result-line {
+    margin-top: 12px;
+    display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap;
+  }
+  .result-now { font-size: 21px; font-weight: 500; letter-spacing: -0.3px; }
+  .result-vs { color: var(--muted); font-size: 12px; }
+  .result-vs .value { font-size: 13px; color: var(--on-dark-soft); }
+  .result-gap { font-size: 15px; font-weight: 500; }
+  .result-basis { color: var(--muted-soft); font-size: 10px; }
+  .result-next { margin-top: 5px; color: var(--muted); font-size: 12px; }
+  .result-next .value { font-size: 13px; color: var(--on-dark-soft); }
+
+  /* 시장 기대 — 숫자가 주인공이고 색은 서프라이즈 부호에만 쓴다(텍스트 전용). */
+  /* 서프라이즈 그림이 EPS 블록으로 옮겨가면서 이 카드는 숫자만 남았다. 오른쪽
+     '추정치 방향'과 높이를 맞추느라 생기는 여백을 숫자가 가운데를 잡아 메운다. */
+  .expect-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 26px;
+    flex: 1; align-content: center;
+  }
+  .expect-label { font-size: 12px; font-weight: 600; color: var(--muted); }
+  .expect-basis { font-weight: 400; color: var(--muted-soft); }
+  .expect-main { margin-top: 8px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .expect-main .value { font-size: 24px; font-weight: 500; letter-spacing: -0.3px; }
+  .expect-vs { font-size: 13px; color: var(--on-dark-soft); }
+  .expect-surprise { font-size: 15px; font-weight: 500; }
+  /* low~high 안에서 실제가 어디였나. 채움이 아니라 눈금이라 색을 쓰지 않는다. */
+  .expect-track {
+    position: relative; height: 4px; margin: 12px 0 9px;
+    border-radius: 100px; background: var(--surface-dark-elevated);
+  }
+  .expect-track i {
+    position: absolute; top: -3px; width: 3px; height: 10px;
+    border-radius: 100px; background: var(--primary); transform: translateX(-1.5px);
+  }
+  .expect-sub { font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+  /* 가격 트랙 — 실제 궤적(52주 띠)과 목표(파란 눈금)를 한 축에.
+     목표 구간은 면적이라 상승/하락 색을 쓰지 않는다(브랜드 색 하나만). */
+  .price-track {
+    position: relative; height: 7px; margin: 4px 0 12px;
+    border-radius: var(--radius-pill); background: rgba(238, 240, 243, 0.08);
+  }
+  .price-track i { position: absolute; }
+  .price-band { top: 0; height: 7px; border-radius: var(--radius-pill); background: rgba(238, 240, 243, 0.18); }
+  .price-target-span { top: 2px; height: 3px; border-radius: var(--radius-pill); background: rgba(0, 82, 255, 0.28); }
+  .price-sma { top: -2px; width: 1px; height: 11px; background: var(--muted); }
+  .price-now { top: -4px; width: 3px; height: 15px; border-radius: 2px; background: var(--on-dark); transform: translateX(-1.5px); }
+  .price-target-mean { top: -4px; width: 3px; height: 15px; border-radius: 2px; background: var(--primary); transform: translateX(-1.5px); }
+  .price-track-legend {
+    display: flex; justify-content: space-between;
+    font-size: 12px; color: var(--muted);
+  }
+  .price-track-note { margin: 5px 0 16px; font-size: 11px; color: var(--muted-soft); }
+
+  .revision-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 4px; }
+  .revision-cell {
+    background: var(--surface-dark-elevated); border-radius: 16px; padding: 16px 18px;
+  }
+  .revision-count { font-size: 30px; font-weight: 500; letter-spacing: -0.6px; }
+  .revision-label { margin-top: 4px; font-size: 12px; color: var(--muted); }
+  .revision-recent {
+    margin-top: 12px; padding-top: 12px;
+    border-top: 1px solid rgba(222, 225, 230, 0.08);
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 12px; color: var(--muted);
+  }
+  .revision-recent .value { font-size: 13px; }
+  .revision-flag {
+    margin-left: 4px; padding: 1px 6px; border-radius: var(--radius-pill);
+    background: var(--surface-strong); color: var(--ink);
+    font-size: 10px; font-weight: 600;
+  }
+  .revision-text { margin-top: 14px; font-size: 13px; line-height: 1.6; color: var(--on-dark-soft); }
+
+  svg { display: block; width: 100%; height: auto; }
+  .chart-grid { stroke: rgba(238, 240, 243, 0.10); stroke-width: 1; }
+  /* SVG는 width:100%라 viewBox가 판보다 넓으면 글자도 같이 줄어든다. 판에서
+     실제 11px로 보이도록 차트마다 되돌린다(보정 없으면 6.2px까지 내려갔다). */
+  .chart-axis { fill: var(--body); font-size: 10px; }
+  .chart-13q .chart-axis { font-size: 16px; }     /* viewBox 720 · 1/2 폭 */
+  .chart-cf .chart-axis { font-size: 11px; }      /* viewBox 440 · 1/2 폭 */
+  .chart-eps .chart-axis { font-size: 14px; }     /* viewBox 400 · 1/3 폭 */
+  .chart-ratio .chart-axis { font-size: 15px; }   /* viewBox 440 · 1/3 폭 */
+  .chart-spark .chart-axis { font-size: 11px; }   /* viewBox 210 · 210px 고정 */
+  .chart-div .chart-axis { font-size: 10px; }     /* viewBox 340 · 1/3 폭 */
+  .chart-label { fill: var(--on-dark); font-size: 10px; }
+
+  .stats { display: grid; gap: 18px 12px; }
+  .stats-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stats-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .stats-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .stats-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  /* 한 줄에 몇 개가 서느냐로 글자를 정한다 — 둘이면 크게, 다섯이면 작게. */
+  .stats-1 .stat-value, .stats-2 .stat-value { font-size: 21px; }
+  .stats-3 .stat-value { font-size: 19px; }
+  .stats-4 .stat-value { font-size: 17px; }
+  .stats-5 .stat-value { font-size: 16px; }
+  /* 1/3 칸처럼 좁은 자리는 한 단계 더 줄여야 한 줄에 들어간다. */
+  .stats.tight { gap: 14px 8px; }
+  .stats.tight .stat-name { font-size: 10px; }
+  .stats.tight .stat-value { margin-top: 4px; font-size: 15px; }
+  .stat { min-width: 0; }
+  .stat-name { color: var(--muted); font-size: 11px; line-height: 1.35; }
+  .stat-value { margin-top: 6px; color: var(--on-dark); font-size: 17px; font-weight: 500; line-height: 1.15; }
+  .stat-tag { font-size: 12px; font-weight: 500; }
+
+  .divbars { display: flex; align-items: flex-end; justify-content: space-around; gap: 8px; }
+  .divbar { flex: 1; max-width: 48px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 5px; }
+  .divbar-fill { width: 100%; border-radius: 4px 4px 0 0; background: var(--muted-soft); }
+  .divbar-fill.hi { background: var(--primary); }
+  .divbar-label { color: var(--muted); font-size: 11px; }
+
+  .footer {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    margin-top: 4px;
+    padding: 20px 4px 2px;
+    border-top: 1px solid rgba(222, 225, 230, 0.12);
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .footer b { color: var(--on-dark); font-family: "JetBrains Mono", monospace; font-size: 14px; font-weight: 500; }
+  .footer-source { margin-left: auto; color: var(--body); font-size: 12px; }
+</style>
+</head>
+<body>
+  <header class="hero">
+    {# 언제·무슨 공시인지가 맨 위 한 줄. 이름·결론·시세는 그 아래 세 칸으로 나눈다. #}
+    <div class="hero-top">
+      <span class="status"><span class="status-dot"></span>{{ badge }}</span>
+      <span class="period">{{ period }} · {{ form }} · 기간말 {{ period_end }} · 공시 {{ filed_at }}</span>
+      <span class="hero-summary">{{ label }}</span>
+    </div>
+    <div class="hero-main">
+      <div>
+        <h1>{{ title_main }}<span class="ticker-tag mono">{{ ticker }}</span></h1>
+        {% if title_en %}<div class="name-en">{{ title_en }}</div>{% endif %}
+      </div>
+      <div class="quote">
+        {% if price %}<div class="quote-price mono">{{ price }}</div>{% endif %}
+        <div class="quote-meta">시총 <span class="mono">{{ market_cap }}</span><br>EV <span class="mono">{{ enterprise_value }}</span></div>
+      </div>
+    </div>
+  </header>
+
+{% macro valuation_block() %}
+  <div class="card-block" style="border-top:none;margin-top:0;padding-top:0;">
+    <div class="valuation-head">
+      <div>
+        <div class="section-title">밸류에이션</div>
+        <div class="section-note" style="margin-top:5px;">{{ val_history.span_years }}년 분포 · 로그 축 · 초록 저평가 / 빨강 고평가</div>
+      </div>
+      {% if val_history.spark %}
+      <svg class="chart-spark" viewBox="0 0 {{ val_history.spark.w }} {{ val_history.spark.h }}">
+        <line x1="0" y1="{{ val_history.spark.avg_y }}" x2="{{ val_history.spark.w }}" y2="{{ val_history.spark.avg_y }}" stroke="var(--body)" stroke-width="1" stroke-dasharray="3 3"/>
+        <polyline points="{{ val_history.spark.points }}" fill="none" stroke="var(--primary)" stroke-width="1.8"/>
+        <circle cx="{{ val_history.spark.last_x }}" cy="{{ val_history.spark.last_y }}" r="3" fill="var(--on-dark)"/>
+        <text x="2" y="10" class="chart-axis">PER {{ val_history.spark.lo }}–{{ val_history.spark.hi }} · 중앙 {{ val_history.spark.avg }}</text>
+      </svg>
+      {% endif %}
+    </div>
+    <div class="valuation-rows">
+      <div class="valuation-row valuation-colhead">
+        <span></span>
+        <span>현재</span>
+        <span style="text-align:center;">■ 25–75% 구간 · │ 중앙값 · ▮ 현재</span>
+        <span class="windows-head">최근 1·3·5·7년 중앙값</span>
+      </div>
+      {% for r in val_history.rows %}
+      <div class="valuation-row">
+        <span class="valuation-name">{{ r.label }}</span>
+        <span class="value">{{ r.value }}</span>
+        <div class="val-cell">
+          <div class="range-track">
+            <span class="range-band" style="left:{{ r.band_l }}%; width:{{ r.band_w }}%;"></span>
+            <span class="range-mid" style="left:{{ r.med_pos }}%;"></span>
+            <span class="range-marker" style="left:{{ r.cur_pos }}%; background:{{ r.color }};"></span>
+          </div>
+          <div class="range-scale mono">
+            <span>{{ r.lo_label }}</span>
+            <span class="mid">중앙 {{ r.median }}</span>
+            <span>{{ r.hi_label }}</span>
+          </div>
+        </div>
+        <span class="windows">{% for w in r.windows %}<span style="color:{{ w.color }};">{% if w.value %}{{ w.value }}{% else %}–{% endif %}</span>{% endfor %}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+{% endmacro %}
+
+{% macro price_inner(tight=false) %}
+  <div class="section-head">
+    <div class="section-title">주가</div>
+    <div class="section-note mono">{% if price_range %}52주 {{ price_range.lo_label }} – {{ price_range.hi_label }} · {% endif %}공시 직전</div>
+  </div>
+  {# 실제로 거래된 구간(밝은 띠)과 애널리스트 목표(파란 눈금)를 한 자에 얹는다.
+     목표는 보통 52주 고가 밖이라 축은 둘의 합집합이다. #}
+  {% if price_range and price_range.target %}
+  <div class="price-track">
+    <i class="price-band" style="left:{{ price_range.band_left }}%; width:{{ price_range.band_width }}%;"></i>
+    {% if price_range.target.low_pos is not none and price_range.target.high_pos is not none %}
+    <i class="price-target-span" style="left:{{ price_range.target.low_pos }}%; width:{{ price_range.target.high_pos - price_range.target.low_pos }}%;"></i>
+    {% endif %}
+    {% if price_range.sma200_pos is not none %}<i class="price-sma" style="left:{{ price_range.sma200_pos }}%;"></i>{% endif %}
+    <i class="price-now" style="left:{{ price_range.close_pos }}%;"></i>
+    <i class="price-target-mean" style="left:{{ price_range.target.mean_pos }}%;"></i>
+  </div>
+  <div class="price-track-legend">
+    <span>현재 <span class="value">{{ price_range.close_label }}</span></span>
+    <span>목표 평균 <span class="value">{{ price_range.target.mean_label }}</span> ({{ price_range.target.upside }})</span>
+  </div>
+  <div class="price-track-note">
+    52주 {{ price_range.lo_label }} – {{ price_range.hi_label }}{% if price_range.target.range_label %} · 목표 {{ price_range.target.range_label }}{% endif %}
+  </div>
+  {% endif %}
+  <div class="stats stats-5{% if tight %} tight{% endif %}">
+    {% for t in technicals %}<div class="stat"><div class="stat-name">{{ t.name }}</div><div class="stat-value mono">{{ t.value }}</div></div>{% endfor %}
+  </div>
+{% endmacro %}
+
+{% macro profitability_inner(tight=false) %}
+  <div class="section-head"><div class="section-title">수익성</div></div>
+  {# 지표가 몇 개든 한 줄. 좁은 칸이면 글자를 한 단계 줄인다(.tight). #}
+  <div class="stats stats-{{ profitability|length }}{% if tight %} tight{% endif %}">
+    {% for t in profitability %}<div class="stat"><div class="stat-name">{{ t.name }}</div><div class="stat-value mono">{{ t.value }}</div></div>{% endfor %}
+  </div>
+{% endmacro %}
+
+{% macro shareholder_block() %}
+  <div class="card-block">
+    <div class="section-head">
+      <div>
+        <div class="section-title">주주환원</div>
+        {% if dividend_trend %}
+        <div class="section-note" style="margin-top:4px;">
+          월별 주당배당 · 배당수익률{% if dividend_trend.freq %} · 연 {{ dividend_trend.freq }}회{% endif %}{% if dividend_trend.cagr %} · DPS CAGR {{ dividend_trend.cagr }}{% endif %}
+        </div>
+        {% endif %}
+      </div>
+      {% if dividend_trend %}
+      <div class="legend compact" style="margin-left:auto;">
+        <span class="legend-key"><i class="legend-line" style="background:var(--primary); height:6px; border-radius:1px;"></i>주당배당</span>
+        <span class="legend-key"><i class="legend-line white" style="background:var(--on-dark); height:2px;"></i>배당수익률</span>
+      </div>
+      {% endif %}
+    </div>
+    {% if dividend_trend and dividend_trend.svg %}
+    <div class="divchart-wrap" style="margin-top:6px; margin-bottom:4px;">
+      <svg class="chart-div" viewBox="0 0 {{ dividend_trend.svg.w }} {{ dividend_trend.svg.h }}">
+        <line x1="16" y1="{{ dividend_trend.svg.baseline_y }}" x2="{{ dividend_trend.svg.w - 16 }}" y2="{{ dividend_trend.svg.baseline_y }}" stroke="rgba(238, 240, 243, 0.12)" stroke-width="1"/>
+        {% for b in dividend_trend.svg.bars %}
+        <rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="2" fill="{% if b.hi %}var(--primary){% else %}rgba(0, 82, 255, 0.35){% endif %}"/>
+        {% if b.show_label %}
+        <text x="{{ b.cx }}" y="{{ dividend_trend.svg.baseline_y + 13 }}" class="chart-axis mono" text-anchor="middle" font-size="10" fill="{% if b.hi %}var(--on-dark){% else %}var(--muted){% endif %}">{{ b.label }}</text>
+        {% endif %}
+        {% endfor %}
+        {% if dividend_trend.svg.line_points %}
+        <polyline points="{{ dividend_trend.svg.line_points }}" fill="none" stroke="var(--on-dark)" stroke-width="1.8"/>
+        {% for d in dividend_trend.svg.dots %}
+        <circle cx="{{ d.cx }}" cy="{{ d.cy }}" r="{% if d.hi %}3.5{% else %}2.0{% endif %}" fill="{% if d.hi %}var(--primary){% else %}var(--surface-dark-elevated){% endif %}" stroke="var(--on-dark)" stroke-width="{% if d.hi %}1.5{% else %}1.0{% endif %}"/>
+        {% endfor %}
+        {% endif %}
+        {% if dividend_trend.svg.div_top_label %}
+        <text x="16" y="11" class="chart-axis mono" text-anchor="start" font-size="9" fill="var(--muted)">DPS {% if dividend_trend.svg.div_min_label %}{{ dividend_trend.svg.div_min_label }} → {% endif %}{{ dividend_trend.svg.div_top_label }}</text>
+        {% endif %}
+        {% if dividend_trend.latest_yield %}
+        <text x="{{ dividend_trend.svg.w - 16 }}" y="11" class="chart-axis mono" text-anchor="end" font-size="9" fill="var(--muted)">수익률 {{ dividend_trend.latest_yield }}</text>
+        {% endif %}
+      </svg>
+    </div>
+    {% endif %}
+    {% if shareholder_return %}
+    <div class="stats stats-{{ shareholder_return|length if shareholder_return|length < 3 else 3 }}" style="margin-top:14px;">
+      {% for t in shareholder_return %}<div class="stat"><div class="stat-name">{{ t.name }}</div><div class="stat-value mono">{{ t.value }}</div></div>{% endfor %}
+    </div>
+    {% endif %}
+  </div>
+{% endmacro %}
+
+{% macro revisions_block() %}
+  {# 추정치 방향은 '시장이 무엇을 기대했나'의 마지막 조각이라, 주주환원·수익성과
+     같은 칸 아래에 한 묶음으로 붙인다. 이 값 하나로 카드 한 장을 세울 만큼은 아니다. #}
+  <div class="card-block">
+    <div class="section-head">
+      <div class="section-title">추정치 방향</div>
+      <div class="section-note">발표 전 30일</div>
+    </div>
+    <div class="revision-pair">
+      <div class="revision-cell">
+        <div class="revision-count value">{{ expectation.revisions.up }}</div>
+        <div class="revision-label">상향</div>
+      </div>
+      <div class="revision-cell">
+        <div class="revision-count value">{{ expectation.revisions.down }}</div>
+        <div class="revision-label">하향</div>
+      </div>
+    </div>
+    {% if expectation.revisions.has_7d %}
+    {# 직전 7일은 발표에 가장 가까운 움직임이라 30일과 따로 읽을 값이 있다.
+       7일이 30일을 넘으면 출처가 두 창을 따로 갱신한 것이다 — 값을 깎아 맞추지 않고
+       어긋났다고 표시한다(포함관계를 주장하지 않는다). #}
+    <div class="revision-recent">
+      <span>직전 7일{% if expectation.revisions.inconsistent_7d %} <span class="revision-flag">출처 불일치</span>{% endif %}</span>
+      <span class="value">상향 {{ expectation.revisions.up_7d or 0 }} · 하향 {{ expectation.revisions.down_7d or 0 }}</span>
+    </div>
+    {% endif %}
+    <div class="revision-text">{{ expectation.revisions.text }}</div>
+  </div>
+{% endmacro %}
+
+  {# ── 1행 — 주주환원이 있으면 2:1, 없으면 밸류에이션이 전폭 ────────── #}
+  {% set has_return = dividend_trend or shareholder_return %}
+  {% if has_return %}
+  <section class="grid grid-21">
+    <div class="card">
+      {% if val_history %}{{ valuation_block() }}{% endif %}
+      {% if technicals %}<div class="card-block">{{ price_inner() }}</div>{% endif %}
+    </div>
+    <div class="card">
+      {{ shareholder_block() }}
+      {% if profitability %}<div class="card-block">{{ profitability_inner(tight=true) }}</div>{% endif %}
+      {% if expectation and expectation.revisions %}{{ revisions_block() }}{% endif %}
+    </div>
+  </section>
+  {% else %}
+  {# 배당·자사주가 없으면 오른쪽 칸이 통째로 빈다. 블록은 한 덩어리로 두되 폭을 다 쓰고,
+     아래에서 주가와 수익성이 그 자리를 1:1로 나눠 갖는다. #}
+  <section class="grid">
+    <div class="card">
+      {% if val_history %}{{ valuation_block() }}{% endif %}
+      {% if technicals or profitability %}
+      <div class="card-block split-2">
+        {% if technicals %}<div class="pane">{{ price_inner(tight=true) }}</div>{% endif %}
+        {% if profitability %}<div class="pane">{{ profitability_inner() }}</div>{% endif %}
+      </div>
+      {% endif %}
+      {# 배당이 없는 회사(UBER 등)도 추정치 방향은 있어야 한다 — 두 분기 다 붙인다. #}
+      {% if expectation and expectation.revisions %}{{ revisions_block() }}{% endif %}
+    </div>
+  </section>
+  {% endif %}
+
+  {# ── 2행 1:1 — 손익 구조 : 분기 실적 ────────────────────────────── #}
+  {% if waterfall or combo %}
+  <section class="grid grid-{{ [waterfall, combo] | select | list | length }}">
+    {% if waterfall %}
+    <div class="card">
+      <div class="section-head">
+        <div class="section-title">손익 구조</div>
+        <div class="section-note">이번 분기</div>
+      </div>
+      <div class="waterfall grow">
+        <div class="waterfall-columns"><span></span><span></span><span>실제 금액</span><span>비중</span><span>YoY</span></div>
+        {% for s in waterfall.steps %}
+        <div class="waterfall-row">
+          <span class="waterfall-label">{{ s.label }}</span>
+          <div class="bar-track"><div class="bar-fill {% if loop.first %}primary{% elif loop.last %}light{% endif %}" style="width:{{ s.width }}%;"></div></div>
+          <span class="amount">{{ s.money }}</span>
+          <span class="pct">{% if s.pct is not none %}{{ s.pct }}{% endif %}</span>
+          <span class="yoy" style="color:{{ s.yoy_color }};">{{ s.yoy }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+    {% if combo %}
+    <div class="card">
+      <div class="section-head">
+        <div class="section-title">실적 추이</div>
+        <div class="section-note">최근 13분기</div>
+        <div class="legend compact">
+          <span class="legend-key"><i class="legend-line"></i>매출</span>
+          <span class="legend-key"><i class="legend-line gray"></i>영업이익</span>
+          <span class="legend-key"><i class="legend-line white"></i>순이익</span>
+          {% if combo.financials.estimate %}<span class="legend-key"><i class="legend-line dotted"></i>매출 기대치</span>{% endif %}
+        </div>
+      </div>
+      <div class="chart-fill">
+      <svg class="chart-13q" viewBox="0 0 {{ combo.financials.w }} {{ combo.financials.h }}">
+        {% for g in combo.financials.grid %}
+        <line x1="42" y1="{{ g.y }}" x2="{{ combo.financials.w - 8 }}" y2="{{ g.y }}" class="chart-grid"/>
+        <text x="38" y="{{ g.y + 3 }}" class="chart-axis" text-anchor="end">{{ g.label }}</text>
+        {% endfor %}
+        <line x1="42" y1="{{ combo.financials.zero_y }}" x2="{{ combo.financials.w - 8 }}" y2="{{ combo.financials.zero_y }}" stroke="var(--body)" stroke-width="1"/>
+        {% for b in combo.financials.bars %}
+        <rect x="{{ b.rev.x }}" y="{{ b.rev.y }}" width="7" height="{{ b.rev.h }}" fill="var(--primary)"/>
+        <rect x="{{ b.op.x }}" y="{{ b.op.y }}" width="7" height="{{ b.op.h }}" fill="var(--muted-soft)"/>
+        <rect x="{{ b.net.x }}" y="{{ b.net.y }}" width="7" height="{{ b.net.h }}" fill="var(--on-dark)"/>
+        {% if b.show %}<text x="{{ b.lx }}" y="{{ combo.financials.h - 6 }}" class="chart-axis" text-anchor="middle" fill="{% if b.hi %}var(--on-dark){% else %}var(--body){% endif %}">{{ b.label }}</text>{% endif %}
+        {% endfor %}
+        {# 매출 기대치 — 컨센서스와 기준이 같아 같은 축에 겹칠 수 있다. 수염은 low~high. #}
+        {% if combo.financials.estimate %}
+        {% set est = combo.financials.estimate %}
+        {% if est.y_low is not none and est.y_high is not none %}
+        <line x1="{{ est.cx }}" y1="{{ est.y_high }}" x2="{{ est.cx }}" y2="{{ est.y_low }}" stroke="var(--muted)" stroke-width="1"/>
+        {% endif %}
+        <line x1="{{ est.x1 }}" y1="{{ est.y }}" x2="{{ est.x2 }}" y2="{{ est.y }}" stroke="var(--on-dark)" stroke-width="1.5" stroke-dasharray="2 2"/>
+        {% endif %}
+        {# 다음 분기 예상 매출 — 실적이 아니라 테두리만. #}
+        {% if combo.financials.forward %}
+        {% set fw = combo.financials.forward %}
+        <rect x="{{ fw.x }}" y="{{ fw.y }}" width="{{ fw.w }}" height="{{ fw.h }}"
+              fill="none" stroke="var(--primary)" stroke-width="1" stroke-dasharray="2 2"/>
+        <text x="{{ fw.lx }}" y="{{ combo.financials.h - 6 }}" class="chart-axis" text-anchor="middle" fill="var(--muted)">예상</text>
+        {% endif %}
+      </svg>
+      </div>
+      {# 예상이 없어도 이번 분기 매출은 말한다 — 그림의 마지막 막대가 얼마인지는
+         컨센서스 유무와 무관하게 궁금하다. 매출 과거 예상치는 수집이 최근에 시작돼
+         복원할 수 없어, 있어도 이번 분기와 다음 분기뿐이다. #}
+      {% if combo.financials.last_revenue %}
+      <div class="result-line">
+        <span class="result-now value">{{ combo.financials.last_revenue }}</span>
+        {% if expectation and expectation.revenue %}
+        <span class="result-vs">예상 <span class="value">{{ expectation.revenue.estimate }}</span></span>
+        {% if expectation.revenue.surprise %}
+        <span class="result-gap value" style="color:{{ expectation.revenue.color }};">{{ expectation.revenue.surprise }}</span>
+        {% endif %}
+        {% endif %}
+      </div>
+      {% if combo.financials.forward %}
+      <div class="result-next">다음 분기 예상 <span class="value">{{ combo.financials.forward.label_money }}</span></div>
+      {% endif %}
+      {% endif %}
+    </div>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  {# ── 3행 1:1 — 현금흐름(+이익의 질) : 분기 현금흐름 ─────────────── #}
+  {% if cashflow_bridge or cashflow_quarters %}
+  <section class="grid grid-{{ [cashflow_bridge, cashflow_quarters] | select | list | length }}">
+    {% if cashflow_bridge %}
+    <div class="card">
+      <div class="section-head">
+        <div class="section-title">현금흐름</div>
+        <div class="section-note">순이익 → 잉여현금</div>
+      </div>
+      <div class="waterfall grow bridge">
+        <div class="waterfall-columns bridge"><span></span><span></span><span>실제 금액</span><span>YoY</span></div>
+        {% for s in cashflow_bridge.steps %}
+        <div class="waterfall-row bridge">
+          <span class="waterfall-label">{{ s.label }}</span>
+          <div class="bar-track"><div class="bar-fill {% if s.kind == 'total' %}primary{% elif s.kind == 'subtotal' %}light{% endif %}" style="width:{{ s.width }}%;"></div></div>
+          <span class="amount">{{ s.money }}</span>
+          <span class="yoy" style="color:{{ s.yoy_color }};">{{ s.yoy }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+    {% if cashflow_quarters %}
+    <div class="card">
+      <div class="section-head">
+        <div class="section-title">현금흐름 추이</div>
+        <div class="section-note">최근 13분기</div>
+        <div class="legend compact">
+          <span class="legend-key"><i class="legend-line"></i>영업</span>
+          <span class="legend-key"><i class="legend-line dashed"></i>투자</span>
+          <span class="legend-key"><i class="legend-line dotted"></i>재무</span>
+        </div>
+      </div>
+      <div class="chart-fill">
+      <svg class="chart-cf" viewBox="0 0 {{ cashflow_quarters.w }} {{ cashflow_quarters.h }}">
+        {% for g in cashflow_quarters.grid %}
+        <line x1="42" y1="{{ g.y }}" x2="{{ cashflow_quarters.w - 18 }}" y2="{{ g.y }}" class="chart-grid"/>
+        <text x="38" y="{{ g.y + 3 }}" class="chart-axis" text-anchor="end">{{ g.label }}</text>
+        {% endfor %}
+        <line x1="42" y1="{{ cashflow_quarters.zero_y }}" x2="{{ cashflow_quarters.w - 18 }}" y2="{{ cashflow_quarters.zero_y }}" stroke="var(--body)" stroke-width="1"/>
+        <polyline points="{{ cashflow_quarters.operating.points }}" fill="none" stroke="var(--primary)" stroke-width="2"/>
+        {% for d in cashflow_quarters.operating.dots %}<circle cx="{{ d.x }}" cy="{{ d.y }}" r="2.2" fill="var(--primary)"/>{% endfor %}
+        <polyline points="{{ cashflow_quarters.investing.points }}" fill="none" stroke="var(--muted-soft)" stroke-width="1.7" stroke-dasharray="5 3"/>
+        <polyline points="{{ cashflow_quarters.financing.points }}" fill="none" stroke="var(--on-dark)" stroke-width="1.5" stroke-dasharray="2 3"/>
+        {% for l in cashflow_quarters.labels %}<text x="{{ l.x }}" y="{{ cashflow_quarters.h - 6 }}" class="chart-axis" text-anchor="{{ l.anchor }}">{{ l.label }}</text>{% endfor %}
+      </svg>
+      </div>
+    </div>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  {# ── 4행 1:1:1 — EPS : 유동성·부채 : 재무건전성 ──────────── #}
+  {% if eps_trend or combo or gauges or working_capital %}
+  <section class="grid grid-{{ [eps_trend, combo, (gauges or working_capital)] | select | list | length }}">
+    {% if eps_trend %}
+    <div class="card">
+      <div class="section-head">
+        {# 블록에 세 계열(GAAP 희석 선·조정 실제·예상)이 있으므로 제목은 주제만 이름한다.
+           기준 구분은 범례가 진다 — '희석 EPS'는 파란 선 하나만 설명하는 이름이었다. #}
+        <div class="section-title">EPS</div>
+        <div class="legend compact">
+          <span class="legend-key"><i class="legend-line"></i>GAAP 희석</span>
+          {% if eps_trend.actual_dots %}<span class="legend-key"><i class="legend-dot"></i>조정 실제</span>{% endif %}
+          {% if eps_trend.estimate_points %}<span class="legend-key"><i class="legend-line dotted"></i>예상</span>{% endif %}
+        </div>
+      </div>
+      <div class="chart-fill">
+      <svg class="chart-eps" viewBox="0 0 {{ eps_trend.w }} {{ eps_trend.h }}">
+        {% for g in eps_trend.grid %}
+        <line x1="44" y1="{{ g.y }}" x2="{{ eps_trend.w - 12 }}" y2="{{ g.y }}" class="chart-grid"/>
+        <text x="40" y="{{ g.y + 4 }}" class="chart-axis" text-anchor="end">{{ g.left }}</text>
+        {% endfor %}
+        {# 예상은 과거 분기부터 다음 분기까지 한 줄로 잇는다 — 실제 점과 벌어진 간격이
+           곧 서프라이즈라, 따로 서프라이즈 그림을 두지 않는다. #}
+        {% if eps_trend.estimate_points %}
+        <polyline points="{{ eps_trend.estimate_points }}" fill="none" stroke="var(--on-dark)" stroke-width="1.4" stroke-dasharray="3 3"/>
+        {% endif %}
+        <polyline points="{{ eps_trend.eps_points }}" fill="none" stroke="var(--primary)" stroke-width="2"/>
+        <circle cx="{{ eps_trend.last_x }}" cy="{{ eps_trend.last_y }}" r="3" fill="var(--primary)"/>
+        {% for d in eps_trend.estimate_dots %}
+        <circle cx="{{ d.x }}" cy="{{ d.y }}" r="2.6" fill="none" stroke="var(--on-dark)" stroke-width="1"/>
+        {% endfor %}
+        {% for d in eps_trend.actual_dots %}
+        <circle cx="{{ d.x }}" cy="{{ d.y }}" r="2.6" fill="var(--on-dark)"/>
+        {% endfor %}
+        {% if eps_trend.forward %}
+        <circle cx="{{ eps_trend.forward.x }}" cy="{{ eps_trend.forward.y }}" r="3" fill="none" stroke="var(--on-dark)" stroke-width="1.4"/>
+        {% endif %}
+        <text x="44" y="{{ eps_trend.h - 4 }}" class="chart-axis">{{ eps_trend.first_q }}</text>
+        <text x="{{ eps_trend.w - 8 }}" y="{{ eps_trend.h - 4 }}" class="chart-axis" text-anchor="end">{% if eps_trend.forward %}예상{% else %}{{ eps_trend.last_q }}{% endif %}</text>
+      </svg>
+      </div>
+      {# 실제는 단어 없이 숫자만 — 이 줄의 주어라 이름표가 필요 없다.
+         단 조정 실제가 없을 때 GAAP 값을 그 자리에 놓으면 안 된다 — 옆의 예상(조정
+         기준)과 짝지어 읽히면서 없는 서프라이즈를 만든다. 그때는 기준을 밝힌다. #}
+      <div class="result-line">
+        {% if eps_trend.actual_label %}
+        <span class="result-now value">{{ eps_trend.actual_label }}</span>
+        <span class="result-vs">예상 <span class="value">{{ eps_trend.estimate_label }}</span></span>
+        {% if eps_trend.surprise %}
+        <span class="result-gap value" style="color:{{ eps_trend.surprise_color }};">{{ eps_trend.surprise }}</span>
+        {% endif %}
+        {% else %}
+        <span class="result-now value">{{ eps_trend.last_eps }}</span>
+        <span class="result-vs">GAAP</span>
+        {% if eps_trend.estimate_label %}
+        <span class="result-vs">예상 <span class="value">{{ eps_trend.estimate_label }}</span> <span class="result-basis">조정</span></span>
+        {% endif %}
+        {% endif %}
+      </div>
+      {% if eps_trend.forward %}
+      <div class="result-next">다음 분기 예상 <span class="value">{{ eps_trend.forward.label }}</span></div>
+      {% endif %}
+    </div>
+    {% endif %}
+    {% if combo %}
+    <div class="card">
+      <div class="section-head">
+        <div class="section-title">유동성 · 부채</div>
+        <div class="legend compact">
+          <span class="legend-key"><i class="legend-line"></i>유동비율</span>
+          <span class="legend-key"><i class="legend-line dashed"></i>부채/자본</span>
+        </div>
+      </div>
+      <div class="chart-fill">
+      <svg class="chart-ratio" viewBox="0 0 {{ combo.ratios.w }} {{ combo.ratios.h }}">
+        {% for g in combo.ratios.grid %}
+        <line x1="12" y1="{{ g.y }}" x2="{{ combo.ratios.w - 66 }}" y2="{{ g.y }}" class="chart-grid"/>
+        <text x="{{ combo.ratios.w - 60 }}" y="{{ g.y + 4 }}" class="chart-axis">{{ g.label }}</text>
+        {% endfor %}
+        <polyline points="{{ combo.ratios.de_points }}" fill="none" stroke="var(--muted-soft)" stroke-width="1.7" stroke-dasharray="5 3"/>
+        <polyline points="{{ combo.ratios.cr_points }}" fill="none" stroke="var(--primary)" stroke-width="2"/>
+        {% for l in combo.ratios.labels %}<text x="{{ l.x }}" y="{{ combo.ratios.h - 6 }}" class="chart-axis" text-anchor="{{ l.anchor }}">{{ l.label }}</text>{% endfor %}
+      </svg>
+      </div>
+    </div>
+    {% endif %}
+    {% if gauges or working_capital %}
+    <div class="card">
+      <div class="section-head"><div class="section-title">재무건전성</div></div>
+      {% if gauges %}
+      <div class="stats stats-{{ gauges|length }}">
+        {% for g in gauges %}
+        <div class="stat">
+          <div class="stat-name">{{ g.name }}</div>
+          <div class="stat-value mono">{{ g.value }} <span class="stat-tag" style="color:{{ g.color }};">{{ g.tag }}</span></div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if working_capital %}
+      <div class="card-block">
+        <div class="pane-title">운전자본 회전</div>
+        {# 넷을 한 줄에 꽉 눌러 담는다. 칸이 좁으니 글자를 줄인다. #}
+        <div class="stats stats-{{ working_capital|length }} tight">
+          {% for t in working_capital %}<div class="stat"><div class="stat-name">{{ t.name }}</div><div class="stat-value mono">{{ t.value }}</div></div>{% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  <footer class="footer">
+    {% for name, val in footer %}<span>{{ name }} <b>{{ val }}</b></span>{% endfor %}
+    <span class="footer-source">잔액 = 이번 분기 · 이익의 질 = TTM · 역사 = 7년</span>
+  </footer>
+</body>
+</html>

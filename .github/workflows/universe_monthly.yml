@@ -1,0 +1,58 @@
+name: universe_monthly
+
+on:
+  schedule:
+    - cron: "20 0 1 * *" # 매월 1일 09:20 KST (정각은 Actions 혼잡 구간이라 비켜둔다)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: universe-refresh
+  cancel-in-progress: false
+
+jobs:
+  monthly:
+    runs-on: ubuntu-latest
+    # 월간 정합성 점검은 SIC 결측 CIK도 함께 확인하므로 실행 시간이 길 수 있다.
+    # 청크 단위로 저장하므로 중단돼도 다음 실행이 이어받는다.
+    timeout-minutes: 120
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      EDGAR_USER_AGENT: ${{ secrets.EDGAR_USER_AGENT || vars.EDGAR_USER_AGENT }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/python-job
+        with:
+          group: data
+          require-env: "SUPABASE_URL SUPABASE_SERVICE_KEY EDGAR_USER_AGENT"
+      - name: Validate secret formats
+        run: |
+          printf '%s' "$EDGAR_USER_AGENT" | grep -qiE '[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}'
+      - name: Run monthly universe reconciliation
+        id: universe
+        run: python -m investment_agent.data.universe.commands.universe_monthly
+      - name: Dispatch downstream backfills only for a changed tracked set
+        if: ${{ steps.universe.outputs.changed == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh workflow run market_backfill.yml --ref "$GITHUB_REF_NAME" -f scope=missing -f dataset=both
+          gh workflow run fundamentals_backfill.yml --ref "$GITHUB_REF_NAME" -f scope=missing
+          gh workflow run fundamentals_dimensions_backfill.yml --ref "$GITHUB_REF_NAME" -f scope=missing -f period=both
+
+  notify-error:
+    if: ${{ failure() || cancelled() }}
+    needs: monthly
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/ops_failure_report.yml
+    with:
+      source_conclusion: ${{ needs.monthly.result }}
+    secrets:
+      discord_webhook_ops: ${{ secrets.DISCORD_WEBHOOK_OPS_ACTIONS }}

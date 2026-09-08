@@ -1,0 +1,93 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "investment-agent"
+version = "1.0.0"
+description = "Investment analysis data pipeline and Discord notification system"
+requires-python = ">=3.11,<3.13"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/investment_agent"]
+
+[dependency-groups]
+core = [
+  "supabase>=2.30.1,<3",
+  "postgrest>=2.30.1,<3",
+  "requests>=2.31.0,<3",
+  "httpx>=0.28.1,<1",
+  "pandas>=2.1.0,<3",
+  "numpy>=1.26.0,<2",
+  "lxml>=5.0.0,<7",
+  "python-dateutil>=2.8.0,<3",
+  "python-dotenv>=1.0.0,<2",
+  "tenacity>=8.2.0,<10",
+]
+data = [
+  { include-group = "core" },
+  "pyarrow>=19,<26",
+  "yfinance[repair]>=1.6,<2",
+  "beautifulsoup4>=4.12.0,<5",
+  "openpyxl>=3.1.0",
+  "xlrd>=2.0.1",
+  "secfsdstools==2.4.3",
+  "edgartools==5.36.0",
+  "html5lib>=1.1",
+]
+research = [
+  { include-group = "core" },
+  "yfinance[repair]>=1.6,<2",
+  "duckdb==1.5.5",
+  "pyqlib==0.9.7",
+  "lumibot==4.5.86",
+]
+ml = [
+  { include-group = "research" },
+  "scikit-learn==1.9.0",
+  "lightgbm==4.7.0",
+  "xgboost==3.4.1; python_version >= '3.12'",
+  "scipy>=1.11,<1.17",
+]
+portfolio = [
+  { include-group = "core" },
+  # 포트폴리오 최적화. 1.9+는 NumPy 2를 요구해 secfsdstools(<2)와 충돌하므로
+  # 상한을 둔다 — `numpy<2`를 core가 이미 고정하고 있어 이 경계가 실제로 걸린다.
+  "cvxpy>=1.6.7,<1.9",
+  "scipy>=1.11,<1.17",
+]
+rl = [
+  { include-group = "ml" },
+  "gymnasium==1.3.0",
+  "stable-baselines3==2.9.0",
+]
+dashboard = [
+  { include-group = "research" },
+  "streamlit>=1.62,<2",
+  "plotly>=6,<7",
+]
+notifications = [
+  { include-group = "data" },
+  "playwright>=1.45.0",
+  "jinja2>=3.1.0",
+  "markupsafe>=2.1.0",
+]
+execution = [
+  { include-group = "core" },
+  "discord.py==2.7.1",
+]
+intelligence = [
+  { include-group = "core" },
+  "yfinance[repair]>=1.6,<2",
+  "duckdb==1.5.5",
+  "praw==7.8.1",
+]
+dev = [
+  { include-group = "dashboard" },
+  { include-group = "notifications" },
+  { include-group = "rl" },
+  { include-group = "execution" },
+  { include-group = "intelligence" },
+  "psycopg2-binary==2.9.10",
+  "pglast>=7.10,<8",
+]
