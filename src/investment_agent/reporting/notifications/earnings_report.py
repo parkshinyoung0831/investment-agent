@@ -30,6 +30,7 @@ SCHEMA_UNIVERSE = "universe"
 T_FINANCIALS = "financials"
 T_FILINGS = "filings"
 T_SEGMENT_METRICS = "segment_metrics"
+T_SHARE_CLASS_SNAPSHOTS = "share_class_snapshots"
 T_FILING_PROCESSING = "filing_processing"
 T_ENTITIES = "entities"
 T_EARNINGS_ESTIMATES = "earnings_estimates"
@@ -98,7 +99,15 @@ _FINANCIAL_COLUMNS = (
     "capital_expenses,cash_and_cash_equivalents,total_debt_including_current,"
     "short_term_debt,current_portion_of_long_term_debt,long_term_debt,"
     "operating_lease_current_debt_equivalent,operating_lease_non_current_debt_equivalent,"
-    "common_dividends_paid,shares_fully_diluted_average,mapping_version"
+    "common_dividends_paid,shares_fully_diluted_average,shares_average,mapping_version,"
+    # 손익 구조의 매출총이익·세전이익, 현금흐름 브릿지의 감가상각·주식보상,
+    # 유동성 차트의 유동자산/유동부채, 운전자본 회전의 매출채권·재고·매입채무,
+    # Altman Z의 이익잉여금. 전부 financials가 선언·적재하고 있는데 읽지 않아
+    # 카드에서 빈칸이나 $0으로 나왔다.
+    "gross_profit,cost_of_goods_and_services_sold,pretax_income_loss,income_taxes,"
+    "interest_expense,current_assets_total,current_liabilities_total,"
+    "depreciation_amortization_cf,stock_based_compensation_cf,"
+    "trade_receivables,inventories,trade_payables,retained_earnings"
 )
 
 
@@ -221,16 +230,6 @@ def load_pending_keys(tickers: list[str]) -> list[dict]:
         for row in _financial_rows(tickers)
         if row.get("fiscal_period") in HEADLINE_PERIODS
     ]
-
-
-def load_health(tickers: list[str]) -> dict[str, dict]:
-    """v1 reporting에 아직 합성 quality view가 없어 빈 선택 블록으로 둔다."""
-    return {}
-
-
-def load_valuation(tickers: list[str]) -> dict[str, dict]:
-    """v1 선언에 valuation view가 없으므로 밸류에이션을 추정하지 않는다."""
-    return {}
 
 
 def load_earnings_estimates(tickers: list[str]) -> list[dict]:
@@ -385,21 +384,6 @@ def load_quality_history(tickers: list[str]) -> dict[str, list[dict]]:
     return out
 
 
-def load_earnings_quality(tickers: list[str]) -> dict[str, dict]:
-    """v1 reporting에 TTM quality view가 없으므로 값을 추정하지 않는다."""
-    return {}
-
-
-def load_shares_history(tickers: list[str]) -> dict[str, list[tuple[str, float]]]:
-    """v1 share class snapshot은 아직 카드용 fan-out reader가 없다."""
-    return {}
-
-
-def load_valuation_snapshots(tickers: list[str]) -> dict[str, list[dict]]:
-    """v1 선언에 valuation snapshot view가 없어 빈 이력을 유지한다."""
-    return {}
-
-
 # 카드가 축 embed를 그리는 데 필요한 세그먼트 컬럼.
 # `secondary_axis`는 2차원(주 축×보조 축) 교차표 자식 행을 걸러 내려고 읽는다 —
 # 카드는 아직 계층을 그리지 않고 1차원 축만 평평하게 나열한다. 표시용 이름과 이익
@@ -472,3 +456,274 @@ def load_segment_highlights(
             for ticker in tickers:
                 states[(ticker, str(state["accession_no"]))] = state
     return segment_state.build(rows, targets, states)
+
+
+# ── 카드가 쓰는 파생 read model ────────────────────────────────────────────
+#
+# 아래 다섯은 한동안 빈 값을 그대로 돌려주고 있었다("v1에 view가 없다"). 그런데
+# 필요한 사실은 전부 fundamentals.financials와 share_class_snapshots에 이미
+# 적재돼 있다 — 없던 것은 뷰가 아니라 그 사실을 접는 코드였다. 뷰를 새로 만들지
+# 않는 이유는 계산 규칙이 카드의 표시 규칙과 함께 움직이기 때문이다. DB에 굳혀
+# 두면 규칙이 바뀔 때 과거 행이 조용히 옛 규칙을 말한다(market이 조정가를 저장하지
+# 않는 것과 같은 이유).
+
+def _quarterly_by_ticker(tickers: list[str]) -> dict[str, list[dict]]:
+    """티커별 분기 행을 기간 오름차순으로 모은다."""
+    out: dict[str, list[dict]] = {}
+    for row in _financial_rows(tickers):
+        if row.get("fiscal_period") not in QUARTERS or not row.get("period_end"):
+            continue
+        out.setdefault(str(row["ticker"]), []).append(row)
+    for rows in out.values():
+        rows.sort(key=lambda r: str(r.get("period_end") or ""))
+    return out
+
+
+def _ttm(rows: list[dict], column: str) -> float | None:
+    """직전 4분기 합. 한 분기라도 비면 TTM을 만들지 않는다 — 부분 합은 틀린 값이다."""
+    window = rows[-4:]
+    if len(window) < 4:
+        return None
+    values = [f(row.get(column)) for row in window]
+    return None if any(value is None for value in values) else float(sum(values))
+
+
+def _net_debt(row: dict) -> float | None:
+    debt = total_debt(row)
+    cash = f(row.get("cash_and_cash_equivalents"))
+    if debt is None or cash is None:
+        return None
+    return debt - cash
+
+
+def _ev_ex_market_cap(row: dict) -> float | None:
+    """EV = 시총 + 이 값. 순부채에 소수주주 지분과 우선주를 더한다."""
+    net = _net_debt(row)
+    if net is None:
+        return None
+    for column in ("minority_interest_balance", "preferred_stock"):
+        net += f(row.get(column)) or 0.0
+    return net
+
+
+def _ebitda_ttm(rows: list[dict]) -> float | None:
+    operating = _ttm(rows, "operating_income_loss")
+    if operating is None:
+        return None
+    return operating + (_ttm(rows, "depreciation_amortization_cf") or 0.0)
+
+
+def _fcf_ttm(rows: list[dict]) -> float | None:
+    operating = _ttm(rows, "net_cash_from_operating_activities")
+    capex = _ttm(rows, "capital_expenses")
+    if operating is None or capex is None:
+        return None
+    return operating - abs(capex)
+
+
+def load_valuation_snapshots(tickers: list[str]) -> dict[str, list[dict]]:
+    """역사 밸류에이션이 각 거래일에 붙일 "그날 공개돼 있던 재무" 스냅샷.
+
+    available_date는 공시 접수일이다 — 그보다 이른 거래일에 이 분기 숫자를 쓰면
+    미래를 본 밸류에이션이 된다.
+    """
+    out: dict[str, list[dict]] = {}
+    for ticker, rows in _quarterly_by_ticker(tickers).items():
+        snapshots: list[dict] = []
+        for end in range(4, len(rows) + 1):
+            window = rows[:end]
+            current = window[-1]
+            available = str(current.get("filed_at") or current.get("source_filing_date") or "")
+            if not available:
+                continue
+            snapshots.append({
+                "available_date": available[:10],
+                "earnings_ttm": _ttm(window, "net_income"),
+                "revenue_ttm": _ttm(window, "revenue"),
+                "ebitda_ttm": _ebitda_ttm(window),
+                "book_value": f(current.get("common_equity")),
+                "ev_ex_market_cap": _ev_ex_market_cap(current),
+                "fcf_ttm": _fcf_ttm(window),
+            })
+        snapshots.sort(key=lambda snapshot: snapshot["available_date"])
+        if snapshots:
+            out[ticker] = snapshots
+    return out
+
+
+def load_shares_history(tickers: list[str]) -> dict[str, list[tuple[str, float]]]:
+    """발행주식수 이력. 같은 날 여러 종류주가 있으면 합쳐 한 점으로 만든다."""
+    if not tickers:
+        return {}
+    database = Database.from_config(load_config())
+    securities = UniverseRepository(database).securities_by_ticker(tickers)
+    by_cik = {
+        str(security.cik): ticker
+        for ticker, security in securities.items() if security.cik
+    }
+    if not by_cik:
+        return {}
+    rows = database.select_in_chunks(
+        schema=SCHEMA_FUNDAMENTALS,
+        table=T_SHARE_CLASS_SNAPSHOTS,
+        columns="cik,as_of_date,shares_outstanding",
+        filter_column="cik",
+        values=list(by_cik),
+        order_by="cik,as_of_date",
+    )
+    totals: dict[str, dict[str, float]] = {}
+    for row in rows:
+        ticker = by_cik.get(str(row.get("cik") or ""))
+        shares = f(row.get("shares_outstanding"))
+        as_of = str(row.get("as_of_date") or "")[:10]
+        if not ticker or shares is None or not as_of:
+            continue
+        totals.setdefault(ticker, {})
+        totals[ticker][as_of] = totals[ticker].get(as_of, 0.0) + shares
+    return {ticker: sorted(points.items()) for ticker, points in totals.items() if points}
+
+
+def load_valuation(tickers: list[str]) -> dict[str, dict]:
+    """카드 머리의 주가·시총·EV. 역사 스냅샷의 마지막 점과 같은 규칙으로 만든다.
+
+    기준 시점은 공시 접수일이다. 그날 종가와 그날까지 공개돼 있던 발행주식수를
+    곱해야 카드의 다른 값들과 같은 시점을 말한다 — 오늘 종가를 쓰면 몇 달 지난
+    공시의 카드가 오늘 시총을 주장하게 된다.
+    """
+    snapshots_by_ticker = load_valuation_snapshots(tickers)
+    if not snapshots_by_ticker:
+        return {}
+    prices = load_price_history(list(snapshots_by_ticker))
+    shares = load_shares_history(list(snapshots_by_ticker))
+    out: dict[str, dict] = {}
+    for ticker, snapshots in snapshots_by_ticker.items():
+        latest = dict(snapshots[-1])
+        as_of = str(latest.get("available_date") or "")
+        # 공시 당일의 반응은 배제한다 — 카드의 주가 블록(prices_before_filing)과
+        # 같은 기준이어야 머리의 시총과 아래 주가가 같은 날을 말한다.
+        close = _as_of_value(
+            [(str(row["trade_date"]), f(row.get("close")))
+             for row in prices.get(ticker, []) if row.get("close") is not None],
+            as_of,
+            strictly_before=True,
+        )
+        count = _as_of_value(shares.get(ticker, []), as_of)
+        latest["price"] = close
+        latest["market_cap"] = None if close is None or count is None else close * count
+        latest["enterprise_value"] = (
+            None if latest["market_cap"] is None or latest.get("ev_ex_market_cap") is None
+            else latest["market_cap"] + latest["ev_ex_market_cap"]
+        )
+        out[ticker] = latest
+    return out
+
+
+def _as_of_value(
+    points: list[tuple[str, float | None]],
+    as_of: str,
+    *,
+    strictly_before: bool = False,
+) -> float | None:
+    """as_of 시점에 유효한 마지막 값. 없으면 None.
+
+    입력 정렬을 가정하지 않는다 — 조회 경로마다 정렬이 다르고, 정렬을 가정한
+    조기 종료는 값을 조용히 엉뚱한 날짜로 만든다.
+    """
+    usable = [
+        (str(when)[:10], float(value))
+        for when, value in points
+        if value is not None and (
+            str(when)[:10] < as_of if strictly_before else str(when)[:10] <= as_of
+        )
+    ]
+    return max(usable)[1] if usable else None
+
+
+def load_earnings_quality(tickers: list[str]) -> dict[str, dict]:
+    """이익의 질(TTM) — OCF/순이익·FCF/순이익·발생액.
+
+    발생액은 (순이익 − 영업현금흐름) / 총자산이다. 이익이 현금으로 뒷받침되는지
+    보는 값이라 분모는 매출이 아니라 자산이다.
+    """
+    out: dict[str, dict] = {}
+    for ticker, rows in _quarterly_by_ticker(tickers).items():
+        net_income = _ttm(rows, "net_income")
+        operating = _ttm(rows, "net_cash_from_operating_activities")
+        if net_income is None or operating is None:
+            continue
+        assets = f(rows[-1].get("assets"))
+        out[ticker] = {
+            "net_income_ttm": net_income,
+            "operating_cash_flow_ttm": operating,
+            "free_cash_flow_ttm": _fcf_ttm(rows),
+            "accruals_ttm": None if not assets else (net_income - operating) / assets,
+        }
+    return out
+
+
+def _altman_z(row: dict, *, operating_ttm: float | None) -> float | None:
+    """Altman Z''(비제조·신흥시장형). 제조업 전용 Z와 달리 매출/자산 항이 없다.
+
+    Z'' = 6.56·(운전자본/자산) + 3.26·(이익잉여금/자산)
+        + 6.72·(영업이익/자산) + 1.05·(자본/부채)
+    """
+    assets = f(row.get("assets"))
+    liabilities = f(row.get("liabilities"))
+    if not assets or not liabilities:
+        return None
+    parts = [
+        f(row.get("current_assets_total")),
+        f(row.get("current_liabilities_total")),
+        f(row.get("retained_earnings")),
+        # EBIT은 TTM이다. 분기 영업이익을 연간 자산과 견주면 항이 1/4로 줄어
+        # 우량 기업이 위험 구간으로 내려앉는다.
+        operating_ttm,
+        f(row.get("common_equity")),
+    ]
+    if any(part is None for part in parts):
+        return None
+    current_assets, current_liabilities, retained, operating, equity = parts
+    return (
+        6.56 * ((current_assets - current_liabilities) / assets)
+        + 3.26 * (retained / assets)
+        + 6.72 * (operating / assets)
+        + 1.05 * (equity / liabilities)
+    )
+
+
+def load_health(tickers: list[str]) -> dict[str, dict]:
+    """수익성·자본효율과 재무건전성 게이지.
+
+    분모는 기말 잔액이다. 평균 잔액이 이론적으로는 낫지만, 이 카드의 다른 값들과
+    같은 시점을 말해야 "이번 분기의 상태"로 읽힌다.
+    """
+    out: dict[str, dict] = {}
+    for ticker, rows in _quarterly_by_ticker(tickers).items():
+        net_income = _ttm(rows, "net_income")
+        if net_income is None:
+            continue
+        current = rows[-1]
+        equity = f(current.get("common_equity"))
+        assets = f(current.get("assets"))
+        debt = total_debt(current)
+        invested = None if equity is None else equity + (debt or 0.0)
+        ebitda = _ebitda_ttm(rows)
+        net_debt = _net_debt(current)
+        interest = _ttm(rows, "interest_expense")
+        operating = _ttm(rows, "operating_income_loss")
+
+        health = {
+            "roe": None if not equity else net_income / equity,
+            "roa": None if not assets else net_income / assets,
+            "roic": None if not invested else net_income / invested,
+            "interest_coverage": (
+                None if not interest or operating is None else operating / abs(interest)
+            ),
+            "net_debt_to_ebitda": (
+                None if not ebitda or net_debt is None else net_debt / ebitda
+            ),
+            "altman_z": _altman_z(current, operating_ttm=operating),
+        }
+        if any(value is not None for value in health.values()):
+            out[ticker] = health
+    return out
