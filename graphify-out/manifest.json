@@ -504,63 +504,63 @@
     "semantic_hash": ""
   },
   "AGENTS.md": {
-    "mtime": 1788786419.9674711,
-    "seen": 1788797862.4905376,
-    "ast_hash": "663a2374569fdb9495c31ba8f347038c",
+    "mtime": 1788919224.642471,
+    "seen": 1788919641.7270582,
+    "ast_hash": "2374985b988cda79128a405cbd9b7219",
     "semantic_hash": ""
   },
   "CLAUDE.md": {
-    "mtime": 1788848020.0031507,
-    "seen": 1788849001.222517,
-    "ast_hash": "8a3a7b65b1aa40031eea1614fd671fd4",
+    "mtime": 1788919224.6434228,
+    "seen": 1788919641.7270582,
+    "ast_hash": "7f8af25ef796074eebba0b7b6b06a2d9",
     "semantic_hash": ""
   },
   "DESIGN-system.md": {
-    "mtime": 1788779391.7792473,
-    "seen": 1788780544.836032,
-    "ast_hash": "2deb070de54caee4f163847696825a3a",
+    "mtime": 1788919224.6446986,
+    "seen": 1788919641.7270582,
+    "ast_hash": "ebfd975f92746efd40d763c40d90d116",
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1788848799.5783374,
-    "seen": 1788849001.2245317,
-    "ast_hash": "ffb9638875dc41cafee3a519c25d728a",
+    "mtime": 1788919224.6446986,
+    "seen": 1788919641.7270582,
+    "ast_hash": "3f651476c63bdef9717b8ebba9b214da",
     "semantic_hash": ""
   },
   "docs/AUTONOMOUS_SYSTEM.md": {
-    "mtime": 1788786591.6695874,
-    "seen": 1788797862.4931178,
-    "ast_hash": "e594c91883ca5bde99b3935e256c4e4e",
+    "mtime": 1788919224.6446986,
+    "seen": 1788919641.7270582,
+    "ast_hash": "609865f2f9ead5039e59ef255d58b0f6",
     "semantic_hash": ""
   },
   "docs/DATA.md": {
-    "mtime": 1788821786.685279,
-    "seen": 1788841385.9570508,
-    "ast_hash": "2a24e0e233375641481f5eb11af5834a",
+    "mtime": 1788919224.6446986,
+    "seen": 1788919641.7270582,
+    "ast_hash": "8578645ca4bac4d61582038c0131fde0",
     "semantic_hash": ""
   },
   "docs/EXECUTION_AND_SAFETY.md": {
-    "mtime": 1788848670.864103,
-    "seen": 1788849001.2265353,
-    "ast_hash": "6c43a14dd1bdacf35b97f63c7013af2c",
+    "mtime": 1788919224.6446986,
+    "seen": 1788919641.7270582,
+    "ast_hash": "89867fc686006fcf51985d4f69086b26",
     "semantic_hash": ""
   },
   "docs/INVESTMENT_SYSTEM.md": {
-    "mtime": 1788779391.8049705,
-    "seen": 1788780544.836032,
-    "ast_hash": "8655ff50dc063ca72b0f4ff2a1a8b75d",
+    "mtime": 1788919224.6446986,
+    "seen": 1788919641.7270582,
+    "ast_hash": "be29f896b6ca6c3829779a6da6e61ea4",
     "semantic_hash": ""
   },
   "docs/OPERATIONS.md": {
-    "mtime": 1788871958.7661817,
-    "seen": 1788882479.1579683,
-    "ast_hash": "d86ed0b41b0fcb401f4dd41677204151",
+    "mtime": 1788919224.6446986,
+    "seen": 1788919641.7270582,
+    "ast_hash": "3a1b1a496ee2eae6daf04af8fa5008c9",
     "semantic_hash": ""
   },
   "docs/README.md": {
-    "mtime": 1788848670.8610992,
-    "seen": 1788849001.227536,
-    "ast_hash": "14075dcea69be0dda9882418da850336",
+    "mtime": 1788919224.6446986,
+    "seen": 1788919641.7270582,
+    "ast_hash": "8f02306c5e9e07b68af45c9dd393bee7",
     "semantic_hash": ""
   },
   "tests/test_repo_conventions.py": {
@@ -582,9 +582,9 @@
     "semantic_hash": ""
   },
   "docs/ENV.md": {
-    "mtime": 1788858770.0652423,
-    "seen": 1788882479.1579683,
-    "ast_hash": "5d71fd61686da314385fd3c08f580ce2",
+    "mtime": 1788919248.2123559,
+    "seen": 1788919641.7270582,
+    "ast_hash": "b20204fdac1733caf0e0345c58a7f1a8",
     "semantic_hash": ""
   },
   "scripts/v1_schema_probe.py": {
@@ -1038,9 +1038,9 @@
     "semantic_hash": ""
   },
   "docs/V1_STATUS.md": {
-    "mtime": 1788841160.0950427,
-    "seen": 1788841385.9580514,
-    "ast_hash": "9850c06dce7da49bc7fae9eb1eb14c32",
+    "mtime": 1788919224.6446986,
+    "seen": 1788919641.7270582,
+    "ast_hash": "ed7bec14f82fbcb8e0905c778698caa0",
     "semantic_hash": ""
   },
   "src/investment_agent/notifications/__init__.py": {
@@ -1650,27 +1650,27 @@
     "semantic_hash": ""
   },
   "src/investment_agent/data/fundamentals/ARCHITECTURE.md": {
-    "mtime": 1788779391.984758,
-    "seen": 1788780544.8430424,
-    "ast_hash": "eec2db0e421cf930552385bcf62ea2b9",
+    "mtime": 1788919224.6540616,
+    "seen": 1788919641.7270582,
+    "ast_hash": "3c5180a12ef667ab27fa71b72f8717f5",
     "semantic_hash": ""
   },
   "src/investment_agent/data/fundamentals/COLUMNS.md": {
-    "mtime": 1788779391.984758,
-    "seen": 1788780544.8430424,
-    "ast_hash": "676d609eedcdf153d5a2eed7a8bd4287",
+    "mtime": 1788919224.6540616,
+    "seen": 1788919641.7270582,
+    "ast_hash": "c24a3c0b1e6b59872fc7cedf365b97b9",
     "semantic_hash": ""
   },
   "src/investment_agent/data/fundamentals/README.md": {
-    "mtime": 1788783611.926713,
-    "seen": 1788783784.8579984,
-    "ast_hash": "75f898b182f52d959c9d1ab0ca1b88b6",
+    "mtime": 1788919224.6540616,
+    "seen": 1788919641.7270582,
+    "ast_hash": "5983bfaf9a3c4eb3f3ecc99199e2b50a",
     "semantic_hash": ""
   },
   "src/investment_agent/data/fundamentals/SEGMENT_COLUMNS.md": {
-    "mtime": 1788782101.9194894,
-    "seen": 1788783784.8579984,
-    "ast_hash": "395354284d3546a94c1054707c731f46",
+    "mtime": 1788919224.6540616,
+    "seen": 1788919641.7270582,
+    "ast_hash": "017b09a6bd2fda68f9942c8fa6cc58a0",
     "semantic_hash": ""
   },
   "src/investment_agent/data/fundamentals/data/NOTICE.md": {
@@ -1680,15 +1680,15 @@
     "semantic_hash": ""
   },
   "src/investment_agent/data/fundamentals/domain/README.md": {
-    "mtime": 1788821786.577392,
-    "seen": 1788841385.963558,
-    "ast_hash": "601f4ae7a8f2b5cab63506fdcfd0611c",
+    "mtime": 1788919224.6560793,
+    "seen": 1788919641.7270582,
+    "ast_hash": "2eac012d0367bccd731f1f9b94f5895b",
     "semantic_hash": ""
   },
   "src/investment_agent/data/macro/README.md": {
-    "mtime": 1788783611.928722,
-    "seen": 1788783784.8599987,
-    "ast_hash": "4d173f5f2831e6d6609191299201f352",
+    "mtime": 1788918943.68533,
+    "seen": 1788919641.7275195,
+    "ast_hash": "688705a134d9130943ea4fe17bbe99ad",
     "semantic_hash": ""
   },
   "src/investment_agent/data/fundamentals/infrastructure/sec/edgar_parser/earnings_release.py": {
@@ -1788,9 +1788,9 @@
     "semantic_hash": ""
   },
   "src/investment_agent/data/institutional/NOTICE.md": {
-    "mtime": 1788800497.4939094,
-    "seen": 1788801002.6766386,
-    "ast_hash": "52610cba7a43250568737d29f2546787",
+    "mtime": 1788919224.6560793,
+    "seen": 1788919641.7270582,
+    "ast_hash": "6a52664b3e8296a67abbd4b75b9b3c9a",
     "semantic_hash": ""
   },
   "src/investment_agent/data/institutional/README.md": {
@@ -1812,15 +1812,15 @@
     "semantic_hash": ""
   },
   "src/investment_agent/data/market/README.md": {
-    "mtime": 1788779392.111845,
-    "seen": 1788780544.8430424,
-    "ast_hash": "f1ec5921889334aea055b20d9cb56240",
+    "mtime": 1788919224.6560793,
+    "seen": 1788919641.7275195,
+    "ast_hash": "bf3e1e7c780f0b3bca4ca65d21e2a3be",
     "semantic_hash": ""
   },
   "src/investment_agent/data/universe/README.md": {
-    "mtime": 1788782096.5975897,
-    "seen": 1788783784.8599987,
-    "ast_hash": "470a560f3639d272cb4e700443f41532",
+    "mtime": 1788919224.6560793,
+    "seen": 1788919641.7275195,
+    "ast_hash": "6a3ec9244b857a49b7c34c64c9859aa1",
     "semantic_hash": ""
   },
   "tests/investment_agent/reporting/__init__.py": {
@@ -2442,21 +2442,21 @@
     "semantic_hash": ""
   },
   "src/investment_agent/dashboard/README.md": {
-    "mtime": 1788821786.5480685,
-    "seen": 1788841385.962052,
-    "ast_hash": "47bf3d48efb9e463f8aff8108602353b",
+    "mtime": 1788919224.6446986,
+    "seen": 1788919641.7270582,
+    "ast_hash": "3346d039c94ba2e6c71e2beb2f5b1ccf",
     "semantic_hash": ""
   },
   "src/investment_agent/data/macro/releases/README.md": {
-    "mtime": 1788779392.106593,
-    "seen": 1788780544.8430424,
-    "ast_hash": "f74df31ce4b8892ec00c21a904073d05",
+    "mtime": 1788919224.6560793,
+    "seen": 1788919641.7275195,
+    "ast_hash": "8a7de6bc2aa207f16075ce642522de71",
     "semantic_hash": ""
   },
   "src/investment_agent/data/macro/releases/SOURCE_CONTRACT.md": {
-    "mtime": 1788779392.1078458,
-    "seen": 1788780544.8430424,
-    "ast_hash": "42e0695cbcf74588528864371a302c9f",
+    "mtime": 1788919224.6560793,
+    "seen": 1788919641.7275195,
+    "ast_hash": "645984e7ea47a4f23bf0e015e4b89e36",
     "semantic_hash": ""
   },
   "src/investment_agent/data/universe/watchlists/README.md": {
@@ -4170,9 +4170,9 @@
     "semantic_hash": ""
   },
   "src/investment_agent/notifications/README.md": {
-    "mtime": 1788821753.677637,
-    "seen": 1788841385.9674118,
-    "ast_hash": "017a8bbdff64b60d608e53d438fddf2f",
+    "mtime": 1788919494.4721794,
+    "seen": 1788919641.7275195,
+    "ast_hash": "4d789b9faeeb6e5601c4e8360cf94779",
     "semantic_hash": ""
   },
   "src/investment_agent/operations/README.md": {
@@ -4974,27 +4974,27 @@
     "semantic_hash": ""
   },
   "src/investment_agent/execution/README.md": {
-    "mtime": 1788848670.8630984,
-    "seen": 1788849001.2430987,
-    "ast_hash": "862bb7a8a081b9bee6afc84be60d2b8f",
+    "mtime": 1788919224.6560793,
+    "seen": 1788919641.7275195,
+    "ast_hash": "6e322df79c93f39fac883b021512022e",
     "semantic_hash": ""
   },
   "src/investment_agent/trading/CANDIDATE_SELECTION.md": {
-    "mtime": 1788779392.4056847,
-    "seen": 1788780544.8430424,
-    "ast_hash": "013bfe037ab282d224f7b44a5d20da71",
+    "mtime": 1788919224.6594906,
+    "seen": 1788919641.7285242,
+    "ast_hash": "07532670688ac481b654b371c7436195",
     "semantic_hash": ""
   },
   "src/investment_agent/trading/CONSTITUTION.md": {
-    "mtime": 1788848730.660162,
-    "seen": 1788849001.2470984,
-    "ast_hash": "9641abf514449266631733c709c90b9f",
+    "mtime": 1788919224.6608381,
+    "seen": 1788919641.7285242,
+    "ast_hash": "7476325a13a5383f2c5d5fd5d9556da0",
     "semantic_hash": ""
   },
   "src/investment_agent/trading/README.md": {
-    "mtime": 1788779392.4072785,
-    "seen": 1788780544.8430424,
-    "ast_hash": "91f66b8b659f91e468120a6a39d6fc06",
+    "mtime": 1788919224.6613672,
+    "seen": 1788919641.7285242,
+    "ast_hash": "ab80859e44bc41eaced193e09cadba2f",
     "semantic_hash": ""
   },
   "db/duckdb/intelligence/v1/00_init.sql": {
@@ -5256,21 +5256,21 @@
     "semantic_hash": ""
   },
   "docs/STORAGE_REFACTOR_HANDOFF.md": {
-    "mtime": 1788779391.8082802,
-    "seen": 1788780544.836032,
-    "ast_hash": "635c47cad738f168affd289a84e9a0c1",
+    "mtime": 1788919224.6446986,
+    "seen": 1788919641.7270582,
+    "ast_hash": "eb93c8d13f9d4cc2a75aacf575e35158",
     "semantic_hash": ""
   },
   "docs/superpowers/specs/2026-09-06-storage-minimization-review.md": {
-    "mtime": 1788779391.8207977,
-    "seen": 1788780544.836032,
-    "ast_hash": "7127ed3dea74d3d36971ec6e5f6c2474",
+    "mtime": 1788919239.358745,
+    "seen": 1788919641.7270582,
+    "ast_hash": "8a3278e5c884f1f84defcfb81b3a86b5",
     "semantic_hash": ""
   },
   "docs/superpowers/specs/2026-09-06-v1-hardening-roadmap.md": {
-    "mtime": 1788779391.8213081,
-    "seen": 1788780544.836032,
-    "ast_hash": "638b9d00d10a9a9b0897e56d578352c1",
+    "mtime": 1788919239.3603306,
+    "seen": 1788919641.7270582,
+    "ast_hash": "9c7edcf63bdef7a81653026730f215e4",
     "semantic_hash": ""
   },
   "src/investment_agent/operations/harness/README.md": {
@@ -6042,9 +6042,9 @@
     "semantic_hash": ""
   },
   "docs/superpowers/specs/2026-09-07-storage-layout-and-schema-refactor-design.md": {
-    "mtime": 1788850107.9820216,
-    "seen": 1788850256.7625155,
-    "ast_hash": "4c5e2257293c56ea6af5d11a6faa10a3",
+    "mtime": 1788919239.361103,
+    "seen": 1788919641.7270582,
+    "ast_hash": "e5260de5cb6b6fdd83e49d778a66b058",
     "semantic_hash": ""
   },
   "scripts/postgres_schema_layout.py": {
@@ -6102,9 +6102,9 @@
     "semantic_hash": ""
   },
   "docs/OPEN_SOURCE_READINESS.md": {
-    "mtime": 1788779391.8049705,
-    "seen": 1788780544.836032,
-    "ast_hash": "fc221e785a703140614997dc68dbe810",
+    "mtime": 1788919494.4744174,
+    "seen": 1788919641.7270582,
+    "ast_hash": "76cfd22a3fcdc0deb045e93f0e1da8db",
     "semantic_hash": ""
   },
   "tests/investment_agent/test_snapshot_retention.py": {
@@ -7110,21 +7110,21 @@
     "semantic_hash": ""
   },
   "CODE_OF_CONDUCT.md": {
-    "mtime": 1788850424.8118863,
-    "seen": 1788850811.9922583,
-    "ast_hash": "edb5cc79494e7f6c6cdc32167bae7fe6",
+    "mtime": 1788918886.4672396,
+    "seen": 1788919641.7270582,
+    "ast_hash": "b886d73826b33ecdb96e37b6a90070a4",
     "semantic_hash": ""
   },
   "CONTRIBUTING.md": {
-    "mtime": 1788850424.8102913,
-    "seen": 1788850811.9922583,
-    "ast_hash": "c868dc8b98ad70ce6b24bab2020b0fe2",
+    "mtime": 1788918851.508618,
+    "seen": 1788919641.7270582,
+    "ast_hash": "58183f36791b42e2ad3c4b2df9bc20a4",
     "semantic_hash": ""
   },
   "SECURITY.md": {
-    "mtime": 1788850424.8118863,
-    "seen": 1788850811.9932675,
-    "ast_hash": "0a3024f37ff11050d967a66d87e4d095",
+    "mtime": 1788918874.2397273,
+    "seen": 1788919641.7270582,
+    "ast_hash": "964db4202f43c892dec70549e16ce2d8",
     "semantic_hash": ""
   },
   "tests/investment_agent/dashboard/test_page_wiring.py": {
@@ -7137,6 +7137,60 @@
     "mtime": 1788871149.2005453,
     "seen": 1788882479.1071231,
     "ast_hash": "ed11248ce7eb75f6628f570766f2822d",
+    "semantic_hash": ""
+  },
+  "tests/test_docs_consistency.py": {
+    "mtime": 1788919239.361103,
+    "seen": 1788919641.711408,
+    "ast_hash": "c5c6dd379e2220f02f2bde0f343967a7",
+    "semantic_hash": ""
+  },
+  "THIRD_PARTY_NOTICES.md": {
+    "mtime": 1788918823.0275977,
+    "seen": 1788919641.7270582,
+    "ast_hash": "5527bd5f3dd1883fa95399969d6609a4",
+    "semantic_hash": ""
+  },
+  "docs/STORAGE_MAP.md": {
+    "mtime": 1788919196.7265394,
+    "seen": 1788919641.7270582,
+    "ast_hash": "952623fac3372048b3e898fd88824160",
+    "semantic_hash": ""
+  },
+  "prompts/README.md": {
+    "mtime": 1788918755.7942736,
+    "seen": 1788919641.7270582,
+    "ast_hash": "824f303cb74a2fbddf94f6f61033f1aa",
+    "semantic_hash": ""
+  },
+  "prompts/etf_analysis.md": {
+    "mtime": 1788918338.27956,
+    "seen": 1788919641.7270582,
+    "ast_hash": "b83b007c706ac868ae1884fe7ad4eba6",
+    "semantic_hash": ""
+  },
+  "prompts/stock_analysis.md": {
+    "mtime": 1788918729.6004884,
+    "seen": 1788919641.7270582,
+    "ast_hash": "b242769fd689df0b693475822b1f12d1",
+    "semantic_hash": ""
+  },
+  "src/investment_agent/intelligence/README.md": {
+    "mtime": 1788919042.7539573,
+    "seen": 1788919641.7275195,
+    "ast_hash": "1dc524450486198e7559f68bf7a0e36a",
+    "semantic_hash": ""
+  },
+  "src/investment_agent/reporting/README.md": {
+    "mtime": 1788918981.980457,
+    "seen": 1788919641.7285242,
+    "ast_hash": "260ea9da5691ccb485101a3cda5baa91",
+    "semantic_hash": ""
+  },
+  "src/investment_agent/research/README.md": {
+    "mtime": 1788919014.8371892,
+    "seen": 1788919641.7285242,
+    "ast_hash": "06c54a2b0f49d453033fc97280a762ef",
     "semantic_hash": ""
   }
 }
