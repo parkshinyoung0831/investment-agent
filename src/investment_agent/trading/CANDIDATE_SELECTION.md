@@ -1,4 +1,4 @@
-# Tracked universe 후보 선정
+# 후보 선정 — tracked universe에서 무엇을 볼까
 
 * **상위 문서**: [AI Investor README.md](README.md) · [루트 README.md](../../../README.md)
 

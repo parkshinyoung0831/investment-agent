@@ -1,4 +1,4 @@
-# Fundamentals canonical columns
+# Fundamentals canonical 컬럼 — 이름과 의미
 
 아래 표는 `db/postgres/v1/30_fundamentals.sql`의 현재 저장 계약을 요약한다. 없는 파생 테이블이나
 과거 이름을 이 문서에 추가하지 않는다.
@@ -30,7 +30,7 @@
 
 ## 재무 원장
 
-### `fundamentals.financial_versions`
+### `fundamentals.financials`
 
 grain은 `(cik, period_end, accession_no)`다. 손익·재무상태·현금흐름·EPS 및 업종별
 계정을 wide column으로 저장하고, 다음 provenance를 반드시 함께 보존한다.
@@ -73,7 +73,6 @@ grain은 `(cik, share_class_key, as_of_date, accession_no)`다. 클래스별 `ti
 현재 공개 reporting view는 다음과 같다.
 
 - `reporting.company_financials_latest`
-- `reporting.financial_restatements`
 - `reporting.earnings_schedule`
 - `reporting.earnings_surprise`
 

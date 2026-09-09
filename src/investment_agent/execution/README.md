@@ -1,4 +1,4 @@
-# Execution package
+# Execution — 주문 lifecycle과 안전 경계
 
 `investment_agent.execution`은 승인된 목표 비중을 실제 broker 주문 계약으로 바꾸는 credential 격리 계층입니다.
 투자 thesis를 만들거나 LLM을 호출하지 않습니다.
@@ -117,7 +117,7 @@ Shadow와 연구용 Paper 단계는 주문 없는 분석·승격 증거에 사�
 
 ## Durable safety
 
-환경변수와 `execution.control_state`는 AND 조건입니다.
+환경변수와 `execution_control`는 AND 조건입니다.
 
 - `TRADING_KILL_SWITCH=on`: 신규 live risk 차단
 - `TOSS_LIVE_ENABLED=false`: Toss live mutation 차단
@@ -126,7 +126,7 @@ Shadow와 연구용 Paper 단계는 주문 없는 분석·승격 증거에 사�
   그 승인이 `approved`이고 `execution_mode='live'`일 때만 진행한다.
 - durable kill switch/lockdown: process restart 뒤에도 유지
 
-`execution.control_state`는 `data/local/runtime/runtime.sqlite3`(`db/sqlite/runtime/v1/30_execution.sql`)의
+`execution_control`는 `data/local/runtime/runtime.sqlite3`(`db/sqlite/runtime/v1/30_execution.sql`)의
 `execution_control` 표에 있습니다. 신규 설치는 이 행을 자동으로 채우지 않고, 이 표에 쓰는
 CLI 명령도 아직 없습니다 — 사람이 직접 `execution_control(control_key='global', ...)` 행을
 심기 전까지는 `load_control_state()`가 예외를 던져 주문 경로 전체가 막힙니다(fail-closed).

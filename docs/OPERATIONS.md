@@ -1,4 +1,4 @@
-# 설치, 자동 실행, 상태 확인과 장애 대응
+# 운영 — 설치, 자동 실행, 상태 확인과 장애 대응
 
 이 문서는 개발 환경 설치, GitHub Actions, 로컬 자동 실행기(하네스), 모니터링과 장애 해결을
 한곳에 모은 운영 안내서다. 코드·환경변수의 최종 SSOT는 루트 `CLAUDE.md`와 `.env.example`이다.
@@ -126,7 +126,7 @@ python scripts/db_bootstrap.py apply --confirm <project-ref> --drop-first   # �
 ```
 
 실행 전 예약 workflow와 로컬 하네스를 정지하고 maintenance hold, 로컬 execution
-lockdown, 환경변수 kill switch, `execution.control_state`의 DB lockdown을 모두 켠다.
+lockdown, 환경변수 kill switch, `execution_control`의 DB lockdown을 모두 켠다.
 
 `--drop-first`는 여섯 application schema(`universe`, `market`, `fundamentals`, `macro`,
 `institutional`, `reporting`)를 CASCADE로 지우고 다시 만든다. 드롭과 재생성이
@@ -363,10 +363,10 @@ flowchart LR
   상류가 둘(`macro_etl` 화~토, `macro_etl_monday` 월)이므로 **둘 다 양쪽을 들어야**
   합니다 — 한쪽만 들으면 그 요일 카드가 조용히 빕니다. 게이트는 `!= 'cancelled'`이고
   (ECOS 키 하나로 15종이 실패해도 미국 지표는 멀쩡합니다) 각자 안전망 cron을 갖습니다.
-  워치도 안전망은 하루 한 번(`50 0 * * 1-6`)입니다 — `macro.observation_versions`를 채우는
+  워치도 안전망은 하루 한 번(`50 0 * * 1-6`)입니다 — `macro.market_observations`를 채우는
   것은 macro ETL뿐이고 같은 관측치는 outbox 중복방지에 걸리므로, 장중에 더 자주 돌려도
   새 경보를 만들 수 없습니다. 장중 감시가 필요하면 알림이 아니라 ETL을 더 돌립니다.
-  중복은 `notifications.outbox`가 막습니다 — macro·macro releases·gurus가 `producer/kind`
+  중복은 `notification_outbox`가 막습니다 — macro·macro releases·gurus가 `producer/kind`
   컬럼으로 구분해 같은 원장을 공유합니다. 워치는 `(series_id, obs_date)` 기반 키로 load
   단계에서, 코어는 한 장짜리 묶음이라 `core.run()`이 발송 직전에 직접 확인합니다.
   경제지표 발표 중복은 같은 표에 `notification_key=f"first_actual:{event_key}"`로
@@ -378,10 +378,10 @@ flowchart LR
   (13:00 UTC = 22:00 KST)와 장후 마감 후(22:00 UTC = 07:00 KST) 두 번 안전망으로
   돕니다. 둘 다 같은 진입점(`watch_earnings`)을 쓰므로 수집 경로가 갈리지 않습니다.
 - **중복 발송은 발송 *전* 선점으로 막습니다.** notification producer가
-  `notifications.outbox`에 `(producer, notification_key)`를 먼저 기록하고, 실제로
+  `notification_outbox`에 `(producer, notification_key)`를 먼저 기록하고, 실제로
   선점한 쪽만 보냅니다. 발송 뒤에 기록하면 두 러너가 모두 "미발송"을 읽고 둘 다
   보낸 뒤 기록하게 되어 UNIQUE 제약이 이미 나간 메시지를 되돌리지 못합니다.
-  발송 실패는 outbox 상태와 `notifications.deliveries`에 남아 다음 재시도 판단의 근거가 됩니다.
+  발송 실패는 outbox 상태와 `notification_deliveries`에 남아 다음 재시도 판단의 근거가 됩니다.
 - fast path는 `investment_agent.data.fundamentals.commands.check_earnings_season`으로 시즌을 먼저 판정합니다.
   근거는 `fundamentals.earnings_schedule_versions`(yfinance 발표 예정일)이고,
   `refresh_expectations`가 채웁니다. 판단 근거가 없으면(스냅샷 없음·오래됨·비어 있음)

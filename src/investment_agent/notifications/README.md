@@ -57,15 +57,18 @@ flowchart TD
 
 ### 이중 발송 방지 원장 (Deduplication)
 * **한 줄 설명**: 이미 Discord로 전송된 알림인지 DB에 영구 기록하여, 스케줄러 재시도나 중복 실행 시 동일 카드가 반복 발송되지 않도록 차단하는 메커니즘.
-* **이 프로젝트에서는**: `(producer, notification_key)`를 `notifications.outbox`의 자연키로 사용하고,
-  실제 시도 결과는 `notifications.deliveries`에 기록합니다. 실패·전달 여부 불명 상태도 삭제하지 않습니다.
+* **이 프로젝트에서는**: `(producer, notification_key)`를 `notification_outbox`의 자연키로 사용하고,
+  실제 시도 결과는 `notification_deliveries`에 기록합니다. 실패·전달 여부 불명 상태도 삭제하지 않습니다.
 
 ### 수신 대상 구독
-알림 종류와 수신 대상은 `notifications.subscriptions`가 소유합니다. `SubscriptionReader`는
-활성일·enabled 조건과 전체/종목별 구독을 읽고, producer는 `discord_targets()`로 Discord
-대상을 받아 Outbox 목적지로 고정합니다. 구독이 없으면 환경변수로 조용히 대체하지 않고
-실패합니다. 현재 macro core/watch가 이 경계를 사용하며, 나머지 producer도 같은 계약으로
-순차 전환합니다.
+알림 종류와 채널의 매핑은 `subscriptions.py`의 `KIND_ENV`가 소유합니다 — kind 하나에
+`DISCORD_CHANNEL_*` 환경변수 하나입니다. 한때 `notifications.subscriptions` 표에 같은 것을
+복제해 저장했지만 실사용이 전부 global(`security_id` 전부 NULL, `is_enabled` 전부 true)이라
+DB 왕복이 아무것도 더 말해 주지 않았습니다.
+
+producer는 `discord_target(kind)`로 채널 하나를 받아 Outbox 목적지로 고정합니다. 채널이
+구성되지 않으면 조용히 건너뛰지 않고 실패합니다. **kind 하나에 채널은 하나**이므로 호출부가
+개수를 다시 세지 않습니다.
 
 ---
 
@@ -76,14 +79,14 @@ flowchart TD
 | `macro_core` | `src/investment_agent/notifications/macro/core.py` | **PNG 대시보드** | `#오늘의-시장` (매일 KST 09:25) | 주가지수, 국채금리, 실질금리, 환율, 원자재, 레짐 게이지 |
 | `macro_watch` | `src/investment_agent/notifications/macro/watch.py` | **Discord Embed** | `#시장-경보` (장중 매시간 감시) | VIX 급등, 금리/환율 임계 돌파 등 실시간 경보 |
 | `econ_calendar_release` | `src/investment_agent/notifications/econ_calendar/run.py` | **Discord Embed** | `#지표-발표` (first actual 확인 직후) | CPI·고용 등 실제, Survey, Nowcast, 자체모델, 시장서프라이즈/모델오차, 개정 |
-| `fundamentals_flash` | `earnings_flash/run.py` | **Discord Embed** | `notifications.subscriptions` (`fundamentals_flash`) | **[1단계 속보]** 8-K 실적 발표 당일 매출·EPS 실제/예상 서프라이즈 % 및 공시 링크 |
-| `fundamentals_earnings` | `earnings_report/run.py` | **PNG + 세그먼트 Embed** | `notifications.subscriptions` (`fundamentals_earnings`) | **[2단계 정밀 카드]** 10-Q/10-K 공시 시 13분기 추세, 현금흐름 폭포수, 5개년 배당 계단 분석 |
+| `fundamentals_flash` | `earnings_flash/run.py` | **Discord Embed** | `#실적-리포트` 포럼 (`DISCORD_CHANNEL_EARNINGS`) | **[1단계 속보]** 8-K 실적 발표 당일 매출·EPS 실제/예상 서프라이즈 % 및 공시 링크 |
+| `fundamentals_earnings` | `earnings_report/run.py` | **PNG + 세그먼트 Embed** | `#실적-리포트` 포럼 (`DISCORD_CHANNEL_EARNINGS`) | **[2단계 정밀 카드]** 10-Q/10-K 공시 시 13분기 추세, 현금흐름 폭포수, 5개년 배당 계단 분석 |
 | `fundamentals_calendar` | `src/investment_agent/notifications/earnings_calendar/run.py` | **PNG 대시보드** | `#실적-캘린더` (매주 월 KST 08:30) | 이번 주 실적 발표 예정 기업 캘린더 및 10-K/10-Q 구분 표기 |
-| `gurus_13f` | `src/investment_agent/notifications/institutional/run.py` | **Embed + QuickChart** | `notifications.subscriptions` (`institutional`) | 버핏 등 거장 7인 13F 신규매수/추가/축소/전량매도 델타 및 컨센서스 |
-| `strategy` / `strategy_summary` | `src/investment_agent/notifications/strategy/service.py` | **Embed + QuickChart** | `notifications.subscriptions` (`strategy`, `strategy_summary`) | 퀀트 자산배분 6종(GEM, HAA 등) 목표 비중 도넛 차트 & 리밸런싱 근거 |
-| `investment_portfolio` | `src/investment_agent/notifications/investment/run_portfolio.py` | **Discord Embed** | `notifications.subscriptions` (`investment_portfolio`) | 하루 1장 종합 — RiskGate 승인/거절과 위반 사유, 목표 비중, 분석 성공 비율 |
-| `investment_candidates` | `src/investment_agent/notifications/investment/run_candidates.py` | **Discord Embed** | `notifications.subscriptions` (`investment_candidates`) | 신뢰도 상위 N종목 심층 — 신호·기대 초과수익·근거, **확보하지 못한 근거**까지 |
-| `investment_trades` | `src/investment_agent/notifications/investment/run_trades.py` | **Discord Embed** | `notifications.subscriptions` (`investment_trades`) | 실제 주문·체결 수량/평균가, 승인 ID로 판단까지 역추적 |
+| `gurus_13f` | `src/investment_agent/notifications/institutional/run.py` | **Embed + QuickChart** | `#13f-요약` (`DISCORD_CHANNEL_GURUS`) | 버핏 등 거장 7인 13F 신규매수/추가/축소/전량매도 델타 및 컨센서스 |
+| `strategy` / `strategy_summary` | `src/investment_agent/notifications/strategy/service.py` | **Embed + QuickChart** | `#전략-아카이브` 포럼 · `#월간-전략-요약` (`DISCORD_CHANNEL_STRATEGY_FORUM`·`_MONTHLY`) | 퀀트 자산배분 6종(GEM, HAA 등) 목표 비중 도넛 차트 & 리밸런싱 근거 |
+| `investment_portfolio` | `src/investment_agent/notifications/investment/run_portfolio.py` | **Discord Embed** | `#투자-리포트` (`DISCORD_CHANNEL_AI_REPORTS`) | 하루 1장 종합 — RiskGate 승인/거절과 위반 사유, 목표 비중, 분석 성공 비율 |
+| `investment_candidates` | `src/investment_agent/notifications/investment/run_candidates.py` | **Discord Embed** | `#투자-리포트` (`DISCORD_CHANNEL_AI_REPORTS`) | 신뢰도 상위 N종목 심층 — 신호·기대 초과수익·근거, **확보하지 못한 근거**까지 |
+| `investment_trades` | `src/investment_agent/notifications/investment/run_trades.py` | **Discord Embed** | `#매매-기록` (`DISCORD_CHANNEL_AI_TRADES`) | 실제 주문·체결 수량/평균가, 승인 ID로 판단까지 역추적 |
 
 ---
 
@@ -95,7 +98,7 @@ src/investment_agent/notifications/
 ├── channels/            # Discord transport와 채널 라우팅
 │   ├── discord.py       # Discord 전송 경계
 │   └── routing.py       # 실적 포럼 태그 대응표(sic_division_name → EARNINGS_TAGS)
-├── subscriptions.py     # notifications.subscriptions 활성 수신 대상 reader (읽기 전용)
+├── subscriptions.py     # kind → DISCORD_CHANNEL_* 매핑(KIND_ENV). 채널 SSOT
 ├── earnings_flash/      # 8-K 실적 속보 알림 모듈
 │   ├── candidates.py    # 미발송 8-K 속보 조회
 │   ├── embeds.py        # DESIGN-system.md 색 토큰 기반 실적 속보 Rich Embed 빌더
@@ -121,7 +124,7 @@ src/investment_agent/notifications/
 operations/commands/notify.py::main(--kind fundamentals_earnings) ──> KINDS 매핑으로 디스패치
   └── investment_agent.notifications.earnings_report.run:run()
         ├── candidates.py::load_pending()                ──> 미발송 신규 공시 조회
-        ├── notifications.outbox::Outbox.enqueue()       ──> notifications.outbox에 스냅샷 선점
+        ├── notification_outbox::Outbox.enqueue()       ──> notification_outbox에 스냅샷 선점
         ├── card.py::build()                              ──> 렌더 컨텍스트 계산
         ├── render.py::render() + render.py::shoot_png()  ──> Jinja2 HTML 빌드 + Playwright PNG 캡처
         └── notifications.service::NotificationService  ──> Discord 전송 후 deliveries 기록
@@ -167,5 +170,5 @@ python -m investment_agent.operations.commands.notify --kind investment_trades
 |---|---|---|
 | 카드 시각 디자인 수정 | PNG 카드를 만드는 각 패키지가 소유한 `templates/*.html.j2` (예: `earnings_report/templates/earnings.html.j2`) | [DESIGN-system.md](../../../DESIGN-system.md) 색상 토큰 준수, 패키지 간 공유 금지 |
 | Playwright 뷰포트 크기 조정 | 각 PNG 카드 패키지의 `render.py` (`shoot_png`의 `viewport_width`, 기본 1080) | 모바일 가독성 유지 |
-| Discord 채널 라우팅 변경 | `notifications.subscriptions`의 kind/target 행 | `src/investment_agent/notifications/discord_admin` manifest는 채널 구조 동기화용으로 유지 |
+| Discord 채널 라우팅 변경 | `subscriptions.py`의 `KIND_ENV`와 그 env 값 | `discord_admin` manifest는 채널 **구조**를, `KIND_ENV`는 **목적지**를 소유한다 |
 | 중복 방지 키 룰 수정 | 각 producer의 `run.py`와 `notifications/outbox.py` (`enqueue`·`claim`·`record`) | `(producer, notification_key)` 원자적 기록과 전달 이력 보장 |

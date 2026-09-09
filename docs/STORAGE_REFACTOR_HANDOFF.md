@@ -1,4 +1,4 @@
-# 저장 계층 전면 개편 인계 메모
+# 저장 계층 개편 — 인계 메모
 
 작성 시점: 2026-09-06
 
@@ -38,7 +38,7 @@
   `universe.index_memberships`로 교체했다.
 - `market.prices_daily`에서 `source`와 `ingested_at`을 제거하고 `is_repaired`를
   사용하도록 writer와 Dashboard 가격 reader를 바꿨다.
-- `fundamentals.financial_versions` 사용을 canonical `financials`로 바꾸고 filing
+- `fundamentals.financials` 사용을 canonical `financials`로 바꾸고 filing
   accession 및 filing date provenance를 연결했다. `FY` fiscal period도 허용한다.
 - Macro catalog seed를 실제 collector source 목록에서 만들며, 정상 writer 진입점이
   catalog를 먼저 seed하도록 바꿨다.
@@ -61,7 +61,8 @@
 - `account_daily_snapshots`를 갱신하고 상세 operational account snapshot은 이틀로
   제한한다.
 - Dashboard와 알림 reader의 remote trading/execution/notifications 직접 조회를
-  대부분 `reporting.local_runtime`과 로컬 outbox로 전환했다.
+  대부분 로컬 런타임 뷰(`reporting/readers/runtime.py`의 `LOCAL_VIEWS`)와 로컬 outbox로
+  전환했다.
 
 ### Research와 Intelligence
 
@@ -123,7 +124,7 @@ storage foundation과 `src/` 구조 정리에서 새로 생긴 failure나 error�
 1. **실제 코드 결함부터 닫기**
    - `dashboard.db`가 `data.institutional.managers`를 직접 import해 presentation dependency
      guard를 깨는 문제를 reporting 전용 presentation adapter로 옮긴다.
-   - `reporting.local_runtime`의 모든 view를 임시 SQLite fixture로 통합 검증한다.
+   - `LOCAL_VIEWS`의 모든 view를 임시 SQLite fixture로 통합 검증한다.
    - account daily snapshot writer/reader, order event, fill, notification outbox를 실제
      SQLite로 검증한다.
    - `ResearchStore` Parquet 동시 writer, record가 다른 연도 partition으로 이동하는

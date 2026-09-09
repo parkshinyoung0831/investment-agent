@@ -1,4 +1,4 @@
-# Fundamentals domain
+# Fundamentals domain — 저장소와 무관한 계산 규칙
 
 `investment_agent.data.fundamentals.domain`은 외부 공급자나 저장 방식이 바뀌어도 유지되어야 할 회계·재무
 결정 규칙의 단일 기준이다. SEC 실제값, 차원값, 시장 예상값, 실적 발표값은 같은

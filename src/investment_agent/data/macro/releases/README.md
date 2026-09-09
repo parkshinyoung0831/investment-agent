@@ -1,4 +1,4 @@
-# Macro 경제발표
+# Macro 경제발표 — 일정·예상·실제·개정
 
 **원자료·일정·예상값의 변경만 저장한다. 계산한 실제값은 다시 저장하지 않는다.**
 시장 지표와 고정 30개 발표 지표를 하나의 `macro` owner 아래 versioned 표로 관리한다.
@@ -142,7 +142,7 @@ ALFRED 최초 발표 복원과 취소 외의 과거 일정 정정은 별도 감�
 
 대시보드는 기간 조회·지표별 조회·자연키 상세 조회를 분리한다. 그래프는 최신값, 발표 비교는 최초값이다.
 ICS는 일정 연기에도 UID를 유지하고 취소 상태를 내보낸다.
-Discord 성공 기록은 **`notifications.outbox`·`notifications.deliveries`**에 보관한다. macro 표에 발송 플래그를 두지 않는다.
+Discord 성공 기록은 **`notification_outbox`·`notification_deliveries`**에 보관한다. macro 표에 발송 플래그를 두지 않는다.
 보내기 실패는 적재를 되돌리지 않으며 다음 notifier 실행이 재시도한다. 여러 배치 중 성공한 배치만 기록한다.
 Discord 전송과 DB 기록은 하나의 트랜잭션이 아니므로 ‘전송 성공 후 기록 직전 장애’의 중복 가능성은 남는다.
 

@@ -1,4 +1,4 @@
-# v1 현재 상태
+# v1 현재 상태 — 무엇이 구현됐고 무엇이 남았나
 
 > 이 문서는 공개 가능한 개발 상태 보고서이면서 유지보수 참고 자료입니다. 실거래 준비 완료를
 > 의미하지 않으며, 라이브·외부 API·DB 실행 여부는 아래 제한을 따릅니다.
@@ -74,7 +74,7 @@ canonical schema는 `db/postgres/v1/`이다.
 판단·실행·알림·운영 상태는 `data/local/runtime/runtime.sqlite3`와
 `db/sqlite/runtime/v1/` DDL이 소유한다. 별도 PostgreSQL execution schema SQL은 없다.
 
-`trading.model_versions`는 불변 artifact metadata만 보관한다. 현재 모델 단계는 승인된
+`model_versions`는 불변 artifact metadata만 보관한다. 현재 모델 단계는 승인된
 `model_promotions` 이력에서 `reporting.current_model_stage`가 계산하며, 수동 승격은 artifact
 행을 갱신하지 않고 잠금된 append-only audit으로 기록한다.
 
@@ -131,9 +131,9 @@ notification producer 경계와 다르다.
   호환 hook은 존재하지 않는다.
 - Dashboard 가격·전략 재현은 `market.prices_daily` 저장 행만 읽고, 진행 중인 달은
   월말 종가로 만들지 않는다. yfinance 가격 호출과 전략 source 직접 의존성은 없다.
-- Dashboard 뉴스는 `reporting.news` 계약만 소비하고, provider 호출·메타데이터 정규화는
-  `data.news`가 소유한다. 하네스 상태 읽기는 `dashboard.ops`에, 캐시와 provider 사용량
-  원장은 `platform`에 둔다.
+- Dashboard 뉴스는 `reporting/readers/news.py` 계약만 소비하고, provider 호출·메타데이터
+  정규화는 `intelligence`가 소유한다. 본문은 Parquet, 색인은 로컬 DuckDB에 있고 Supabase에는
+  없다. 하네스 상태 읽기는 `dashboard/ops.py`에, 캐시와 provider 사용량 원장은 `platform`에 둔다.
 
 ## 적용 상태
 

@@ -1,4 +1,4 @@
-# Native Autonomous Investment System
+# 자율 판단 계층 — 근거 수집부터 승격까지
 
 이 문서는 외부 투자 프레임워크에 의존하지 않는 `investment-agent`의 현재 계약과
 실행 경계를 설명한다. 데이터 수집, Supabase private schema, Discord 승인, PIT 검증,

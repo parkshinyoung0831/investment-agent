@@ -1,5 +1,27 @@
-# Code of Conduct
+# 행동 강령 — 무엇을 기대하고, 무엇은 받아들이지 않는가
 
-Contributors should communicate respectfully and focus discussion on the work. Harassment, discrimination, threats, and publication of another person's private information are not acceptable.
+## 기대하는 것
 
-Report concerns privately to the maintainers through the repository's security contact. Maintainers may remove content or participation that violates this policy.
+- 사람이 아니라 **작업**에 대해 말합니다. 코드·설계·판단을 두고 이견을 냅니다.
+- 판단이 갈릴 때는 근거를 함께 냅니다. "틀렸다"보다 "이 입력에서 이렇게 된다"가 낫습니다.
+- 모르면 모른다고 씁니다. 추측을 사실처럼 적는 것이 이 저장소에서는 실제 손해로 이어집니다.
+- 실수를 지적받으면 고치고 넘어갑니다. 사과를 길게 적을 필요는 없습니다.
+
+## 받아들이지 않는 것
+
+- 괴롭힘, 차별, 위협.
+- 다른 사람의 사생활 정보를 동의 없이 공개하는 것.
+- 반복적인 인신공격이나 논의를 막는 행위.
+
+## 신고와 조치
+
+우려되는 일이 있으면 저장소의 보안 연락처를 통해 관리자에게 **비공개로** 알립니다
+([SECURITY.md](SECURITY.md)). 공개 스레드에서 다투기 전에 먼저 알리는 편이 좋습니다.
+
+관리자는 이 정책을 어긴 내용이나 참여를 제거할 수 있습니다. 조치는 사안에 비례해서
+정하며, 반복되면 더 강해집니다.
+
+## 적용 범위
+
+이 저장소의 이슈·PR·토론·커밋 메시지, 그리고 이 프로젝트를 대표해 활동하는 공간에
+적용됩니다.

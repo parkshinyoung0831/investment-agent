@@ -1,4 +1,4 @@
-# Universe v1
+# Universe — 회사 identity, 상장 증권, 지수 구성
 
 `investment_agent.data.universe`는 회사 identity, 거래 증권, point-in-time
 S&P 500 membership을 소유한다. 회사 사실은 `entities(cik)`에 한 번만 저장하고,
@@ -17,7 +17,7 @@ SEC exchange master의 회사명은 새 entity를 **처음 만들 때만 쓰는 
 | SEC 등록인과 SIC metadata | `universe.entities` |
 | 상장 증권과 수집 gate | `universe.securities` |
 | 과거 ticker/CUSIP/FIGI 연결 | `universe.security_identifiers` |
-| 날짜별 S&P 500 구성 | `universe.memberships` (`tickers` JSONB) |
+| 날짜별 S&P 500 구성 | `universe.index_memberships` (`tickers` JSONB) |
 | 관심 기업 | `universe.entities.watchlist_sources` (발행사 행의 상태) |
 
 모든 하류 market writer는 ticker를 입력으로 받지만 저장 직전에 `security_id`로

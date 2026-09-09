@@ -1,4 +1,4 @@
-# 데이터, Supabase, PIT와 로컬 뉴스 Cache
+# 데이터 — Supabase, PIT, 그리고 로컬 저장소
 
 이 문서는 외부 데이터가 어디서 수집되어 어떻게 Supabase에 저장되고, 과거 시점의 미래 정보
 누출을 어떻게 막는지 설명한다. 뉴스·소셜 원문은 예외적으로 로컬 DuckDB에만 저장한다.
@@ -46,7 +46,7 @@ Universe는 현재 수집 대상과 과거 S&P 500 구성종목을 구분한다.
 
 - universe.entities: CIK 기준 회사/SEC 등록인 사실(회사명·SIC 등)
 - universe.securities: ticker별 거래 정보와 현재 is_tracked 수집 gate
-- universe.sp500_membership_snapshots: 날짜별 과거 S&P 500 ticker 배열
+- universe.index_memberships: 날짜별 과거 S&P 500 ticker 배열
 
 현재 is_tracked는 운영 ETL과 trading decision이 읽는 현재 상태다. 과거 연구와
 backtest는 반드시 membership snapshot을 사용한다. 자세한 데이터 소유권·운영·검증은
@@ -60,8 +60,8 @@ backtest는 반드시 membership snapshot을 사용한다. 자세한 데이터 �
 |---|---|---|
 | Universe | effective date/snapshot이 있는 membership history | 현재 member 목록 |
 | 가격 | trade/session과 ingestion provenance가 있는 bar | 최신 quote/price view |
-| 재무 | `fundamentals.financial_versions` + `fundamentals.filings`의 PIT cutoff 조회 | reporting financial read model |
-| 거시 | `macro.observation_versions`의 effective/collected cutoff | `reporting.macro_latest`·`macro_observations` |
+| 재무 | `fundamentals.financials` + `fundamentals.filings`의 PIT cutoff 조회 | reporting financial read model |
+| 거시 | `macro.market_observations`의 effective/collected cutoff | `reporting.macro_latest`·`macro_observations` |
 | 일정·예상 | 수집·발표·개정 시각이 있는 snapshot | 최신 일정/actual view |
 | 기관 | SEC accepted time이 있는 filing/position | 최신 13F 요약 |
 
@@ -82,9 +82,9 @@ schema마다 다르게 반응한다.
 ```mermaid
 sequenceDiagram
     participant C as Backtest / AI Investor<br/>(cutoff = t)
-    participant F as fundamentals.financial_versions + filings
-    participant U as universe.sp500_membership_snapshots
-    participant M as macro.observation_versions
+    participant F as fundamentals.financials + filings
+    participant U as universe.index_memberships
+    participant M as macro.market_observations
 
     C->>F: filed_at·available_at·ingested_at <= t 인 버전 조회
     F-->>C: accession별 원장 버전과 provenance 반환
@@ -98,13 +98,13 @@ sequenceDiagram
 
 ### Macro historical replay
 
-MACRO는 시장 관측의 version을 `macro.observation_versions`에 append한다. historical replay는
+MACRO는 시장 관측의 version을 `macro.market_observations`에 append한다. historical replay는
 `effective_at`과 `collected_at`을 모두 cutoff에 적용하고, 발표 일정·예상·revision도 같은
 `macro` owner의 versioned release 표에서 읽는다.
 
 ### Fundamentals cutoff 조회
 
-`fundamentals.financial_versions`의 grain은 `(cik, period_end, accession_no)`다.
+`fundamentals.financials`의 grain은 `(cik, period_end, accession_no)`다.
 식별자는 ticker가 아니라 CIK다. 재무는 회사 단위 사실이라 한 회사가 여러 클래스를
 상장해도 하나이기 때문이다. AI 재무 조회는 `filed_at`, `available_at`, `ingested_at`를
 cutoff에 적용하고, 같은 기간의 정정공시도 별도 version으로 보존한다.

@@ -1,4 +1,4 @@
-# Fundamentals architecture
+# Fundamentals 아키텍처 — 계층 경계와 소유 규칙
 
 이 문서는 현재 v1 구현의 경계만 정의한다. 스키마의 단일 기준은
 `db/postgres/v1/30_fundamentals.sql`이고 reporting read model은 `db/postgres/v1/90_reporting.sql`에 있다.
@@ -61,8 +61,8 @@ financial_versions.ingested_at <= as_of_at
 ## 계산과 reporting
 
 원장에 없는 TTM·margin·surprise·valuation은 계산 결과를 별도 writer로 저장하지
-않는다. `reporting.company_financials_latest`, `reporting.financial_restatements`,
-`reporting.earnings_schedule`, `reporting.earnings_surprise`와 application 계산기가
+않는다. `reporting.company_financials_latest`, `reporting.earnings_schedule`,
+`reporting.earnings_surprise`와 application 계산기가
 필요한 시점에 원장으로부터 결과를 만든다. 따라서 별도 파생 결과 갱신 job은
 architecture contract에 포함되지 않는다.
 

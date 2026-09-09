@@ -1,4 +1,4 @@
-# Investment Agent
+# Investment Agent — S&P 500 투자 분석 파이프라인과 Discord 알림
 
 **Point-in-time 데이터 → 검증 가능한 신호 → 결정론적 위험 제한, 그다음에야 주문 후보가 되는
 미국 주식 투자 연구·운용 시스템.**
@@ -105,9 +105,10 @@ python -m investment_agent.operations.commands.harness_switch --status
 각 도메인은 자기 저장소 경계에서만 Supabase를 조회하며 투자·분석에 필요한 도메인 사실만 저장합니다. 실행 실패, 예외 문구, 재시도 이력과 품질
 진단은 DB에 쓰지 않고 GitHub Actions 원문 로그와 Discord `#시스템-로그`에 남깁니다.
 
-`macro.observations`는 현재 시장 상태 시계열입니다. historical replay에서 point-in-time 이력이
+`macro.market_observations`는 현재 시장 상태 시계열이고, 경제지표 발표는
+`macro.economic_observations`가 따로 갖습니다. historical replay에서 point-in-time 이력이
 필요한 macro evidence는 제공하지 않습니다. 기업 재무의 원장 진실 공급원은
-`fundamentals.financial_versions`와 `fundamentals.filings`이며, 과거 조회는
+`fundamentals.financials`와 `fundamentals.filings`이며, 과거 조회는
 `filed_at`·`available_at`·`ingested_at` cutoff를 사용합니다.
 
 ### 2. Evidence와 Feature
@@ -258,7 +259,7 @@ python -m investment_agent.trading.portfolio.construct --batch-id <BATCH_ID> --s
 - [초보자용 시스템·폴더 지도](docs/README.md)
 - [현재 구현 상태](docs/V1_STATUS.md)
 
-필요할 때만 [데이터](docs/DATA.md), [투자 시스템](docs/INVESTMENT_SYSTEM.md),
+필요할 때만 [저장 지도](docs/STORAGE_MAP.md), [데이터](docs/DATA.md), [투자 시스템](docs/INVESTMENT_SYSTEM.md),
 [자율 판단 계층](docs/AUTONOMOUS_SYSTEM.md), [실행과 안전](docs/EXECUTION_AND_SAFETY.md),
 [운영](docs/OPERATIONS.md)을 골라 읽습니다.
 

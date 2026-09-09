@@ -1,4 +1,4 @@
-# Trading package
+# Trading — 근거에서 포트폴리오까지의 판단 계층
 
 `investment_agent.trading`는 구조화된 투자 근거를 분석 신호로 바꾸고, 그 신호를 포트폴리오와 검증 가능한
 위험 결정으로 변환하는 계층입니다. 증권사 credential을 갖거나 주문 API를 호출하지 않습니다.

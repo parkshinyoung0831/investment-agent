@@ -1,4 +1,4 @@
-# Segment metrics
+# Segment metrics — 축별 컬럼 계약
 
 세그먼트 저장 계약은 `fundamentals.segment_metrics`와 공유 provenance 표인
 `fundamentals.filings`, `fundamentals.filing_processing`으로 구성된다.

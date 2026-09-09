@@ -1,4 +1,4 @@
-# 처음 보는 사람을 위한 시스템 지도
+# 문서 지도 — 처음 보는 사람을 위한 시스템 안내
 
 > 이 문서는 공개 저장소의 현재 구조를 설명하는 입문 문서입니다. 유지보수자용 작업 지시와
 > 날짜가 붙은 검토 기록은 아래의 별도 문서로 분리되어 있습니다.
@@ -58,6 +58,8 @@
 코드가 원천 데이터는 Supabase, Research 파생 산출물은 로컬 DuckDB에 저장한다. `.github/workflows/*.yml`이 GitHub 서버에서 이 명령을 예약 실행한다.
 
 상세한 PIT, Supabase와 뉴스 cache 설명은 [데이터 문서](DATA.md)에 있다.
+무엇이 Supabase에 있고 무엇이 로컬 SQLite·DuckDB에 있는지는 [저장 지도](STORAGE_MAP.md)가
+한 장으로 갖는다 — 저장소를 헷갈리면 없는 곳을 찾아가게 된다.
 
 ## Discord 알림은 어디에 있는가
 
@@ -68,7 +70,7 @@
 src/investment_agent/reporting/notifications/<read-model>.py
 → src/investment_agent/notifications/<알림종류>/candidates.py
 → card.py·embeds.py·render.py
-→ notifications.outbox 원장 등록·선점
+→ notification_outbox 원장 등록·선점
 → src/investment_agent/notifications/channels/discord.py
 → delivery 결과 기록
 ```

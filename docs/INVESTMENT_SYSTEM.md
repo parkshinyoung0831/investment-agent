@@ -1,4 +1,4 @@
-# 투자 판단, ML/RL, Backtest와 Portfolio Risk
+# 투자 시스템 — 판단, ML/RL, Backtest와 Portfolio Risk
 
 이 문서는 Supabase 데이터가 투자 신호와 포트폴리오 제안으로 바뀌는 과정을 설명한다.
 `src/investment_agent/trading`은 투자안을 만드는 계층이며 broker 주문을 직접 보내지 않는다.
@@ -63,7 +63,7 @@ evidence 대신 `missing_data`에 사유를 남긴다. `news_archive`는 Supabas
 |---|---|---|---|
 | market | `market.prices_daily` | 최신 행 `ingested_at` | "market: 시점 기준 사용 가능한 가격 없음" |
 | technical | ResearchStore `feature_signals_daily` + `market.prices_daily` | feature 행 `ingested_at` | "technical: 시점 기준 기술지표 없음" |
-| fundamentals | SEC EDGAR/FSDS, `fundamentals.financial_versions` + `fundamentals.filings` | live: 최신 `ingested_at` / historical_replay: `filed_at`·`available_at` cutoff | source_kind별 문구로 "fundamentals: ..." |
+| fundamentals | SEC EDGAR/FSDS, `fundamentals.financials` + `fundamentals.filings` | live: 최신 `ingested_at` / historical_replay: `filed_at`·`available_at` cutoff | source_kind별 문구로 "fundamentals: ..." |
 | estimates | yfinance observed snapshots | 최신 `collected_at` | "estimates: 시점 기준 실제 관측 컨센서스 없음" |
 | macro | `macro.series`+`observation_versions` | 관측치 `collected_at` 최댓값 | historical_replay는 항상 제외; live에서 실행·관측이 없으면 missing |
 | segments | SEC XBRL, `fundamentals.segment_metrics` | filings `updated_at` | provider unavailable 여부로 사유 분기 |

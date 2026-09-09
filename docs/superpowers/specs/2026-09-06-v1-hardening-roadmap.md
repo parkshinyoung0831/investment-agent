@@ -1,4 +1,4 @@
-# v1 내부 정리 로드맵
+# v1 내부 정리 로드맵 — 2026-09-06 기록
 
 > 후속 저장 검토: [저장 최소화 검토와 Markdown 개정안](2026-09-06-storage-minimization-review.md).
 > 아래 P5의 archive 기반은 현재 `data/market/archive.py`에 구현되어 있으므로 새로 구축하지 않는다.

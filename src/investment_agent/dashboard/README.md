@@ -1,4 +1,4 @@
-# ATLAS 투자 터미널
+# Dashboard — ATLAS 읽기 전용 투자 터미널
 
 이 디렉터리는 Discord 알림과 동일한 운영 사실을 **읽기 전용**으로 탐색하는
 Streamlit 관제 화면이다. 대시보드는 Supabase 행을 생성·수정·삭제하지 않으며,
@@ -89,7 +89,7 @@ Toss Blue를 기본 시각 언어로 쓰고, 금융 값의 상승·하락에만 
 화면은 `reporting` read model을 통해 두 종류를 나눠 표시하며 domain 표를 직접 조립하지 않는다.
 
 매크로 지표 집합·파생 계산·임계 판정은 **Discord 알림과 같은 순수 함수**를 쓴다
-(`investment_agent.reporting.macro`의 `constants.CORE_LAYOUT`, `metrics.compute_metrics_series`,
+(`investment_agent.reporting.services.macro`의 `constants.CORE_LAYOUT`, `metrics.compute_metrics_series`,
 `thresholds.eval_row`, `format.meta_tags`). ETL은 raw만 저장하므로 z·이동평균·52주
 고저는 화면이 그때 계산하며, 카드와 화면이 서로 다른 숫자를 말하지 않는다.
 등락 색 방향도 같은 SSOT를 쓴다 — `constants.INVERSE_SERIES`(VIX·MOVE·HY_SPREAD)는
@@ -131,11 +131,11 @@ Toss Blue를 기본 시각 언어로 쓰고, 금융 값의 상승·하락에만 
 |---|---|---|
 | 확장 섹션 | 읽는 것 | 카드와의 차이 |
 |---|---|---|
-| 종합 재무·성장·마진 | `fundamentals.financial_versions` + application 계산기 | 카드와 같은 원장으로 TTM·마진·성장 지표를 계산 |
-| 특수 계정 재무 | `fundamentals.financial_versions` 실제 저장 필드 | 카드에 아예 없는 은행 NII·충당금·예금 등 특화 계정 |
+| 종합 재무·성장·마진 | `fundamentals.financials` + application 계산기 | 카드와 같은 원장으로 TTM·마진·성장 지표를 계산 |
+| 특수 계정 재무 | `fundamentals.financials` 실제 저장 필드 | 카드에 아예 없는 은행 NII·충당금·예금 등 특화 계정 |
 | 기술 지표 | 로컬 `feature_signals_daily` | 카드는 공시 시점 스냅샷, 여기는 저장된 RSI·MACD 시계열 |
 | 세그먼트 전 축 | `segment_metrics` 전체 | 카드는 종류별 대표 축 1개·상위 6행·기타 합산, 여기는 모든 축·모든 멤버·다기간 추이·세그먼트 자산 |
-| 수집·발송 감사 | terminal `fundamentals.filing_processing` + `notifications.outbox` + Discord/GitHub 운영 로그 | 카드에 없음. 성공 provenance·실제 Discord 발송 여부와 실패 원인 확인 경로 |
+| 수집·발송 감사 | terminal `fundamentals.filing_processing` + `notification_outbox` + Discord/GitHub 운영 로그 | 카드에 없음. 성공 provenance·실제 Discord 발송 여부와 실패 원인 확인 경로 |
 
 세그먼트 품질 게이트는 카드와 같다 — `verified`/`partial`이 아닌 값은 숫자로 만들지 않고
 상태 문자열로만 남기며 차트에 올리지 않는다. 비중 분모도 게이트를 통과한 매출만 쓴다.
@@ -165,12 +165,12 @@ Toss Blue를 기본 시각 언어로 쓰고, 금융 값의 상승·하락에만 
 |---|---|---|---|
 | 매크로 시황 | `reporting.macro_observations` (코어·감시 지표의 최근 400일) | 없음 | Discord와 같은 z·레벨z·백분위·이동평균·52주 고저·경보 등급, 레짐 근거와 반대 신호 |
 | 지표 발표 | 범위 제한 `reporting.macro_release_summary`, 자연키로 지연 조회하는 `macro_release_forecasts`·`macro_release_actuals` | 없음 | KST 일정·최초/최신 실제값·발표 전 예상값·서프라이즈/모델오차/개정을 분리 표시 |
-| AI 투자 승인 & 토론 | `reporting.security_decisions`, `trading.signals`, `trading.portfolio_proposals`, `trading.risk_decisions`, `execution.approval_requests`, artifact URI·digest | `market.prices_daily` 저장 90거래일 OHLCV | SMA20/SMA60/RSI14, 저장 제안과 승인 비중 비교, 세션 메모리 프리뷰 |
+| AI 투자 승인 & 토론 | `reporting.security_decisions`, `signals`, `portfolio_proposals`, `risk_decisions`, `approvals`, artifact URI·digest | `market.prices_daily` 저장 90거래일 OHLCV | SMA20/SMA60/RSI14, 저장 제안과 승인 비중 비교, 세션 메모리 프리뷰 |
 | 실적 & 어닝 서프라이즈 | `fundamentals` v1 reporting views, 관심종목, 저장된 `feature_signals_daily` | 없음 | Discord와 같은 등급·시점정합 기대치·13분기/현금흐름·역사 밸류·5개년 월별 배당 듀얼차트·기술·주주환원 계산, 8-K 속보 서프라이즈 대조, SEC GAAP/조정 EPS 분리, 세그먼트 다기간 추이와 수집·발송 감사 |
 | 13F 거장 레이더 | `institutional.managers`, `institutional.filings`, `institutional.positions`, `universe.security_identifiers` | 없음 | 보고 장부 내 금액 비중(도넛)·상위 5/10 집중도, 공시 지연 일수, 정정공시·기밀 누락·파싱 누락 신뢰 판정, 이전 분기 대비 신규/증가/감소/매도(비교 가능한 long equity만) |
 | 퀀트 전략 & 백테스트 | `catalog.py`, 로컬 DuckDB 배분 | 성과: `market.prices_daily` 저장 전략 자산·SPY 일별 가격 / 룰 재현·시뮬레이션: 저장 일봉을 월말로 정규화한 종가 | 저장 배분 기간 수익률, walk-forward 룰 재현과 Research 결과 대조, CAGR/MDD/변동성/누적수익률, 메모리 내 Monte Carlo |
 | 뉴스 & 소셜 미디어 인텔리전스 | `reporting.security_decisions`의 artifact URI·digest 메타데이터 | yfinance 뉴스(허용·cap·kill switch 통과 시), 승인된 provider만 | 키워드 기반 감성/불확실성 태그, 관련 종목 표시 |
-| 내 포트폴리오 | 최신 `execution.account_snapshots`·`execution.position_snapshots` 및 `trading.risk_decisions.approved_weights` | 없음. execution이 저장한 스냅샷만 읽음 | 저장된 실제/목표 비중, 차이·조정 금액·가이드 수량, 현금·집중도 비교 |
+| 내 포트폴리오 | 최신 `account_snapshots`(현금·평가액·매수여력과 그 안의 보유 항목) 및 `risk_decisions.approved_weights` | 없음. execution이 저장한 스냅샷만 읽음 | 저장된 실제/목표 비중, 차이·조정 금액·가이드 수량, 현금·집중도 비교 |
 | 시스템 관제탑 | Discord `#액션-실패`와 GitHub Actions 링크, 로컬 하네스 상태 | 없음 | DB 운영 이력 대신 사건 카드·원문 Actions 로그·로컬 `artifacts/ops/investment_harness/state.json`을 안내 |
 
 ### 판단에 영향을 주는 상태를 먼저 보여 준다
@@ -223,9 +223,9 @@ Toss Blue를 기본 시각 언어로 쓰고, 금융 값의 상승·하락에만 
 - 룰 재현 백테스트는 `investment_agent.research.strategies.catalog`의 순수 계산 함수와
   `market.prices_daily`에서 읽은 일봉을 월말 기준으로 정규화한 저장 데이터만 쓴다.
   `investment_agent.research.strategies.etl`과 `investment_agent.research.strategies.db`(upsert 경로)는 import하지 않는다.
-- 계좌·보유 화면은 `execution.account_snapshots`와
-  `execution.position_snapshots`의 저장 필드만 읽는다. 계좌 스냅샷 생성과 브로커
-  조회는 execution 경계가 소유하며, 대시보드는 브로커 클라이언트를 import하지 않는다.
+- 계좌·보유 화면은 로컬 런타임 SQLite의 `account_snapshots`에 저장된 관측 필드만 읽는다.
+  브로커 원본(`raw_snapshot`)은 읽지 않는다. 스냅샷 생성과 브로커 조회는 execution 경계가
+  소유하며, 대시보드는 브로커 클라이언트를 import하지 않는다.
 - 뉴스 사용량 cap은 로컬 metadata-only SQLite 원장을 따른다. 기사 원문을 DB나
   파일에 저장하지 않는다. StockTwits는 명시적 권한 없이는 호출하지 않고 Reddit은 현재
   OAuth adapter가 없어 호출하지 않는다.

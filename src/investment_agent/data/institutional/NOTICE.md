@@ -1,4 +1,4 @@
-# Third-party notice
+# 서드파티 고지 — edgartools 13F 파서
 
 이 파이프라인은 MIT 라이선스 프로젝트
 [edgartools 5.36.0](https://github.com/dgunning/edgartools/tree/v5.36.0)를 두 방식으로 사용합니다.

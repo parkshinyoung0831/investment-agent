@@ -1,4 +1,4 @@
-# AGENTS.md
+# AGENTS.md — 에이전트가 이 저장소에서 지킬 것
 
 이 저장소에서 작업하는 코딩 에이전트(OpenAI Codex 등)를 위한 안내서입니다.
 Codex는 저장소 루트의 `AGENTS.md`를 자동으로 읽습니다.

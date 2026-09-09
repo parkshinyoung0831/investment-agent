@@ -1,4 +1,4 @@
-# CLAUDE.md
+# CLAUDE.md — 이 저장소의 개발 규칙
 
 이 저장소에서 작업할 때 따라야 할 안내서입니다. **작업 전에 먼저 읽으세요.**
 알림 카드 템플릿(`src/investment_agent/notifications/*/templates/*.html.j2`)이나 대시보드 UI를 만지기 전에는
@@ -53,7 +53,12 @@ src/investment_agent/
                            그 이름을 자동 멀티페이지로 훑기 때문이다.
 
 db/postgres/v1/                     현재 Supabase schema의 유일한 선언 순서
+db/sqlite/runtime/v1/               로컬 실행·승인·알림 원장 선언
+db/duckdb/{research,intelligence}/v1/  로컬 연구·텍스트 저장소 선언
 ```
+
+저장소가 넷이라는 것이 이 시스템에서 가장 자주 오해되는 지점이다 — 무엇이 어디에 사는지는
+[docs/STORAGE_MAP.md](docs/STORAGE_MAP.md)가 한 장으로 갖는다.
 
 ### 일부러 다르게 둔 모양
 
@@ -88,7 +93,7 @@ Supabase 쿼리 빌더는 `src/investment_agent/data/fundamentals/infrastructure
 | [strategy](src/investment_agent/research/strategies/README.md) | 팩터/룰 기반 전략 배분 | `investment_agent.research.strategies.etl` | 월 1회 |
 | [trading](src/investment_agent/trading/README.md) | TradingAgents 판단·full portfolio·backtest/RL·평가/승격 | `investment_agent.trading.decision.portfolio_shadow` / `investment_agent.trading.portfolio.construct` | 로컬 하네스/수동 |
 | [watchlists](src/investment_agent/data/universe/watchlists/README.md) | 관심종목 설정·Toss 보유 출처 동기화 | `investment_agent.data.universe.watchlists.watchlist` | 수동 / 로컬 |
-| intelligence(news) | 관심종목 뉴스 수집 | `investment_agent.intelligence.commands.collect_news` | 로컬 하네스 |
+| [intelligence](src/investment_agent/intelligence/README.md)(news) | 관심종목 뉴스 수집 | `investment_agent.intelligence.commands.collect_news` | 로컬 하네스 |
 | intelligence(social) | 서브레딧 스트림·종목 언급 | `investment_agent.intelligence.commands.collect_social` | 로컬 하네스 |
 | [operations](src/investment_agent/operations/README.md) | Discord 시스템 로그·Actions 생존 점검 + 로컬 투자 하네스/checkpoint/heartbeat | `investment_agent.operations.commands.heartbeat` / `.investment_harness` | Actions 일일 + 로컬 상시 |
 | [discord_admin](src/investment_agent/notifications/discord_admin/README.md) | Discord 채널 구조·역할/권한·안내문·Server Guide 선언 (로컬 전용, CI 없음) | `investment_agent.notifications.discord_admin.entries.sync` / `.roles` / `.guide` / `.onboarding` | 수동 |
@@ -135,7 +140,7 @@ flowchart LR
   `investment_candidates`(신뢰도 상위 N종목 심층), `investment_trades`(실제 주문·체결).
   파이프라인이 아니라 `trading`·`execution` 원장이 원천이고, 로컬 하네스가
   판단·체결 직후에 보내며 `notify_investment` Actions가 하루 한 번 안전망으로 돈다.
-  중복은 `notifications.outbox`의 producer·notification_key 선점이 막는다.
+  중복은 `notification_outbox`의 producer·notification_key 선점이 막는다.
   카드에는 원장에 실제로 있는 값만 적는다 — 판단에 반영되지 않는 요소를 반영된 것처럼
   쓰지 않는다.
 - **실적 알림 2단계 파이프라인**:

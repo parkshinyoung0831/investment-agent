@@ -1,4 +1,4 @@
-# AI Investor Constitution
+# AI Investor Constitution — 판단 계층이 넘지 않는 선
 
 * **상위 문서**: [AI Investor README.md](README.md) · [루트 README.md](../../../README.md)
 

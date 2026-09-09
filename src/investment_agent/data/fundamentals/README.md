@@ -1,4 +1,4 @@
-# Fundamentals
+# Fundamentals — 공시·재무·세그먼트·실적 이벤트
 
 fundamentals 도메인은 SEC 공시를 기준으로 기업 재무·세그먼트·실적 이벤트와
 시장 예상치의 수집, 정규화, 시점 정합 조회를 소유한다. 정식 실행 경로는
@@ -31,7 +31,7 @@ Supabase query builder는 `infrastructure/supabase/`와 공용
 |---|---|---|
 | 공시 provenance | `fundamentals.filings` | `accession_no` |
 | 처리 상태 | `fundamentals.filing_processing` | accession · content type · mapping version |
-| 기업 전체 재무 | `fundamentals.financial_versions` | CIK · period end · accession |
+| 기업 전체 재무 | `fundamentals.financials` | CIK · period end · accession |
 | 클래스별 발행주식수 | `fundamentals.share_class_snapshots` | CIK · class · as-of date · accession |
 | 세그먼트 지표 | `fundamentals.segment_metrics` | CIK · accession · fiscal period · segment hash |
 | 실적 결과 | `fundamentals.earnings_results` | security · fiscal period · accession |

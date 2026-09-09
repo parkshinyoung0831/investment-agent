@@ -1,4 +1,4 @@
-# 주문 실행, 승인, Broker와 단계별 안전장치
+# 실행과 안전 — 주문·승인·Broker와 단계별 안전장치
 
 `src/investment_agent/execution`은 AI와 broker 사이의 credential 격리 경계다. AI Investor는 RiskDecision과
 ExecutionIntent까지만 만들며 broker API key를 보거나 주문을 직접 보내지 않는다.
@@ -141,7 +141,7 @@ timeout, connection error나 5xx 뒤에는 broker가 실제 주문을 받았을 
 ID를 다시 POST하지 않고 status, open orders와 fills를 조회한다. broker order ID가 없는 결과를
 ticker와 수량만으로 추정 매칭하지 않는다.
 
-lockdown은 이 이벤트 상태 전이의 일부가 아니다. `execution.control_state`의
+lockdown은 이 이벤트 상태 전이의 일부가 아니다. `execution_control`의
 `durable_lockdown_on`이 별도로 관리하는 durable safety state이며, [Kill switch와
 Lockdown](#kill-switch와-lockdown) 절을 따른다.
 
@@ -160,7 +160,7 @@ account/hash/quantity가 일치해 안전하게 한 가지로 해석되는 누�
 
 ## Kill switch와 Lockdown
 
-신규 risk-increasing order는 환경변수와 `execution.control_state`의 durable state가 모두 열려야
+신규 risk-increasing order는 환경변수와 `execution_control`의 durable state가 모두 열려야
 한다. DB 조회 실패나 state 부재도 fail-closed다. 프로세스 메모리 bool이나 LLM output으로 해제할
 수 없다.
 
@@ -206,7 +206,7 @@ model artifact를 Live로 승격하는 게이트(`ManualPromotionGate`)와, 시�
 | 사고 이력 0건 | look-ahead·leakage·survivorship·data-integrity·order incident | execution·reconciliation·risk·data-quality incident |
 | 추가 검증 | `research_only=false`인 persisted evaluation | kill switch test, broker reconciliation 통과 |
 | hard limit 요구 | (해당 없음) | max order/daily notional·daily order count·daily loss·drawdown 완비 |
-| 최종 산출물 | 사람이 정확한 artifact/stage 확인문을 다시 입력 | evidence·criteria·hard-limit hash로 `execution.autonomy_permits` 발급(account·artifact 결박, 만료·취소 가능) |
+| 최종 산출물 | 사람이 정확한 artifact/stage 확인문을 다시 입력 | evidence·criteria·hard-limit hash로 결박한 permit 발급(account·artifact 고정, 만료·취소 가능) — **아직 구현 없음** |
 
 `LIVE_ENABLED`를 켜는 것만으로는 Live Autonomous Permit이 발급되지 않는다 — 위 표의 criteria를
 모두 충족해야 한다.

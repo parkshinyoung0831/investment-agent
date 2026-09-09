@@ -1,16 +1,16 @@
-# Graph Report - investment-agent-main  (2026-09-08)
+# Graph Report - investment-agent-main  (2026-09-09)
 
 ## Corpus Check
-- 1149 files · ~863,829 words
+- 1150 files · ~866,580 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 14624 nodes · 31926 edges · 658 communities (529 shown, 92 thin omitted)
-- Extraction: 95% EXTRACTED · 5% INFERRED · 0% AMBIGUOUS · INFERRED: 1544 edges (avg confidence: 0.93)
+- 14716 nodes · 31756 edges · 680 communities (555 shown, 88 thin omitted)
+- Extraction: 97% EXTRACTED · 3% INFERRED · 0% AMBIGUOUS · INFERRED: 1059 edges (avg confidence: 0.91)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `68a11575`
+- Built from commit: `1f2ee8ec`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -20,23 +20,23 @@
 - app_pages/earnings.py
 - EvidenceBundle
 - PolicyAndModelRepositoryTest
-- live_worker.py
+- orders.py
 - ExecutionIntent
 - ReleaseWatchTest
 - actuals.py
-- execution/db.py
+- sqlite.py
 - artifacts.py
 - awaiting_message
 - companyfacts.py
 - launcher.py
-- .create
+- ApprovalRequest
 - investment_harness.py
-- commands/common_shares.py
-- ExecutionRepository
+- us_market_today
+- parse_datetime
 - sec.py
 - charts.py
 - dashboard/db.py
-- portfolio/contracts.py
+- serialization.py
 - _tree
 - rl/contracts.py
 - MarketQuote
@@ -47,10 +47,10 @@
 - FundamentalsRepository
 - FeatureDataset
 - test_historical_earnings_estimates.py
-- parse_earnings_release.py
+- TestFundamentalsFlash
 - refresh_earnings_season.py
-- _ensure_filings
-- supabase_repository.py
+- earnings_report.py
+- SupabaseRepository
 - 90_reporting.sql
 - continuous_retrain.py
 - ProductionInvestmentAdapters
@@ -59,34 +59,34 @@
 - build_events.py
 - HarnessScheduler
 - FiscalPeriod
-- AccountSnapshot
-- DiscordApprovalClient
+- SignalBook
+- execution/contracts.py
 - Investment Agent Design System
 - MacroRepository
 - releases/db.py
-- DailyBar
-- SelectOnlyGatewayTests
+- as_date
+- _FakeClient
 - ReportingQueries
 - postgres.py
-- inspect_harness_state
-- RunLifecycleTest
+- add_technical_indicators
+- live_worker.py
 - run_backtest
 - _ExecutionRepository
 - TradingRepository
-- candidate_ranker.py
-- fundamentals/repository.py
+- fast_ranker.py
+- VersionKey
 - yahoo_finance/consensus.py
-- ResearchDataset
-- refresh_expectations
+- build_research_dataset
+- commands/refresh_expectations.py
 - discord_admin/client.py
 - _flatten
 - BuildEventsTest
 - normalize_ticker
-- app_pages/intelligence.py
-- f
+- alpha_lab.py
+- earnings_report/consensus.py
 - calculations/__init__.py
 - toss/client.py
-- UniverseRepository
+- universe/test_repository.py
 - BrokerAdapter
 - _text
 - create_execution_intent.py
@@ -97,28 +97,28 @@
 - reported_observations.py
 - worker.py
 - econ_calendar.py
-- PersistenceSecurityQueriesTest
-- Database
-- home.py
-- SupabaseRepository
+- universe/test_persistence.py
+- EarningsFlashStore
+- NotificationServiceTest
+- .save_events
 - canonical_json
-- storage_paths.py
-- export_dataset
+- JsonStateStore
+- test_dataset_export.py
 - .from_row
 - application/etl.py
 - WeightEnvironmentCore
-- ShadowFillTest
-- institutional/test_service.py
-- CompanyFinancialRepository
-- snapshots.py
+- build_training_samples.py
+- OrderIdentityTest
+- UniverseRepository
+- AccountSnapshot
 - macro/format.py
 - size_portfolio
 - normalize_segment_facts.py
 - logging.py
 - renderers/text.py
 - provider.py
-- OpenAICompatibleClient
-- RawPosition
+- DiscordTest
+- sec13f.py
 - _snap
 - parse_xbrl.py
 - make_filing_record
@@ -130,99 +130,99 @@
 - CLAUDE.md
 - src/investment_agent/data/fundamentals/application/__init__.py
 - evaluate
-- NotificationServiceTest
+- fakes.py
 - BackfillWindow
 - 설치, 자동 실행, 상태 확인과 장애 대응
 - select_tracked_tickers
-- BacktestRequest
+- TransactionCostModel
 - detect_earnings_events.py
 - RunContext
 - parse_external_payload
 - services/investment/__init__.py
 - parse_shares.py
-- HarnessMode
+- harness/contracts.py
 - infrastructure/sources/yfinance.py
 - releases/schedule.py
-- EarningsCalendarStore
+- earnings_calendar/run.py
 - What You Must Do When Invoked
 - factor_risk.py
 - _snap
-- auth.py
+- toss.py
 - ics.py
-- TossOrderApiTest
+- universe/repository.py
 - backtest/contracts.py
 - calendar.py
 - FilingRef
 - fit_baseline
 - fsds.py
 - alfred.py
-- process_filing.py
+- build_segment_metrics.py
 - earnings_report/embeds.py
 - strategies.py
-- LocalTradingDatabase
+- _Query
 - DossierBuilder
 - _wf
 - README.md
 - earnings/schedule.py
-- control_center.py
+- ControlCenter
 - json_value
 - ExpectationRetentionTest
-- ExecutionSafetyError
+- request_toss_approval.py
 - 저장 계층 구조·스키마 축소 설계
 - collection.py
-- build
-- DispatchResult
-- ForumDeliveryTest
+- desks/base.py
+- dispatch_pending
+- ForumThreadsAreReusedTest
 - compute_rl_blend
 - _run
 - _modules
 - archive_daily_rows
 - expectations_exit_code
 - normalize.py
-- validated_weights
+- ResearchDataset
 - universe/persistence.py
 - _intent
 - FakeDatabase
 - strategies/db.py
-- select_session_targets.py
-- parse_datetime
+- select_timed_targets
+- tca.py
 - filing_documents.py
 - main
 - _Repository
-- press_releases.py
+- collect_candidates
 - app_pages/macro.py
 - _run
 - test_workflow_wiring.py
 - market_schedule.py
 - MeasureCalculationTest
-- TransactionCostModel
-- filings.py
+- ContractError
+- company_financials.py
 - install_investment_harness.py
 - price_risk_profile
-- _canonical_filing_focus
-- build_labels.py
+- earnings_report/candidates.py
+- build_features.py
 - IntelligenceRepositoryTest
 - TossTokenManagerTest
 - What You Must Do When Invoked
 - What You Must Do When Invoked
 - market/persistence.py
-- shadow_daily.py
+- trading/contracts.py
 - TossAuthError
 - Path
 - _Query
 - GuildDirectory
 - _row
 - inputs.py
-- main
-- capture_toss_account_snapshot
+- harness_adapters.py
+- risk_snapshot.py
 - Third-party data notice — `gaap_mappings.json`
 - ._at
 - valuation_history
-- OrderIdentityTest
+- test_page_wiring.py
 - valuation_history.py
-- select_model_for_ticker
+- model_pool.py
 - fact_checker.py
-- eval_row
+- institutional/test_repository.py
 - PolicyConceptChoice
 - Trading package
 - test_schema_alignment.py
@@ -232,11 +232,11 @@
 - _row
 - classify_session
 - ensure_aware
-- attribution.py
+- src/investment_agent/research/evaluation/__init__.py
 - IntelligenceRepository
 - QualityAssessmentTest
 - layer.py
-- _Query
+- RLRepositoryTest
 - 투자 판단, ML/RL, Backtest와 Portfolio Risk
 - segment_concepts.py
 - analysis.py
@@ -245,38 +245,38 @@
 - sources/toss_holdings.py
 - filing_xbrl.py
 - GuruRoutingTest
-- select_timed_targets
+- ml_rl_lab.py
 - DimensionPreservationTest
 - earnings_calendar/card.py
 - ResearchStore
 - breadth_200dma
 - watchlists/db.py
-- drop_implausible_share_rows
+- dashboard/ops.py
 - SubprocessModuleRunner
 - promotion/gate.py
 - release_catalog.py
-- SegmentMetricRepository
-- portfolio_shadow.py
+- InstitutionalRepository
+- PortfolioRiskPolicy
 - run_preflight
 - format_guidance_headline
-- edgartools_13f.py
+- sync_schedules
 - backtest/cli.py
 - StrategyTests
 - experiments
 - validate_snapshot
 - Investment Operations Harness — 로컬 상시 오케스트레이션 계층
 - 20_decisions.sql
-- ActiveMembersTest
+- test_watchlist_db.py
 - monitoring/discord.py
 - ArtifactRef
-- sec13f.py
+- keys.py
 - Execution package
 - _Repository
 - 저장 계층 최소화 검토와 Markdown 개정안
 - FailureAlertTest
 - test_logging.py
 - Filing13F
-- Outbox
+- load_config
 - AI Investor Constitution
 - finite_float
 - backtest/metrics.py
@@ -286,42 +286,42 @@
 - ViewTest
 - 데이터, Supabase, PIT와 로컬 뉴스 Cache
 - test_edgartools_13f.py
-- github_actions.py
+- ._send
 - SurpriseRowsTest
-- src/investment_agent/research/features/__init__.py
+- TechIndicatorAtomicUpsertTests
 - load_or_create_approval_secret
 - map_fiscal_periods.py
 - _ops_webhook
 - test_reporting_guards.py
 - _row
-- fusion.py
+- test_ensemble.py
 - storable_share_rows
 - DashboardLauncherCliTest
-- universe/infrastructure/sources/__init__.py
+- _document
 - SegmentHighlightsTest
 - object
-- SelectOnlyGateway
+- to_wide_tables
 - ContextBuilder
 - MacroChainTest
 - 적응형 정보 구조
 - extract_summary_financials
 - gdpnow_archive.py
-- normalize_positions
+- earnings_report_segment_state.py
 - safe_fetch
 - institutional/card.py
 - src/investment_agent/research/rl/__init__.py
 - strategy/embeds.py
-- QlibPITAdapter
+- qlib_adapter.py
 - 주문 실행, 승인, Broker와 단계별 안전장치
-- digest.py
+- main
 - verify_postgres_sql_syntax.py
 - load
 - fomc_calendar.py
-- macro_indicator_rows
+- MacroNotificationStore
 - reconcile_orders
 - EnvFileTest
 - earnings_report/quickchart.py
-- CollectSocialTest
+- test_collect_social.py
 - test_watchlists.py
 - build_valuations
 - _Builder
@@ -330,30 +330,30 @@
 - _Repository
 - _Repository
 - test_serving.py
-- test_config.py
-- notifications/macro.py
+- _Query
+- freshness_for
 - Investment Agent
 - 자주 발생하는 문제
 - IntelligenceArchitectureTest
-- test_view_reachability.py
-- TradingAgentsDecisionEngine
-- test_workflow_storage_paths.py
+- retry.py
+- AgentEngineResult
+- TrainingSample
 - 30_execution.sql
 - openfigi.py
 - OpenFigiIdentifierTest
 - IntelligenceReaderTest
-- MembershipReconcileTest
+- build_membership_snapshots
 - FiresBetweenTest
 - _called_schemas
 - store
 - Fundamentals domain
-- taxonomy/__init__.py
-- main
+- assess_segment_quality.py
+- market/test_persistence.py
 - test_market_retention.py
 - Macro 경제발표
 - InstitutionalArchitectureTest
 - EconIcsTest
-- DiscordTest
+- test_investment_adapters.py
 - apply_downstream_api_key
 - CandidateFeatureReadTest
 - Research Features — 일간 기술지표와 PIT 학습 입력
@@ -363,36 +363,36 @@
 - _by_key
 - CollectNewsTest
 - earnings/__init__.py
-- application/service.py
+- CommandResult
 - test_segments_quality.py
 - CardInstallGuardTest
 - 처음 보는 사람을 위한 시스템 지도
-- HarnessReporter
+- ProcessFileLock
 - db_capacity.py
-- Any
+- SelectOnlyGateway
 - social_normalize.py
 - compute_all
-- model_pool.py
+- reasons.py
 - Notifications — 시각화 알림(Playwright PNG 카드 & Discord Embed) 서브시스템
 - test_inputs.py
-- overwrites
+- main
 - FindTickersTest
 - context.py
 - ActualProviderTest
 - investment/embeds.py
 - redact
 - _service
-- application/backfill_history.py
+- storage/repository.py
 - v1 현재 상태
-- cron.py
-- test_universe_sic.py
+- deflated_sharpe.py
+- LocalTradingDatabase
 - MACRO — v1 market-state pipeline
 - test_ecos.py
 - news_normalize.py
-- validate
+- validate_subscriptions.py
 - installation_files
 - DependencyDeclarationTest
-- features/etl.py
+- DerivedReadModelTest
 - Universe watchlists — 관심 기업 & 토스증권 보유종목 동기화
 - Discord Admin — 코드 기반 선언적 Discord 서버 관리 (IaC)
 - Tracked universe 후보 선정
@@ -401,101 +401,101 @@
 - 10. 데이터 시각화
 - test_continuous_retrain_exit_code.py
 - FundamentalsArchitectureTest
-- _domain_precisions
+- _coherent_range
 - test_operational_guardrails.py
 - test_macro_release_watch_dedup.py
 - report.py
 - 16. 구현 계약
-- StrategyLabelsTest
+- transient_retry
 - 9. 핵심 컴포넌트
-- split_dataset
+- strategy/quickchart.py
 - 2. 핵심 결정과 우선순위
-- trading/contracts.py
+- decision/pipeline.py
 - graphify reference: extra exports and benchmark
 - 3. 제품 철학
-- retry_on_5xx
+- fetch_release_dates
 - Fundamentals
 - Universe v1
-- is_earnings_item
+- training/baseline.py
 - validate_series
 - HarnessModuleAllowlistTest
 - UniverseArchitectureTest
-- test_filing_xbrl_fallback.py
+- test_edgar_parser.py
 - earnings/metrics.py
 - SourceBudgetTest
 - EconSnapshotShapeTest
 - validate_live_candidate_as_of
 - 40_macro.sql
 - 5. 색 시스템
-- resolve_flash_period
+- ToRecordTest
 - 저장 계층 전면 개편 인계 메모
-- _LabelRepository
+- build_labels.py
 - test_research_store_read_paths.py
 - WorkflowNameTest
 - 11. 라이트·다크 모드 운영
 - 14. 보이스 앤 톤
-- social_source.py
+- _Repository
 - 2. 핵심 헬퍼 모듈 사용법
 - download_monthly_close
 - 6. 타이포그래피
 - 8. 모양, 보더, 깊이
-- lifecycle.py
-- SetMembershipTest
+- _FakeBuilder
+- earnings_calendar/__init__.py
 - Institutional — SEC 13F 원천·유효 포트폴리오
-- DecisionTest
+- day_window
 - Market v1
 - valuation/engine.py
 - earnings_report/__init__.py
-- normalize_accession
+- EarningsCardTest
 - test_failure_reporter_deps.py
 - graphify reference: extra exports and benchmark
 - graphify reference: extra exports and benchmark
 - _submissions_document
-- VersionSelectionTest
+- portfolio_weights
 - 10_universe.sql
 - run
 - LocalArtifactStore
 - _entrypoints
 - platform/artifacts.py
-- EntityMention
+- _article
 - NewsSocialPageTest
 - PriceTargetTest
-- decision_and_apply_dates
-- releases/test_db.py
-- pending_filings
+- strategies/etl.py
+- split_event_key
+- Filing
 - Native Autonomous Investment System
 - content_index
 - discord_admin/guide.py
 - Path
 - v1 내부 정리 로드맵
 - MarketArchitectureTest
-- retry.py
+- is_transient
 - src/investment_agent/execution/__init__.py
 - news_social.py
 - InstitutionalSchemaContractTest
-- strategies/catalog.py
-- .bars
+- memory.py
+- build_card
 - releases/baseline.py
-- _run_backfill
+- UniverseSnapshot
 - FullPortfolioSchemaTest
 - operations_view.py
 - SharedSetupTest
-- us_market_today
+- datetime
 - actions_budget.py
-- twap.py
-- main
+- context_hash
+- build
 - SegmentSnapshotOrderTest
 - Operations — Discord-first 운영 관측과 로컬 하네스
 - discord_admin/sync.py
 - yahoo.py
 - build_valuations.py
-- process_segment_cik
+- news_source.py
 - test_channel_names_are_declared.py
-- change_manifest.py
+- FakeLogger
 - ExecutionBoundaryTest
-- MembershipHistoryStorageTest
+- test_dashboard_readonly.py
 - 10. Intelligence: Parquet로 옮길 때 필요한 운영 계약
-- _complete_tail
+- animated_pipeline
 - PostgresSchemaLayoutTest
 - graphify reference: query, path, explain
 - graphify reference: query, path, explain
@@ -509,7 +509,7 @@
 - PackagingContractTest
 - _payload_key_sets
 - PriceCollectionContractTests
-- EarningsWatchStatus
+- test_earnings_session_watch.py
 - test_company_financials_upsert.py
 - test_fundamentals_consensus.py
 - test_forum_kinds_are_wired.py
@@ -523,11 +523,11 @@
 - 11. Research: 대용량 Wide와 불변 실행 metadata
 - 16. 구현 순서와 완료 기준
 - calibrator.py
-- ExhibitExtractorTest
-- fundamentals/test_service.py
+- non_liability_claims
+- refresh_fundamentals
 - 12. Runtime: SQLite에 돈의 사실과 안전 상태를 보존
-- institutional/db.py
-- BlindSpotCaveatTest
+- institutional_backfill.py
+- _collect_news
 - StrategyWorkflowOrderingTest
 - 15. Markdown 파일별 개정 지도
 - 6. Market: 얇은 행 + 명시적인 공개·변경 계약
@@ -540,74 +540,94 @@
 - execution_view.py
 - graphify reference: query, path, explain
 - 8. Macro: fact를 분리하되 의미 metadata는 유지
-- InstitutionalRetentionTest
-- d_day_label
+- institutional/test_persistence.py
+- fundamentals_source.py
 - DangerFloorTest
-- RadarCodeContractTest
+- test_intelligence_job.py
 - 4. 500MB 예산을 올바르게 정의하기
-- test_entrypoint.py
+- refresh_macro
 - 5. Universe: identity를 보존하며 간소화
-- migrate_local_storage.py
+- storage_paths.py
 - test_adapter_contracts.py
 - PITValuationInputs
 - _imported_modules
-- TechnicalIndicatorRetryTest
-- evidence/cache.py
+- holdings.py
+- strategy/models.py
 - DataPackageLayoutTest
 - test_subscription_routing_contract.py
-- EarningsFlashOutbox
+- test_domain_contracts.py
 - identifiers.py
 - graphify reference: GitHub clone and cross-repo merge
 - graphify reference: transcribe video and audio
-- test_evaluator.py
+- evaluation/evaluator.py
 - graphify reference: GitHub clone and cross-repo merge
 - graphify reference: transcribe video and audio
+- IngestTest
 - ExpectationsRepositoryPagingTest
 - verify_data.py
 - test_calculations_facade.py
 - .claude/skills/graphify/references/extraction-spec.md
 - .codex/skills/graphify/references/extraction-spec.md
 - ReportingPackageLayoutTest
+- ResolveIdentifiersTest
 - intelligence/v1/00_init.sql
 - graphify reference: add a URL and watch a folder
-- test_default_paths.py
+- src/investment_agent/operations/commands/__init__.py
 - graphify reference: commit hook and native CLAUDE.md integration
 - FilingRowAcceptsEveryShapeTest
 - graphify reference: incremental update and cluster-only
 - src/investment_agent/data/fundamentals/infrastructure/__init__.py
-- _StubModel
+- ResearchStoreTest
 - investment-agent
+- DashboardStaticBoundaryTests
+- _uncached
 - src/investment_agent/data/__init__.py
 - institutional/commands/__init__.py
+- WebClientError
 - institutional/NOTICE.md
+- strategy/__init__.py
 - 20_market.sql
+- parse_event_key
+- ._resolve
 - 40_notifications.sql
+- ._tick_with_fakes
+- AdoptedWeightsTest
+- calculations/schedule.py
+- _Response
 - CandidateCoverageRepositoryTest
+- MaintenanceCliTest
+- export_dataset
 - src/investment_agent/__init__.py
+- PPOAllocationTimingSpec
 - entries/__init__.py
+- AsOfLookupTest
 - test_fundamentals_integrity.py
 - DerivedQuartersCarryNoBalances
 - src/investment_agent/notifications/__init__.py
 - StorageLayoutTest
-- test_earnings_consensus_reader.py
-- test_universe_names.py
-- ResearchStoreTest
+- reporting/notifications/__init__.py
+- src/investment_agent/data/universe/__init__.py
+- DuckDBStoreTest
 - graphify reference: GitHub clone and cross-repo merge
 - graphify reference: transcribe video and audio
-- test_watchlist_toss.py
+- universe/infrastructure/sources/__init__.py
 - 50_institutional.sql
+- _pipeline_steps
 - src/investment_agent/research/valuation/__init__.py
+- .current_model_stage
 - src/investment_agent/trading/decision/llm/__init__.py
 - src/investment_agent/trading/evidence/__init__.py
 - .agents/skills/graphify/references/extraction-spec.md
 - src/investment_agent/trading/portfolio/__init__.py
 - test_model_pool_providers.py
 - src/investment_agent/trading/risk/__init__.py
+- WeekWindowTest
 - tests/__init__.py
 - tests/investment_agent/data/fundamentals/application/__init__.py
 - tests/investment_agent/data/fundamentals/domain/__init__.py
 - tests/investment_agent/data/fundamentals/infrastructure/__init__.py
 - tests/investment_agent/data/macro/releases/__init__.py
+- update
 - tests/investment_agent/notifications/__init__.py
 - tests/investment_agent/operations/commands/__init__.py
 - tests/investment_agent/reporting/__init__.py
@@ -619,8 +639,10 @@
 - tests/investment_agent/trading/evidence/__init__.py
 - tests/investment_agent/trading/portfolio/__init__.py
 - native/__init__.py
+- .save_event_features
 - 10_account.sql
 - NotifyPackageShapeTest
+- .save_valuation_observations
 - macro/domain/__init__.py
 - src/investment_agent/data/macro/__init__.py
 - 30_fundamentals.sql
@@ -642,12 +664,12 @@
 2. `get_logger()` - 167 edges
 3. `canonical_json()` - 155 edges
 4. `FakeDatabase` - 155 edges
-5. `ExecutionSafetyError` - 151 edges
-6. `SupabaseRepository` - 136 edges
-7. `ContractError` - 130 edges
-8. `Database` - 128 edges
-9. `EvidenceBundle` - 98 edges
-10. `ExecutionRepository` - 91 edges
+5. `ContractError` - 130 edges
+6. `Database` - 129 edges
+7. `SupabaseRepository` - 128 edges
+8. `ExecutionSafetyError` - 115 edges
+9. `start_cli()` - 86 edges
+10. `load_config()` - 86 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `run()` --uses--> `Database`  [INFERRED]
@@ -656,99 +678,103 @@
   scripts/verify_integration.py → src/investment_agent/reporting/notifications/macro.py
 - `run()` --uses--> `SupabaseRepository`  [INFERRED]
   scripts/verify_integration.py → src/investment_agent/trading/supabase_repository.py
-- `LoadConfigTest` --uses--> `ConfigError`  [INFERRED]
-  tests/investment_agent/test_config.py → src/investment_agent/config.py
 - `_config()` --uses--> `Config`  [INFERRED]
   tests/investment_agent/notifications/test_channel_directory.py → src/investment_agent/config.py
+- `_config()` --uses--> `Config`  [INFERRED]
+  tests/investment_agent/notifications/test_forum_delivery.py → src/investment_agent/config.py
 
 ## Import Cycles
 - None detected.
 
-## Communities (658 total, 92 thin omitted)
+## Communities (680 total, 88 thin omitted)
 
 ### Community 0 - "web.py"
-Cohesion: 0.09
-Nodes (42): _cboe_put_call(), _cboe_put_call_on(), _cboe_vix(), _cnn_fear_greed(), fetch_batch(), _get(), _month_starts(), _multpl() (+34 more)
+Cohesion: 0.12
+Nodes (36): _cboe_put_call(), _cboe_put_call_on(), _cboe_vix(), _cnn_fear_greed(), fetch_batch(), _get(), _month_starts(), _multpl() (+28 more)
 
 ### Community 1 - "quant.py"
-Cohesion: 0.06
-Nodes (67): _allocation_items(), _allocation_summary(), _allocation_text(), _asset_label(), _assets_for_allocations(), _comparison_chart(), _is_equal_weight_allocation(), _metric_row() (+59 more)
+Cohesion: 0.04
+Nodes (98): _allocation_items(), _allocation_summary(), _allocation_text(), _asset_label(), _assets_for_allocations(), _comparison_chart(), _is_equal_weight_allocation(), _metric_row() (+90 more)
 
 ### Community 2 - "app_pages/earnings.py"
-Cohesion: 0.04
-Nodes (109): _frame_from_prices(), _latest(), Any, DataFrame, 저장된 AI 투자 판단을 선택한 깊이만큼 읽기 전용으로 검토한다., 선택된 가격 뷰 안에서만 저장된 OHLCV를 읽고 지표를 계산한다., 주문·체결 페이지가 탭 하나로 불러 쓴다. 페이지 단독 진입점은 아니다. 스크립트였을 때의 st.stop()은 return으로 바꿨다 — 탭…, render() (+101 more)
+Cohesion: 0.03
+Nodes (146): _frame_from_prices(), _latest(), Any, DataFrame, 저장된 AI 투자 판단을 선택한 깊이만큼 읽기 전용으로 검토한다., 선택된 가격 뷰 안에서만 저장된 OHLCV를 읽고 지표를 계산한다., 주문·체결 페이지가 탭 하나로 불러 쓴다. 페이지 단독 진입점은 아니다. 스크립트였을 때의 st.stop()은 return으로 바꿨다 — 탭…, render() (+138 more)
 
 ### Community 3 - "EvidenceBundle"
-Cohesion: 0.07
-Nodes (35): EvidenceBundle, EvidenceItem, _estimates(), _external_live(), _find(), _fundamentals(), _macro_events(), _missing_reason() (+27 more)
+Cohesion: 0.08
+Nodes (31): EvidenceBundle, EvidenceItem, _estimates(), _external_live(), _find(), _fundamentals(), _macro_events(), _missing_reason() (+23 more)
 
-### Community 5 - "live_worker.py"
-Cohesion: 0.04
-Nodes (75): LiveExecutionPermit, 소비된 승인 하나가 허용하는 주문 집합. **몇 분짜리다.**, 저장소 표기(BRK-B)를 토스 표기(BRK.B)로 변환한다., to_toss_symbol(), TossUsRegularSession, _decimal(), _decimal_text(), parse_personal_order_event() (+67 more)
+### Community 4 - "PolicyAndModelRepositoryTest"
+Cohesion: 0.06
+Nodes (9): DecisionTest, PolicyAndModelRepositoryTest, 부분 성공을 성공으로 승격하지 않고, 거절이 주문으로 새지 않는다., 판단하지 않음'도 판단이다. 근거가 없으면 나중에 되짚을 수 없다., 거절인데 비중이 남아 있으면 그것을 주문으로 읽는 길이 열린다., 둘 다 있으면 나중에 읽는 사람이 어느 쪽을 믿을지 모른다., completed로 적으면 빠진 종목이 '신호 없음'으로 보인다., RiskDecisionTest (+1 more)
+
+### Community 5 - "orders.py"
+Cohesion: 0.05
+Nodes (55): LiveExecutionPermit, 소비된 승인 하나가 허용하는 주문 집합. **몇 분짜리다.**, 저장소 표기(BRK-B)를 토스 표기(BRK.B)로 변환한다., to_toss_symbol(), _decimal(), _decimal_text(), parse_personal_order_event(), Any (+47 more)
 
 ### Community 6 - "ExecutionIntent"
-Cohesion: 0.07
-Nodes (39): Toss 인증·계좌 조회·주문 API client 패키지., ExecutionIntent, IntentError, datetime, ValueError, 지금 이 의도로 주문을 만들어도 되는가. 아니면 예외. `required_mode`를 인자로 받는 이유: 부르는 쪽이 **자기가 어느 경로인지…, 현금을 뺀 대상 종목. 주문 계획이 도는 목록이다., 실행 의도가 계약을 어겼다. **주문을 만들지 않는다.** (+31 more)
+Cohesion: 0.04
+Nodes (58): Toss 인증·계좌 조회·주문 API client 패키지., ExecutionIntent, IntentError, Any, datetime, ValueError, 판단 계층이 실행 계층에 넘길 수 있는 **유일한** 물건. ## 왜 execution이 이 모양을 소유하나 `trading`이 만든 것을…, 지금 이 의도로 주문을 만들어도 되는가. 아니면 예외. `required_mode`를 인자로 받는 이유: 부르는 쪽이 **자기가 어느 경로인지… (+50 more)
 
 ### Community 7 - "ReleaseWatchTest"
 Cohesion: 0.10
 Nodes (7): Macro application orchestration boundary., Macro domain의 실행 가능한 명령 진입점., HistoricalForecastTest, ALFRED forecast reconstruction이 measure/PIT 계약을 지키는지 검사한다., ECON release-time watcher의 due/filter/pending/idempotency 계약., _release(), ReleaseWatchTest
 
 ### Community 8 - "actuals.py"
-Cohesion: 0.12
-Nodes (35): ActualConfigurationError, ActualDataError, ActualNotAvailableYetError, ActualProviderError, ActualsError, _canonical_period(), _contract(), _ecos() (+27 more)
+Cohesion: 0.11
+Nodes (37): ActualConfigurationError, ActualDataError, ActualNotAvailableYetError, ActualProviderError, ActualsError, _canonical_period(), _contract(), _ecos() (+29 more)
 
-### Community 9 - "execution/db.py"
-Cohesion: 0.04
-Nodes (44): Connection, Broker에 전달하기 전 주문 계획 계약., _attempt_event(), latest_order(), latest_paper_account_snapshot(), latest_reconciliation_run(), _order_attempt(), 로컬 SQLite 실행 원장과 canonical 종목 identity 조회 경계. (+36 more)
+### Community 9 - "sqlite.py"
+Cohesion: 0.05
+Nodes (29): Connection, PostgREST numeric 직렬화 차이(``5``/``5.0``)를 충돌로 오인하지 않는다., _same_planned_value(), make_attempt_id(), payload_digest(), Any, datetime, 주문 시도의 변경 불가능한 원장. ## 네트워크 호출 **전에** 한 줄을 예약한다 주문을 보낸 뒤 기록하면, 보내는 도중에 프로세스가 죽었을… (+21 more)
 
 ### Community 10 - "artifacts.py"
 Cohesion: 0.11
 Nodes (24): archive_case_evidence(), ArchivedCaseEvidence, _bounded_texts(), build_evidence_digest(), EvidenceArtifactError, EvidenceArtifactManifest, EvidenceArtifactStore, _latest_timestamp() (+16 more)
 
 ### Community 11 - "awaiting_message"
-Cohesion: 0.31
-Nodes (4): awaiting_message(), 비어 있는 화면에 붙일 안내 문구를 만든다. 빈 화면만으로는 "코드가 죽었다"와 "아직 안 쌓였다"를 구분할 수 없다. 무엇이 없는지와 언제…, AwaitingMessageTest, 빈 화면이 고장인지 데이터가 없는 건지 구분되게 한다. 지금까지는 그냥 비어 있어서, 코드가 죽은 것(호출자 0)과 아직 안 쌓인 것을 화면만…
+Cohesion: 0.24
+Nodes (6): awaiting_data(), awaiting_message(), 비어 있는 화면에 붙일 안내 문구를 만든다. 빈 화면만으로는 "코드가 죽었다"와 "아직 안 쌓였다"를 구분할 수 없다. 무엇이 없는지와 언제…, `awaiting_message`를 화면에 표시한다., AwaitingMessageTest, 빈 화면이 고장인지 데이터가 없는 건지 구분되게 한다. 지금까지는 그냥 비어 있어서, 코드가 죽은 것(호출자 0)과 아직 안 쌓인 것을 화면만…
 
 ### Community 12 - "companyfacts.py"
-Cohesion: 0.07
-Nodes (48): normalize_form(), 공시와 회계기간을 식별하는 순수 값 객체., 수정 공시 표기를 원 공시 유형으로 정규화한다., _accession_coverage(), _affected_fiscal_years(), _annual_fiscal_year(), _available_daily_index_urls(), companyfacts_to_facts() (+40 more)
+Cohesion: 0.06
+Nodes (52): _accession_coverage(), _affected_fiscal_years(), all_financial_filings(), _annual_fiscal_year(), _available_daily_index_urls(), _canonical_filing_focus(), companyfacts_to_facts(), _corroborated_source_accessions() (+44 more)
 
 ### Community 13 - "launcher.py"
 Cohesion: 0.14
-Nodes (28): clear_screen(), configure_console(), developer_tools_menu(), find_available_port(), harness_switch_command(), interactive_menu(), is_port_available(), main() (+20 more)
+Nodes (27): clear_screen(), configure_console(), developer_tools_menu(), find_available_port(), harness_switch_command(), interactive_menu(), is_port_available(), main() (+19 more)
 
-### Community 14 - ".create"
-Cohesion: 0.11
-Nodes (14): create_approval_id(), issue_live_execution_permit(), datetime, timedelta, `intent` 만료를 넘지 않는 pending 요청을 만든다. `latest_expiry`로 자르는 이유: 의도가 끝난 뒤에도 살아 있는…, 소비된 승인을 짧은 실주문 permit으로 바꾼다. **DB를 바꾸지도, 네트워크를 부르지도 않는다.** 부르는 쪽이 먼저…, ApprovalBridgeTest, _consumed() (+6 more)
+### Community 14 - "ApprovalRequest"
+Cohesion: 0.04
+Nodes (41): ApprovalRequest, create_approval_id(), issue_live_execution_permit(), Any, datetime, timedelta, 사람의 승인. 실주문으로 가는 유일한 문이다. 승인 요청·서명·permit 발급을 이 execution owner 안에서 함께 정의한다. ##…, 상태와 결정이 어긋나면 거절한다. 어긋난 행을 통과시키면 "승인되지 않았는데 승인된 것처럼 보이는" 상태가 생기고, 그 상태를 만든 경로는… (+33 more)
 
 ### Community 15 - "investment_harness.py"
-Cohesion: 0.07
-Nodes (47): build_registry(), _emit(), main(), 항상 켜진 로컬 장비용 투자 분석 운영 하네스. 인자 없이 실행하면 상태 파일이나 외부 서비스에 손대지 않고 계획만 출력한다., JobDefinition, StageDefinition, HealthReport, inspect_health() (+39 more)
+Cohesion: 0.08
+Nodes (42): build_registry(), _emit(), main(), 항상 켜진 로컬 장비용 투자 분석 운영 하네스. 인자 없이 실행하면 상태 파일이나 외부 서비스에 손대지 않고 계획만 출력한다., JobDefinition, StageDefinition, HealthReport, inspect_health() (+34 more)
 
-### Community 16 - "commands/common_shares.py"
-Cohesion: 0.07
-Nodes (45): main(), _parse_args(), Namespace, SEC 보통주 발행주식수 수집 및 백필 엔트리포인트., main(), _parse_args(), Namespace, 적재된 fundamentals 데이터의 불변조건을 주기적으로 점검하는 canonical 잡. 수집 성공 여부만으로는 저장 행의 완전성과 파생… (+37 more)
+### Community 16 - "us_market_today"
+Cohesion: 0.04
+Nodes (59): main(), _parse_args(), Namespace, SEC 보통주 발행주식수 수집 및 백필 엔트리포인트., main(), _parse_args(), Namespace, 적재된 fundamentals 데이터의 불변조건을 주기적으로 점검하는 canonical 잡. 수집 성공 여부만으로는 저장 행의 완전성과 파생… (+51 more)
 
-### Community 17 - "ExecutionRepository"
+### Community 17 - "parse_datetime"
 Cohesion: 0.05
-Nodes (20): _approval(), ExecutionRepository, _intent(), datetime, 실행 컴퓨터의 SQLite 원장만 사용하는 주문·승인 저장소., 원본 응답을 내용 주소 파일로 보존하고 원장에는 경로·해시만 남긴다., 실행을 위해 보존해야 하는 판단 원문을 local runtime에 기록한다., DurableControlState (+12 more)
+Nodes (40): ExecutionSafetyError, RuntimeError, 주문을 만들지 않고 즉시 중단해야 하는 안전 오류., _approval(), _attempt_event(), ExecutionRepository, _intent(), latest_order() (+32 more)
 
 ### Community 18 - "sec.py"
 Cohesion: 0.09
-Nodes (36): _get_text_optional(), archive_cik(), filing_archive_base(), filing_archive_items(), filing_document_url(), filing_homepage_url(), filings_filed_since(), get_bytes_optional() (+28 more)
+Nodes (34): archive_cik(), filing_archive_base(), filing_archive_items(), filing_document_url(), filing_homepage_url(), filings_filed_since(), get_bytes_optional(), get_json() (+26 more)
 
 ### Community 19 - "charts.py"
-Cohesion: 0.07
-Nodes (44): _as_date(), _axis_money(), _bridge_parts(), cashflow_quarters(), combo(), _div(), dividend_trend(), earnings_quality() (+36 more)
+Cohesion: 0.05
+Nodes (70): _beat_color(), _big(), build(), _expectation_view(), _inconsistent_7d(), _period_text(), 실적 PNG 카드 — 템플릿 컨텍스트(ctx)와 Discord 캡션 조립. candidates.load_pending() 항목 +…, 항목(+extras) → (템플릿 ctx, Discord 캡션). (+62 more)
 
 ### Community 20 - "dashboard/db.py"
 Cohesion: 0.03
-Nodes (170): Figure, P, R, blending_weights(), _load_real_active_policy(), Any, AI·강화학습(ML/RL) 자율진화 관제 랩 대시보드 페이지. 하네스 7대 전자동 잡의 실제 실행 상태, PPO 강화학습 챔피언 정책…, 승격된 정책의 DSR 확률이 만드는 (LLM 가중치, RL 가중치). 정책이 없으면 None. 실제 판단 경로가 RL 목표비중을 넘기지… (+162 more)
+Nodes (148): P, R, _active_watchlist_rows(), _as_datetime(), _attach_entity_profiles(), _canonical_financial_rows(), _canonical_price_rows(), _canonical_processing_rows() (+140 more)
 
-### Community 21 - "portfolio/contracts.py"
-Cohesion: 0.06
-Nodes (43): baseline을 실행 권한 없는 RL challenger PortfolioProposal로 변환한다., PortfolioProposal, _probability(), Any, LLM·RL·룰 전략이 공유하는 포트폴리오 비중 계약., FinRL-X의 weight-centric 경계를 저장 가능한 형태로 엄격화한다., long-only 비중을 검증하고 현금 항목을 포함한 정렬 사본을 반환한다., 종목 분석 결과다. 실제 주문 권한은 갖지 않는다. (+35 more)
+### Community 21 - "serialization.py"
+Cohesion: 0.04
+Nodes (63): datetime, JSON 직렬화·해싱·URL 정규화. ## 왜 표준 json으로 부족한가 `json.dumps`는 `Decimal`과 `date`를 못…, 내용 기반의 결정론적 식별자를 만든다., stable_id(), optimizer와 RiskGate의 현재 한도를 단일 기준으로 읽어온다., enabled_social_vendors(), 공식 API 접근 및 일일 한도를 준비한 provider만 명시적으로 활성화한다., _case_key() (+55 more)
 
 ### Community 22 - "_tree"
 Cohesion: 0.14
@@ -756,19 +782,19 @@ Nodes (16): DatabaseNameConstantsTest, FutureAnnotationsTest, _has_main_guard(),
 
 ### Community 23 - "rl/contracts.py"
 Cohesion: 0.06
-Nodes (51): 단일 horizon label을 구간 종료가 확정된 뒤에만 만든다. `label_available_at`을 넘기면 실제 적재 시각을 근거로…, 1/5/20 거래일 종료 뒤에만 label을 생성한다., ResearchStore의 PIT feature snapshot을 Qlib research workflow에만 연결한다., FeatureSnapshot, _finite(), ForwardReturnLabel, _hash(), MembershipSnapshot (+43 more)
+Nodes (50): 단일 horizon label을 구간 종료가 확정된 뒤에만 만든다. `label_available_at`을 넘기면 실제 적재 시각을 근거로…, 1/5/20 거래일 종료 뒤에만 label을 생성한다., FeatureSnapshot, _finite(), ForwardReturnLabel, _hash(), MembershipSnapshot, MembershipTimeline (+42 more)
 
 ### Community 24 - "MarketQuote"
 Cohesion: 0.17
-Nodes (10): MarketQuote, MarketState, _number(), Any, datetime, 최신값만 덮어쓰는 RAM cache. source of truth나 주문 ledger가 아니다., 최신 quote를 원자적으로 교체한다., 호출자가 수정할 수 없는 정렬된 shallow snapshot을 반환한다. (+2 more)
+Nodes (11): MarketQuote, MarketState, _number(), Any, datetime, 실시간 quote를 보관하는 단일 프로세스 RAM Hot State., 최신값만 덮어쓰는 RAM cache. source of truth나 주문 ledger가 아니다., 최신 quote를 원자적으로 교체한다. (+3 more)
 
 ### Community 25 - "switch.py"
-Cohesion: 0.07
-Nodes (45): interactive_loop(), main(), print_status_dashboard(), Path, 투자 하네스 ON/OFF 스위치 및 제어판 CLI 진입점. 사용 예시: # 1. 종합 상태 조회 python -m…, _safe_print(), clear_maintenance_hold(), get_maintenance_path() (+37 more)
+Cohesion: 0.08
+Nodes (45): interactive_loop(), main(), print_status_dashboard(), Path, 투자 하네스 ON/OFF 스위치 및 제어판 CLI 진입점. 사용 예시: # 1. 종합 상태 조회 python -m…, _safe_print(), ATLAS 로컬 제어센터. 대시보드는 관측 전용으로 유지하고, 하네스 시작·정지처럼 로컬 프로세스를 변경하는 작업만 이 창에서 명시적으로…, clear_maintenance_hold() (+37 more)
 
 ### Community 26 - "reserve_provider_call"
-Cohesion: 0.06
-Nodes (42): main(), 서브레딧 새 글을 수집해 intelligence.duckdb에 적재한다., 수집 대상 서브레딧 선언. 환경변수가 아니라 코드가 선언을 갖는다 — 어떤 채널을 보는지는 실행 환경마다 달라야 할 설정이 아니라 이 저장소의…, RuntimeError, 뉴스 provider가 data 계층에서 반환하는 결과 계약., Reddit 자격증명이 없다. 오류가 아니라 아직 켜지지 않은 상태다., 오늘 provider 한도를 다 썼다. 수집 유스케이스와 reddit 어댑터가 함께 쓰는 계약이라 둘 중 어느 계층에도 두지 않는다.…, SocialCredentialsMissing (+34 more)
+Cohesion: 0.07
+Nodes (39): RuntimeError, 뉴스 provider가 data 계층에서 반환하는 결과 계약., Reddit 자격증명이 없다. 오류가 아니라 아직 켜지지 않은 상태다., 오늘 provider 한도를 다 썼다. 수집 유스케이스와 reddit 어댑터가 함께 쓰는 계약이라 둘 중 어느 계층에도 두지 않는다.…, SocialCredentialsMissing, SocialQuotaExhausted, fetch_ticker_news(), NewsQuotaExhausted (+31 more)
 
 ### Community 27 - "MacroArchitectureTest"
 Cohesion: 0.10
@@ -776,35 +802,35 @@ Nodes (18): ImportFrom, _application_code_files(), _command_code_files(), _domai
 
 ### Community 28 - "readers/intelligence.py"
 Cohesion: 0.13
-Nodes (27): default_database_path(), 이번 실행이 쓸 Intelligence DB 경로., connect(), ddl_statements(), DuckDBStoreError, Any, Path, RuntimeError (+19 more)
+Nodes (28): connect(), ddl_statements(), DuckDBStoreError, Any, Path, RuntimeError, 로컬 DuckDB 파일을 여는 공통 기술 경계. ## 도메인 이름을 두지 않는다 어떤 표가 있는지는…, DuckDB 파일을 열거나 선언을 적용하지 못했다. (+20 more)
 
 ### Community 29 - "FundamentalsRepository"
 Cohesion: 0.05
-Nodes (27): Filing, 공시가 존재한다는 사실. 우리가 그것을 어떻게 처리했는지는 여기 없다., FundamentalsRepository, Any, date, datetime, 기간별 canonical provenance. 호환을 위해 목록 모양은 유지하지만 각 기간에는 최대 한 행만 들어간다., canonical 재무 행. 정정 전 숫자는 저장하지 않으므로 ``as_of``는 source filing date보다 앞선 행을 제외한다.… (+19 more)
+Nodes (29): FundamentalsRepository, Any, date, datetime, 기간별 canonical provenance. 호환을 위해 목록 모양은 유지하지만 각 기간에는 최대 한 행만 들어간다., canonical 재무 행. 정정 전 숫자는 저장하지 않으므로 ``as_of``는 source filing date보다 앞선 행을 제외한다.…, canonical 정책에서는 재무 숫자 정정 횟수를 재현하지 않는다., 발표 시점 이전 **마지막** 컨센서스. 최신 컨센서스를 쓰면 과거 서프라이즈가 매일 조금씩 달라진다. 그러면 "그때 놀라운 실적이었나"에… (+21 more)
 
 ### Community 30 - "FeatureDataset"
-Cohesion: 0.05
-Nodes (37): PPOAllocationTimingSpec, Any, PPO의 초기 범위를 allocation·timing으로 제한한다., PPO가 broker나 종목 수량을 직접 만들지 않는 연구 명세., RewardConfig, FeatureDataset, make_gym_environment(), 종목 수량이 아니라 목표 비중을 학습하는 FinRL용 환경. (+29 more)
+Cohesion: 0.06
+Nodes (34): PPO의 초기 범위를 allocation·timing으로 제한한다., RewardConfig, FeatureDataset, make_gym_environment(), 종목 수량이 아니라 목표 비중을 학습하는 FinRL용 환경., t 시점 feature와 t→t+1 실현수익을 분리해 보관한다., FinRL/Stable-Baselines3가 요구하는 Gymnasium 환경을 지연 생성한다., ExperienceCollector (+26 more)
 
 ### Community 31 - "test_historical_earnings_estimates.py"
-Cohesion: 0.07
-Nodes (25): backfill_historical_eps_estimates(), Any, ExpectationsRepository, 과거 8-K 실적 속보에 EPS 예상치 재구성값을 채운다., 기존 실적 속보에만 Yahoo의 과거 EPS 예상치를 재구성해 저장한다., build_historical_eps_estimates(), _finite_number(), HistoricalEpsEstimateBatch (+17 more)
+Cohesion: 0.08
+Nodes (20): build_historical_eps_estimates(), _finite_number(), HistoricalEpsEstimateBatch, Any, 발표 이력에서 재구성한 EPS 예상치 스냅샷을 만든다., 저장 가능 행과 건너뛴 사유를 함께 전달한다., 실적 속보 회계키에 Yahoo의 과거 EPS 예상치를 정확히 붙인다. Yahoo 이력은 발표 당시의 마지막 일별 컨센서스 스냅샷이 아니므로…, match_reported_earnings() (+12 more)
 
-### Community 32 - "parse_earnings_release.py"
-Cohesion: 0.12
-Nodes (17): _first_table_amount(), _html_table_priority(), _normalize_text(), _normalized_label(), 실적 보도자료 HTML에서 실제 매출과 가이던스 문장을 추출한다., HTML에서 읽은 공백과 글머리표를 비교 가능한 한 줄로 정리한다., 표 행의 각주·기호를 빼고 허용한 매출 레이블과 비교한다., 표 안이나 가까운 제목의 표시 단위를 달러 원단위 배수로 바꾼다. (+9 more)
+### Community 32 - "TestFundamentalsFlash"
+Cohesion: 0.08
+Nodes (25): determine_fiscal_period(), _parse_release_html(), 구조화 결과가 없는 보도자료 HTML에서 누락 필드를 보완한다., 8-K 공시일을 회사의 실제 회계분기에 붙인다. 회계력을 못 읽거나 정상 범위를 벗어나면 **추정하지 않고 None**을 돌려준다. 회사별…, _first_table_amount(), _html_table_priority(), _normalize_text(), _normalized_label() (+17 more)
 
 ### Community 33 - "refresh_earnings_season.py"
-Cohesion: 0.08
-Nodes (21): _as_date(), _env_int(), evaluate_earnings_season(), lag_days(), lead_days(), date, 발표 예정일을 기준으로 관심종목 fast path 실행 여부를 판정한다., 실적 예정일 전에 fast path를 시작할 일수. (+13 more)
+Cohesion: 0.14
+Nodes (20): _as_date(), _env_int(), evaluate_earnings_season(), github_output_lines(), lag_days(), lead_days(), date, 발표 예정일을 기준으로 관심종목 fast path 실행 여부를 판정한다. (+12 more)
 
-### Community 34 - "_ensure_filings"
-Cohesion: 0.29
-Nodes (10): _ensure_filings(), _filing_state_row(), mark_empty_filing_targets(), mark_processed_filing_targets(), mark_superseded_filing_targets(), 공시 사실을 processing 상태보다 먼저 canonical filings에 기록한다., 허용된 표준 fact가 없는 공시를 정상 완료(empty)로 기록한다., 현재 CIK의 동일 기간이 대신하는 전임 CIK 공시를 terminal로 기록한다. (+2 more)
+### Community 34 - "earnings_report.py"
+Cohesion: 0.07
+Nodes (51): merge_corporate_actions(), 분리 저장한 배당·분할 이벤트를 가격 행에 읽기 전용으로 결합한다., 가격 행의 grain을 바꾸지 않고 같은 거래일의 이벤트만 붙인다., f(), financial_versions 한 행에서 값을 읽는 순수 함수. DB에 접근하지 않으므로 조회 경계(reporting)와 카드 계산…, 숫자로 바꿀 수 없으면 None. Decimal·문자열·None이 섞여 들어온다., 단기차입·유동성 장기부채·장기부채·운용리스 부채 합계., total_debt() (+43 more)
 
-### Community 35 - "supabase_repository.py"
-Cohesion: 0.05
-Nodes (44): Return the v1 security identity for each current ticker., select_security_ids_by_ticker(), normalize_ticker(), universe의 Yahoo식 표기(BRK-B)에 맞춘다., _feature_snapshot(), _finite(), _guru_candidate_signals(), _iso() (+36 more)
+### Community 35 - "SupabaseRepository"
+Cohesion: 0.03
+Nodes (65): Project v1 security identities back to the user-facing ticker., select_tickers_by_security_id(), _args(), main(), Namespace, 평가 원장을 재집계한 뒤 모델 수명주기를 수동으로 한 단계 승격한다., normalize_ticker(), AI 판단 대상을 현재 범용 수집 게이트 구성종목으로 제한한다. (+57 more)
 
 ### Community 36 - "90_reporting.sql"
 Cohesion: 0.09
@@ -812,15 +838,15 @@ Nodes (33): reporting.company_financials_latest, reporting.earnings_schedule, re
 
 ### Community 37 - "continuous_retrain.py"
 Cohesion: 0.07
-Nodes (38): default_spec(), _load_champion_score(), main(), _parse_args(), Any, datetime, Namespace, Path (+30 more)
+Nodes (31): default_spec(), _load_champion_score(), main(), _parse_args(), Any, datetime, Namespace, Path (+23 more)
 
 ### Community 38 - "ProductionInvestmentAdapters"
-Cohesion: 0.07
-Nodes (36): ApprovalRepositoryPort, _clock(), DecisionRepositoryPort, _metadata_id(), _positive_float(), _positive_int(), ProductionInvestmentAdapters, Any (+28 more)
+Cohesion: 0.14
+Nodes (20): _metadata_id(), ProductionInvestmentAdapters, ID를 metadata로 넘기고 모든 주문 mutation은 execution entry에만 맡긴다., 발표 예정 시각 창에서 관심종목 공시를 훑고 알림을 바로 보낸다. 거래 창(risk_window)으로 막지 않는다 — 주문이 아니라 공시…, PIT 밸류에이션 관측값을 원장에 적재한다. live_shadow만 만든다 — 과거 시점은 가격 적재시각과 TTM vintage를 증명할 수…, tracked universe의 PIT feature snapshot을 ResearchStore에 적재한다. 주문이 아니라 데이터 생산이라…, 확정된 label을 비용 반영 학습 표본으로 바꿔 쌓는다. label 단계 뒤에 붙는다. gross 수익률을 그대로 학습하면 모델이 회전율을…, 알림 발송은 실패해도 판단·주문 결과를 가리지 않는다 (관례 8). 보고서가 안 나간 것은 되돌릴 수 있지만, 여기서 예외를 올리면 그 회차의… (+12 more)
 
 ### Community 39 - "emergency.py"
-Cohesion: 0.13
-Nodes (23): main(), 투자 하네스 비상 긴급 정지(Emergency Stop) 및 재활성화(Re-arm) CLI 도구. 사용 예시: # 1. 상태 및 Durable…, _safe_print(), check_runtime_status(), emergency_stop(), get_lockdown_path(), is_execution_locked_down(), _is_process_alive() (+15 more)
+Cohesion: 0.17
+Nodes (21): main(), 투자 하네스 비상 긴급 정지(Emergency Stop) 및 재활성화(Re-arm) CLI 도구. 사용 예시: # 1. 상태 및 Durable…, _safe_print(), check_runtime_status(), emergency_stop(), get_lockdown_path(), is_execution_locked_down(), _is_process_alive() (+13 more)
 
 ### Community 40 - "_fetch"
 Cohesion: 0.10
@@ -831,92 +857,92 @@ Cohesion: 0.10
 Nodes (37): build_events(), EventRepository, main(), _normalized(), _parse_args(), Any, Namespace, Protocol (+29 more)
 
 ### Community 42 - "HarnessScheduler"
-Cohesion: 0.05
-Nodes (33): 운영 하네스 job·stage의 실행 계약., KillSwitches, 알 수 없는 값은 안전하게 ON으로 해석한다., _switch(), 한 장비에서 하네스 프로세스가 하나만 실행되게 하는 OS file lock., HarnessScheduler, _idempotency_key(), datetime (+25 more)
+Cohesion: 0.09
+Nodes (22): KillSwitches, 알 수 없는 값은 안전하게 ON으로 해석한다., _switch(), HarnessScheduler, _idempotency_key(), datetime, job 등록, 일정 판정, stage 전이를 담당하는 단일 프로세스 scheduler., 한 tick 안에서 성공 stage를 진행하고 waiting·오류·kill에서 멈춘다. (+14 more)
 
 ### Community 43 - "FiscalPeriod"
 Cohesion: 0.06
 Nodes (29): derive_fourth_quarter(), FiscalPeriod, parse_period(), period_end_is_plausible(), PeriodError, date, ValueError, 회계기간의 규칙. ## 달력 분기가 아니다 회사마다 회계연도 끝이 다르다(애플은 9월, 마이크로소프트는 6월). `period_end`가… (+21 more)
 
-### Community 44 - "AccountSnapshot"
-Cohesion: 0.05
-Nodes (37): AccountSnapshot, 현금과 보유 평가액을 합친 스냅샷 기준 순자산., CASH를 포함해 합이 1인 현재 포트폴리오 비중., 계좌 조회 결과에서 내용 기반 ID를 만드는 불변 snapshot., PortfolioConstructor, Any, datetime, SignalBook과 실제 계좌 snapshot을 전체 목표 비중으로 결합한다. (+29 more)
+### Community 44 - "SignalBook"
+Cohesion: 0.09
+Nodes (20): Any, datetime, 양 끝 중 만료 시각만 배제해 재현 가능한 TTL 경계를 만든다., 완료 배치의 최신 유효 의견만 노출하는 불변 SignalBook., 부분·실패·만료 배치를 full portfolio 입력에서 차단한다., 지정된 단일 배치에만 속하며 만료되지 않은 종목 의견을 반환한다., 종목마다 point-in-time 기준 가장 최신인 유효 의견을 반환한다., 원본을 바꾸지 않고 새 분석 배치를 누적한다. (+12 more)
 
-### Community 45 - "DiscordApprovalClient"
-Cohesion: 0.07
-Nodes (26): DiscordApprovalClient, DiscordMessageRef, _interaction_payload(), InteractionHandler, Any, Protocol, 투자 승인 카드 전용 Discord REST/Gateway 경계., 원 승인 카드 한 장의 상태 문구만 멱등 PATCH한다. (+18 more)
+### Community 45 - "execution/contracts.py"
+Cohesion: 0.04
+Nodes (52): build_approval_card(), button_components(), Any, 토스 비실행 주문표를 Discord 건별 승인 카드로 바꾼다., 자유문장 대신 서명된 승인/거절 버튼 두 개만 만든다., Discord message create API에 바로 전달할 안전한 payload를 만든다., _ticket_lines(), DiscordApprovalClient (+44 more)
 
 ### Community 46 - "Investment Agent Design System"
 Cohesion: 0.22
 Nodes (9): 12. 모션, 13. 접근성, 15. 아이콘과 일러스트, 17. 컴포넌트 상태 매트릭스, 19. 절대 하지 않는 것, 1. 한 문장 정의, 20. 설계 근거, 4. 토큰 구조 (+1 more)
 
 ### Community 47 - "MacroRepository"
-Cohesion: 0.03
-Nodes (68): SeriesValidator, SourceFetcher, Any, date, datetime, v1 macro 원천 결과를 revision-safe observation 원장에 적재한다., source별 결과를 독립 수집해 원천 수집 시각으로만 버전을 남긴다., refresh_macro() (+60 more)
+Cohesion: 0.04
+Nodes (42): v1 macro 원천 결과를 revision-safe observation 원장에 적재한다., Any, v1 시장 거시지표의 선언형 원천 카탈로그. 카탈로그는 DB seed와 같은 계약을 코드에서 재현한다. 수집 시에는 DB에 실제로 seed된…, _row(), first_print(), Observation, date, datetime (+34 more)
 
 ### Community 48 - "releases/db.py"
-Cohesion: 0.14
-Nodes (47): ingest_raw(), 미래 발표의 예상값을 매번 확인하고, 달라진 상태만 DB가 원자적으로 저장한다., 원자료를 한 번만 저장한다. 최초 관측 판정은 계산 결과의 전후 차이로 얻는다., 현재 일정의 제한된 발표창만 조회하며 아직 계산 가능한 값이 없으면 기다린다., snapshot_forecasts(), watch_once(), event_key(), Any (+39 more)
+Cohesion: 0.20
+Nodes (36): 미래 발표의 예상값을 매번 확인하고, 달라진 상태만 DB가 원자적으로 저장한다., snapshot_forecasts(), append_forecasts(), append_observations(), calendar_window(), collectible_series(), counts(), _db() (+28 more)
 
-### Community 49 - "DailyBar"
-Cohesion: 0.06
-Nodes (30): adjust(), dividend_factors(), _previous_close(), date, 분할·배당으로 과거 가격을 조정한다. ## 왜 저장하지 않고 계산하는가 조정가를 저장하면 **분할이 하나 새로 들어올 때마다 과거 행 전체를…, 거래일마다 곱할 분할 계수. 분할 당일(`action_date`)의 가격은 이미 분할 후 가격이다. 따라서 조정 대상은 **그 전날까지**다.…, 거래일마다 곱할 배당 계수(총수익 기준). 배당락일 전날 종가를 기준으로 `1 - 배당/종가`를 누적한다. 종가를 모르면 그 배당은 건너뛴다…, 배당락일 **직전 거래일**의 종가. 휴장을 건너뛰어야 하므로 목록을 거슬러 찾는다. (+22 more)
+### Community 49 - "as_date"
+Cohesion: 0.04
+Nodes (48): MarketRefreshResult, Yahoo 원천 가격을 v1 security identity로 변환해 적재한다., 완결된 일봉만 받고, ticker를 저장 직전에 security_id로 바꾼다., refresh_market(), adjust(), dividend_factors(), _previous_close(), date (+40 more)
 
-### Community 50 - "SelectOnlyGatewayTests"
-Cohesion: 0.05
-Nodes (18): DashboardStaticBoundaryTests, _FakeBuilder, _FakeClient, _FakeFunction, _FakeSchema, OfflineBoundaryTests, Any, SimpleNamespace (+10 more)
+### Community 50 - "_FakeClient"
+Cohesion: 0.17
+Nodes (6): _FakeClient, manager_cik/name/fund_name/is_active는 코드 설정이 SSOT이므로 `institutional.managers`를…, loader가 부르는 RPC 이름과 인자가 allowlist에 실제로 있는지 정적으로 확인한다. 오프라인 테스트는 preflight에서 먼저…, 관심종목 밖 행을 읽지 않고, PostgREST 상한에서 잘리지 않아야 한다., execution 관측은 이제 Supabase가 아니라 로컬 runtime.sqlite3 (reporting.local_runtime)가…, SelectOnlyGatewayTests
 
 ### Community 51 - "ReportingQueries"
-Cohesion: 0.08
-Nodes (10): 화면과 알림에 같은 DataResult를 반환한다. 실패를 빈 결과로 숨기지 않는다., ReportingQueries, Builder, Client, LocalRuntimeViewTest, 공통 조회 계약을 실제 페이지네이션과 오프라인 응답으로 검증한다., LOCAL_VIEWS는 Postgres가 아니라 실행 컴퓨터의 runtime.sqlite3가 소유한다 —…, LOCAL_VIEWS는 Postgres가 아니라 로컬 runtime.sqlite3가 소유한다 — 별도 real-SQLite 계약은… (+2 more)
+Cohesion: 0.06
+Nodes (16): 화면과 알림에 같은 DataResult를 반환한다. 실패를 빈 결과로 숨기지 않는다., ReportingQueries, MasterViewsHaveNoScopeTest, 코드가 실제로 부르는 모양으로 reporting 뷰를 읽을 수 있어야 한다. `ReportingQueries.read`는 이력 뷰가 통째로…, `f("some_view")` 꼴로 인자 하나만 준 호출을 모은다., 검사 대상을 못 찾으면 위 테스트는 공허하게 통과한다. 여기서 특정 뷰를 이름으로 붙잡는 것은 `macro_measures` 하나뿐이다 —…, 시간 컬럼이 없는 뷰에 scope를 걸면 범위로 풀 길이 없다 — 영구히 못 읽는다., _unfiltered_view_calls() (+8 more)
 
 ### Community 52 - "postgres.py"
-Cohesion: 0.02
-Nodes (160): 영구 저장이 허용된 기업 전체 재무 wide 컬럼 집합. SEC fact는 변환 중에만 long 형태로 다루며, 이 목록에 없는 값은 표준화…, ColumnPolicy, _load_maps(), SEC us-gaap 태그를 프로젝트 표준 재무 컬럼으로 매핑한다. edgartools의 ``gaap_mappings.json``을 기본…, 중요 wide 컬럼의 허용 태그와 결정적 우선순위., CamelCase나 라벨 형태의 문자열을 snake_case로 바꾼다., 원시 태그 매핑, 표준 컬럼 매핑, 충돌 우선순위를 읽는다., _snake() (+152 more)
+Cohesion: 0.03
+Nodes (121): ciks_for_tickers(), ciks_missing_financials(), filing_accessions(), 관심종목의 다음 발표 예정일 — 티커별 최신 일정 스냅샷 1건. 시즌 게이트가 "지금 발표가 몰리는 구간인가"를 판단하는 유일한 입력이다.…, 현재 매핑 버전의 지정 상태 accession_no을 source CIK별로 반환한다., 현재 추적 security에 연결됐지만 core fundamentals가 없는 CIK., Return the entity gate for SEC CompanyFacts work exactly once per CIK., Resolve ticker CLI selectors to their current CIKs without fan-out. (+113 more)
 
-### Community 53 - "inspect_harness_state"
-Cohesion: 0.04
-Nodes (40): inspect_harness_state(), Any, datetime, 하네스 JSON을 변경하지 않고 PID·heartbeat·잡 건강 상태로 요약한다. 반환값은 ``available``,…, add_technical_indicators(), DataFrame, OHLC 프레임 복사본에 ``SMA20``, ``SMA60``, ``RSI14``를 추가한다. 종가는 ``Close`` 또는 ``close``…, _harness_health() (+32 more)
+### Community 53 - "add_technical_indicators"
+Cohesion: 0.05
+Nodes (25): add_technical_indicators(), DataFrame, OHLC 프레임 복사본에 ``SMA20``, ``SMA60``, ``RSI14``를 추가한다. 종가는 ``Close`` 또는 ``close``…, EarningsAndGuruTests, PortfolioAndRoleTests, 대시보드 읽기 전용 계산의 결측 보존과 핵심 수식을 검증한다., 필수 관측치가 부족할 때 진단을 중립이나 risk-on으로 꾸미지 않아야 한다., 지표가 없거나 신호가 비등해도 화면 계약을 빠뜨리지 않아야 한다. (+17 more)
 
-### Community 54 - "RunLifecycleTest"
-Cohesion: 0.25
-Nodes (3): 둘 다 있으면 나중에 읽는 사람이 어느 쪽을 믿을지 모른다., completed로 적으면 빠진 종목이 '신호 없음'으로 보인다., RunLifecycleTest
+### Community 54 - "live_worker.py"
+Cohesion: 0.07
+Nodes (26): 현재 플랫폼이 허용하는 S&P 500 미국주식 주문., TossOrderCommand, assert_official_us_session(), assert_regular_us_session(), commands_from_handoff(), guarded_limit_price(), LiveExecutionPolicy, LiveExecutionRepository (+18 more)
 
 ### Community 55 - "run_backtest"
 Cohesion: 0.32
 Nodes (6): 작은 호출 경계를 제공해 향후 entry·FinRL adapter가 엔진 타입에 결합되지 않게 한다., run_backtest(), BacktestEngineTest, market_bar(), request(), weight_point()
 
 ### Community 56 - "_ExecutionRepository"
-Cohesion: 0.17
+Cohesion: 0.18
 Nodes (13): _config(), _DecisionRepository, _ExecutionRepository, _existing(), _handoff(), _intent(), _planner(), _proposal() (+5 more)
 
 ### Community 57 - "TradingRepository"
-Cohesion: 0.05
-Nodes (21): Any, datetime, 승인 전 제안·거절 audit만 기록한다. 승인은 수동 게이트를 거친다., 현재 단계를 잠근 뒤 승인 audit만 추가한다., reporting read model에서 artifact의 현재 승인 단계를 읽는다., 이미 계산된 회차 상태를 v1 원장에 기록한다., 완전성 배치와 immutable 종목 신호를 함께 기록한다., 회차를 연다. 아직 끝나지 않았으므로 `finished_at`은 비운다. (+13 more)
+Cohesion: 0.07
+Nodes (14): Any, datetime, 승인 전 제안·거절 audit만 기록한다. 승인은 수동 게이트를 거친다., 현재 단계를 잠근 뒤 승인 audit만 추가한다., 이미 계산된 회차 상태를 v1 원장에 기록한다., 완전성 배치와 immutable 종목 신호를 함께 기록한다., 회차를 닫는다. 상태와 사유의 짝이 맞지 않으면 여기서 막는다. 저장소도 같은 것을 CHECK로 막지만, 거기서 걸리면 배치 전체가 죽는다., 판단 한 건. `final_decision`과 `failure_reason`은 배타적이다. (+6 more)
 
-### Community 58 - "candidate_ranker.py"
-Cohesion: 0.09
-Nodes (32): normalize_ticker(), 종목 심볼을 대문자 및 표준 dash 형태로 정규화한다., assemble_candidate_features(), CandidateFeatures, CandidateRank, _dense_percentiles(), _group_by_ticker(), _latest() (+24 more)
-
-### Community 59 - "fundamentals/repository.py"
+### Community 58 - "fast_ranker.py"
 Cohesion: 0.10
-Nodes (21): latest(), latest_known_at(), datetime, 여러 버전 중 "그 시점의 최신"을 고르는 규칙. ## 왜 고르는 일이 따로 있어야 하나 v1은 정정공시가 원본을 덮지 않는다. 같은…, 버전 하나를 고르는 데 필요한 것 전부., PostgREST는 timestamptz를 **문자열**로 준다. 그대로 두면 비교하는 순간에야 터지는데, 그 자리는 저장소에서 한참 떨어져…, 지금 기준 최신. 제출일이 늦은 것, 같으면 나중에 손에 넣은 것. 제출일이 같은 정정이 실제로 있다(같은 날 두 번 낸다). 그때…, `as_of` 시점에 우리가 알고 있던 것 중 최신. 이것이 v1이 정정 이력을 남기는 이유 그 자체다 — "2026년 3월에 우리가 알던… (+13 more)
+Nodes (21): CandidateFeatures, CandidateRank, _mean_available(), rank_candidate_features(), 재현 가능한 후보 점수와 도메인별 기여도., 미분석/가장 오래된 종목을 먼저 두고 같은 cohort를 신호 크기로 정렬한다., 후보 정렬에만 쓰는 작은 구조화 snapshot. 값의 방향을 곧바로 매수 신호로 쓰지 않는다. 이 랭커는 큰 변화나 극단값을 먼저…, FastCandidateRank (+13 more)
+
+### Community 59 - "VersionKey"
+Cohesion: 0.07
+Nodes (25): normalize_accession(), 공시 번호를 표준 모양으로. 읽을 수 없으면 `None`. 하이픈 없는 18자리로 오는 소스가 있다. 그대로 저장하면 같은 공시가 두 키로…, latest(), latest_known_at(), datetime, 여러 버전 중 "그 시점의 최신"을 고르는 규칙. ## 왜 고르는 일이 따로 있어야 하나 v1은 정정공시가 원본을 덮지 않는다. 같은…, 버전 하나를 고르는 데 필요한 것 전부., PostgREST는 timestamptz를 **문자열**로 준다. 그대로 두면 비교하는 순간에야 터지는데, 그 자리는 저장소에서 한참 떨어져… (+17 more)
 
 ### Community 60 - "yahoo_finance/consensus.py"
 Cohesion: 0.14
 Nodes (35): _add_quarter(), _analyst_snapshot(), _as_date(), fetch_consensus(), _frame(), _int(), _next_quarter_end(), _next_report() (+27 more)
 
-### Community 61 - "ResearchDataset"
-Cohesion: 0.06
-Nodes (47): _default_splits(), main(), _parse_args(), Namespace, 선형 Ridge 정책을 Walk-Forward 교차 검증으로 학습하고 평가 아티팩트를 저장한다., 시점 경계로 60/20/20을 나누고 label이 겹치는 시점을 purge한다. 행 번호로 자르면 같은 날짜의 종목이 train과…, DatasetManifest, FeatureRecord (+39 more)
+### Community 61 - "build_research_dataset"
+Cohesion: 0.11
+Nodes (25): DatasetManifest, FeatureRecord, _finite_features(), LabelRecord, _period(), Any, 연구 산출물의 provenance와 PIT 경계를 표현하는 계약., dataset hash·기간·PIT cutoff을 모델 artifact와 함께 추적한다. (+17 more)
 
-### Community 62 - "refresh_expectations"
-Cohesion: 0.06
-Nodes (24): changed_analyst_snapshots(), _is_changed(), 애널리스트 커버리지 관측값의 변경 여부를 판정한다., 직전 값과 다른 관측만 남긴다. 날짜는 자연키에 포함되지만 값 비교에서는 제외한다. 같은 값의 일별 행을 만들면 이력이 아니라 중복이므로,…, _snapshot_key(), collect_expectations(), CollectionBudgetExceeded, persist_expectations() (+16 more)
+### Community 62 - "commands/refresh_expectations.py"
+Cohesion: 0.04
+Nodes (41): changed_analyst_snapshots(), _is_changed(), 애널리스트 커버리지 관측값의 변경 여부를 판정한다., 직전 값과 다른 관측만 남긴다. 날짜는 자연키에 포함되지만 값 비교에서는 제외한다. 같은 값의 일별 행을 만들면 이력이 아니라 중복이므로,…, _snapshot_key(), build_earnings_estimates(), ConsensusBatch, date (+33 more)
 
 ### Community 63 - "discord_admin/client.py"
-Cohesion: 0.10
-Nodes (40): add_member_role(), admin_user_id(), create_channel(), create_role(), create_webhook(), delete_channel(), edit_channel(), edit_everyone() (+32 more)
+Cohesion: 0.11
+Nodes (38): add_member_role(), admin_user_id(), create_channel(), create_role(), create_webhook(), delete_channel(), edit_channel(), edit_everyone() (+30 more)
 
 ### Community 64 - "_flatten"
 Cohesion: 0.14
@@ -927,28 +953,28 @@ Cohesion: 0.27
 Nodes (4): BuildEventsTest, _item(), DuckDB 원문 → 사건 → 학습용 feature snapshot 배선을 검증한다., _Repository
 
 ### Community 66 - "normalize_ticker"
-Cohesion: 0.11
-Nodes (14): normalize_ticker(), 밖에서 온 종목 표기를 우리 표기로. 읽을 수 없으면 `None`. 점을 하이픈으로 바꾸는 이유: 같은 종목을 SEC은 `BRK.B`,…, Any, ValueError, 더 깊이 볼 회사. 알림 여부는 여기서 정하지 않는다(notifications의 몫). 관심의 identity는 `cik`다.…, 출처가 하나라도 남아 있으면 계속 본다. 토스 보유가 빠져도 수동 등록이 남아 있으면 활성이다. 저장소도 같은 식으로 `is_active`를…, 저장소 행이 universe의 계약을 어겼다., UniverseDataError (+6 more)
+Cohesion: 0.10
+Nodes (15): normalize_ticker(), 밖에서 온 종목 표기를 우리 표기로. 읽을 수 없으면 `None`. 점을 하이픈으로 바꾸는 이유: 같은 종목을 SEC은 `BRK.B`,…, Any, ValueError, 더 깊이 볼 회사. 알림 여부는 여기서 정하지 않는다(notifications의 몫). 관심의 identity는 `cik`다.…, 출처가 하나라도 남아 있으면 계속 본다. 토스 보유가 빠져도 수동 등록이 남아 있으면 활성이다. 저장소도 같은 식으로 `is_active`를…, 저장소 행이 universe의 계약을 어겼다., UniverseDataError (+7 more)
 
-### Community 67 - "app_pages/intelligence.py"
-Cohesion: 0.07
-Nodes (61): _engine_snapshot(), _engine_steps(), _list(), _mapping(), _merge_execution_payload(), _normalise_article(), _provider_payload(), Any (+53 more)
+### Community 67 - "alpha_lab.py"
+Cohesion: 0.16
+Nodes (21): alpha_summary(), _as_mapping(), candidate_rows(), evaluation_rows(), latest_rows(), model_rows(), _number(), Any (+13 more)
 
-### Community 68 - "f"
-Cohesion: 0.08
-Nodes (40): profit_measure_label(), `profit_measure_kind`의 사람이 읽는 이름. 모르는 값은 일반 표기로 돌려준다., adjustment(), f(), 자본구조에서 EV 가산분을 계산하는 순수 함수. financial_versions 한 행을 받아 총부채·현금성자산·우선주·비지배지분을…, 숫자로 바꿀 수 없으면 None. Decimal·문자열·None이 섞여 들어온다., 단기차입·유동성 장기부채·장기부채·운용리스 부채 합계., EV 가산분 = 총부채 - 현금성자산 + 우선주 + 비지배지분. (+32 more)
+### Community 68 - "earnings_report/consensus.py"
+Cohesion: 0.18
+Nodes (18): _as_date(), build(), _next_fiscal_period(), pick_next_quarter(), pick_price_target(), pick_snapshot(), _position(), date (+10 more)
 
 ### Community 69 - "calculations/__init__.py"
 Cohesion: 0.03
-Nodes (135): _manager_investment_style(), _manager_investment_summary(), _money_short(), Any, 13F 거장 레이더 — 매니저별 포트폴리오 구성을 먼저 보고, 고른 매니저만 파고든다. 13F는 **분기말 long equity 장부**다.…, 이 장부를 얼마나 믿을 수 있는지. 공시 표에만 있던 사실을 문장으로 올린다., 보고된 장부를 기기별로 읽기 좋은 비중 차트와 보유 목록으로 보여준다., 비교 가능한 두 분기의 포지션 변화를 보여준다. (+127 more)
+Nodes (126): _manager_investment_style(), _manager_investment_summary(), _money_short(), Any, 13F 거장 레이더 — 매니저별 포트폴리오 구성을 먼저 보고, 고른 매니저만 파고든다. 13F는 **분기말 long equity 장부**다.…, 이 장부를 얼마나 믿을 수 있는지. 공시 표에만 있던 사실을 문장으로 올린다., 비교 가능한 두 분기의 포지션 변화를 보여준다., 대표 매니저의 실제 운용 성격을 카드 제목 옆에 짧게 표시한다. (+118 more)
 
 ### Community 70 - "toss/client.py"
-Cohesion: 0.08
-Nodes (37): access_token(), _authorized_headers(), fetch_accounts(), fetch_buying_power(), fetch_exchange_rate(), fetch_holdings(), fetch_open_orders(), fetch_prices() (+29 more)
+Cohesion: 0.10
+Nodes (32): access_token(), _authorized_headers(), fetch_accounts(), fetch_buying_power(), fetch_exchange_rate(), fetch_holdings(), fetch_open_orders(), fetch_prices() (+24 more)
 
-### Community 71 - "UniverseRepository"
-Cohesion: 0.03
-Nodes (45): MembershipSnapshot, 그날 지수에 무엇이 있었는가. 이것이 없으면 backtest가 생존 편향에 걸린다 — 지금 살아남은 종목만 과거에 넣게 되기 때문이다. 그래서…, configure(), Any, date, 다른 스키마에서 받은 identity를 사람이 읽는 현재 ticker로 되돌린다., CUSIP·과거 ticker 같은 외부 식별자를 security_id로 옮긴다. `on_date`를 주면 그 시점에 유효했던 매핑만 본다.…, 그날(또는 그 이전 마지막) 구성 종목. 정확히 그날 스냅샷이 없을 수 있다(휴장·수집 실패). 그때 `None`을 주면 부르는 쪽이 "그날은… (+37 more)
+### Community 71 - "universe/test_repository.py"
+Cohesion: 0.07
+Nodes (16): AllSecuritiesTest, _membership_row(), MembershipTest, universe 저장소가 조용히 잘리거나 잘못 합치지 않는지 본다., index_memberships는 스냅샷 한 행이 아니라 종목별 유효기간 행이다 — 관측이 쌓인 채로 세면 기간이 겹쳐 지수가 실제보다 부풀어…, 그날 것이 없다고 빈 목록을 주면 backtest가 '그날 지수가 비었다'로 읽는다., 관심은 발행사(CIK) 단위다. 표시 ticker는 읽기 경계에서 대표 종목으로 붙인다., GOOG/GOOGL이 둘 다 tracked여도 관심 기업은 하나고, 대표는 매번 같아야 한다. (+8 more)
 
 ### Community 72 - "BrokerAdapter"
 Cohesion: 0.11
@@ -959,172 +985,172 @@ Cohesion: 0.12
 Nodes (11): _crons(), EconCalendarChainTest, ExpectationsWorkflowTest, NotifyChainTest, 무관한 CIK 하나로 ETL이 exit 1 하는 일이 잦다 — success로 잠그면 알림이 묻힌다., 워치가 볼 수 있는 새 관측치는 macro ETL이 넣어주는 것뿐이다. `macro.observation_versions`는…, 워크플로의 schedule cron 목록(주석 처리된 줄은 제외)., watcher가 같은 러너에서 이미 보내므로 여기에 workflow_run을 걸지 않는다. 걸면 watch가 도는 족족 러너가 한 번 더… (+3 more)
 
 ### Community 74 - "create_execution_intent.py"
-Cohesion: 0.13
-Nodes (14): ExecutionRepository, main(), Paper intent 생성 및 승인 요청 진입점., 부분 분석이나 실제 계좌 기준이 없는 목표 비중을 주문으로 승격하지 않는다., validate_paper_scope(), create_execution_intent(), main(), datetime (+6 more)
+Cohesion: 0.08
+Nodes (18): ExecutionRepository, main(), Paper intent 생성 및 승인 요청 진입점., 부분 분석이나 실제 계좌 기준이 없는 목표 비중을 주문으로 승격하지 않는다., validate_paper_scope(), create_execution_intent(), main(), datetime (+10 more)
 
 ### Community 75 - "market_daily.py"
-Cohesion: 0.10
-Nodes (34): _backfill_prices(), main(), _parse_args(), Namespace, Market history backfill for prices, splits, and dividends., 시세 이력 백필 — 평시는 신규만, 수동 보수 시 현재 멤버 전체., _targets(), changed_rows() (+26 more)
+Cohesion: 0.14
+Nodes (27): _backfill_prices(), main(), _parse_args(), Namespace, Market history backfill for prices, splits, and dividends., 시세 이력 백필 — 평시는 신규만, 수동 보수 시 현재 멤버 전체., _targets(), changed_rows() (+19 more)
 
 ### Community 76 - "tradingagents_adapter.py"
-Cohesion: 0.05
-Nodes (78): _date_ok(), _domain_payload(), fetch_fundamentals(), fetch_macro_indicators(), fetch_statement(), TradingAgents Fundamentals Analyst를 위한 SEC 재무제표·Gurus·거시지표 데이터 소스 어댑터., 재무제표, 밸류에이션, 세그먼트, 13F 기관 대가 지분을 시점 일치 번들에서 읽는다., 손익계산서/대차대조표/현금흐름표를 시점 일치 번들에서 읽는다. (+70 more)
+Cohesion: 0.06
+Nodes (68): fetch_statement(), 손익계산서/대차대조표/현금흐름표를 시점 일치 번들에서 읽는다., _date_ok(), _domain_payload(), fetch_indicator_data(), fetch_stock_data(), fetch_verified_market_snapshot(), TradingAgents Market Analyst를 위한 Supabase 시세·기술지표 데이터 소스 어댑터. (+60 more)
 
 ### Community 77 - "FakeRepository"
-Cohesion: 0.10
-Nodes (17): OrderAttemptReservation, 예약 결과. **이미 있었는지**가 여기서 유일하게 중요한 정보다., 새로 예약한 것만 통과시킨다. 기존 예약을 재전송 허가로 오인하면 같은 주문이 두 번 나간다. 이미 있으면 보낼 것이 아니라 **결과를…, S&P 500 미국주식 sleeve의 읽기 전용 계좌 스냅샷., TossManualSnapshot, approval(), FakeApi, FakeRepository (+9 more)
+Cohesion: 0.11
+Nodes (14): 주문 직전에 DB와 broker에서 **다시 계산한** 당일 상태. 캐시된 값을 쓰지 않는 이유: 한도는 "지금" 기준이어야 하고, 몇 분 전…, RuntimeRiskState, approval(), FakeApi, FakeRepository, handoff(), intent(), LiveWorkerTest (+6 more)
 
 ### Community 78 - "features/db.py"
-Cohesion: 0.13
-Nodes (25): changed_indicators(), delete_before(), earliest_market_change_since(), existing_indicators_since(), features_for_ticker(), features_since(), _latest_date(), latest_indicator_date() (+17 more)
+Cohesion: 0.06
+Nodes (44): main(), _parse_args(), Namespace, Technical indicators backfill entrypoint., main(), Daily technical indicators entrypoint., changed_indicators(), delete_before() (+36 more)
 
 ### Community 79 - "reported_observations.py"
-Cohesion: 0.06
-Nodes (61): non_liability_claims(), Any, 자본 범위를 구분해 회계항등식의 비부채 청구권을 계산한다., 선택된 common_equity 태그의 포함 범위를 반환한다., 총자산에서 총부채를 제외한 청구권 합계를 계산한다., source_scope(), _clone(), _credible_total_equity() (+53 more)
+Cohesion: 0.08
+Nodes (49): 외부 I/O 없이 재무 관측값을 변환하고 검증하는 서비스., _clone(), _credible_total_equity(), _date_s(), _derive_mezzanine_from_balance_totals(), _derive_mezzanine_from_components(), _derive_minority_interest_from_total_equity(), _derive_spac_mezzanine_from_trust() (+41 more)
 
 ### Community 80 - "worker.py"
-Cohesion: 0.04
-Nodes (35): ApprovalStatusClient, ApprovalStatusPublishSummary, ApprovalStatusRepository, publish_reconciliation_statuses(), Protocol, 재조정 결과를 원래 Discord 승인 카드에만 best-effort로 되돌린다., 허용한 broker 축약 상태만 사람용 문구로 바꾼다., 원장 변경 뒤 exact approval/message에만 PATCH하며 실패를 전파하지 않는다. 승인봇 설정이 아직 없으면 조용히… (+27 more)
+Cohesion: 0.08
+Nodes (18): from_toss_symbol(), 토스의 미국 종목 표기를 저장소 표기로 변환한다., classify_remote_order(), datetime, Protocol, 토스 주문 상태를 immutable snapshot과 로컬 상태로 재동기화한다., broker_order_id가 있는 주문만 자동 결합하고 나머지는 운영자 확인으로 남긴다., 새 enum은 보존하되 누적 체결량과 명확한 종결 상태만 로컬 상태로 축약한다. (+10 more)
 
 ### Community 81 - "econ_calendar.py"
-Cohesion: 0.10
-Nodes (39): dialog, _as_date(), _calendar_query_window(), _country_emoji(), _event_card(), _expected_number(), _korean_time(), _number() (+31 more)
+Cohesion: 0.11
+Nodes (36): dialog, _as_date(), _calendar_query_window(), _country_emoji(), _event_card(), _expected_number(), _korean_time(), _number() (+28 more)
 
-### Community 83 - "Database"
-Cohesion: 0.03
-Nodes (112): load_config(), Path, 설정을 한 번 읽는다. **진입점에서만** 부른다. `use_dotenv=False`는 테스트용이다 — 로컬 `.env`가 테스트 결과를…, all_financial_filings(), cutoff 이후의 10-K/10-Q 전부를 반환한다. `financial_filings`는 submissions의…, main(), main(), configure() (+104 more)
-
-### Community 84 - "home.py"
-Cohesion: 0.21
-Nodes (19): _allocation_text(), _close_prices(), _econ_table(), _expected_value(), _market_snapshot(), _market_value(), _mode_text(), _page_link() (+11 more)
-
-### Community 85 - "SupabaseRepository"
+### Community 82 - "universe/test_persistence.py"
 Cohesion: 0.06
-Nodes (18): date, 현재 tracked를 과거에 대입하지 않는 MembershipTimeline 입력 행이다., artifact에 연결된 local Research 평가를 안전 증명 컬럼까지 포함해 조회한다., 평가 원장 전체를 보수적인 승격 요약으로 집계한다., 평가 재검증 뒤 현재 단계를 잠그고 승인 audit만 기록한다., 사후 평가용 경로. PIT 조회가 아니다., LLM에는 노출하지 않는 제한된 읽기 도구와 판단 저장소., v1 trading 원장의 domain owner를 지연 생성한다. (+10 more)
+Nodes (15): ListingSyncDoesNotOwnTheGateTest, PersistenceDotTickerNormalizationTest, PersistenceSecurityProfilesTrackedOnlyTest, PersistenceSecurityQueriesTest, persistence.py의 조회 함수가 UniverseRepository로 위임한 뒤에도 같은 값을 주는지 굳힌다. 리팩터 전 특성화 테스트…, 수집 게이트를 정하는 자리다. 여기서 틀리면 모든 하류가 조용히 더 돈다. 실제로 두 가지가 함께 틀려 있었다. * 과거 멤버 행에는…, `is_tracked` 키가 없는 행은 게이트에 대해 아무 말도 하지 않는다., 현재 멤버인데 마스터에 없으면 CIK를 모른다 — 지어내면 재무가 영영 안 붙는다. (+7 more)
+
+### Community 83 - "EarningsFlashStore"
+Cohesion: 0.13
+Nodes (13): _cutoff(), load_pending_flash(), _lookback_days(), pending_count(), 8-K 실적 속보 알림 대상 후보 선정., 관심종목의 미발송 8-K 실적 속보 목록., 렌더 의존성 설치 전 preflight용 대기 건수., main() (+5 more)
+
+### Community 84 - "NotificationServiceTest"
+Cohesion: 0.08
+Nodes (20): DeliveryRejected, DeliveryUnknown, fetch_forum_threads(), Any, Config, RuntimeError, 스레드를 다시 찾을 때 쓰는 안정된 키. 제목 전체를 키로 쓰면 표시명이 바뀌는 순간 같은 대상의 이력이 조용히 갈라진다. 실제로 한글명을…, 포럼 채널의 스레드 매칭 키(`_thread_match_key`) -> 스레드 ID (활성 + 공개 보관). 포럼은 "종목 1개 = 스레드… (+12 more)
 
 ### Community 86 - "canonical_json"
-Cohesion: 0.07
-Nodes (24): 실시간 quote를 보관하는 단일 프로세스 RAM Hot State., canonical_json(), content_hash(), Any, JSON 직렬화·해싱·URL 정규화. ## 왜 표준 json으로 부족한가 `json.dumps`는 `Decimal`과 `date`를 못…, 같은 내용이면 항상 같은 문자열. 해시와 중복 판정의 기준이다., 내용 지문(sha256 hex). 근거 번들이 바뀌었는지 판정하는 유일한 기준., build_training_sample() (+16 more)
+Cohesion: 0.08
+Nodes (20): AutonomyCriteria, AutonomyEvidence, LifecycleDecision, LifecyclePromotionGate, LifecycleStage, Enum, str, BACKTEST→SHADOW→PAPER→LIVE_MANUAL→LIVE_AUTONOMOUS 운영 승격 경계. (+12 more)
 
-### Community 87 - "storage_paths.py"
-Cohesion: 0.17
-Nodes (21): parquet_root(), Path, Intelligence의 DuckDB catalog와 Parquet archive 위치. 표 이름을 문자열 리터럴로 흩뿌리면 이름을 바꿀 때…, 본문 Parquet 루트. 기본 production 경로는 명시적으로 고정한다. 테스트나 별도 profile에서 DuckDB 경로를 주면 그…, _configured_path(), evidence_cache_path(), intelligence_database_path(), intelligence_parquet_root() (+13 more)
+### Community 87 - "JsonStateStore"
+Cohesion: 0.09
+Nodes (13): HarnessState, JsonStateStore, Any, Path, RuntimeError, 같은 디렉터리의 임시 파일을 원자적으로 교체한다., checkpoint를 임의 초기화하지 않고 운영자가 확인해야 하는 경우다., StageRuntime (+5 more)
 
-### Community 88 - "export_dataset"
-Cohesion: 0.16
-Nodes (10): export_dataset(), Any, Path, 원장을 읽어 label이 확정된 행만 학습 dataset으로 결합한다., _snapshot(), ExportDatasetTest, _features(), datetime (+2 more)
+### Community 88 - "test_dataset_export.py"
+Cohesion: 0.23
+Nodes (5): ExportDatasetTest, _features(), datetime, dataset export와 purge된 split이 미래 label 누수를 막는지 고정한다., _Repository
 
 ### Community 89 - ".from_row"
-Cohesion: 0.08
-Nodes (24): first_print(), latest_known_at(), MacroDataError, Any, ValueError, `as_of` 시점에 알고 있던 것 중 가장 최근에 유효해진 값., 최초 발표에서 최종값까지의 변화량. 정정이 없었으면 `None`. 크게 고쳐지는 지표는 최초 발표를 그대로 믿으면 안 된다는 신호다., 최초 발표값. 정정 전 숫자라 서프라이즈 계산의 기준이 된다. (+16 more)
+Cohesion: 0.11
+Nodes (18): latest_known_at(), MacroDataError, Any, ValueError, `as_of` 시점에 알고 있던 것 중 가장 최근에 유효해진 값., KnownAtTest, LatestKnownAtTest, _obs() (+10 more)
 
 ### Community 90 - "application/etl.py"
-Cohesion: 0.04
-Nodes (76): AllGuruManagersFailedError, GuruConfigurationError, GuruEtlError, GuruProviderError, main(), _make_filing_error_sink(), _make_shadow_sink(), Any (+68 more)
+Cohesion: 0.07
+Nodes (48): AllGuruManagersFailedError, GuruConfigurationError, GuruEtlError, GuruProviderError, main(), _make_filing_error_sink(), _make_shadow_sink(), Any (+40 more)
 
 ### Community 91 - "WeightEnvironmentCore"
-Cohesion: 0.08
-Nodes (19): action_to_weights(), _project_to_constraints(), Any, ndarray, optimizer와 RiskGate의 현재 한도를 단일 기준으로 읽어온다., long-only 비중을 종목 상한·종목 수·dust 규칙 안으로 밀어 넣는다. 상한을 넘은 몫은 아직 여유가 있는 종목에 비례 배분하고,…, 연속 action을 실행 가능한 long-only risky assets + CASH 비중으로 바꾼다., Gym과 분리된 결정적 상태 전이로 reward·비중 계약을 단위 테스트한다. (+11 more)
+Cohesion: 0.09
+Nodes (17): action_to_weights(), _project_to_constraints(), Any, ndarray, long-only 비중을 종목 상한·종목 수·dust 규칙 안으로 밀어 넣는다. 상한을 넘은 몫은 아직 여유가 있는 종목에 비례 배분하고,…, 연속 action을 실행 가능한 long-only risky assets + CASH 비중으로 바꾼다., Gym과 분리된 결정적 상태 전이로 reward·비중 계약을 단위 테스트한다., RL이 학습 중에 도달할 수 있는 비중 공간을 실제 실행 한도와 맞춘다. 이 값이 optimizer/RiskGate보다 느슨하면 policy는… (+9 more)
 
-### Community 92 - "ShadowFillTest"
-Cohesion: 0.27
-Nodes (4): 매도 수수료·슬리피지는 매도 시점 금액에 붙으므로 많이 오를수록 더 낸다., 수익률이 흔들려도 비용은 왕복 요율 근처에 머문다 — 예산을 잡을 수 있다., 이게 gross label로 학습하면 안 되는 이유다., ShadowFillTest
+### Community 92 - "build_training_samples.py"
+Cohesion: 0.12
+Nodes (15): build_training_samples(), main(), _parse_args(), Any, datetime, Namespace, 확정된 feature/label을 **비용 반영 학습 표본**으로 바꿔 원장에 쌓는다. 이 entry가 채점과 학습 사이의 다리다.…, label이 확정된 (종목, 시점)마다 비용 반영 학습 표본을 하나씩 만든다. (+7 more)
 
-### Community 93 - "institutional/test_service.py"
-Cohesion: 0.39
-Nodes (4): InstitutionalWriterTest, SimpleNamespace, v1 13F writer는 SEC 원문 행과 provenance를 함께 남긴다., _record()
+### Community 93 - "OrderIdentityTest"
+Cohesion: 0.18
+Nodes (6): InstitutionalWriterTest, SimpleNamespace, v1 13F writer는 SEC 원문 행과 provenance를 함께 남긴다., _record(), OrderIdentityTest, 주문을 쓰기 전에 universe identity를 결박하고 승인 표기를 보존한다.
 
-### Community 94 - "CompanyFinancialRepository"
-Cohesion: 0.06
-Nodes (7): CompanyFinancialRepository, EarningsEventRepository, ExpectationsRepository, Any, date, Protocol, 시장 예상치·발표 일정·애널리스트 커버리지 저장소.
+### Community 94 - "UniverseRepository"
+Cohesion: 0.07
+Nodes (18): MembershipSnapshot, configure(), Any, date, 다른 스키마에서 받은 identity를 사람이 읽는 현재 ticker로 되돌린다., CUSIP·과거 ticker 같은 외부 식별자를 security_id로 옮긴다. `on_date`를 주면 그 시점에 유효했던 매핑만 본다.…, 그날(또는 그 이전 마지막) 구성 종목. 정확히 그날 스냅샷이 없을 수 있다(휴장·수집 실패). 그때 `None`을 주면 부르는 쪽이 "그날은…, 관심 기업 원시 행. CLI 조회·토스 동기화처럼 활성 여부를 직접 고르거나 해제 이력까지 봐야 하는 자리에서 쓴다. (+10 more)
 
-### Community 95 - "snapshots.py"
+### Community 95 - "AccountSnapshot"
 Cohesion: 0.13
-Nodes (14): PositionSnapshot, PositionSnapshot, Any, 브로커 계좌의 변경 불가능한 포트폴리오 스냅샷 계약., 한 시점의 long-only 보유 수량과 USD 평가액., PortfolioConstructionPolicy, 모델이 변경할 수 없는 계좌 병합 규칙., AccountSnapshotTest (+6 more)
+Nodes (16): PositionSnapshot, AccountSnapshot, 현금과 보유 평가액을 합친 스냅샷 기준 순자산., CASH를 포함해 합이 1인 현재 포트폴리오 비중., 계좌 조회 결과에서 내용 기반 ID를 만드는 불변 snapshot., PortfolioConstructionPolicy, PortfolioConstructor, 모델이 변경할 수 없는 계좌 병합 규칙. (+8 more)
 
 ### Community 96 - "macro/format.py"
 Cohesion: 0.06
-Nodes (46): _build_ctx(), _pct(), Any, 레짐 리본 톤 칩용 화살표(플레인 글리프 — 이모지 변형 selector 미사용)., 개별 카드의 freshness를 집계한다., shoot(), _stale_info(), _tone_arrow() (+38 more)
+Nodes (48): _build_ctx(), 개별 카드의 freshness를 집계한다., _stale_info(), build_watch(), _capped_table(), Any, 매크로 워치 Discord embed 조립. macro_core는 여전히 PNG다 — 4섹션이 한 장에서 서로를 설명하는 대시보드라 쪼개면…, 표가 embed 필드 한도(1024자)를 넘으면 뒤에서부터 줄이고 잘림을 표시한다. 카테고리 하나에 지표가 몰릴 때도 Discord 한도를… (+40 more)
 
 ### Community 97 - "size_portfolio"
 Cohesion: 0.07
 Nodes (20): Any, 승인된 비중을 **실제로 낼 수 있는 수량**으로 바꾼다. ## 비중과 수량 사이에는 현실이 있다 비중 3.7%는 주식 수로 딱 떨어지지…, 한 종목의 목표. 수량은 정수다 — 소수점 주식은 다루지 않는다., 실제로 내야 하는 주문 수량. 양수면 매수, 음수면 매도., 승인된 비중 → 주문 수량. `equity`는 계좌의 총 평가액이다. 현금이 아니라 총액인 이유: 비중은 총액 대비로 정의되고, 현금 대비로…, size_portfolio(), SizingResult, TargetPosition (+12 more)
 
 ### Community 98 - "normalize_segment_facts.py"
-Cohesion: 0.12
-Nodes (22): current_segment_facts(), 공시의 현재 보고기간 fact만 남기고 표준 회계기간 키를 부여한다., bulk_frames_to_filings_and_facts(), _dimension_path(), _dimensions_hash(), _int_to_date(), parse_dimensions(), _period_is_usable() (+14 more)
+Cohesion: 0.13
+Nodes (20): bulk_frames_to_filings_and_facts(), _dimension_path(), _dimensions_hash(), _int_to_date(), parse_dimensions(), _period_is_usable(), Any, date (+12 more)
 
 ### Community 99 - "logging.py"
 Cohesion: 0.02
-Nodes (158): 프로세스로 시작한 CLI만 거치는 자리. 여기서 두 가지를 한다 — 로컬 `.env`를 읽는 것과, 루트 로거를 JSON 한 줄로 맞추는 것.…, 프로세스 진입점 준비. `__main__` 블록에서만 부른다., start_cli(), backfill_company_history(), prune_segment_history(), 정책 보존 기간보다 오래된 세그먼트 지표와 처리 상태를 제거한다., 기업 전체 재무를 accession_no 상태에 따라 선별해 백필한다. daily와 같은 companyfacts 경로를 쓴다. 경로가 갈려…, process_company_facts() (+150 more)
+Nodes (188): 프로세스로 시작한 CLI만 거치는 자리. 여기서 두 가지를 한다 — 로컬 `.env`를 읽는 것과, 루트 로거를 JSON 한 줄로 맞추는 것.…, 프로세스 진입점 준비. `__main__` 블록에서만 부른다., start_cli(), backfill_historical_eps_estimates(), Any, ExpectationsRepository, 과거 8-K 실적 속보에 EPS 예상치 재구성값을 채운다., 기존 실적 속보에만 Yahoo의 과거 EPS 예상치를 재구성해 저장한다. (+180 more)
 
 ### Community 100 - "renderers/text.py"
-Cohesion: 0.09
-Nodes (36): build(), _number(), Any, 경제발표 결과를 survey/nowcast/own_model과 혼동 없이 Discord에 표시한다., build_filing(), build_quarterly(), _matrix(), _move_label() (+28 more)
+Cohesion: 0.10
+Nodes (34): build(), _number(), Any, 경제발표 결과를 survey/nowcast/own_model과 혼동 없이 Discord에 표시한다., build_filing(), build_quarterly(), _matrix(), _move_label() (+26 more)
 
 ### Community 101 - "provider.py"
 Cohesion: 0.12
 Nodes (21): NewsResult, Any, provider 호출 결과와 실패 원인을 data 계층 안에서 보존한다., 표시할 뉴스가 준비된 결과인지 반환한다., _canonical_url(), load_live_news(), _news_enabled(), _news_time() (+13 more)
 
-### Community 102 - "OpenAICompatibleClient"
-Cohesion: 0.09
-Nodes (17): OpenAICompatibleClient, _parse_json_object(), Any, OpenAI 호환 로컬·원격 LLM 호출 어댑터., 모델이 실제로 받는 모양으로 요청 본문을 만든다., 이 모델에 temperature를 실어 보내도 되는가., provider가 돌려준 거절 사유를 짧게 뽑는다. 본문이 없으면 그렇다고 적는다., Ollama·LM Studio·OpenAI 호환 chat/completions 클라이언트. (+9 more)
+### Community 102 - "DiscordTest"
+Cohesion: 0.06
+Nodes (24): 이 어댑터의 text/embed 계약과 Discord 길이 한도를 전송 전에 검사한다., validate_message(), LLMClient, OpenAICompatibleClient, _parse_json_object(), Any, Protocol, OpenAI 호환 로컬·원격 LLM 호출 어댑터. (+16 more)
 
-### Community 103 - "RawPosition"
-Cohesion: 0.18
-Nodes (12): PositionKey, SEC Information Table 원본 행의 분석·감사 필수 필드., RawPosition, _aggregate(), compare(), errored(), KeyMismatch, 운영 파서와 edgartools shadow 파서의 13F 결과를 대조한다. 순수 비교 로직이라 외부 의존성이 없다. 입력은 양쪽 파서가 만든… (+4 more)
+### Community 103 - "sec13f.py"
+Cohesion: 0.08
+Nodes (36): FilingErrorSink, PositionKey, ShadowSink, 13F 수집·저장 경계에서 사용하는 명시적 데이터 모델., SEC Information Table 원본 행의 분석·감사 필수 필드., RawPosition, identifier_type(), 13F의 9자리 식별자를 OpenFIGI 조회 타입으로 분류한다. CINS는 국가 문자로 시작하는 9자리 CUSIP 확장이다. 이 분류는… (+28 more)
 
 ### Community 104 - "_snap"
-Cohesion: 0.13
-Nodes (8): CardTest, ConfidenceTest, CustomWindowTest, PriorFilingTest, 발표 예정 카드의 주 선택·불확실성 표기 회귀 테스트., 대시보드가 쓰는 임의 구간 조회가 Discord 주간 규칙을 바꾸지 않아야 한다., _snap(), WeekWindowTest
+Cohesion: 0.16
+Nodes (7): CardTest, ConfidenceTest, CustomWindowTest, PriorFilingTest, 발표 예정 카드의 주 선택·불확실성 표기 회귀 테스트., 대시보드가 쓰는 임의 구간 조회가 Discord 주간 규칙을 바꾸지 않아야 한다., _snap()
 
 ### Community 105 - "parse_xbrl.py"
 Cohesion: 0.16
 Nodes (32): _clean_number(), _concept_local(), _concept_qname(), _context_ref(), _deep_first_local(), _dimension_path(), _dimensions_hash(), _duration_days() (+24 more)
 
 ### Community 106 - "make_filing_record"
-Cohesion: 0.13
-Nodes (15): SEC Summary와 직접 파싱 결과가 완전히 일치하는지 검증한다., _validate_filing(), make_filing_record(), make_position(), Position, gurus 테스트용 FilingRecord/Position 팩토리. 외부 의존성 없음., edgar.py가 만들어내는 것과 동일한 형태의 검증 통과용 레코드., 13F 적재 전 검증 계약. SEC 요약(tableEntryTotal)이 세는 것은 informationTable의 **원시 행**이다.… (+7 more)
+Cohesion: 0.11
+Nodes (18): SEC Summary와 직접 파싱 결과가 완전히 일치하는지 검증한다., _validate_filing(), FilingRecord, RPC에 넘기는 원천 포지션 배열. DB 컬럼 계약과 1:1로 맞춘다., 검증을 마친 13F 공시와 합산 포지션 묶음., make_filing_record(), make_position(), Position (+10 more)
 
 ### Community 107 - "FeatureLayer"
-Cohesion: 0.15
-Nodes (15): FeatureLayer, impute_cross_section(), EvidenceBundle 외의 SQL 접근을 모델에서 금지하는 단일 feature 경계다., 같은 시점 종목들의 중앙값으로 결측을 채워 유한한 학습 행렬을 만든다. 원장(rl_feature_snapshots)에는 None을 그대로…, _bars(), _bundle(), FeatureColumnStabilityTest, ImputationTest (+7 more)
+Cohesion: 0.13
+Nodes (16): FeatureLayer, impute_cross_section(), EvidenceBundle 외의 SQL 접근을 모델에서 금지하는 단일 feature 경계다., 같은 시점 종목들의 중앙값으로 결측을 채워 유한한 학습 행렬을 만든다. 원장(rl_feature_snapshots)에는 None을 그대로…, FeatureLayerTest, _bars(), _bundle(), FeatureColumnStabilityTest (+8 more)
 
 ### Community 108 - "parser.py"
-Cohesion: 0.19
-Nodes (20): _amendment_type(), _boolean(), _child(), _child_text(), _date(), identifier_type(), _integer(), local_name() (+12 more)
+Cohesion: 0.12
+Nodes (28): Position, SEC 원본 한 행을 USD로 정규화한 DB 저장 단위. Combination Report의 중복 보유를 Python에서 먼저 합치면 sub-…, _amendment_type(), _boolean(), _child(), _child_text(), _date(), _integer() (+20 more)
 
 ### Community 109 - "TradingAgentsAdapterTest"
-Cohesion: 0.09
-Nodes (9): _bundle(), _Client, _ExternalClient, _ExternalRunner, LocalEvidencePersistenceTest, TradingAgents가 활성 Supabase bundle 밖으로 나가지 않는지 검증한다., 뉴스·소셜 원문이 기사 단위로 남아야 사건 추출이 그것을 읽을 수 있다., _Runner (+1 more)
+Cohesion: 0.07
+Nodes (13): DecisionEngine, Protocol, 투자 Agent 구현을 교체 가능한 인터페이스로 제한한다., AI Investor 판단 엔진 인터페이스 및 공통 경계., _bundle(), _Client, _ExternalClient, _ExternalRunner (+5 more)
 
 ### Community 110 - "test_roles.py"
 Cohesion: 0.04
 Nodes (21): EveryoneTest, GrantTest, OnboardingGateTest, PlanTest, PrivateCategoryTest, 역할·권한 선언이 조용히 잘못 열리거나 잘못 닫히지 않는지 지킨다. 권한은 틀려도 아무것도 실패하지 않는 종류다. 너무 열면 아무 일도 안…, 공개 채널을 실수로 숨기면 사람들은 그 채널이 있는 줄도 모른다. ai_investor는 보유종목·비중·체결가가 드러나므로 숨긴다., 이 설계의 전제. @everyone에 쓰기 권한이 붙으면 모든 카드 채널이 한 번에 열린다. (+13 more)
 
 ### Community 111 - "LocalEvidenceCache"
-Cohesion: 0.11
-Nodes (14): LocalEvidenceCache, LocalEvidenceCacheError, Any, datetime, Path, RuntimeError, 기사·게시물을 한 건씩 보관한다. 같은 URL·본문은 한 행으로 합쳐진다., 같은 요청을 다시 던졌을 때 재사용할 응답 원문을 TTL 동안 보관한다. (+6 more)
+Cohesion: 0.08
+Nodes (22): canonicalize_url(), 같은 문서를 가리키는 URL을 한 모양으로. 읽을 수 없으면 `None`. 같은 기사에 tracking 파라미터만 달라진 URL이 붙어…, LocalEvidenceCache, LocalEvidenceCacheError, _normalized_content(), Any, datetime, Path (+14 more)
 
 ### Community 112 - "CLAUDE.md"
 Cohesion: 0.11
 Nodes (18): CI / GitHub Actions, `prompts/` — 코드가 아닙니다, 대시보드 ([src/investment_agent/dashboard/](src/investment_agent/dashboard/README.md)), 데이터·연구 owner (`src/investment_agent/`), 런타임 한계 (넘기면 조용히 틀립니다), 로컬 실행 스크립트, 아키텍처, 알림 ([src/investment_agent/notifications/](src/investment_agent/notifications/README.md)) (+10 more)
 
 ### Community 113 - "src/investment_agent/data/fundamentals/application/__init__.py"
-Cohesion: 0.10
-Nodes (16): build_earnings_estimates(), ConsensusBatch, date, 시장 원천의 상대 기간을 표준 회계기간 스냅샷으로 변환한다., 예상치 수집 한 번에서 만들어진 정규화 결과., 컨센서스와 발표 예정일을 같은 회계기간 키에 맞춘다., CompanyFilingSource, Any (+8 more)
+Cohesion: 0.02
+Nodes (100): backfill_company_history(), backfill_segment_history(), _company_backfill_targets(), _completed_segment_accessions(), prune_segment_history(), date, 기업 재무 이력을 명시적으로 백필한다. 기업 전체 재무는 daily와 같은 companyfacts 원천을 쓰고, 세그먼트는 차원 데이터가…, 선택 CIK에서 완료된 전역 고유 accession_no 집합. (+92 more)
 
 ### Community 114 - "evaluate"
 Cohesion: 0.09
 Nodes (15): CircuitBreakerPolicy, CircuitBreakerStatus, evaluate(), 시스템적 위험 상황에서 **신규 매수만** 자동으로 얼린다. ## 한도와 다른 층이다 `control`의 한도는 "이 주문 하나가 너무…, 신규 매수를 허용할지 판정한다. 순서가 의미를 갖는다. **우리 쪽 고장(연속 실패)을 먼저** 본다 — 주문이 계속 거부되는 상황에서 시장…, EvaluateTest, MissingDataTest, PolicyShapeTest (+7 more)
 
-### Community 115 - "NotificationServiceTest"
-Cohesion: 0.06
-Nodes (10): FakeClient, FakeQuery, FakeRpc, Any, `sb.schema(s).rpc(name, params)`가 돌려주는 호출 흉내., `sb.schema(s).table(t)`가 돌려주는 빌더 흉내., _Result, NotificationServiceTest (+2 more)
+### Community 115 - "fakes.py"
+Cohesion: 0.10
+Nodes (8): FakeClient, FakeQuery, FakeRpc, Any, 테스트가 쓰는 가짜 PostgREST. ## 왜 patch가 아니라 가짜 객체인가 `Database`를 인자로 받는 구조에서는 가짜 연결을…, `sb.schema(s).rpc(name, params)`가 돌려주는 호출 흉내., `sb.schema(s).table(t)`가 돌려주는 빌더 흉내., _Result
 
 ### Community 116 - "BackfillWindow"
-Cohesion: 0.10
-Nodes (5): BackfillWindow, MarketRetentionTest, v1 market은 append-only 관측 원장이다 — 보존 정리는 아무것도 지우지 않는다. 배치 삭제가 돌아오면 그것이 8초…, 뒷정리 실패가 그날의 수집을 되돌리면 안 된다. 2026-08-27·28에 실제로 그랬다 — 가격을 전부 저장한 뒤 보존 정리가…, TechIndicatorsRetentionTest
+Cohesion: 0.08
+Nodes (9): compact_price_rows(), date, Supabase 보관 범위 안의 연속 일봉만 남긴다., _years_ago(), BackfillWindow, MarketRetentionTest, v1 market은 append-only 관측 원장이다 — 보존 정리는 아무것도 지우지 않는다. 배치 삭제가 돌아오면 그것이 8초…, 뒷정리 실패가 그날의 수집을 되돌리면 안 된다. 2026-08-27·28에 실제로 그랬다 — 가격을 전부 저장한 뒤 보존 정리가… (+1 more)
 
 ### Community 117 - "설치, 자동 실행, 상태 확인과 장애 대응"
 Cohesion: 0.10
@@ -1132,19 +1158,19 @@ Nodes (20): Discord-first 운영 기록, GitHub Actions, Maintenance hold, Resea
 
 ### Community 118 - "select_tracked_tickers"
 Cohesion: 0.12
-Nodes (13): datetime, Protocol, AI 판단 대상을 현재 범용 수집 게이트 구성종목으로 제한한다., 한 실행에서 검증된 tracked 전체 집합과 실제 분석 대상을 함께 보존한다., 가장 최근 실행의 마지막 종목 다음부터 순환한다., 명시 종목도 현재 tracked universe 밖이면 fail-closed 한다., rotate_after_latest_cases(), select_tracked_tickers() (+5 more)
+Nodes (12): datetime, Protocol, 한 실행에서 검증된 tracked 전체 집합과 실제 분석 대상을 함께 보존한다., 가장 최근 실행의 마지막 종목 다음부터 순환한다., 명시 종목도 현재 tracked universe 밖이면 fail-closed 한다., rotate_after_latest_cases(), select_tracked_tickers(), UniverseRepository (+4 more)
 
-### Community 119 - "BacktestRequest"
-Cohesion: 0.12
-Nodes (20): BacktestRequest, BacktestResult, BacktestSafetyError, RuntimeError, 결측·거래중단·시간 오류 때문에 장부 생성을 중단해야 하는 경우다., 네트워크나 DB 없이 재생할 수 있는 완전한 백테스트 입력이다., 입력 hash와 모든 장부를 포함하는 재현 가능한 결과 artifact다., 목표 비중 시간열을 다음 거래일 시가에 재생하는 엔진. (+12 more)
+### Community 119 - "TransactionCostModel"
+Cohesion: 0.09
+Nodes (26): BacktestRequest, BacktestResult, BacktestSafetyError, RuntimeError, 결측·거래중단·시간 오류 때문에 장부 생성을 중단해야 하는 경우다., 네트워크나 DB 없이 재생할 수 있는 완전한 백테스트 입력이다., 입력 hash와 모든 장부를 포함하는 재현 가능한 결과 artifact다., 목표 비중 시간열을 다음 거래일 시가에 재생하는 엔진. (+18 more)
 
 ### Community 120 - "detect_earnings_events.py"
-Cohesion: 0.06
-Nodes (37): detect_earnings_events(), detect_earnings_events_for_ticker(), determine_fiscal_period(), _parse_release_html(), Any, date, 8-K Item 2.02를 감지해 실적 속보를 만든다., 구조화 결과가 없는 보도자료 HTML에서 누락 필드를 보완한다. (+29 more)
+Cohesion: 0.07
+Nodes (29): detect_earnings_events_for_ticker(), date, 8-K Item 2.02를 감지해 실적 속보를 만든다., 8-K 접수일과 같은 발표의 조정 EPS 실제값만 고른다. Yahoo 발표일과 SEC 접수일은 보통 같지만, 장 마감 뒤 제출은 다음 영업일로…, 한 종목의 최근 실적 8-K를 찾아 멱등 저장한다., reported_eps_for_filing(), build_earnings_results(), Any (+21 more)
 
 ### Community 121 - "RunContext"
-Cohesion: 0.06
-Nodes (29): case_key(), context_hash(), is_reproducible(), Any, datetime, 판단 하나를 가리키는 키와, 그 판단을 재현할 수 있는지 보는 지문. ## case_key는 계산되는 값이다 UUID를 쓰면 같은 판단을 두…, 마이크로초를 버린다. 재실행이 같은 키로 모이게 하는 유일한 이유다., 판단 하나의 키. 같은 질문이면 항상 같은 문자열. 사람이 읽을 수 있게 앞부분을 그대로 두고 뒤에 지문을 붙인다 — 로그에서 어느 종목·어느… (+21 more)
+Cohesion: 0.11
+Nodes (14): 회차를 연다. 아직 끝나지 않았으므로 `finished_at`은 비운다., ContractViolation, Any, ValueError, 판단·실행 전체가 공유하는 어휘. ## 세 축은 서로 독립이다 한 낱말로 뭉뚱그리면 조용히 틀린다. 실제로 `mode`라는 이름 하나에 세…, 한 판단 회차가 서 있는 자리. 기록되는 모든 행이 이 셋을 갖는다., 실제 돈이 움직이는가. 안전 점검이 보는 유일한 값이다., 기본값. 판단만 하고 주문은 종이로 간다. (+6 more)
 
 ### Community 122 - "parse_external_payload"
 Cohesion: 0.10
@@ -1155,24 +1181,24 @@ Cohesion: 0.14
 Nodes (26): _bounded_counts(), _bounded_text(), _bounded_texts(), _bounded_timestamps(), build_decision_case_read_model(), build_decision_cases_read_model(), _claim_summaries(), _mapping() (+18 more)
 
 ### Community 124 - "parse_shares.py"
-Cohesion: 0.08
-Nodes (30): fundamentals 수집·검증 명령 패키지., aggregate_company_share_history(), _clean_member_title(), _is_preferred_or_derivative(), _match_class_ticker(), _normalize_class_key(), parse_common_shares_from_companyfacts(), parse_common_shares_from_xbrl_document() (+22 more)
+Cohesion: 0.07
+Nodes (37): aggregate_company_share_history(), _clean_member_title(), drop_implausible_share_rows(), _is_preferred_or_derivative(), _match_class_ticker(), _normalize_class_key(), parse_common_shares_from_companyfacts(), parse_common_shares_from_xbrl_document() (+29 more)
 
-### Community 125 - "HarnessMode"
+### Community 125 - "harness/contracts.py"
 Cohesion: 0.09
-Nodes (26): _format_terminal_output(), main(), 투자 하네스 보안 및 런타임 안전 감사 CLI. 사용 예시: python -m…, _safe_print(), HarnessMode, Enum, str, _check_discord_security() (+18 more)
+Nodes (27): _format_terminal_output(), main(), 투자 하네스 보안 및 런타임 안전 감사 CLI. 사용 예시: python -m…, _safe_print(), HarnessMode, Enum, str, 운영 하네스 job·stage의 실행 계약. (+19 more)
 
 ### Community 126 - "infrastructure/sources/yfinance.py"
 Cohesion: 0.16
 Nodes (25): _extract_batch_close(), fetch_batch(), _fetch_info_ratio(), _fetch_many(), _fetch_one(), _market_today(), DataFrame, date (+17 more)
 
 ### Community 127 - "releases/schedule.py"
-Cohesion: 0.10
-Nodes (38): _as_datetime(), _failure(), Any, date, datetime, ISO UTC/aware datetime와 datetime 객체를 동일하게 비교한다., 미래 일정 → 예상값 변화 → 최근 원자료 변화만 확인한다., future schedule만 source별로 동기화한다. actual fetch와 섞지 않는다. (+30 more)
+Cohesion: 0.11
+Nodes (31): _add_months(), _first_business_day(), _month_start(), _months(), official_calendar_dates(), Any, date, datetime (+23 more)
 
-### Community 128 - "EarningsCalendarStore"
-Cohesion: 0.19
-Nodes (10): collect(), _default_store(), force_resend(), pending_state(), date, 이번 주 실적 캘린더 후보를 고르는 entry-side reader., main(), EarningsCalendarStore (+2 more)
+### Community 128 - "earnings_calendar/run.py"
+Cohesion: 0.05
+Nodes (49): collect(), _default_store(), force_resend(), pending_state(), date, 이번 주 실적 캘린더 후보를 고르는 entry-side reader., main(), Playwright 없이 실행하는 v1 실적 캘린더 Actions 사전 점검. (+41 more)
 
 ### Community 129 - "What You Must Do When Invoked"
 Cohesion: 0.08
@@ -1186,29 +1212,29 @@ Nodes (10): FactorExposure, FactorRiskEngine, PortfolioFactorExposure, 다요인
 Cohesion: 0.16
 Nodes (7): NextQuarterTest, PickSnapshotTest, eps_trend 소급분은 수집 시점의 target을 달고 있어 과거 분기에 못 붙인다., 발표 뒤 갱신된 값을 섞으면 '그때의 기대'가 아니라 지금 기대가 된다., 발표 뒤 값은 '기대'가 아니라 결과를 반영한 값이다., 회계기간 식별자는 날짜 근사치 대신 저장된 절대 기간 키로 맞춘다., _snap()
 
-### Community 132 - "auth.py"
-Cohesion: 0.13
-Nodes (23): _access_token(), _fetch_chunk(), fetch_korean_names(), toss.py — 토스증권 Open API에서 미국 종목의 한글명을 보강한다. OAuth2 client_credentials로 access…, 공용 token을 반환하고 실패는 미시도 상태로 호출자에게 전달한다., 우리 표기(BRK-B) → 토스 표기(BRK.B)., 종목코드 목록 → (찾은 {ticker: 한글명}, 실제로 조회한 ticker 목록). 두 번째 값(attempted)은 '실제로 토스에…, _to_toss_symbol() (+15 more)
+### Community 132 - "toss.py"
+Cohesion: 0.25
+Nodes (10): _access_token(), _fetch_chunk(), fetch_korean_names(), toss.py — 토스증권 Open API에서 미국 종목의 한글명을 보강한다. OAuth2 client_credentials로 access…, 공용 token을 반환하고 실패는 미시도 상태로 호출자에게 전달한다., 우리 표기(BRK-B) → 토스 표기(BRK.B)., 종목코드 목록 → (찾은 {ticker: 한글명}, 실제로 조회한 ticker 목록). 두 번째 값(attempted)은 '실제로 토스에…, _to_toss_symbol() (+2 more)
 
 ### Community 133 - "ics.py"
 Cohesion: 0.32
 Nodes (12): build(), _escape(), _event_lines(), fold(), group_events(), _moment(), Any, datetime (+4 more)
 
-### Community 134 - "TossOrderApiTest"
-Cohesion: 0.20
-Nodes (8): command(), controls(), FakeResponse, permit(), remote_order(), risk_state(), TossOrderApiTest, TossOrderCommandTest
+### Community 134 - "universe/repository.py"
+Cohesion: 0.09
+Nodes (26): _membership_hash(), Any, date, SEC·Nasdaq Trader·S&P 500 원천을 v1 universe 계약으로 적재한다., 현재 상장 master와 S&P 500 기준정보를 원천에서 다시 만든다. 기존 DB를 읽어 보충하지 않는다. SEC 상세 metadata가…, refresh_universe(), UniverseRefreshResult, Entity (+18 more)
 
 ### Community 135 - "backtest/contracts.py"
-Cohesion: 0.11
-Nodes (23): CashEvent, CorporateActionApplication, _date(), FillEvent, _finite(), MarketBar, NavPoint, OrderEvent (+15 more)
+Cohesion: 0.09
+Nodes (25): CashEvent, CorporateActionApplication, _date(), FillEvent, _finite(), MarketBar, OrderEvent, PositionSnapshot (+17 more)
 
 ### Community 136 - "calendar.py"
 Cohesion: 0.11
 Nodes (22): completed_bar_cutoff(), market_today(), overlap_window(), date, datetime, 미국 시장의 시간 규칙. ## 왜 platform이 아니라 여기인가 "장이 언제 끝나는가"는 시장 도메인 지식이다.…, 시장이 보는 오늘 날짜. UTC 자정 근처에서 한국 시각과 뉴욕 날짜가 하루 어긋나므로, 날짜가 필요한 자리에서는 반드시 이것을 쓴다., 확정된 일봉의 **상한 날짜**. 이 날짜까지만 적재한다. (+14 more)
 
 ### Community 137 - "FilingRef"
-Cohesion: 0.08
-Nodes (14): FilingRef, 원천 수집기가 넘기는 SEC 공시 참조. ``Filing``은 v1 저장 계약이고, 이 타입은 아직 원문을 읽기 전의 최소 식별자다. 둘을…, canonical `filings` 행. 자식 행의 FK 부모라 먼저 있어야 한다. `Filing.as_row()`와 같은 모양이지만…, BackfillScopeTest, BulkFilingContractTest, _CompanyRepository, _CompanySource, FilingSchemaContractTest (+6 more)
+Cohesion: 0.11
+Nodes (8): FilingRef, 원천 수집기가 넘기는 SEC 공시 참조. ``Filing``은 v1 저장 계약이고, 이 타입은 아직 원문을 읽기 전의 최소 식별자다. 둘을…, BackfillScopeTest, _CompanyRepository, _CompanySource, date, 기업 전체 재무 백필이 쓰는 companyfacts 원천의 최소 대역., FilingXbrlFallbackTest
 
 ### Community 138 - "fit_baseline"
 Cohesion: 0.07
@@ -1219,24 +1245,24 @@ Cohesion: 0.13
 Nodes (30): BulkFrames, discover_batches(), ensure_data(), _ensure_segment_data(), _expected_quarters(), iter_batches(), load_batch(), _missing_quarters() (+22 more)
 
 ### Community 140 - "alfred.py"
-Cohesion: 0.19
-Nodes (20): AlfredDataError, fetch_batch(), fetch_first_prints(), fetch_revisions(), _observations(), _observations_window(), _parse(), _parse_revisions() (+12 more)
+Cohesion: 0.15
+Nodes (24): _fred_slot(), AlfredDataError, fetch_batch(), fetch_first_prints(), fetch_revisions(), _observations(), _observations_window(), _parse() (+16 more)
 
-### Community 141 - "process_filing.py"
-Cohesion: 0.09
-Nodes (39): derive_segment_rows(), persist_segment_filings(), 공시 한 건의 기업 전체·세그먼트 결과를 처리한다., 저장된 연도 지표와 이번 YTD 관측값으로 discrete 분기를 계산한다., direct·derived 지표가 모두 성공한 뒤 공시를 완료 상태로 전환한다., build_segment_metrics(), Any, 차원이 있는 공시 fact에서 세그먼트 지표를 만든다. (+31 more)
+### Community 141 - "build_segment_metrics.py"
+Cohesion: 0.11
+Nodes (32): derive_segment_rows(), 저장된 연도 지표와 이번 YTD 관측값으로 discrete 분기를 계산한다., _build_wide(), _date_s(), derive_q4_rows(), derive_ytd_quarters(), _drop_aggregate_rows(), _init_row() (+24 more)
 
 ### Community 142 - "earnings_report/embeds.py"
-Cohesion: 0.13
-Nodes (23): _axis_embed(), build_segments(), _f(), _footnote(), _join(), _lines(), _period_text(), _profit_field() (+15 more)
+Cohesion: 0.10
+Nodes (28): _axis_embed(), build_segments(), _f(), _footnote(), _join(), _lines(), _period_text(), _profit_field() (+20 more)
 
 ### Community 143 - "strategies.py"
-Cohesion: 0.16
-Nodes (24): _adm(), cum_ret(), defensive(), _dmsr(), _gem(), _gtaa5(), _haa_balanced(), _haa_simple() (+16 more)
+Cohesion: 0.06
+Nodes (45): 공용 카탈로그(`investment_agent.research.strategies.catalog`)에서 파생한 알림용 전략 라벨 모음., 읽어 온 것을 화면·알림 계약으로 조립하는 자리. 여기서는 저장소를 열지 않는다. 무엇을 어디서 읽을지는 `readers/`가 안다., ensure_registered_strategies(), 계산기와 알림이 공유하는 전략 메타데이터., Fail fast when compute registration and metadata drift apart., StrategyMeta, _compute_available_for_backfill(), DataFrame (+37 more)
 
-### Community 144 - "LocalTradingDatabase"
-Cohesion: 0.10
-Nodes (5): LocalTradingDatabase, _name(), _Query, TradingRepository의 쿼리 계약을 로컬 SQLite 관계형 원장에 연결한다. 금융 데이터용 Database와 같은 작은 주입…, 관계형 판단 원장의 원자 쓰기와 페이지 제한 없는 로컬 조회.
+### Community 144 - "_Query"
+Cohesion: 0.17
+Nodes (3): _name(), _Query, TradingRepository의 쿼리 계약을 로컬 SQLite 관계형 원장에 연결한다. 금융 데이터용 Database와 같은 작은 주입…
 
 ### Community 145 - "DossierBuilder"
 Cohesion: 0.10
@@ -1251,44 +1277,44 @@ Cohesion: 0.14
 Nodes (5): Code of Conduct, Contributing, 환경변수 레퍼런스, Open-source readiness, Security Policy
 
 ### Community 148 - "earnings/schedule.py"
-Cohesion: 0.15
-Nodes (22): date, 선택한 지평을 실제 날짜 구간으로 바꾼다. 반환값은 ``(시작일, 종료일, 기간별 분리 여부)``다. 모르는 라벨은 예외 대신 기본 창으로…, schedule_window(), as_date(), build_rows(), build_rows_in_window(), iso_week(), _latest_by_ticker() (+14 more)
+Cohesion: 0.20
+Nodes (17): as_date(), build_rows(), build_rows_in_window(), iso_week(), _latest_by_ticker(), _latest_by_ticker_period(), _money(), _prior_year_filing() (+9 more)
 
-### Community 149 - "control_center.py"
-Cohesion: 0.10
-Nodes (14): range, control_command(), ControlCenter, dashboard_command(), dashboard_url(), Any, Path, ATLAS 로컬 제어센터. 대시보드는 관측 전용으로 유지하고, 하네스 시작·정지처럼 로컬 프로세스를 변경하는 작업만 이 창에서 명시적으로… (+6 more)
+### Community 149 - "ControlCenter"
+Cohesion: 0.11
+Nodes (13): range, control_command(), ControlCenter, dashboard_command(), dashboard_url(), Any, Path, 실행 중인 로컬 Streamlit만 찾아 URL을 반환한다. (+5 more)
 
 ### Community 150 - "json_value"
-Cohesion: 0.14
-Nodes (4): json_value(), JSON에 실을 수 있는 모양으로 바꾼다. 손실이 생기는 변환은 하지 않는다., Any, Any
+Cohesion: 0.18
+Nodes (5): json_value(), JSON에 실을 수 있는 모양으로 바꾼다. 손실이 생기는 변환은 하지 않는다., CorporateAction, Any, 장 시작 전에 포지션에 적용할 split 또는 현금배당이다.
 
 ### Community 151 - "ExpectationRetentionTest"
 Cohesion: 0.08
 Nodes (12): ExpectationRetentionTest, _function_body(), 스냅샷 정리 함수가 "계속 읽히는 한 건"을 실제로 지키는지 선언에서 확인한다. ## 왜 텍스트로 보는가 이 정리는 DELETE라서 틀리면…, 나이로만 자르면 아직 발표 안 한 분기의 드리프트가 먼저 사라진다., 서프라이즈가 집는 바로 그 행이 keeper여야 한다., 원천이 둘이면 한쪽이 다른 쪽을 밀어낸다., 최근 구간을 통째로 들고 있어야 그 시점 판단을 재현할 수 있다., 0이면 오늘 것까지 지운다 — 기본값 실수를 조용히 통과시키지 않는다. (+4 more)
 
-### Community 152 - "ExecutionSafetyError"
-Cohesion: 0.04
-Nodes (76): build_approval_card(), button_components(), Any, 토스 비실행 주문표를 Discord 건별 승인 카드로 바꾼다., 자유문장 대신 서명된 승인/거절 버튼 두 개만 만든다., Discord message create API에 바로 전달할 안전한 payload를 만든다., _ticket_lines(), ApprovalInteraction (+68 more)
+### Community 152 - "request_toss_approval.py"
+Cohesion: 0.06
+Nodes (36): approver_allowlist(), 쉼표로 나열된 설정을 중복 없는 승인자 목록으로. 비면 예외., 계좌 스냅샷과 결정적 주문표를 함께 묶은 내보내기 단위., 내보내지 않는 계좌 결박까지 포함한 manifest 원본이다., 메모리에서 ticket을 바꾼 뒤 기존 승인을 재사용하지 못하게 한다., TossManualHandoff, ApprovalRuntimeConfig, ApprovalWorkflowPort (+28 more)
 
 ### Community 153 - "저장 계층 구조·스키마 축소 설계"
 Cohesion: 0.10
 Nodes (19): 1. 목표, 2.1 코드 디렉터리 평탄화, 2. 최종 디렉터리, 3.1 Universe, 3.2 Market, 3.3 Fundamentals, 3.4 Macro, 3.5 Institutional (+11 more)
 
 ### Community 154 - "collection.py"
-Cohesion: 0.05
-Nodes (55): SEC·S&P500·Toss 수집 흐름을 조율한다., _membership_hash(), Any, date, SEC·Nasdaq Trader·S&P 500 원천을 v1 universe 계약으로 적재한다., 현재 상장 master와 S&P 500 기준정보를 원천에서 다시 만든다. 기존 DB를 읽어 보충하지 않는다. SEC 상세 metadata가…, refresh_universe(), UniverseRefreshResult (+47 more)
+Cohesion: 0.10
+Nodes (30): _missing_sec_get_json(), Any, SEC·S&P500·Toss 수집 흐름을 조율한다., SEC 거래소 master를 동기화하고 새 CIK의 entity 이름만 seed한다., CIK별 SEC submissions metadata를 증분 보강한다., sync_exchange_listings(), sync_sec_entities(), classify_security_type() (+22 more)
 
-### Community 155 - "build"
-Cohesion: 0.09
-Nodes (32): _beat_color(), _big(), build(), _expectation_view(), _inconsistent_7d(), _period_text(), 실적 PNG 카드 — 템플릿 컨텍스트(ctx)와 Discord 캡션 조립. candidates.load_pending() 항목 +…, 항목(+extras) → (템플릿 ctx, Discord 캡션). (+24 more)
+### Community 155 - "desks/base.py"
+Cohesion: 0.16
+Nodes (25): clamp(), domain_items(), finite(), make_signal(), nested_metrics(), Any, Desk 구현이 공유하는 입력 추출·신호 생성 보조 함수., 저장 payload의 흔한 통계 필드만 읽고 임의의 숫자를 만들지 않는다. (+17 more)
 
-### Community 156 - "DispatchResult"
-Cohesion: 0.12
-Nodes (12): DispatchResult, Any, 상류 성공을 가리지 않고 알림 결과만 반환한다., 전송 없이 스냅샷만 보관한다. 실패를 명시적으로 반환하고 상류 예외로 올리지 않는다., 선점 실패면 전송하지 않는다. 보낸 뒤 기록 실패도 자동 재전송하지 않는다., dispatch_pending(), main(), Any (+4 more)
+### Community 156 - "dispatch_pending"
+Cohesion: 0.13
+Nodes (14): DispatchResult, Any, 상류 성공을 가리지 않고 알림 결과만 반환한다., 전송 없이 스냅샷만 보관한다. 실패를 명시적으로 반환하고 상류 예외로 올리지 않는다., 선점 실패면 전송하지 않는다. 보낸 뒤 기록 실패도 자동 재전송하지 않는다., build_service(), dispatch_pending(), main() (+6 more)
 
-### Community 157 - "ForumDeliveryTest"
-Cohesion: 0.09
-Nodes (11): _config(), ForumDeliveryTest, ForumThreadsAreReusedTest, 분기마다 오는 공시 사이에 스레드는 보관 상태가 된다., 같은 실행에서 두 장을 보내면 두 번째는 방금 만든 스레드로 간다., 스레드가 하나 느는 것이 카드가 아예 안 나가는 것보다 낫다., 스레드 조회 스텁. 주입하지 않으면 단위 테스트가 실제 Discord로 나간다., 100자를 넘기면 Discord가 400으로 거절한다 — 카드가 통째로 안 나간다. (+3 more)
+### Community 157 - "ForumThreadsAreReusedTest"
+Cohesion: 0.22
+Nodes (5): ForumThreadsAreReusedTest, 분기마다 오는 공시 사이에 스레드는 보관 상태가 된다., 같은 실행에서 두 장을 보내면 두 번째는 방금 만든 스레드로 간다., 스레드가 하나 느는 것이 카드가 아예 안 나가는 것보다 낫다., 포럼은 "종목 1개 = 스레드 1개에 누적"이 설계다. `/threads`는 부를 때마다 새 스레드를 만든다. 그대로 두면 같은 종목의 분기…
 
 ### Community 158 - "compute_rl_blend"
 Cohesion: 0.10
@@ -1314,53 +1340,53 @@ Nodes (8): expectations_exit_code(), 부분 성공은 성공, 붕괴한 실행�
 Cohesion: 0.17
 Nodes (22): calculate_family(), calculate_measure(), calendar_months_before(), finite(), _lag_period(), MeasureValidationError, _percentage_change(), _previous_observation() (+14 more)
 
-### Community 164 - "validated_weights"
-Cohesion: 0.18
-Nodes (7): Any, 비중을 검증하고 현금을 포함한 정렬 사본을 돌려준다. **현금을 포함한 합이 1이어야 한다.** 이것이 이 함수의 핵심이다 — 없으면 "10%…, validated_weights(), 10%만 적힌 의도가 통과하면 나머지 90%를 아무도 말하지 않은 채 계획이 결정한다., 0으로 바꾸면 데이터 오류가 매도 주문이 된다., float(True)는 1.0이라 플래그가 100% 비중이 된다., WeightContractTest
+### Community 164 - "ResearchDataset"
+Cohesion: 0.12
+Nodes (18): _default_splits(), main(), _parse_args(), Namespace, 선형 Ridge 정책을 Walk-Forward 교차 검증으로 학습하고 평가 아티팩트를 저장한다., 시점 경계로 60/20/20을 나누고 label이 겹치는 시점을 purge한다. 행 번호로 자르면 같은 날짜의 종목이 train과…, load_dataset_json(), ndarray (+10 more)
 
 ### Community 165 - "universe/persistence.py"
-Cohesion: 0.09
-Nodes (38): _missing_sec_get_json(), Any, 현재 S&P 집합을 비교하고 실제 변경 또는 월간 감사 때만 저장한다. `is_tracked`는 범용 gate이므로, 과거 멤버 전체를…, 추적 종목의 누락 한글명을 토스증권으로 보강한다. 토스 IP 허용목록에 등록된 로컬 환경에서만 별도 실행한다. 기존…, SEC 거래소 master를 동기화하고 새 CIK의 entity 이름만 seed한다., CIK별 SEC submissions metadata를 증분 보강한다., 수집 게이트를 현재 멤버 집합에 맞춘다. 고친 종목 수를 돌려준다., reconcile_membership() (+30 more)
+Cohesion: 0.13
+Nodes (28): 현재 S&P 집합을 비교하고 실제 변경 또는 월간 감사 때만 저장한다. `is_tracked`는 범용 gate이므로, 과거 멤버 전체를…, 추적 종목의 누락 한글명을 토스증권으로 보강한다. 토스 IP 허용목록에 등록된 로컬 환경에서만 별도 실행한다. 기존…, 수집 게이트를 현재 멤버 집합에 맞춘다. 고친 종목 수를 돌려준다., reconcile_membership(), refresh_korean_names(), _repair_tracked_gate(), append_memberships(), apply_entity_results() (+20 more)
 
 ### Community 166 - "_intent"
 Cohesion: 0.18
 Nodes (6): ExecutabilityTest, _intent(), 실행 의도가 받아들이는 모양. 여기서 막지 못한 것은 주문이 된다., 며칠 전 승인이 오늘 주문으로 나가면 안 된다., 부르는 쪽이 자기가 어느 경로인지 명시해야 한다., ShapeTest
 
 ### Community 167 - "FakeDatabase"
-Cohesion: 0.03
-Nodes (57): 13F 유스케이스 계층. 수집·적재·정리 흐름을 조립한다., InstitutionalRepository, Any, 추적 대상 manager 목록. manager_cik/name/fund_name/is_active의 SSOT는 코드…, 이미 원장에 있는 SEC accession. 신규 수집만 원천에 요청할 때 쓴다., MarketRepository, 주어진 종목 중 가격이 하나라도 있는 종목의 identity., ActiveManagerQueryTest (+49 more)
+Cohesion: 0.07
+Nodes (25): MarketRepository, 일별 사실을 canonical 가격 표에 upsert한다., 주어진 종목 중 가격이 하나라도 있는 종목의 identity., ActiveManagerQueryTest, manager_cik/name/fund_name/is_active의 SSOT는 코드 설정이다 — DB는 전혀 관여하지 않으므로…, BadRowTest, BulkReadTest, MarketWideQueriesTest (+17 more)
 
 ### Community 168 - "strategies/db.py"
 Cohesion: 0.29
 Nodes (12): allocation_strategy_ids(), delete_allocations_before(), latest_allocation_per_strategy(), mark_allocations_sent(), date, 전략 계산 결과를 Research 로컬 저장소에 기록하는 경계., _store(), upsert_allocation() (+4 more)
 
-### Community 169 - "select_session_targets.py"
-Cohesion: 0.16
-Nodes (15): _as_date(), _as_datetime(), _is_date_only_anchor(), latest_schedule_by_ticker(), date, datetime, 지금 이 시각에 발표가 예정된 관심종목만 골라 낸다. 관심종목 50개를 매번 다 훑으면 SEC 호출이 낭비되고, 하루 한 번만 훑으면 장전…, 지금이 ET 기준 어느 세션 구간인지 — 로그와 워크플로 표시에 쓴다. (+7 more)
+### Community 169 - "select_timed_targets"
+Cohesion: 0.13
+Nodes (21): _as_date(), _as_datetime(), _is_date_only_anchor(), latest_schedule_by_ticker(), date, datetime, 지금 이 시각에 발표가 예정된 관심종목만 골라 낸다. 관심종목 50개를 매번 다 훑으면 SEC 호출이 낭비되고, 하루 한 번만 훑으면 장전…, 발표 예정 시각의 신뢰도에 맞춰 지금 SEC를 조회할 종목만 고른다. 정확 시각은 발표 직전부터 짧게, Yahoo 추정·자리표시는 넓게,… (+13 more)
 
-### Community 170 - "parse_datetime"
-Cohesion: 0.07
-Nodes (29): _nonnegative_number(), datetime, 계좌와 freshness가 맞지 않으면 전체 포트폴리오 생성을 막는다., build_tca_report(), _finite(), Any, 주문 결과의 arrival·spread·slippage·implementation shortfall 계산., 원시 가격·체결 결과에서 TCA를 한 번 계산한다. (+21 more)
+### Community 170 - "tca.py"
+Cohesion: 0.16
+Nodes (13): build_tca_report(), _finite(), Any, 주문 결과의 arrival·spread·slippage·implementation shortfall 계산., 원시 가격·체결 결과에서 TCA를 한 번 계산한다., 한 order의 비용을 양수 cost convention으로 남긴다., 실시간 체결 비용(TCA) 계측 및 레코더. 체결 이벤트(Decision price vs Fill price)를 바탕으로 슬리피지(bps),…, 체결 결과에 대한 실시간 비용 계측기. (+5 more)
 
 ### Community 171 - "filing_documents.py"
-Cohesion: 0.15
-Nodes (24): _archive_cik(), _available_daily_index_urls(), fetch_xbrl_document(), _filing_section(), filings_filed_since(), _filings_from_document(), _find_xbrl_document(), _get_bytes_optional() (+16 more)
+Cohesion: 0.14
+Nodes (26): _archive_cik(), _available_daily_index_urls(), fetch_xbrl_document(), _filing_section(), filings_filed_since(), _filings_from_document(), _find_xbrl_document(), _get_bytes_optional() (+18 more)
 
 ### Community 172 - "main"
 Cohesion: 0.13
-Nodes (20): _ensure_community(), main(), Any, 포럼을 만들기 전에 길드가 Community인지 확인하고, 아니면 바꾼다., 카테고리와 채널을 매니페스트 선언 순서대로 다시 세운다. 이미 있던 채널은 자기 자리에 있지 않다 — 새로 만든 것만 position을…, _reorder(), Path, values의 키를 갱신하고, 없으면 끝에 덧붙인다. 바뀐 키 이름 목록을 돌려준다. (+12 more)
+Nodes (27): fetch_channels(), fetch_guild(), 길드 메타(이름·features). 포럼을 만들 수 있는지는 features의 COMMUNITY가 정한다., main(), main(), _emit(), _ensure_community(), main() (+19 more)
 
 ### Community 173 - "_Repository"
 Cohesion: 0.13
 Nodes (6): _filing(), FilingRowCapTest, 프롬프트에 실리는 원자료 양을 못박는다. Azure gpt-5-mini 배포 실측(2026-09-03): 50,000 토큰/분, 50…, as_of(2026-09-03)보다 과거인 분기 공시. 최신이 index 0이다., 자른 것을 숨기면 모델이 '이게 전부'라고 읽는다., _Repository
 
-### Community 174 - "press_releases.py"
+### Community 174 - "collect_candidates"
 Cohesion: 0.11
-Nodes (18): clean_html_to_markdown(), _document_score(), extract_text(), _item_value(), SEC 8-K archive에서 EX-99 보도자료를 고르고 텍스트를 정제한다., archive 목록 한 건이 실적 보도자료일 가능성을 점수화한다., archive 파일 목록에서 가장 가능성 높은 EX-99 문서를 고른다., 스크립트·스타일을 제거한 사람이 읽는 공시 본문을 반환한다. (+10 more)
+Nodes (15): IntelligenceSignal, OptimizerSignal, collect_candidates(), EnsembleCandidates, Any, 두 제안이 얼마나 다른 포트폴리오인지 0~1로 잰다. 총변동거리(비중 차이 절대값 합의 절반)다. 0이면 같은 포트폴리오, 1이면 완전히…, 만들어진 제안만 모은다. 없는 예측기를 기본값으로 채우지 않는다., fusion 결과를 optimizer가 받는 좁은 계약으로 옮긴다. `uncertainty`가 곧 `risk_score`다 — 모델들이 서로… (+7 more)
 
 ### Community 175 - "app_pages/macro.py"
-Cohesion: 0.14
-Nodes (28): _delta_color(), _map_frame(), _metric_table(), Any, DataFrame, 매크로 시황 — 시장 레짐과 전 지표를 한 화면에서 읽고, 고른 지표만 파고든다. Discord `#오늘의-시장` 코어 카드와 **같은 지표…, 지표 하나를 카드로 그린다 — 값·변화·스파크라인·보조태그·기준일·등급., 카드가 보조태그로 줄여 쓰는 파생지표의 원값을 전부 편다. (+20 more)
+Cohesion: 0.15
+Nodes (26): _delta_color(), _map_frame(), _metric_table(), Any, DataFrame, 매크로 시황 — 시장 레짐과 전 지표를 한 화면에서 읽고, 고른 지표만 파고든다. Discord `#오늘의-시장` 코어 카드와 **같은 지표…, 지표 하나를 카드로 그린다 — 값·변화·스파크라인·보조태그·기준일·등급., 카드가 보조태그로 줄여 쓰는 파생지표의 원값을 전부 편다. (+18 more)
 
 ### Community 176 - "_run"
 Cohesion: 0.06
@@ -1371,20 +1397,20 @@ Cohesion: 0.15
 Nodes (18): _declared_flags(), _direct_module_imports(), EntryPointOptionTest, _imported_names(), _invocations(), _module_path(), AST, 워크플로 배선 회귀 테스트 — 어긋나도 조용히 실패하는 것들만 지킨다. 여기 걸린 규칙은 전부 "틀려도 CI가 초록이고, 알림만 안 온다"… (+10 more)
 
 ### Community 178 - "market_schedule.py"
-Cohesion: 0.18
+Cohesion: 0.16
 Nodes (13): get_us_market_phase(), is_us_market_holiday(), MarketPhaseInfo, date, datetime, Enum, str, 미국 정규장 시간표(뉴욕 시간 기준)를 인식하여 하네스 동작 국면과 주기를 계산한다. (+5 more)
 
 ### Community 179 - "MeasureCalculationTest"
 Cohesion: 0.08
 Nodes (5): MeasureCalculationTest, 30-family ECON schedule/measure source contract의 오프라인 회귀 테스트., ReferencePeriodTest, ScheduleTimezoneTest, SeedContractTest
 
-### Community 180 - "TransactionCostModel"
-Cohesion: 0.06
-Nodes (41): build_training_samples(), main(), _parse_args(), Any, datetime, Namespace, 확정된 feature/label을 **비용 반영 학습 표본**으로 바꿔 원장에 쌓는다. 이 entry가 채점과 학습 사이의 다리다.…, label이 확정된 (종목, 시점)마다 비용 반영 학습 표본을 하나씩 만든다. (+33 more)
+### Community 180 - "ContractError"
+Cohesion: 0.05
+Nodes (42): _nonnegative_number(), PositionSnapshot, Any, datetime, 브로커 계좌의 변경 불가능한 포트폴리오 스냅샷 계약., 계좌와 freshness가 맞지 않으면 전체 포트폴리오 생성을 막는다., 한 시점의 long-only 보유 수량과 USD 평가액., datetime (+34 more)
 
-### Community 181 - "filings.py"
-Cohesion: 0.06
-Nodes (35): CompanyFactsSource, FactsNormalizer, _as_datetime(), base_form(), filing_row(), FilingError, is_amendment(), is_periodic() (+27 more)
+### Community 181 - "company_financials.py"
+Cohesion: 0.05
+Nodes (57): detect_earnings_events(), Any, 여러 종목을 독립적으로 처리해 한 종목 실패가 전체를 막지 않게 한다., main(), base_form(), filing_row(), is_amendment(), is_periodic() (+49 more)
 
 ### Community 182 - "install_investment_harness.py"
 Cohesion: 0.16
@@ -1394,13 +1420,13 @@ Nodes (14): main(), _plans(), 로컬 운영 하네스의 OS 서비스 등록 계
 Cohesion: 0.07
 Nodes (36): _annual_points(), AnnualPoint, _bars_oldest_first(), _cagr(), fundamental_trend(), _gap_profile(), _number(), _percentile() (+28 more)
 
-### Community 184 - "_canonical_filing_focus"
-Cohesion: 0.20
-Nodes (7): _canonical_filing_focus(), _quarter_from_annual_distance(), 인접 10-K 기간말과의 거리로 10-Q의 분기 번호를 복원한다., SEC unit의 오염된 ``fy``/``fp`` 대신 filing 기간으로 회계키를 만든다. CompanyFacts는 일부 등록인에서 과거…, CanonicalFilingFocusTest, _filing(), SEC CompanyFacts의 오염된 fy/fp를 filing 기간으로 교정하는 계약.
+### Community 184 - "earnings_report/candidates.py"
+Cohesion: 0.11
+Nodes (27): _cutoff(), group_by_filing(), is_report_ready(), load_pending(), _lookback_days(), pending_state(), pick_headline(), date (+19 more)
 
-### Community 185 - "build_labels.py"
-Cohesion: 0.07
-Nodes (27): Any, run_log_payload(), build_features(), main(), _parse_args(), datetime, Namespace, tracked universe의 PIT feature snapshot을 매일 ResearchStore에 적재한다. 이 command가 없으면… (+19 more)
+### Community 185 - "build_features.py"
+Cohesion: 0.10
+Nodes (12): build_features(), main(), _parse_args(), datetime, Namespace, tracked universe의 PIT feature snapshot을 매일 ResearchStore에 적재한다. 이 command가 없으면…, 그 실행 시각까지의 최신 PIT 밸류에이션 관측값을 종목별로 고른다. 원장이 아직 비어 있거나 조회가 실패해도 feature 적재 자체는 막지…, 종목별 EvidenceBundle을 고정 스키마 FeatureSnapshot으로 바꿔 저장한다. (+4 more)
 
 ### Community 186 - "IntelligenceRepositoryTest"
 Cohesion: 0.14
@@ -1419,16 +1445,16 @@ Cohesion: 0.08
 Nodes (24): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+16 more)
 
 ### Community 190 - "market/persistence.py"
-Cohesion: 0.17
-Nodes (27): merge_corporate_actions(), 분리 저장한 배당·분할 이벤트를 가격 행에 읽기 전용으로 결합한다., 가격 행의 grain을 바꾸지 않고 같은 거래일의 이벤트만 붙인다., close_history_as_of(), _db(), _events_as_tickers(), forward_closes_after(), _ids() (+19 more)
+Cohesion: 0.20
+Nodes (24): close_history_as_of(), configure(), _db(), _events_as_tickers(), forward_closes_after(), _ids(), monthly_close_history(), price_history_as_of() (+16 more)
 
-### Community 191 - "shadow_daily.py"
-Cohesion: 0.05
-Nodes (36): Claim, InvestmentDecision, _number(), Any, RoleAnalysis, _text_list(), 결정 계층이 공유하는 정책 식별자와 기본 horizon., LLMClient (+28 more)
+### Community 191 - "trading/contracts.py"
+Cohesion: 0.06
+Nodes (33): Claim, InvestmentDecision, _number(), Any, LLM 입출력과 저장 행을 검증하는 엄격한 계약., RoleAnalysis, _text_list(), 결정 계층이 공유하는 정책 식별자와 기본 horizon. (+25 more)
 
 ### Community 192 - "TossAuthError"
-Cohesion: 0.13
-Nodes (14): Any, Path, RuntimeError, 운영 점검용 캐시 경로. 파일 내용은 외부로 노출하지 않는다., 유효한 공용 token을 반환하고 없을 때만 잠금 안에서 발급한다., 401을 낸 token이 여전히 최신일 때만 잠금 안에서 한 번 갱신한다., 인증 요청을 보내고 401이면 공용 갱신 후 정확히 한 번만 다시 보낸다., 비밀값을 로그에 넣지 않고 network·429·5xx만 제한적으로 재시도한다. (+6 more)
+Cohesion: 0.10
+Nodes (25): authorized_request(), _credential_fingerprint(), _default_cache_path(), get_token_manager(), Any, Path, RuntimeError, 토스 Open API OAuth 토큰의 프로세스·호스트 공용 경계. 토스는 새 access token을 발급하면 이전 token이 무효가 될… (+17 more)
 
 ### Community 193 - "Path"
 Cohesion: 0.31
@@ -1450,13 +1476,13 @@ Nodes (15): JudgeTest, ManifestDriftTest, 채널 도착 확인 — '워크플로
 Cohesion: 0.20
 Nodes (20): build_valuation_inputs(), _decimal(), _evidence_id(), filing_available_at(), _missing(), price_scalar(), Any, datetime (+12 more)
 
-### Community 198 - "main"
+### Community 198 - "harness_adapters.py"
 Cohesion: 0.13
-Nodes (22): bot_user_id(), fetch_channels(), fetch_guild(), fetch_roles(), 길드의 모든 역할. @everyone은 ID가 길드 ID와 같다., 다른 봇 토큰의 사용자 ID를 그 토큰으로 묻는다. 카드 봇에게 역할을 붙이려면 그 봇의 사용자 ID가 필요하다. 관리형 역할에서 역추적할…, 길드 메타(이름·features). 포럼을 만들 수 있는지는 features의 COMMUNITY가 정한다., main() (+14 more)
+Nodes (14): ApprovalRepositoryPort, _clock(), DecisionRepositoryPort, _positive_float(), _positive_int(), Any, datetime, Path (+6 more)
 
-### Community 199 - "capture_toss_account_snapshot"
-Cohesion: 0.10
-Nodes (18): _account_ref(), capture_and_store_risk_snapshot(), datetime, Protocol, 토스 USD sleeve의 일 손실 기준선을 private execution 원장에 기록한다., 브로커 조회만 수행한 뒤 계좌번호를 hash로 바꿔 private DB에 저장한다., RiskSnapshotRepository, StoredRiskSnapshot (+10 more)
+### Community 199 - "risk_snapshot.py"
+Cohesion: 0.14
+Nodes (12): _account_ref(), capture_and_store_risk_snapshot(), datetime, Protocol, 토스 USD sleeve의 일 손실 기준선을 private execution 원장에 기록한다., 브로커 조회만 수행한 뒤 계좌번호를 hash로 바꿔 private DB에 저장한다., RiskSnapshotRepository, StoredRiskSnapshot (+4 more)
 
 ### Community 200 - "Third-party data notice — `gaap_mappings.json`"
 Cohesion: 0.25
@@ -1464,27 +1490,31 @@ Nodes (7): 5.36.0 -> 5.53.0에서 바뀐 것, MIT License, Third-party data noti
 
 ### Community 201 - "._at"
 Cohesion: 0.17
-Nodes (7): 시간 메타데이터가 없다고 발표를 놓치는 쪽이 더 나쁘다., 야후는 시각 미공지 발표에 15:00 ET를 넣는다. 그대로 믿으면 창이 어긋난다., 실측: AMAT는 과거 24회가 16:00인데 다음 예정만 15:00이었다., 확정 시각이 있으면 과거 습관이 달라도 그대로 믿는다., 과거 행에 섞인 자리표시는 최빈값 계산에서 빠진다., SessionTargetSelection, YahooPlaceholderTime
+Nodes (8): is_placeholder_time(), 야후가 '시각 미정'에 쓰는 자리표시 시각인지., 야후는 시각 미공지 발표에 15:00 ET를 넣는다. 그대로 믿으면 창이 어긋난다., 실측: AMAT는 과거 24회가 16:00인데 다음 예정만 15:00이었다., 확정 시각이 있으면 과거 습관이 달라도 그대로 믿는다., 과거 행에 섞인 자리표시는 최빈값 계산에서 빠진다., SessionTargetSelection, YahooPlaceholderTime
 
 ### Community 202 - "valuation_history"
 Cohesion: 0.12
 Nodes (18): _gauge(), _log(), _multiple(), 배수 축은 로그다 — 곱셈 척도이기도 하고, 이익이 0에 가까워지면 발산하기 때문. TSLA는 실제로 PER 5~95분위가…, PER 스파크라인 좌표 + 중앙선/축 라벨 (history.downsample_weekly 결과를 받음). top은 축 라벨이 앉는 자리다 —…, 값 → 트랙 위치(%). 양끝 2~98%로 클램프해 마커가 트랙 밖으로 안 나가게., 배수 표기 — 1000배가 넘으면 소수점을 버려야 칸에 들어간다., valuation_history.compute() 결과 → 역사 밸류에이션 표 행 + PER 스파크라인(색 기준 적용). 트랙은 백분위 축이… (+10 more)
 
+### Community 203 - "test_page_wiring.py"
+Cohesion: 0.10
+Nodes (14): CalendarAssetTest, EconSeriesScopeTest, HomeMarketWiringTest, _page_files(), PageRenderTest, Path, 화면이 실제로 그려지는지, 그리고 화면이 요구하는 것을 reader가 받아 주는지. 2,500개 테스트 중 **화면을 한 번도 렌더하지…, 모든 화면이 연결 없이도 예외 없이 끝까지 그려진다. (+6 more)
+
 ### Community 204 - "valuation_history.py"
 Cohesion: 0.15
 Nodes (19): _asof(), compute(), daily_series(), downsample_weekly(), _f(), _positive_den_ratio(), Any, date (+11 more)
 
-### Community 205 - "select_model_for_ticker"
-Cohesion: 0.20
-Nodes (10): apply_candidate(), Path, 오늘치 예산이 남아 있고 API 키가 설정된 첫 후보를 예약하고 돌려준다. 예약은 원자적이라 같은 순간에 여러 프로세스가 불러도 한 자리씩만…, 이 블록 동안만 `AI_INVESTOR_*` 환경변수를 후보 설정으로 덮는다.…, select_model_for_ticker(), ApplyCandidateTest, _candidate(), Path (+2 more)
+### Community 205 - "model_pool.py"
+Cohesion: 0.11
+Nodes (20): _azure(), _azure_daily_requests(), gemini_candidate(), groq_candidate(), _ledger_key(), ModelCandidate, datetime, Path (+12 more)
 
 ### Community 206 - "fact_checker.py"
 Cohesion: 0.13
 Nodes (15): extract_claims(), _extract_evidence_metrics(), FactClaim, FactVerificationGate, FactVerificationResult, _harvest_payload(), Any, LLM 텍스트 내 수치 주장의 사실성 검증 및 환각(Hallucination) 차단 게이트. LLM의 분석 텍스트(reasoning)에 포함된… (+7 more)
 
-### Community 207 - "eval_row"
-Cohesion: 0.19
-Nodes (14): _check_band(), _check_ma_cross(), _check_signed(), eval_row(), Any, 지표가 '경고할 수준'인지 판단(judgment)하는 곳 — 표시(format)는 format.py. 핵심은 eval_row(행): 그 지표가…, 값이 정해 둔 하한 이하이거나 상한 이상이면 '해당함(True)'., 하락폭·반등폭처럼 부호가 중요한 값을 판단한다 (크기만 비교하거나 범위로 비교). (+6 more)
+### Community 207 - "institutional/test_repository.py"
+Cohesion: 0.12
+Nodes (10): _filing_row(), ManagerTest, OptionsTest, PointInTimeTest, _position_row(), 13F의 45일 지연이 PIT 경계로 지켜지는지 본다., manager_cik/name/fund_name/is_active의 SSOT는 코드 설정이다 — Supabase에는 해당 표가 없으므로 이…, 13F는 45일 늦게 나온다. period_end로 자르면 한 분기를 미리 본다. (+2 more)
 
 ### Community 208 - "PolicyConceptChoice"
 Cohesion: 0.06
@@ -1499,8 +1529,8 @@ Cohesion: 0.09
 Nodes (25): assert_boundary(), assert_schema_contract(), NotificationGuardsTest, 알림의 도메인/DB/HTTP 경계와 선언 SQL 계약. 위반 주입도 함께 실행한다., outbox.py가 삽입하는 컬럼이 로컬 runtime SQLite 선언에 실제로 있는지 본다. outbox·deliveries는…, _column_tokens(), _columns_of_body(), _declared_schema() (+17 more)
 
 ### Community 211 - "test_provider_fail_closed.py"
-Cohesion: 0.09
-Nodes (8): ActiveSeedContractTest, ActualsFailClosedTest, MarketBreadthFailClosedTest, 활성 provider의 오프라인 fail-closed 계약 테스트., 운영 seed의 provider 설정이 코드 registry와 어긋나지 않는지 검사한다., 등록만 되고 seed가 부르지 않는 파서는 조용히 썩는다., WebFailClosedTest, YFinanceFailClosedTest
+Cohesion: 0.12
+Nodes (5): ActualsFailClosedTest, MarketBreadthFailClosedTest, 활성 provider의 오프라인 fail-closed 계약 테스트., WebFailClosedTest, YFinanceFailClosedTest
 
 ### Community 212 - "construct.py"
 Cohesion: 0.05
@@ -1515,16 +1545,16 @@ Cohesion: 0.21
 Nodes (5): FailOpenTest, fast path 시즌 게이트 — 특히 fail-open 규칙 회귀 테스트. 이 게이트가 잘못 "시즌 아님"을 내면 관심종목 공시 알림이…, 근거가 없으면 언제나 수집을 돌린다 — 놓치는 쪽이 훨씬 비싸다., _row(), SeasonWindowTest
 
 ### Community 215 - "classify_session"
-Cohesion: 0.16
-Nodes (17): classify_session(), collect_window(), is_placeholder_time(), is_within_collect_window(), datetime, time, 발표 예정 시각을 거래 세션 구간(BMO/AMC)으로 분류한다. 발표 '날짜'만으로는 언제 수집을 걸어야 하는지 알 수 없다. 같은 날짜라도…, 지금이 그 세션의 수집 창 안인지 판정한다. (+9 more)
+Cohesion: 0.13
+Nodes (18): classify_session(), collect_window(), is_within_collect_window(), datetime, time, 발표 예정 시각을 거래 세션 구간(BMO/AMC)으로 분류한다. 발표 '날짜'만으로는 언제 수집을 걸어야 하는지 알 수 없다. 같은 날짜라도…, 지금이 그 세션의 수집 창 안인지 판정한다., ET 기준 발표 시각을 세션으로 분류한다. tz 정보가 없는 값은 ET로 간주한다 — yfinance의 earnings_dates 인덱스는… (+10 more)
 
 ### Community 216 - "ensure_aware"
-Cohesion: 0.06
-Nodes (51): FetchNews, FetchPosts, 세그먼트 수집 대상 관심종목. fast path가 훑을 범위를 정한다. 세그먼트는 별도 구독이 아니라 실적 카드의 한 단면이라 관심종목…, watchlist_tickers(), active_members(), collect_news(), _mention(), datetime (+43 more)
+Cohesion: 0.08
+Nodes (36): FetchNews, FetchPosts, collect_news(), _mention(), datetime, 관심종목 뉴스 수집 유스케이스. ## fetch를 주입받는다 provider 호출을 이 모듈이 직접 하면 테스트가 네트워크를 타야 한다.…, 조회해서 받은 기사의 언급. 등급은 결정론적이다., 관심종목별로 뉴스를 가져와 저장하고 실행 기록을 남긴다. (+28 more)
 
-### Community 217 - "attribution.py"
-Cohesion: 0.14
-Nodes (13): ChallengerComparison, ChallengerPolicy, compare_challenger(), Any, Champion과 Challenger의 비교 결과를 수동 승격 입력으로 만든다., OOS·shadow·paper 증거를 평가하되 자동 운영 승격은 항상 금지한다., AttributionReport, build_attribution_report() (+5 more)
+### Community 217 - "src/investment_agent/research/evaluation/__init__.py"
+Cohesion: 0.12
+Nodes (16): ChallengerComparison, ChallengerPolicy, compare_challenger(), Any, Champion과 Challenger의 비교 결과를 수동 승격 입력으로 만든다., OOS·shadow·paper 증거를 평가하되 자동 운영 승격은 항상 금지한다., 연구 metric과 OOS stability 평가., evaluate_predictions() (+8 more)
 
 ### Community 218 - "IntelligenceRepository"
 Cohesion: 0.15
@@ -1538,21 +1568,21 @@ Nodes (3): QualityAssessmentTest, 회사 지표가 0이면 커버리지 비율�
 Cohesion: 0.21
 Nodes (16): _close_returns(), FeatureBundle, _fundamental(), _gurus(), _macro(), _number(), Any, datetime (+8 more)
 
-### Community 221 - "_Query"
-Cohesion: 0.08
-Nodes (10): _feature(), _label(), _model_version(), _Query, signal_runs는 decision_runs를 FK로 참조한다 — 둘 다 최소한으로 심는다., _Response, RLRepositoryTest, _Schema (+2 more)
+### Community 221 - "RLRepositoryTest"
+Cohesion: 0.12
+Nodes (8): _feature(), _label(), _model_version(), signal_runs는 decision_runs를 FK로 참조한다 — 둘 다 최소한으로 심는다., RLRepositoryTest, _Schema, _seed_signal_run(), _Supabase
 
 ### Community 222 - "투자 판단, ML/RL, Backtest와 Portfolio Risk"
 Cohesion: 0.09
 Nodes (22): Dataset split과 재현성, DeterministicRiskGate, EvidenceBundle 도메인 구성, Feature Layer, LumiBot 외부 검증, Memory와 평가, ML baseline을 먼저 비교한다, Native Backtest (+14 more)
 
 ### Community 223 - "segment_concepts.py"
-Cohesion: 0.13
-Nodes (27): canonical_axis(), canonical_member(), canonical_segment_dimensions(), is_aggregate_member(), local_name(), 세그먼트 XBRL fact의 축과 멤버를 표준 차원으로 분류한다., 원본 차원을 버리지 않고 축·멤버 local name만 정규화한다., 원본 차원에서 대표 축을 고르고 분류 근거를 함께 반환한다. (+19 more)
+Cohesion: 0.12
+Nodes (29): canonical_axis(), canonical_member(), canonical_segment_dimensions(), is_aggregate_member(), local_name(), 세그먼트 XBRL fact의 축과 멤버를 표준 차원으로 분류한다., 원본 차원을 버리지 않고 축·멤버 local name만 정규화한다., 세그먼트 분석에 의미 있는 축 수를 반환한다. (+21 more)
 
 ### Community 224 - "analysis.py"
-Cohesion: 0.10
-Nodes (22): _authoritative_filings(), build_snapshot(), _change_rows(), _combined_positions(), _consensus_rows(), _coverage_status(), _filing_order(), _instrument() (+14 more)
+Cohesion: 0.08
+Nodes (25): _authoritative_filings(), build_snapshot(), _change_rows(), _combined_positions(), _consensus_rows(), _coverage_status(), _filing_order(), _instrument() (+17 more)
 
 ### Community 225 - "OperationalRetentionTest"
 Cohesion: 0.29
@@ -1563,56 +1593,60 @@ Cohesion: 0.06
 Nodes (19): _existing(), ForumTagTest, ManifestTest, PlanTest, PositionTest, 매니페스트 ↔ 서버 대조 — 여기가 틀리면 채널이 중복 생성된다., 발송 코드가 아는 태그 이름과 서버에 만드는 태그가 어긋나면 태그 없이 나간다., 전략 태그 선언과 발송 routing 대응표가 일치해야 한다. (+11 more)
 
 ### Community 227 - "sources/toss_holdings.py"
-Cohesion: 0.15
-Nodes (22): access_token(), _authorized_headers(), fetch_accounts(), fetch_holdings(), _get_json(), Any, RuntimeError, 토스증권 Open API의 계좌·보유종목 조회 클라이언트. 관심종목 API는 아직 제공되지 않으므로 공식 ``accounts``와… (+14 more)
+Cohesion: 0.16
+Nodes (21): access_token(), _authorized_headers(), fetch_accounts(), fetch_holdings(), _get_json(), Any, RuntimeError, 토스증권 Open API의 계좌·보유종목 조회 클라이언트. 관심종목 API는 아직 제공되지 않으므로 공식 ``accounts``와… (+13 more)
 
 ### Community 228 - "filing_xbrl.py"
-Cohesion: 0.16
-Nodes (20): is_excluded_tag(), policy_accepts(), 원시 us-gaap 태그에 대응하는 프로젝트 컬럼명을 반환한다., 투자 지표 의미가 불명확해 자동 적재하지 않을 SEC 태그인지 반환한다., 정책이 태그와 단위를 허용하는지 반환한다. 정책이 있는 컬럼은 화이트리스트 + 단위로 판정하고, 없는 wide 컬럼은 단위만 검사한다(금액…, to_column_key(), _duration_quarters(), filing_to_facts() (+12 more)
+Cohesion: 0.12
+Nodes (27): normalize_form(), 공시와 회계기간을 식별하는 순수 값 객체., 수정 공시 표기를 원 공시 유형으로 정규화한다., is_excluded_tag(), _load_maps(), policy_accepts(), CamelCase나 라벨 형태의 문자열을 snake_case로 바꾼다., 원시 태그 매핑, 표준 컬럼 매핑, 충돌 우선순위를 읽는다. (+19 more)
 
 ### Community 229 - "GuruRoutingTest"
 Cohesion: 0.09
 Nodes (14): BuildDirectoryTest, _config(), GuildDirectoryCacheTest, GuruRoutingTest, 채널을 이름으로 찾는 경로를 굳힌다. 거장 채널 ID를 시크릿으로 들고 있던 것을 봇 조회로 바꿨다. 그 조회가 틀리면 카드가 엉뚱한 채널로…, 이름이 없는 거장은 태그도 스레드 제목도 만들 수 없다., 태그 하나 때문에 그 분기 공시를 통째로 막지 않는다., 분기마다 새 스레드를 만들면 7명 × 4분기 = 연 28개가 되어 흐름이 끊긴다. (+6 more)
 
-### Community 230 - "select_timed_targets"
-Cohesion: 0.18
-Nodes (10): 발표 예정 시각의 신뢰도에 맞춰 지금 SEC를 조회할 종목만 고른다. 정확 시각은 발표 직전부터 짧게, Yahoo 추정·자리표시는 넓게,…, select_timed_targets(), datetime, 발표 세션(BMO/AMC) 분류·타겟 선정과 발송 상호 배제. 하루 한 번 훑던 시절에는 장전 발표가 최대 15시간 늦게 잡혔고, 로컬…, 정확 시각·추정 시각·날짜만 아는 일정을 서로 다른 창으로 다룬다., 09:30 개장·16:00 마감이 경계다. 실측 JPM 06:00·NVDA 16:00., UTC 13:00은 ET 09:00이라 장전이다. 변환 없이 읽으면 장중으로 잘못 본다., SessionClassification (+2 more)
+### Community 230 - "ml_rl_lab.py"
+Cohesion: 0.16
+Nodes (15): Figure, 선택된 워크스페이스만 실행되는 Streamlit 페이지 모음., blending_weights(), _load_real_active_policy(), Any, AI·강화학습(ML/RL) 자율진화 관제 랩 대시보드 페이지. 하네스 7대 전자동 잡의 실제 실행 상태, PPO 강화학습 챔피언 정책…, 승격된 정책의 DSR 확률이 만드는 (LLM 가중치, RL 가중치). 정책이 없으면 None. 실제 판단 경로가 RL 목표비중을 넘기지…, 실제 강화학습 승격 정책 메타데이터 로드 (없으면 None). (+7 more)
 
 ### Community 232 - "earnings_calendar/card.py"
-Cohesion: 0.14
-Nodes (14): build(), _day_label(), _eps_label(), date, metrics 결과를 템플릿 ctx와 Discord 캡션으로 바꾸는 표시 계층(순수 함수)., 추정 기간말 → '3분기' 같은 사람 말. 회계연도가 어긋나는 회사도 있어 달로 적는다., (템플릿 ctx, Discord 캡션)., _target_label() (+6 more)
+Cohesion: 0.23
+Nodes (11): build(), _day_label(), _eps_label(), date, metrics 결과를 템플릿 ctx와 Discord 캡션으로 바꾸는 표시 계층(순수 함수)., 추정 기간말 → '3분기' 같은 사람 말. 회계연도가 어긋나는 회사도 있어 달로 적는다., (템플릿 ctx, Discord 캡션)., _target_label() (+3 more)
 
 ### Community 233 - "ResearchStore"
-Cohesion: 0.11
-Nodes (22): _decode_allocation(), _decode_json(), default_database_path(), _feature_row(), _iso(), Any, date, datetime (+14 more)
+Cohesion: 0.13
+Nodes (15): _feature_row(), _iso(), Any, date, Path, 같은 파일시스템의 임시 파일에 쓴 뒤 원자 교체한다., 한 창의 feature를 종목 구분 없이 한 번에 읽는다. 종목마다 따로 부르면 연결이 종목 수만큼 열린다 — 후보 선정이 503번을 열면서…, DuckDB 파일을 열어 Research 산출물을 읽고 쓴다. (+7 more)
 
 ### Community 234 - "breadth_200dma"
 Cohesion: 0.40
 Nodes (6): breadth_200dma(), fetch_batch(), date, Series, market 스키마 입력을 사용하는 MACRO series를 수집한다., S&P 500 현재 구성종목 중 200일선 위에 있는 비율을 반환한다. RPC가 실패해도 같은 가격 테이블을 REST로 계산한다. 두 경로…
 
 ### Community 235 - "watchlists/db.py"
-Cohesion: 0.28
-Nodes (17): add_member(), _cik(), configure(), _db(), list_members(), _member_row(), _member_rows(), normalize_ticker() (+9 more)
+Cohesion: 0.23
+Nodes (20): 세그먼트 수집 대상 관심종목. fast path가 훑을 범위를 정한다. 세그먼트는 별도 구독이 아니라 실적 카드의 한 단면이라 관심종목…, watchlist_tickers(), active_members(), add_member(), _cik(), configure(), _db(), list_members() (+12 more)
 
-### Community 236 - "drop_implausible_share_rows"
-Cohesion: 0.24
-Nodes (9): drop_implausible_share_rows(), 원본의 자리표시자·자릿수 오류 행만 걸러 낸다. (남길 것, 버린 것). SEC 원본에는 두 종류의 이상값이 섞인다. * 자리표시자 —…, DropImplausibleSharesTest, SEC 원본의 이상값은 그 행만 버린다 — 그 기업 전체를 버리지 않는다. 발행주식수는 시가총액과 주당 지표의 분모다. 틀린 값을 담느니 없는…, 실측: benchmark=1,000 대 실제 1,071,666,977 — 진짜 값이 걸렸었다., 클래스 B가 A보다 훨씬 작은 것은 정상이다 — 섞어 재면 B가 이상값이 된다., 전부 자리표시자면 그 클래스에 대해 아는 것이 없다 — 지어내지 않는다., _row() (+1 more)
+### Community 236 - "dashboard/ops.py"
+Cohesion: 0.13
+Nodes (15): inspect_harness_state(), Any, 하네스 JSON을 변경하지 않고 PID·heartbeat·잡 건강 상태로 요약한다. 반환값은 ``available``,…, _harness_health(), _harness_stale_seconds(), _pid_exists_readonly(), Any, 운영 하네스 상태를 변경 없이 읽어 Dashboard 표시 계약으로 투영한다. (+7 more)
 
 ### Community 237 - "SubprocessModuleRunner"
-Cohesion: 0.05
-Nodes (25): Popen, CommandExecutionError, CommandResult, ModuleCommandRunner, Path, Protocol, RuntimeError, shell 없이 고정된 Python entry만 실행하는 하네스 command 경계. (+17 more)
+Cohesion: 0.14
+Nodes (11): Popen, CommandExecutionError, Path, RuntimeError, shell 없이 고정된 Python entry만 실행하는 하네스 command 경계., 인자나 자격증명 없이 command의 실패 유형만 상위 상태머신에 알린다., argv 배열만 사용하고 stdout/stderr를 credential 보관소로 만들지 않는다., 종료 요청은 자식에게 먼저 전달하고 짧게 기다린 뒤 강제 종료한다. (+3 more)
 
 ### Community 238 - "promotion/gate.py"
-Cohesion: 0.08
-Nodes (21): _args(), main(), Namespace, aggregate_evaluations(), _covered_days(), EvaluationSummary, _incident_count(), ManualPromotionGate (+13 more)
+Cohesion: 0.14
+Nodes (15): aggregate_evaluations(), _covered_days(), EvaluationSummary, _incident_count(), ManualPromotionGate, PromotionCriteria, PromotionDecision, Any (+7 more)
 
 ### Community 239 - "release_catalog.py"
-Cohesion: 0.11
-Nodes (22): enrich_series(), measure_definitions(), Any, 고정 30개 지표의 수집기 설정. API 옵션·라이선스 설명은 사실표에 반복하지 않는다., 경제 발표 계산에 필요한 고정 measure 정의를 반환한다., 호출자가 고정 설정을 수정하지 못하도록 복사해 반환한다., DB의 표시·단위 master와 코드의 수집 계약을 실행 시점에 결합한다., 빈 DB의 경제지표 master를 재현할 수 있는 코드 catalog. (+14 more)
+Cohesion: 0.16
+Nodes (15): enrich_series(), measure_definitions(), Any, 고정 30개 지표의 수집기 설정. API 옵션·라이선스 설명은 사실표에 반복하지 않는다., 경제 발표 계산에 필요한 고정 measure 정의를 반환한다., 호출자가 고정 설정을 수정하지 못하도록 복사해 반환한다., DB의 표시·단위 master와 코드의 수집 계약을 실행 시점에 결합한다., 빈 DB의 경제지표 master를 재현할 수 있는 코드 catalog. (+7 more)
 
-### Community 241 - "portfolio_shadow.py"
-Cohesion: 0.06
-Nodes (39): 내용 기반의 결정론적 식별자를 만든다., stable_id(), build_fusion_policy_read_model(), build_optimizer_policy_read_model(), build_ranker_policy_read_model(), build_risk_policy_read_model(), Any, 투자 정책을 화면용 bounded read model로 투영한다. (+31 more)
+### Community 240 - "InstitutionalRepository"
+Cohesion: 0.14
+Nodes (10): InstitutionalRepository, Any, date, Position, 정정 규칙을 적용한 뒤 남는 신고들. 보유를 셀 때는 반드시 이것을 쓴다., 그 분기 포트폴리오 비중(CUSIP 기준). `effective_filings`를 거치므로 정정이 이중 계산되지 않는다., 보존 기간 밖 신고를 지우고 FK cascade로 원천 행도 함께 정리한다., 추적 대상 manager 목록. manager_cik/name/fund_name/is_active의 SSOT는 코드… (+2 more)
+
+### Community 241 - "PortfolioRiskPolicy"
+Cohesion: 0.08
+Nodes (21): build_fusion_policy_read_model(), build_optimizer_policy_read_model(), build_ranker_policy_read_model(), build_risk_policy_read_model(), Any, 투자 정책을 화면용 bounded read model로 투영한다., 현재 signal fusion 정책을 변경 없이 직렬화한다., 현재 optimizer 기본 정책을 변경 없이 직렬화한다. (+13 more)
 
 ### Community 242 - "run_preflight"
 Cohesion: 0.20
@@ -1622,13 +1656,13 @@ Nodes (13): build_preflight_report(), load_effective_environment(), PreflightRep
 Cohesion: 0.08
 Nodes (23): Pattern, build_flash_embed(), compute_surprise(), format_eps(), format_money(), Any, 8-K 실적 속보 Discord Embed 빌더., 실제값과 예상값으로부터 서프라이즈 비율(%)을 동적으로 계산한다. (+15 more)
 
-### Community 244 - "edgartools_13f.py"
-Cohesion: 0.26
-Nodes (10): EdgartoolsUnavailable, parse_information_table(), _position_kind(), RuntimeError, _quantity_type(), edgartools 기반 13F information table shadow 파서. 운영…, edgartools가 설치되어 있지 않을 때 발생한다., edgartools로 information table을 파싱해 운영 모델(`RawPosition`)로 정규화한다.… (+2 more)
+### Community 244 - "sync_schedules"
+Cohesion: 0.16
+Nodes (20): _as_datetime(), _failure(), ingest_raw(), Any, date, datetime, ISO UTC/aware datetime와 datetime 객체를 동일하게 비교한다., 원자료를 한 번만 저장한다. 최초 관측 판정은 계산 결과의 전후 차이로 얻는다. (+12 more)
 
 ### Community 245 - "backtest/cli.py"
-Cohesion: 0.13
-Nodes (20): _atomic_json(), load_backtest_input(), main(), _mapping(), Any, Path, 완전한 오프라인 JSON 입력을 결정론적 백테스트 artifact로 변환한다., BacktestConfig (+12 more)
+Cohesion: 0.25
+Nodes (11): _atomic_json(), load_backtest_input(), main(), _mapping(), Any, Path, 완전한 오프라인 JSON 입력을 결정론적 백테스트 artifact로 변환한다., BacktestConfig (+3 more)
 
 ### Community 246 - "StrategyTests"
 Cohesion: 0.12
@@ -1650,9 +1684,9 @@ Nodes (11): 1. 상시 하네스 아키텍처, 2. 운영 모드 비교 (`analysis
 Cohesion: 0.32
 Nodes (13): attribution_reports, decision_evaluations, decision_evidence, decision_runs, model_promotions, model_versions, policies, portfolio_decisions (+5 more)
 
-### Community 251 - "ActiveMembersTest"
+### Community 251 - "test_watchlist_db.py"
 Cohesion: 0.13
-Nodes (8): ActiveMembersTest, AddRemoveMemberTest, _entity(), 보유는 종목 단위로 오지만 관심 기업은 하나여야 한다., 해제 이력조차 없는 회사까지 내면 전 종목이 목록에 들어온다., 관심 갱신이 SEC metadata 수집 결과를 덮어쓰면 회사 이름이 사라진다., _security(), SyncTossMembersTest
+Nodes (9): ActiveMembersTest, AddRemoveMemberTest, _entity(), watchlists/db.py의 공개 함수가 injectable Database로도 같은 값을 주는지 굳힌다. 관심은 발행사(CIK) 단위로…, 보유는 종목 단위로 오지만 관심 기업은 하나여야 한다., 해제 이력조차 없는 회사까지 내면 전 종목이 목록에 들어온다., 관심 갱신이 SEC metadata 수집 결과를 덮어쓰면 회사 이름이 사라진다., _security() (+1 more)
 
 ### Community 252 - "monitoring/discord.py"
 Cohesion: 0.23
@@ -1662,17 +1696,17 @@ Nodes (14): activity(), collect(), _guild_directory(), _headers(), Any, datetime
 Cohesion: 0.11
 Nodes (9): ArtifactRef, ArtifactStore, Protocol, DB에 적는 것 전부. 내용은 여기 없다., `trading.decision_evidence`가 받는 모양., 저장 백엔드. 지금은 로컬 파일뿐이지만, 나중에 객체 저장소로 바꿔도 DB에 적힌 URI는 그대로여야 한다., LocalArtifactStoreTest, canonical JSON으로 저장하지 않으면 같은 근거가 두 지문을 갖는다. (+1 more)
 
-### Community 254 - "sec13f.py"
+### Community 254 - "keys.py"
 Cohesion: 0.16
-Nodes (15): FilingErrorSink, ShadowSink, FilingRecord, 13F 수집·저장 경계에서 사용하는 명시적 데이터 모델., RPC에 넘기는 원천 포지션 배열. DB 컬럼 계약과 1:1로 맞춘다., 검증을 마친 13F 공시와 합산 포지션 묶음., _information_table_xml(), iter_filings() (+7 more)
+Nodes (10): case_key(), datetime, 판단 하나를 가리키는 키와, 그 판단을 재현할 수 있는지 보는 지문. ## case_key는 계산되는 값이다 UUID를 쓰면 같은 판단을 두…, 마이크로초를 버린다. 재실행이 같은 키로 모이게 하는 유일한 이유다., 판단 하나의 키. 같은 질문이면 항상 같은 문자열. 사람이 읽을 수 있게 앞부분을 그대로 두고 뒤에 지문을 붙인다 — 로그에서 어느 종목·어느…, truncate_to_second(), CaseKeyTest, 같은 판단은 같은 키로 모이고, 입력이 달라지면 지문이 달라져야 한다. (+2 more)
 
 ### Community 255 - "Execution package"
 Cohesion: 0.17
 Nodes (12): Durable safety, Execution package, Live Manual 흐름, Reconciliation, Toss 단일 실행 경로, 분석·검증, 주문 결과가 불명확할 때, 주요 CLI (+4 more)
 
 ### Community 256 - "_Repository"
-Cohesion: 0.24
-Nodes (3): ContinuousRetrainTest, 원장 세 갈래를 그대로 흉내내는 fake. 네트워크를 쓰지 않는다., _Repository
+Cohesion: 0.15
+Nodes (5): ContinuousRetrainTest, RL 재학습이 원장 실데이터를 쓰고 held-out 구간에서 채점하는지 검증한다., 원장 세 갈래를 그대로 흉내내는 fake. 네트워크를 쓰지 않는다., _Repository, _StubModel
 
 ### Community 257 - "저장 계층 최소화 검토와 Markdown 개정안"
 Cohesion: 0.15
@@ -1687,32 +1721,32 @@ Cohesion: 0.21
 Nodes (6): JsonFormatterTest, LogFieldsTest, 로그는 한 줄 JSON이고, 비밀값은 나가지 않는다., 로그는 관측이다. 직렬화 때문에 프로그램이 죽으면 안 된다., logging이 나중에 KeyError를 던지는 것보다 여기서 막는 편이 낫다., _render()
 
 ### Community 260 - "Filing13F"
-Cohesion: 0.06
-Nodes (35): effective_filings(), Filing13F, HoldingsError, portfolio_weights(), Position, Any, ValueError, 13F 보유 신고를 읽는 규칙. ## 정정이 원본을 대체하는 방식이 두 가지다 13F 정정(13F-HR/A)에는 두 종류가 있고, 처리가… (+27 more)
+Cohesion: 0.12
+Nodes (14): effective_filings(), Filing13F, HoldingsError, Any, ValueError, 한 매니저·한 분기에서 **실제로 유효한** 신고들. `RESTATEMENT`가 있으면 그것 하나만, 없으면 원본과 `NEW HOLDINGS`…, EffectiveFilingsTest, _filing() (+6 more)
 
-### Community 261 - "Outbox"
+### Community 261 - "load_config"
 Cohesion: 0.02
-Nodes (165): Config, ConfigError, default_config(), RuntimeError, 설정을 명시적으로 읽는 자리. 실제 환경변수가 `.env`보다 우선하고, 필수 값은 호출 시점에 검증하며, 비밀값은 로그에 기록하지 않는다., 설정이 없거나 모양이 틀렸다. 값 자체는 담지 않는다., 이 실행이 쓰는 설정. 값은 프로세스 환경에서 온다., 필요한 값을 지금 확인한다. 없으면 **이름만** 말하고 멈춘다. (+157 more)
+Nodes (158): Config, ConfigError, default_config(), load_config(), Path, RuntimeError, 설정을 명시적으로 읽는 자리. 실제 환경변수가 `.env`보다 우선하고, 필수 값은 호출 시점에 검증하며, 비밀값은 로그에 기록하지 않는다., 설정이 없거나 모양이 틀렸다. 값 자체는 담지 않는다. (+150 more)
 
 ### Community 262 - "AI Investor Constitution"
 Cohesion: 0.18
 Nodes (11): 10. 변경 게이트, 1. 투자 대상, 2. 데이터 Source of Truth, 3. TradingAgents의 책임, 4. 뉴스·소셜 정책, 5. 공통 포트폴리오 계약, 6. 결정론적 계산, 7. 백테스트와 강화학습 (+3 more)
 
 ### Community 263 - "finite_float"
-Cohesion: 0.07
-Nodes (27): finite_float(), 유한한 float만. NaN·Infinity·bool·읽을 수 없는 값은 `default`. bool을 막는 이유: 파이썬에서…, main(), 성숙한 Shadow 판단을 SPY 대비 5·20·60 거래일로 평가한다., Fixed horizons used by post-decision evaluation., _direction(), evaluate_case(), EvaluationRepository (+19 more)
+Cohesion: 0.10
+Nodes (26): finite_float(), normalize_ticker(), 유한한 float만. NaN·Infinity·bool·읽을 수 없는 값은 `default`. bool을 막는 이유: 파이썬에서…, 종목 심볼을 대문자 및 표준 dash 형태로 정규화한다., assemble_candidate_features(), _dense_percentiles(), _group_by_ticker(), _latest() (+18 more)
 
 ### Community 264 - "backtest/metrics.py"
 Cohesion: 0.23
-Nodes (8): BacktestMetrics, calculate_metrics(), Any, 백테스트 NAV·체결 장부에서 성과와 위험을 계산한다., 초기 현금을 첫 기준점으로 포함해 일별 수익과 비용 지표를 계산한다., _sample_std(), BacktestMetricsTest, nav()
+Nodes (9): NavPoint, BacktestMetrics, calculate_metrics(), Any, 백테스트 NAV·체결 장부에서 성과와 위험을 계산한다., 초기 현금을 첫 기준점으로 포함해 일별 수익과 비용 지표를 계산한다., _sample_std(), BacktestMetricsTest (+1 more)
 
 ### Community 265 - "BuildTest"
 Cohesion: 0.20
 Nodes (4): BuildTest, estimates 커버리지가 100%가 아니다 — 없으면 블록이 통째로 빠져야 한다., GAAP 계산값과 조정 컨센서스를 빼면 없는 서프라이즈가 생긴다., 컨센서스 스냅샷이 없어도 서프라이즈 이력만으로 블록을 낼 수 있다.
 
 ### Community 266 - "ticker_label"
-Cohesion: 0.12
-Nodes (35): _moves_text(), 신규·제거·변경을 기호 하나로 표시한다. embed는 색을 못 주므로 기호가 대신한다., mom(), pct(), Momentum score display: signed percentage-points without a percent sign., ticker_label(), ticker_text(), _canary() (+27 more)
+Cohesion: 0.18
+Nodes (22): _moves_text(), 신규·제거·변경을 기호 하나로 표시한다. embed는 색을 못 주므로 기호가 대신한다., pct(), ticker_label(), _canary(), duel_adm(), duel_gem(), gate_haa_bal() (+14 more)
 
 ### Community 267 - "_db"
 Cohesion: 0.07
@@ -1730,25 +1764,25 @@ Nodes (19): Cache와 중복 제거, Feature 소비 경계, Fundamentals cutoff �
 Cohesion: 0.11
 Nodes (7): skipUnless, EdgartoolsWrapperTest, edgartools shadow 파서 wrapper와 운영 파서의 결과 일치(parity) 테스트. edgartools가 설치되어 있지 않으면…, edgartools 미설치/지연 import 경로. 설치 여부와 무관하게 동작해야 한다., edgartools 출력 컬럼을 운영 모델로 정규화하는 순수 헬퍼. 의존성 불필요., WrapperNormalizerTest, WrapperUnavailableTest
 
-### Community 271 - "github_actions.py"
-Cohesion: 0.25
-Nodes (14): _headers(), job_log(), jobs_for_run(), list_workflows(), now_utc(), Any, datetime, GitHub Actions 실행 이력 조회. DB의 run_log가 아니라 Actions API를 본다. run_log는 파이프라인 다섯… (+6 more)
+### Community 271 - "._send"
+Cohesion: 0.15
+Nodes (6): _config(), ForumDeliveryTest, 스레드를 다시 찾는 키는 표시명이 바뀌어도 같아야 한다. 제목 전체를 키로 쓰던 동안, 한글명을 채우자 `AAPL · Apple Inc. ·…, 100자를 넘기면 Discord가 400으로 거절한다 — 카드가 통째로 안 나간다., 빈 배열을 보내면 이미 붙은 태그를 지우는 뜻이 될 수 있다., ThreadIdentityTest
 
 ### Community 272 - "SurpriseRowsTest"
 Cohesion: 0.20
 Nodes (4): 공시 시점에는 아직 모르는 분기를 카드에 실으면 안 된다., 관측된 실제 사례(GOOGL +214%/+92%, UBER -82%)를 서프라이즈로 단정하지 않는다., 정상 범위(AAPL 3~7%, TSLA -38%)까지 잘라내면 블록이 쓸모없어진다., SurpriseRowsTest
 
-### Community 273 - "src/investment_agent/research/features/__init__.py"
-Cohesion: 0.21
-Nodes (4): 일간 기술지표 ETL과 PIT feature layer (RSI·MACD → local ResearchStore). 시세 입력은 v1…, _frame(), DataFrame, TechIndicatorAtomicUpsertTests
+### Community 273 - "TechIndicatorAtomicUpsertTests"
+Cohesion: 0.27
+Nodes (3): _frame(), DataFrame, TechIndicatorAtomicUpsertTests
 
 ### Community 274 - "load_or_create_approval_secret"
 Cohesion: 0.26
 Nodes (9): _default_path(), load_or_create_approval_secret(), Path, Discord 승인 버튼용 로컬 HMAC 비밀값을 안전하게 준비한다., 환경변수를 우선 사용하고, 없으면 Git 제외 로컬 파일을 원자 생성한다., _read(), _restrict(), _validate() (+1 more)
 
 ### Community 275 - "map_fiscal_periods.py"
-Cohesion: 0.11
-Nodes (25): 외부 I/O 없이 재무 관측값을 변환하고 검증하는 서비스., _add_months(), _annual_period(), _as_date(), _as_datetime(), _calendar_by_ticker(), _coherent_range(), _latest_reported_quarters() (+17 more)
+Cohesion: 0.23
+Nodes (17): _add_months(), _annual_period(), _as_date(), _as_datetime(), _calendar_by_ticker(), _latest_reported_quarters(), _nearest_period(), _next_period() (+9 more)
 
 ### Community 276 - "_ops_webhook"
 Cohesion: 0.23
@@ -1762,9 +1796,9 @@ Nodes (7): assert_boundary(), assert_contract(), 읽기 경계와 SQL 공개 계
 Cohesion: 0.24
 Nodes (3): CompareTest, shadow 대조 로직(shadow_diff.compare) 단위 테스트. 외부 의존성 없음., _row()
 
-### Community 279 - "fusion.py"
-Cohesion: 0.05
-Nodes (49): OptimizerSignal, load_model(), LoadedModel, predict_numeric(), Any, ndarray, 저장된 ML artifact를 오늘의 feature에 적용해 수치 예측을 만든다. `fit_baseline`이 학습만 하고 끝나면 모델은…, 오늘의 feature 행렬로 종목별 NumericPrediction을 만든다. feature version과 컬럼 순서가 학습 때와 다르면… (+41 more)
+### Community 279 - "test_ensemble.py"
+Cohesion: 0.09
+Nodes (23): load_model(), LoadedModel, predict_numeric(), Any, ndarray, 저장된 ML artifact를 오늘의 feature에 적용해 수치 예측을 만든다. `fit_baseline`이 학습만 하고 끝나면 모델은…, 오늘의 feature 행렬로 종목별 NumericPrediction을 만든다. feature version과 컬럼 순서가 학습 때와 다르면…, artifact 상태에서 복원한 예측기와 그 신뢰도 근거다. (+15 more)
 
 ### Community 280 - "storable_share_rows"
 Cohesion: 0.26
@@ -1774,21 +1808,21 @@ Nodes (7): Any, 저장 계약이 받는 서식만 남기고, 버린 서식 이�
 Cohesion: 0.15
 Nodes (3): DashboardLauncherCliTest, 모든 .bat은 CRLF여야 하고, 시스템 python이 아니라 프로젝트 .venv를 쓴다. LF로 저장되면 cmd.exe가 마지막 줄을 삼켜…, 루트에는 run.bat 하나만 둔다 — 나머지는 목적별 scripts/ 하위에 있다.
 
-### Community 282 - "universe/infrastructure/sources/__init__.py"
-Cohesion: 0.14
+### Community 282 - "_document"
+Cohesion: 0.15
 Nodes (9): CompanyFactsKeyContractTest, _document(), 공용 SEC submissions 파서의 키 매핑 계약. `src/investment_agent/data/universe/sec.py`는…, fundamentals 일별 경로가 읽는 SEC 키 계약. `src/investment_agent/data/universe/sec.py`와…, Company Facts unit entry도 원본 이름 `form`을 쓴다., SEC submissions 응답의 모양(키 이름이 계약의 전부다)., 두 날짜가 뒤바뀌면 조회 창이 빗나가고 보존 삭제가 엉뚱한 행을 지운다., 13F 운용사는 10년치가 페이지로 나뉜다 — 최근 페이지만 보면 이력이 통째로 빈다. (+1 more)
 
 ### Community 283 - "SegmentHighlightsTest"
-Cohesion: 0.10
-Nodes (11): EarningsCardTest, EarningsExtrasTest, 실적 알림에 붙는 세그먼트 요약의 기간·중복 방지 규칙을 검증한다., 세그먼트 공시가 끝나기 전에는 빈 축 카드로 선점하지 않는다., 후속 알림 잡도 processing/failed 공시를 선점하지 않는다., 블록 하나 = 질문 하나. 제목이 '뭐와 뭐'면 두 주제가 섞였다는 뜻이다., 1행은 배당 유무로 두 갈래다 — 한쪽에만 붙이면 배당 없는 회사에서 조용히 빠진다. 실측으로 UBER(배당 없음) 카드에서 '추정치 방향'이…, 블록 하나 = 질문 하나 = 그림 하나. (+3 more)
+Cohesion: 0.18
+Nodes (6): 세그먼트 공시가 끝나기 전에는 빈 축 카드로 선점하지 않는다., 기한이 없으면 "늦게 보낸다"가 아니라 "영영 안 보낸다"가 된다. 세그먼트는 SEC의 분기 데이터셋에서 오고 그것은 한 분기 늦게 공개된다.…, 접수일을 모르면 기한을 잴 수 없다. 그때는 보내지 않는 쪽이 안전하다., 후속 알림 잡도 processing/failed 공시를 선점하지 않는다., _row(), SegmentHighlightsTest
 
 ### Community 284 - "object"
-Cohesion: 0.22
-Nodes (11): object, ModelPoolError, RuntimeError, 풀 후보를 안전하게 적용할 수 없을 때 발생한다., 풀에서 남은 후보를 하나씩 예약·시도해 이 종목의 분석을 완주한다. 한 후보가 실패하면(예약 자체가 없거나 호출 도중 429/404 등) 다음…, _select_and_run(), _candidate(), Path (+3 more)
+Cohesion: 0.16
+Nodes (14): object, apply_candidate(), ModelPoolError, RuntimeError, 이 블록 동안만 `AI_INVESTOR_*` 환경변수를 후보 설정으로 덮는다.…, 풀 후보를 안전하게 적용할 수 없을 때 발생한다., 풀에서 남은 후보를 하나씩 예약·시도해 이 종목의 분석을 완주한다. 한 후보가 실패하면(예약 자체가 없거나 호출 도중 429/404 등) 다음…, _select_and_run() (+6 more)
 
-### Community 285 - "SelectOnlyGateway"
+### Community 285 - "to_wide_tables"
 Cohesion: 0.26
-Nodes (7): DashboardDataError, RuntimeError, 읽기 결과의 구조가 계약과 다를 때 사용하는 안전한 오류., 허용된 PostgREST SELECT 연산만 조합하는 좁은 게이트웨이. v1 관심 기업은 공개 읽기 전용인…, SELECT와 허용된 필터·정렬·범위만 사용해 행을 읽는다., allowlist에 있는 읽기 전용 SQL 함수의 결과 행만 읽는다. 비공개 스키마(`alerts`)의 사실에 닿는 유일한 경로다. 이름과…, SelectOnlyGateway
+Nodes (5): core wide 행과 매핑 이상 행을 반환한다. FY는 저장하지 않는다. `periodize`가 이미 FY에서 Q4 단독값을 복원했으므로…, to_wide_tables(), ConsolidatedEquityScope, _fact(), 연결 자본 범위와 비지배지분 파생 규칙의 회귀 테스트.
 
 ### Community 286 - "ContextBuilder"
 Cohesion: 0.14
@@ -1803,20 +1837,20 @@ Cohesion: 0.12
 Nodes (16): 13F 비중은 '보고된 장부 안에서의 비중'이다, ATLAS 투자 터미널, Discord 알림 대응표, 데이터 출처 설계표, 매크로와 지표 발표는 분리한다, 사이드바는 세 갈래다, 상세를 여는 방식은 고를 수 있다, 선택은 카드 클릭만이 아니다 (+8 more)
 
 ### Community 289 - "extract_summary_financials"
-Cohesion: 0.09
-Nodes (26): parse_8k_earnings(), 8-K 실적 발표에서 저장 가능한 요약값을 조립한다., 내재화한 표·본문 파서로 8-K 실적값을 한 번에 추출한다., extract_guidance_text(), 가이던스·전망을 언급한 원문 문단을 최대 세 개까지 연결한다., SEC 8-K 보도자료에서 필요한 값만 읽는 경량 파서 묶음. 이 패키지는 외부 EDGAR SDK를 호출하지 않는다. SEC archive에서…, extract_summary_financials(), _label_at() (+18 more)
+Cohesion: 0.05
+Nodes (50): is_earnings_8k(), 정확한 Form 8-K Item 2.02 공시만 허용한다., parse_8k_earnings(), 8-K 실적 발표에서 저장 가능한 요약값을 조립한다., 내재화한 표·본문 파서로 8-K 실적값을 한 번에 추출한다., clean_html_to_markdown(), _document_score(), extract_guidance_text() (+42 more)
 
 ### Community 290 - "gdpnow_archive.py"
 Cohesion: 0.30
 Nodes (13): _as_date(), fetch_rows(), fetch_workbook(), _frame_rows(), parse_workbook(), Any, date, _quarter_start() (+5 more)
 
-### Community 291 - "normalize_positions"
-Cohesion: 0.20
-Nodes (10): Position, SEC 원본 한 행을 USD로 정규화한 DB 저장 단위. Combination Report의 중복 보유를 Python에서 먼저 합치면 sub-…, normalize_positions(), Position, 원본 행을 USD로 환산하되 SEC 행 단위로 보존한다., detect_value_scale(), _fallback_scale(), date (+2 more)
+### Community 291 - "earnings_report_segment_state.py"
+Cohesion: 0.16
+Nodes (17): profit_measure_label(), `profit_measure_kind`의 사람이 읽는 이름. 모르는 값은 일반 표기로 돌려준다., load_segment_highlights(), 카드에 붙일 축별 세그먼트 상태를 만든다. 전년 동기 비교가 필요해 대상 회계연도와 그 전년을 함께 읽는다. 공시 처리…, _axis_rank(), _best_axis(), build(), _filing_status() (+9 more)
 
 ### Community 292 - "safe_fetch"
-Cohesion: 0.16
-Nodes (18): normalize_tz(), Logger, Series, 날짜의 timezone 정보를 떼어 형식 통일(yfinance 등 tz 표기 제각각 대응)., 지표를 하나씩 fetch. 하나 실패해도 멈추지 않고 성공값+실패목록을 함께 반환. budget_sec를 넘기면 그 시점부터 남은 지표는…, safe_fetch(), _api_error(), fetch_batch() (+10 more)
+Cohesion: 0.21
+Nodes (14): normalize_tz(), Logger, Series, 날짜의 timezone 정보를 떼어 형식 통일(yfinance 등 tz 표기 제각각 대응)., 지표를 하나씩 fetch. 하나 실패해도 멈추지 않고 성공값+실패목록을 함께 반환. budget_sec를 넘기면 그 시점부터 남은 지표는…, safe_fetch(), _api_error(), fetch_batch() (+6 more)
 
 ### Community 293 - "institutional/card.py"
 Cohesion: 0.15
@@ -1824,23 +1858,23 @@ Nodes (33): blind_spot_caveat(), blind_spots 코드 목록을 운용사별 한�
 
 ### Community 294 - "src/investment_agent/research/rl/__init__.py"
 Cohesion: 0.05
-Nodes (61): BaselinePolicyConfig, BaselinePolicyModel, DurablePolicyArtifact, load_baseline_policy(), Any, ndarray, Path, 외부 RL 의존성 없이 재현 가능한 선형 challenger 정책. (+53 more)
+Nodes (59): BaselinePolicyConfig, BaselinePolicyModel, DurablePolicyArtifact, load_baseline_policy(), Any, ndarray, Path, 외부 RL 의존성 없이 재현 가능한 선형 challenger 정책. (+51 more)
 
 ### Community 295 - "strategy/embeds.py"
-Cohesion: 0.07
-Nodes (46): analyze_allocation_change(), Allocation change analysis for strategy notifications., _as_card(), _as_row(), build_card(), build_summary(), _generic_layout(), _layout_for() (+38 more)
+Cohesion: 0.16
+Nodes (19): _as_card(), build_summary(), _generic_layout(), 전략 알림 Discord embed 조립. DESIGN-system.md를 embed가 표현할 수 있는 범위에서 따른다. - **색…, 개별 카드들에서 월간 종합 embed를 만든다. allocations를 주면 전략별 배분 막대를 함께 그린다(모노스페이스 코드블록)., 전략 전용 형식을 만들 수 없을 때의 안전한 기본형. 새 전략이 붙거나 signals 형식이 바뀌어도 알림이 죽지 않게 한다., _summary_bar(), mode_label() (+11 more)
 
-### Community 296 - "QlibPITAdapter"
-Cohesion: 0.23
-Nodes (6): Any, DataFrame, QlibPITAdapter, QlibSegments, Qlib data vendor를 쓰지 않고 StaticDataLoader로 우리 snapshot만 전달한다., QlibAdapterTest
+### Community 296 - "qlib_adapter.py"
+Cohesion: 0.18
+Nodes (8): Any, DataFrame, QlibPITAdapter, QlibSegments, ResearchStore의 PIT feature snapshot을 Qlib research workflow에만 연결한다., Qlib data vendor를 쓰지 않고 StaticDataLoader로 우리 snapshot만 전달한다., QlibAdapterTest, _snapshot()
 
 ### Community 297 - "주문 실행, 승인, Broker와 단계별 안전장치"
 Cohesion: 0.14
 Nodes (14): Broker-independent contract, Credential 격리, Discord Live Manual 승인, Idempotency와 결과불명 주문, Kill switch와 Lockdown, Model 승격 최소 증거와 Live Autonomous Permit, Reconciliation, 분석·검증 단계 (+6 more)
 
-### Community 298 - "digest.py"
-Cohesion: 0.16
-Nodes (23): _ago(), build_embed(), chain_expectations(), evaluate(), failure_streak(), judge_channels(), _kst(), _pad() (+15 more)
+### Community 298 - "main"
+Cohesion: 0.06
+Nodes (57): crons_for(), _emit(), main(), Path, 워크플로 파일의 schedule cron 목록(주석 처리된 줄은 제외)., workflow_run으로 이 워크플로를 깨우는 상류 워크플로 이름들., 카드 본문에 이모지가 들어가는데 Windows 콘솔 기본 코드페이지(cp949)로는 인코딩이 터진다 — 미리보기가 개발자 기계에서 죽으면…, _uncommented() (+49 more)
 
 ### Community 299 - "verify_postgres_sql_syntax.py"
 Cohesion: 0.30
@@ -1854,12 +1888,12 @@ Nodes (9): EvidenceError, load(), ValueError, 판단 근거를 파일로 내보�
 Cohesion: 0.22
 Nodes (13): _current_dates(), _fetch(), fetch_dates(), FomcCalendarError, _historical_dates(), _meeting_end_date(), date, ValueError (+5 more)
 
-### Community 302 - "macro_indicator_rows"
-Cohesion: 0.17
-Nodes (12): macro_indicator_rows(), `reporting.macro_observations` 원값을 지표별 최신 상태 + 경보 등급으로 접는다. 반환 각 행:…, compute_metrics_series(), DataFrame, Series, KIND_COMPUTE_MATRIX 기반 파생 지표 계산기. 소비자가 macro v1 observation read model로 받은…, metrics DataFrame 한 행 → 스칼라 dict (NaN 제거·float 캐스팅). db.py가 마지막·직전 관측치를…, 시계열 전 구간 metrics DataFrame. db.py가 마지막·직전 행을 metrics/prev_metrics로 환원. (+4 more)
+### Community 302 - "MacroNotificationStore"
+Cohesion: 0.14
+Nodes (12): MacroNotificationStore, Any, 원천 관측을 카드가 소비하는 최신값+파생지표 행으로 접는다., 매크로 보고서 조회와 notifications.outbox 중복 확인을 담당한다., _rows_from_window(), compute_metrics_series(), DataFrame, Series (+4 more)
 
 ### Community 303 - "reconcile_orders"
-Cohesion: 0.22
+Cohesion: 0.21
 Nodes (10): LocalOrder, Protocol, 우리 원장과 broker 상태를 다시 맞춘다. ## broker_order_id로만 맞춘다 종목·수량·시각이 비슷하다고 같은 주문으로 묶지…, broker 응답에서 이 모듈이 요구하는 최소한., 양쪽 목록을 `broker_order_id`로만 맞춘다., reconcile_orders(), ReconciliationResult, RemoteOrder (+2 more)
 
 ### Community 304 - "EnvFileTest"
@@ -1870,25 +1904,25 @@ Nodes (4): EnvFileTest, Path, .env 갱신 — 비밀값 파일을 다루므로 �
 Cohesion: 0.20
 Nodes (14): axis_chart(), _blue(), _color(), composition_donut(), 세그먼트 embed에 붙일 QuickChart 이미지 URL을 조립한다. 여기서 그림을 그리지 않는다 — Chart.js 설정을 URL에 실어…, 매출 규모 가로 막대 — 비중을 낼 수 없는 축(partial)의 대체 그림. 합계를 모르니 '전체 중 얼마'는 말하지 않고 '서로 얼마나…, 축 하나의 그림 — 비중을 낼 수 있으면 도넛, 아니면 매출 막대., 매출 구성 도넛. 가운데가 비어 있어 집중도가 링 두께로 읽힌다. 비중을 낼 수 있는 행이 둘 미만이면 원 하나가 되어 정보가 없다 →… (+6 more)
 
-### Community 306 - "CollectSocialTest"
-Cohesion: 0.07
-Nodes (13): 텍스트 정규화와 언급 추출 규칙. 외부 호출도 저장소도 모른다., CollectSocialTest, NormalizeSocialTest, _payload(), Reddit 수집 유스케이스와 저장 형태., 작성자 원문을 90일 들고 있을 이유가 없다., 언급이 없다고 게시물을 버리면 나중에 규칙을 고쳐도 다시 못 찾는다., cap 소진은 provider 오류가 아니다 — 남은 채널을 계속 돌면 예약만 반복 소모한다. (+5 more)
+### Community 306 - "test_collect_social.py"
+Cohesion: 0.15
+Nodes (7): CollectSocialTest, NormalizeSocialTest, _payload(), Reddit 수집 유스케이스와 저장 형태., 작성자 원문을 90일 들고 있을 이유가 없다., 언급이 없다고 게시물을 버리면 나중에 규칙을 고쳐도 다시 못 찾는다., cap 소진은 provider 오류가 아니다 — 남은 채널을 계속 돌면 예약만 반복 소모한다.
 
 ### Community 307 - "test_watchlists.py"
-Cohesion: 0.11
-Nodes (7): 운영 점검과 하네스 실행 명령 패키지., PendingFilingGroupsTest, PendingStateTest, Supabase 관심종목 관리와 공시 필터 규칙을 검증한다., WatchlistNormalizationTest, 공통 Actions 실패 리포터가 원문을 안전한 사건 카드로 바꾸는지 검증한다., WorkflowFailureReporterTest
+Cohesion: 0.17
+Nodes (4): PendingFilingGroupsTest, PendingStateTest, Supabase 관심종목 관리와 공시 필터 규칙을 검증한다., WatchlistNormalizationTest
 
 ### Community 308 - "build_valuations"
 Cohesion: 0.16
 Nodes (7): build_valuations(), datetime, 종목별 가격·발행주식수·TTM 재무를 하나의 PIT 관측값으로 만든다., BuildValuationsEntryTest, 근거가 모자란 날도 기록한다 — 왜 못 만들었는지가 나중에 필요하다., DB CHECK 제약과 같은 불변식을 코드 쪽에서도 지킨다., _Repository
 
 ### Community 309 - "_Builder"
-Cohesion: 0.09
-Nodes (6): _Supabase, _Builder, 세그먼트 8년 보존 정책과 외래키 안전 삭제 순서를 검증한다., _Response, SegmentsRetentionTest, _Supabase
+Cohesion: 0.08
+Nodes (5): _Supabase, _Builder, _Response, SegmentsRetentionTest, _Supabase
 
 ### Community 310 - "SignalBlender"
 Cohesion: 0.09
-Nodes (14): BlendedSignal, LLM 정성 분석 신호와 강화학습(RL) 정량 정책 신호의 동적 앙상블 블렌더. TradingAgents(LLM)의 펀더멘털·뉴스·거시…, LLM 신호와 RL 정책의 동적 블렌더., RL 모델의 DSR 확률에 따라 RL 신호 반영 비중을 동적으로 결정한다., 종목별 LLM 신호와 RL 최적 비중을 결합하여 BlendedSignal 매핑을 반환한다., SignalBlender, BlendingRuleChartTest, 융합 차트가 실제 규칙과 어긋나지 않는지. 실측 2026-09-04: 이 화면은 "실제 SignalBlender 엔진을 호출"한다고 적어 놓고… (+6 more)
+Nodes (13): BlendedSignal, LLM 신호와 RL 정책의 동적 블렌더., RL 모델의 DSR 확률에 따라 RL 신호 반영 비중을 동적으로 결정한다., 종목별 LLM 신호와 RL 최적 비중을 결합하여 BlendedSignal 매핑을 반환한다., SignalBlender, BlendingRuleChartTest, 융합 차트가 실제 규칙과 어긋나지 않는지. 실측 2026-09-04: 이 화면은 "실제 SignalBlender 엔진을 호출"한다고 적어 놓고…, 승격된 정책이 없는데 기본값으로 'RL 가중치 46%'를 만들어 내지 않는다. 실측 2026-09-04:… (+5 more)
 
 ### Community 311 - "._history"
 Cohesion: 0.18
@@ -1906,13 +1940,9 @@ Nodes (5): _feature_row(), _label_row(), LoadTrainingSetTest, 원장 행에서 R
 Cohesion: 0.10
 Nodes (16): BlendFlagTest, ComparisonRecordTest, ComputeRlBlendTest, LiveMembershipTest, _model(), _Proposal, datetime, Exception (+8 more)
 
-### Community 315 - "test_config.py"
-Cohesion: 0.40
-Nodes (3): PackageImportTest, 설정은 명시적으로 읽고, 안전 플래그는 fail-closed다., 패키지를 import하는 것만으로 환경이 바뀌면 안 된다.
-
-### Community 316 - "notifications/macro.py"
-Cohesion: 0.06
-Nodes (26): audit_fx_cross_sources(), _comparison(), date, Series, 매크로 원천 시계열의 단위·범위와 환율 교차검증을 담당한다., BOK 환율을 독립적인 연준/FRED 관측치와 교차검증한다. ECOS를 주 원천으로 유지한다. FRED의 DEXKOUS(원/달러)와…, 경제 발표의 식별·일정·정규화·검증 규칙., MacroNotificationStore (+18 more)
+### Community 316 - "freshness_for"
+Cohesion: 0.08
+Nodes (21): audit_fx_cross_sources(), _comparison(), date, Series, 매크로 원천 시계열의 단위·범위와 환율 교차검증을 담당한다., BOK 환율을 독립적인 연준/FRED 관측치와 교차검증한다. ECOS를 주 원천으로 유지한다. FRED의 DEXKOUS(원/달러)와…, 경제 발표의 식별·일정·정규화·검증 규칙., freshness_for() (+13 more)
 
 ### Community 317 - "Investment Agent"
 Cohesion: 0.12
@@ -1926,17 +1956,17 @@ Nodes (15): CVXPY 또는 NumPy 충돌, Discord 승인이 거절됨, DuckDB impor
 Cohesion: 0.18
 Nodes (9): _imports(), IntelligenceArchitectureTest, Path, _python_files(), intelligence 계층 경계를 검증한다. data 도메인들과 같은 4계층 문법을 쓴다 — 저장소만 Supabase가 아니라 로컬…, 도메인 규칙이 저장소나 네트워크를 알면 규칙만 따로 시험할 수 없다., application은 infrastructure.sources와 domain만 안다. universe·market과 같은 이유로…, 따로 두면 정규화·언급 추출 규칙이 두 벌이 되고 조용히 갈라진다. (+1 more)
 
-### Community 320 - "test_view_reachability.py"
-Cohesion: 0.22
-Nodes (7): MasterViewsHaveNoScopeTest, 코드가 실제로 부르는 모양으로 reporting 뷰를 읽을 수 있어야 한다. `ReportingQueries.read`는 이력 뷰가 통째로…, `f("some_view")` 꼴로 인자 하나만 준 호출을 모은다., 검사 대상을 못 찾으면 위 테스트는 공허하게 통과한다., 시간 컬럼이 없는 뷰에 scope를 걸면 범위로 풀 길이 없다 — 영구히 못 읽는다., _unfiltered_view_calls(), UnfilteredViewCallsAreReadableTest
+### Community 320 - "retry.py"
+Cohesion: 0.16
+Nodes (13): fetch_reported_earnings(), _optional_float(), Yahoo Finance에서 발표 실적과 EPS 서프라이즈를 읽는 어댑터., 발표 일자별 EPS 예상·실제·서프라이즈를 반환한다., 단위가 US GDP headline measure와 동일한 Atlanta Fed GDPNow만 수집한다., _fetch_changes_html(), _fetch_html(), wikipedia.py — 위키 S&P 500 문서에서 현재 멤버 + 편입/탈락 기록 수집. User-Agent로 신원을 밝혀 차단 회피,… (+5 more)
 
-### Community 321 - "TradingAgentsDecisionEngine"
-Cohesion: 0.23
-Nodes (7): AgentEngineResult, DecisionEngine, Any, Protocol, 투자 Agent 구현을 교체 가능한 인터페이스로 제한한다., AI Investor 판단 엔진 인터페이스 및 공통 경계., TradingAgentsDecisionEngine
+### Community 321 - "AgentEngineResult"
+Cohesion: 0.29
+Nodes (5): AgentEngineResult, Any, TradingAgentsDecisionEngine, _attempt_case(), `apply_candidate`가 이미 활성화된 상태에서 실제 TradingAgents 호출 한 건을 한다.
 
-### Community 322 - "test_workflow_storage_paths.py"
-Cohesion: 0.22
-Nodes (7): _job_env(), 워크플로가 주고받는 로컬 저장소 경로는 `storage_paths`와 같아야 한다. 로컬 저장소(DuckDB·Parquet)는 Actions…, job에 선언된 env. 여러 단계가 같은 자리를 보게 하는 정상적인 방법이다., 옛 자리를 가리키는 줄이 하나라도 남으면 그 워크플로가 조용히 빈손이 된다., 대상을 못 찾으면 위 검사는 공허하게 통과한다., _resolved_research_paths(), WorkflowArtifactPathsFollowStorageTest
+### Community 322 - "TrainingSample"
+Cohesion: 0.18
+Nodes (8): Any, 미래 label이 확정된 뒤에만 생성되는 immutable 학습 행., TrainingSample, build_training_dataset(), 누적된 outcome 기반 TrainingDataset. 운영 모델 교체는 수행하지 않는다., sample을 정렬·중복 검증해 재현 가능한 dataset으로 만든다., TrainingDataset, 학습 입력 준비 경계. 실제 모델 학습은 investment_agent.research.training이 소유한다.
 
 ### Community 323 - "30_execution.sql"
 Cohesion: 0.29
@@ -1952,7 +1982,11 @@ Nodes (4): institutional 외부 데이터 source adapter 패키지., OpenFigiIde
 
 ### Community 326 - "IntelligenceReaderTest"
 Cohesion: 0.17
-Nodes (6): IntelligenceReaderTest, 읽기 계층에 쓰기 메서드 호출이 있으면 경계가 무너진 것이다., 화면이 쓰기 모드로 열면 수집 잡이 파일을 열지 못해 죽는다., 수집이 한 번도 안 돈 노트북에서 화면이 예외로 죽으면 안 된다., 저장은 원문, 화면으로 나갈 때 가린다. Reddit 본문에는 지시문처럼 읽히는 문장과 자격증명이 실제로 들어온다., 실행 기록의 message는 provider 오류 문구라 자유 텍스트다. 수집 실패 메시지에 URL과 API 키가 들어올 수 있다.
+Nodes (7): _article(), IntelligenceReaderTest, 읽기 계층에 쓰기 메서드 호출이 있으면 경계가 무너진 것이다., 화면이 쓰기 모드로 열면 수집 잡이 파일을 열지 못해 죽는다., 수집이 한 번도 안 돈 노트북에서 화면이 예외로 죽으면 안 된다., 저장은 원문, 화면으로 나갈 때 가린다. Reddit 본문에는 지시문처럼 읽히는 문장과 자격증명이 실제로 들어온다., 실행 기록의 message는 provider 오류 문구라 자유 텍스트다. 수집 실패 메시지에 URL과 API 키가 들어올 수 있다.
+
+### Community 327 - "build_membership_snapshots"
+Cohesion: 0.16
+Nodes (8): build_membership_snapshots(), build_reconcile_rows(), DataFrame, 현재 명단에서 변경 이력을 역재생해 날짜별 S&P 500 명단을 복원한다. 가장 오래된 변경일 이전은 알 수 없으므로 행을 만들지 않는다.…, 현재 멤버 표 + 편입/탈락 기록 → 저장용 목록을 생성한다. 반환: current_rows : 현재 S&P 500 종목 (~503개,…, MembershipHistoryTransformTest, MembershipReconcileTest, 멤버십이 그대로여도 게이트가 그대로라는 뜻은 아니다. 상류의 거래소 master 동기화가 게이트를 통째로 껐고, 이 경로가 조기 반환하는…
 
 ### Community 328 - "FiresBetweenTest"
 Cohesion: 0.13
@@ -1970,13 +2004,13 @@ Nodes (8): Any, DB에 적을 것 전부. 내용은 여기 없다., 근거를 파
 Cohesion: 0.05
 Nodes (37): Fundamentals architecture, 계산과 reporting, 시점 정합성, 실패와 검증, 의존성 방향, 저장 책임, earnings / expectations, Fundamentals canonical columns (+29 more)
 
-### Community 332 - "taxonomy/__init__.py"
-Cohesion: 0.15
-Nodes (18): assess_rows(), _base_quality(), _company_row(), _is_subset_sum(), _metric_method(), _number(), _overlapping_revenue_aggregates(), Any (+10 more)
-
-### Community 333 - "main"
+### Community 332 - "assess_segment_quality.py"
 Cohesion: 0.25
-Nodes (11): crons_for(), _emit(), main(), Path, 워크플로 파일의 schedule cron 목록(주석 처리된 줄은 제외)., workflow_run으로 이 워크플로를 깨우는 상류 워크플로 이름들., 카드 본문에 이모지가 들어가는데 Windows 콘솔 기본 코드페이지(cp949)로는 인코딩이 터진다 — 미리보기가 개발자 기계에서 죽으면…, _uncommented() (+3 more)
+Nodes (14): assess_rows(), _base_quality(), _company_row(), _is_subset_sum(), _metric_method(), _number(), _overlapping_revenue_aggregates(), Any (+6 more)
+
+### Community 333 - "market/test_persistence.py"
+Cohesion: 0.17
+Nodes (6): LatestPriceDateTest, _price(), PricesSinceTest, persistence.py의 조회 함수가 MarketRepository로 위임한 뒤에도 같은 값을 주는지 굳힌다. 리팩터 전 특성화 테스트., universe에서 사라진 security_id는 조인이 안 되므로 결과에서 빠진다 — 이전 raw 쿼리 구현과 같은 동작이다., UniverseMissingPricesTest
 
 ### Community 334 - "test_market_retention.py"
 Cohesion: 0.20
@@ -1993,6 +2027,10 @@ Nodes (8): _imports(), InstitutionalArchitectureTest, Path, _python_files(), ins
 ### Community 337 - "EconIcsTest"
 Cohesion: 0.27
 Nodes (3): 경제 발표 infrastructure adapter., EconIcsTest, 자연키·구독 UID·일정 변경을 보존하는 ECON ICS 테스트.
+
+### Community 338 - "test_investment_adapters.py"
+Cohesion: 0.17
+Nodes (5): context(), FakeApprovalRepository, FakeDecisionRepository, InvestmentAdaptersTest, 수집은 거래 창과 무관하다 — 창으로 자르면 BMO·AMC 발표를 통째로 놓친다.
 
 ### Community 339 - "apply_downstream_api_key"
 Cohesion: 0.17
@@ -2011,7 +2049,7 @@ Cohesion: 0.15
 Nodes (13): 0. 관련 문서 및 전체 위치, 1. 전체 데이터 파이프라인 아키텍처, 2. 핵심 개념 (초보자 가이드), 3. 지원하는 6대 퀀트 자산배분 전략 ([`catalog.py`](catalog.py)), 4. 관련 코드 및 데이터 흐름, 5. 실행 및 검증 가이드, 6. 수정할 때 확인할 곳, 7. 유용한 SQL 점검 쿼리 (+5 more)
 
 ### Community 343 - "PITScalar"
-Cohesion: 0.29
+Cohesion: 0.27
 Nodes (5): PITScalar, 하나의 수치와 그것을 당시 알 수 있었음을 보이는 근거다., _inputs(), PITValuationTest, _scalar()
 
 ### Community 344 - "18. 검수 체크리스트"
@@ -2027,12 +2065,12 @@ Cohesion: 0.15
 Nodes (7): CollectNewsTest, _payload(), 뉴스 수집 유스케이스. 네트워크를 타지 않는다 — fetch는 주입한다., 조회해서 받은 것은 '화제'가 아니다 — 등급을 남긴다., 저장한 뒤 다음 정리에서 지우면 그 사이 화면에 잠깐 나타난다., 파싱 실패를 중복으로 세면 '조용한 0건'을 못 알아본다., cap 소진은 provider 오류가 아니다 — 남은 종목을 계속 돌면 예약만 반복 소모한다.
 
 ### Community 347 - "earnings/__init__.py"
-Cohesion: 0.07
-Nodes (9): Dashboard와 실적 알림이 함께 소비하는 실적 read model 계약., EarningsMetricsTest, 실적 카드와 실적 화면이 공유하는 파생 지표·등급 계약., EarningsScheduleContractTest, 발표 예정 read model은 Reporting이 소유하고 알림은 그것을 재노출한다., EarningsValuationHistoryTest, 역사적 밸류에이션 계산은 카드와 화면이 같은 분포를 주장해야 한다., CalendarPreflightTests (+1 more)
+Cohesion: 0.10
+Nodes (7): Dashboard와 실적 알림이 함께 소비하는 실적 read model 계약., EarningsMetricsTest, 실적 카드와 실적 화면이 공유하는 파생 지표·등급 계약., EarningsScheduleContractTest, 발표 예정 read model은 Reporting이 소유하고 알림은 그것을 재노출한다., EarningsValuationHistoryTest, 역사적 밸류에이션 계산은 카드와 화면이 같은 분포를 주장해야 한다.
 
-### Community 348 - "application/service.py"
-Cohesion: 0.29
-Nodes (9): _filing_row(), InstitutionalRefreshResult, _position_rows(), Any, date, FilingSource, SEC 13F 원문을 v1 institutional 원장에 다시 적재하는 경로., 활성 manager별 13F를 독립 처리한다. 한 filing 실패는 재시도 대상으로 남는다. (+1 more)
+### Community 348 - "CommandResult"
+Cohesion: 0.18
+Nodes (7): CommandResult, FakeRunner, _context(), LearningStageCommandTest, 학습 원장 단계가 실행 가능한 명령 계약을 유지하는지 검증한다. 각 단계는 allowlist에 있는 모듈 하나를 호출하고, 문자열 인자 튜플과…, `--as-of`는 context.now여야 한다 — 벽시계를 쓰면 재시도가 다른 날을 본다., RecordingRunner
 
 ### Community 349 - "test_segments_quality.py"
 Cohesion: 0.17
@@ -2046,29 +2084,29 @@ Nodes (7): CardInstallGuardTest, PNG 카드 렌더 준비의 시간 상한을 �
 Cohesion: 0.15
 Nodes (13): Discord 알림은 어디에 있는가, 공개 독자가 읽을 상시 문서, 대시보드는 어디에 있는가, 데이터 적재는 어디에 있는가, 문서와 코드가 다르면, 쉬운 비유, 유지보수자·기록 자료, 전체 책임 경계 (+5 more)
 
-### Community 352 - "HarnessReporter"
-Cohesion: 0.07
-Nodes (22): main(), Discord 승인 Gateway listener를 별도 lock으로 감싸는 로컬 서비스 entry., DuplicateProcessError, ProcessFileLock, Path, RuntimeError, 이미 같은 state 디렉터리를 소유한 프로세스가 있는 경우다., HarnessReporter (+14 more)
+### Community 352 - "ProcessFileLock"
+Cohesion: 0.12
+Nodes (12): main(), DuplicateProcessError, ProcessFileLock, Path, RuntimeError, 한 장비에서 하네스 프로세스가 하나만 실행되게 하는 OS file lock., 이미 같은 state 디렉터리를 소유한 프로세스가 있는 경우다., HarnessService (+4 more)
 
 ### Community 353 - "db_capacity.py"
 Cohesion: 0.33
 Nodes (12): cmd_reclaim(), cmd_report(), connect(), database_size(), main(), mb(), project_ref(), Supabase 용량을 실측하고, 회수 가능한 공간을 되찾는다. Supabase Free는 **database size 500MB를 넘기면… (+4 more)
 
-### Community 354 - "Any"
+### Community 354 - "SelectOnlyGateway"
 Cohesion: 0.07
-Nodes (18): chunk_values(), _LazyServiceClient, Any, 쿼리 빌더. 스키마를 반드시 함께 받는다 — 기본 스키마에 기대면 표를 옮길 때 어느 스키마를 읽고 있었는지 코드만 봐서는 알 수 없다., 1,000행 상한을 넘겨 끝까지 읽는다. `builder_factory`는 **호출마다 새 빌더**를 돌려줘야 한다. 빌더는 한 번 실행하면…, 긴 `in` 목록을 URL 한도와 행 상한 없이 읽는다., 충돌 키를 **명시적으로** 받아 나눠 넣는다. `on_conflict`를 생략할 수 있게 두지 않는 이유: 생략하면 PostgREST가…, 넣는 데 성공하면 True, 이미 있으면 False. **선점(claim)에 쓴다.** "먼저 조회해서 없으면 넣기"는 두 러너가 동시에… (+10 more)
+Nodes (18): DashboardDataError, _membership_chunks(), RuntimeError, 읽기 결과의 구조가 계약과 다를 때 사용하는 안전한 오류., 허용된 PostgREST SELECT 연산만 조합하는 좁은 게이트웨이. v1 관심 기업은 공개 읽기 전용인…, SELECT와 허용된 필터·정렬·범위만 사용해 행을 읽는다., allowlist에 있는 읽기 전용 SQL 함수의 결과 행만 읽는다. 비공개 스키마(`alerts`)의 사실에 닿는 유일한 경로다. 이름과…, `in` 목록을 URL 한도 안에 들어가는 조각들의 조합으로 나눈다. 조각 크기는 platform이 정한 것 하나를 쓴다 — 여기서 따로… (+10 more)
 
 ### Community 355 - "social_normalize.py"
 Cohesion: 0.36
 Nodes (9): author_hash(), _posted_at(), Any, datetime, Reddit 응답을 저장 레코드로 바꾼다. ## 작성자는 해시로만 남긴다 필요한 것은 "같은 사람이 반복 게시하나"뿐이고 그것은 해시로 된다.…, 작성자 식별용 해시. 지워진 계정은 비운다., 게시물 한 건을 저장 레코드로 바꾼다. 식별할 수 없으면 `None`., _sha() (+1 more)
 
 ### Community 356 - "compute_all"
-Cohesion: 0.17
-Nodes (11): compute_all(), macd(), DataFrame, Series, src/investment_agent/research/features/compute.py — RSI·MACD 직접 계산. §5 공식 그대로:…, Wilder RSI. 첫 length-1행은 NaN., MACD line / signal. EMA는 adjust=False (전통 정의)., 단일 ticker 가격을 날짜당 한 행의 저장형 지표로 계산한다. 입력 컬럼: ticker · trade_date · close 출력 컬럼:… (+3 more)
+Cohesion: 0.14
+Nodes (12): compute_all(), macd(), DataFrame, Series, src/investment_agent/research/features/compute.py — RSI·MACD 직접 계산. §5 공식 그대로:…, Wilder RSI. 첫 length-1행은 NaN., MACD line / signal. EMA는 adjust=False (전통 정의)., 단일 ticker 가격을 날짜당 한 행의 저장형 지표로 계산한다. 입력 컬럼: ticker · trade_date · close 출력 컬럼:… (+4 more)
 
-### Community 357 - "model_pool.py"
-Cohesion: 0.13
-Nodes (14): _azure(), _azure_daily_requests(), gemini_candidate(), groq_candidate(), _ledger_key(), ModelCandidate, datetime, 여러 LLM provider를 하루 요청 한도 안에서 종목 단위로 회전한다. 단일 모델(예: Gemini 무료 등급)의 분당 토큰·일일 요청… (+6 more)
+### Community 357 - "reasons.py"
+Cohesion: 0.27
+Nodes (13): mom(), Momentum score display: signed percentage-points without a percent sign., ticker_text(), _generic_reason(), _haa_canary_off(), _r_adm(), _r_gem(), _r_gtaa5() (+5 more)
 
 ### Community 358 - "Notifications — 시각화 알림(Playwright PNG 카드 & Discord Embed) 서브시스템"
 Cohesion: 0.15
@@ -2078,9 +2116,9 @@ Nodes (13): 0. 관련 문서 및 전체 위치, 1. 전체 알림 렌더링 & 라
 Cohesion: 0.19
 Nodes (7): FilingAvailabilityTest, _four_quarters(), _quarter(), PIT 밸류에이션 입력 조립과 적재 진입점의 시점 계약을 고정한다., 일자만 아는 공시를 그날 0시로 잡으면 실제보다 이르게 안다고 주장하게 된다., 나중 정정본을 쓰면 그 시점에 알 수 없던 값이 섞인다., TTMReconstructionTest
 
-### Community 360 - "overwrites"
-Cohesion: 0.22
-Nodes (10): overwrites(), plan_everyone(), plan_overwrites(), plan_roles(), Any, 적용할 채널 오버라이트 선언 — (대상 이름, 역할 key, allow, deny). private 카테고리는 카테고리와 그 안의 채널에…, @everyone의 길드 권한이 선언과 다르면 그 차이. 같으면 None., 선언한 역할을 이름으로 대조한다 — 없으면 만들고, 권한이 다르면 고친다. 이름으로 찾는 이유는 채널과 같다: ID를 코드에 박으면 서버를… (+2 more)
+### Community 360 - "main"
+Cohesion: 0.14
+Nodes (18): bot_user_id(), fetch_roles(), put_overwrite(), 길드의 모든 역할. @everyone은 ID가 길드 ID와 같다., 채널 권한 오버라이트 하나를 **통째로 덮어쓴다**(kind 0=역할, 1=멤버). 부분 갱신이 없는 API다. 그래서 선언한 값이 그대로…, 다른 봇 토큰의 사용자 ID를 그 토큰으로 묻는다. 카드 봇에게 역할을 붙이려면 그 봇의 사용자 ID가 필요하다. 관리형 역할에서 역추적할…, _assign_bots(), main() (+10 more)
 
 ### Community 361 - "FindTickersTest"
 Cohesion: 0.20
@@ -2106,21 +2144,17 @@ Nodes (4): LogRecord, 알려진 비밀값 모양을 가린다. 값의 길이도 
 Cohesion: 0.22
 Nodes (5): CandidateRunnerTest, PortfolioRunnerTest, 자동매매 보고서 러너 — v1 outbox 등록·디스패치 경계를 DB 없이 검증한다., _service(), TradeRunnerTest
 
-### Community 367 - "application/backfill_history.py"
-Cohesion: 0.17
-Nodes (16): backfill_segment_history(), _company_backfill_targets(), _completed_segment_accessions(), date, 기업 재무 이력을 명시적으로 백필한다. 기업 전체 재무는 daily와 같은 companyfacts 원천을 쓰고, 세그먼트는 차원 데이터가…, 선택 CIK에서 완료된 전역 고유 accession_no 집합., 요청 구간을 보존 창 안으로 제한해 적재 직후 삭제되는 재처리를 막는다., 세그먼트 FSDS 분기 파일을 원본 파일 단위로 한 번씩 처리한다. (+8 more)
+### Community 367 - "storage/repository.py"
+Cohesion: 0.16
+Nodes (10): 저장 기술별 연결 경계. 각 파일이 하나의 DB만 안다. 이 패키지는 재수출하지 않는다. `platform.db`만 적으면 세 저장소 중…, _decode_allocation(), _decode_json(), default_database_path(), datetime, Research 전용 로컬 DuckDB 저장소. Research 산출물은 Production Supabase 스키마에 저장하지 않는다. 이…, 현재 실행이 사용할 Research DB 경로를 계산한다., 시간 축이 없는 작은 artifact도 안전한 partition 이름으로 보낸다. (+2 more)
 
 ### Community 368 - "v1 현재 상태"
 Cohesion: 0.22
 Nodes (9): 2026-09-07 storage foundation 전환, v1 현재 상태, 데이터와 SQL, 소유 구조, 아직 실행하지 않은 것, 적용 상태, 현재 검증, 현재 결론 (+1 more)
 
-### Community 369 - "cron.py"
-Cohesion: 0.31
-Nodes (9): _field(), fires_between(), matches(), parse(), datetime, 워크플로 cron이 특정 구간에 발화했어야 하는지 판정한다. croniter를 쓰지 않는다 — 이 저장소의 cron은 전부 5필드(`분 시 일…, cron 필드 하나를 허용 값 집합으로 편다., moment(UTC)가 이 cron의 발화 시각인지. (+1 more)
-
-### Community 370 - "test_universe_sic.py"
-Cohesion: 0.14
-Nodes (4): EntitySchemaTest, EntitySelectionTest, EntitySourceTest, SEC entity metadata 원천 결측·TTL·CIK 중복 제거 회귀 테스트.
+### Community 369 - "deflated_sharpe.py"
+Cohesion: 0.21
+Nodes (9): DeflatedSharpeRatio, DeflatedSharpeResult, _norm_cdf(), _norm_ppf(), Marcos Lopez de Prado 교수의 Deflated Sharpe Ratio (DSR) 과적합 검정 엔진. 다중 가설…, Deflated Sharpe Ratio 검정 결과., 수익률 시계열과 시도 횟수를 바탕으로 DSR 확률을 계산한다., DeflatedSharpeTests (+1 more)
 
 ### Community 371 - "MACRO — v1 market-state pipeline"
 Cohesion: 0.29
@@ -2134,9 +2168,9 @@ Nodes (7): dict, v1 macro 원천 어댑터. 각 adapter는 원천별 실패를 s
 Cohesion: 0.26
 Nodes (12): canonical_url(), content_fingerprint(), _published_at(), Any, datetime, provider 응답을 저장 레코드로 바꾸고 중복 제거 키를 만든다. ## 왜 URL을 정규화하는가 같은 기사에 추적 파라미터만 다른 링크가…, 중복 제거에 쓸 URL 형태로 맞춘다., 제목·요약으로 만드는 내용 지문. 다른 provider가 같은 기사를 다른 URL로 줄 때 이 지문이 중복을 잡는다. (+4 more)
 
-### Community 374 - "validate"
-Cohesion: 0.36
-Nodes (5): 각 kind에 정확히 하나의 Discord target 환경변수가 설정돼 있는지 확인한다., validate(), _config(), workflow용 subscription read-only validation을 검증한다., ValidateSubscriptionsTest
+### Community 374 - "validate_subscriptions.py"
+Cohesion: 0.24
+Nodes (9): main(), Config, 알림 채널 환경변수 구성을 읽기 전용으로 검증한다., 각 kind의 Discord 채널 환경변수가 실제로 설정돼 있는지 확인한다., run(), validate(), _config(), workflow용 subscription read-only validation을 검증한다. (+1 more)
 
 ### Community 375 - "installation_files"
 Cohesion: 0.11
@@ -2146,9 +2180,9 @@ Nodes (26): cmd_apply(), cmd_plan(), _connect(), _exposed_schemas(), main(), _pr
 Cohesion: 0.22
 Nodes (5): _declared_groups(), DependencyDeclarationTest, 의존성을 선언하는 자리는 `pyproject.toml` 하나다. 전에는 `requirements/*.txt` 31개와 루트…, 안내가 가리키는 group이 그 패키지를 실제로 담고 있어야 한다., TradingAgents는 git 의존이라 lock에 넣지 않는다 — 그러면 모든 CI가 그 저장소의 가용성에 묶인다. 대신 검증된…
 
-### Community 377 - "features/etl.py"
-Cohesion: 0.22
-Nodes (8): load_market_prices_since(), v1 market 봉을 현재 ticker 표기로 투영해 끝까지 읽는다., Core runner for technical indicators., load_prices(), DataFrame, date, 지표 계산에 필요한 만큼의 market.prices_daily 롤링 윈도우를 읽어 온다. Supabase 접근은 이 패키지의 db.py를…, 최근 rolling_days 거래일 분량의 prices_daily(전 종목) → DataFrame. 반환 컬럼: ticker ·…
+### Community 377 - "DerivedReadModelTest"
+Cohesion: 0.18
+Nodes (7): DerivedReadModelTest, _quarters(), 카드가 쓰는 파생 read model이 실제로 값을 만드는지 지킨다. 이 다섯은 한동안 `return {}`으로 박혀 있었다("v1에…, 8분기치 최소 재무. TTM(4분기)과 전년 동기 비교가 성립하는 최소 크기다., 분기 영업이익을 연간 자산과 견주면 항이 1/4로 줄어 우량 기업이 위험으로 나온다., 스냅샷의 기준일은 공시 접수일이다 — 그 전 거래일에 이 숫자를 쓰면 미래를 본다., 네 분기가 안 되면 합치지 않는다. 부분 합은 틀린 TTM이다.
 
 ### Community 378 - "Universe watchlists — 관심 기업 & 토스증권 보유종목 동기화"
 Cohesion: 0.18
@@ -2182,9 +2216,9 @@ Nodes (9): Research 명령 진입점 패키지. import는 명시적이며 부작
 Cohesion: 0.30
 Nodes (5): FundamentalsArchitectureTest, _imports(), Path, _python_files(), fundamentals 계층 경계와 기준 진입점을 검증한다.
 
-### Community 386 - "_domain_precisions"
-Cohesion: 0.33
-Nodes (6): _declared_precisions(), _domain_precisions(), 일정 정확도의 목록은 도메인과 저장소가 같아야 한다. `domain/releases/schedule.py`의…, 반대 방향도 본다 — 쓰지 않는 값을 받아 두면 오타가 그대로 저장된다., 대상을 못 찾으면 위 두 검사는 공허하게 통과한다., SchedulePrecisionContractTest
+### Community 386 - "_coherent_range"
+Cohesion: 0.21
+Nodes (7): _coherent_range(), Any, 추정 구간이 말이 될 때만 싣는다. yfinance가 `low > high`인 구간을 주는 일이 있다(실측: eps_low 1.24 >…, CoherentRangeTest, 추정 구간이 뒤집혀 오면 구간만 버리고 평균은 남긴다. yfinance가 `low > high`인 구간을 준다(실측: eps_low 1.24…, 한쪽만 있는 구간은 저장소가 받는다 — 버릴 이유가 없다., 원천 한 칸이 이상하다고 그 종목 전체를 잃지 않는다.
 
 ### Community 387 - "test_operational_guardrails.py"
 Cohesion: 0.16
@@ -2202,21 +2236,25 @@ Nodes (10): coverage_rows(), dossier_sections(), DossierSectionSpec, 대시보�
 Cohesion: 0.40
 Nodes (5): 16.1 CSS 변수 계약, 16.2 코드 SSOT, 16.3 명명 규칙, 16.4 구현 반영 시 확인할 항목, 16. 구현 계약
 
+### Community 391 - "transient_retry"
+Cohesion: 0.21
+Nodes (10): fetch_batch(), _fetch_one(), date, Series, _policy(), Any, 연결 오류 + 429/5xx + Postgres 일시 오류를 재시도. 외부 API 읽기의 기본값., transient_retry() (+2 more)
+
 ### Community 392 - "9. 핵심 컴포넌트"
 Cohesion: 0.18
 Nodes (11): 9.10 승인·주문·위험 행동, 9.1 버튼, 9.2 카드, 9.3 Metric, 9.4 Data row와 Table, 9.5 Chip, Badge, Status, 9.6 입력과 선택, 9.7 Navigation (+3 more)
 
-### Community 393 - "split_dataset"
-Cohesion: 0.33
-Nodes (3): 뒤쪽 구간을 평가용으로 떼어낸다. 학습한 구간에서 채점하면 어떤 정책도 통과한다., split_dataset(), SplitDatasetTest
+### Community 393 - "strategy/quickchart.py"
+Cohesion: 0.18
+Nodes (11): 전략 카드 색 기준(SSOT) — DESIGN-system.md 토큰과 배분 막대 규칙. 원칙: 1. 색 voltage는 Brand Blue…, 배분 막대 한 칸의 색. rank는 비중 내림차순 0-based., 위험자산 비중 합계(0~1). 헤더의 위험 노출 표시에 쓴다., 턴오버 크기 → 배지 톤 키. 색은 텍스트·점에만 적용한다., _rgba(), risk_weight(), segment_color(), turnover_tone() (+3 more)
 
 ### Community 394 - "2. 핵심 결정과 우선순위"
 Cohesion: 0.40
 Nodes (5): 2.1 핵심 결정 요약, 2.2 충돌 시 우선순위, 2.3 규칙의 강도와 적용 단위, 2.4 매체별 적용 범위, 2. 핵심 결정과 우선순위
 
-### Community 395 - "trading/contracts.py"
-Cohesion: 0.06
-Nodes (61): 시장 가격을 Dashboard용 regime read model로 투영한다., LLM 입출력과 저장 행을 검증하는 엄격한 계약., AnalystSignal, Event, MarketRegime, 네이티브 투자 판단 계층이 공유하는 작고 검증 가능한 계약., 종목별 판단보다 먼저 공유되는 시장 환경 snapshot이다., Market/Fundamental/Macro/Event desk가 공통으로 반환하는 신호. (+53 more)
+### Community 395 - "decision/pipeline.py"
+Cohesion: 0.05
+Nodes (59): 시장 가격을 Dashboard용 regime read model로 투영한다., AnalystSignal, _between(), Event, ExpectedReturnSignal, _finite(), MarketRegime, Any (+51 more)
 
 ### Community 396 - "graphify reference: extra exports and benchmark"
 Cohesion: 0.22
@@ -2226,9 +2264,9 @@ Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only
 Cohesion: 0.40
 Nodes (5): 3.1 먼저 이해시키고, 그다음 행동시킨다, 3.2 사용자의 인지 부하를 대신 짊어진다, 3.3 단순함은 정보 삭제가 아니라 우선순위다, 3.4 차분하지만 모호하지 않다, 3. 제품 철학
 
-### Community 398 - "retry_on_5xx"
-Cohesion: 0.20
-Nodes (13): _fred_slot(), fetch_batch(), fetch_release_dates(), date, FRED 발표 일정(release/dates) 어댑터. macro/clients/fred.py는 관측치(series/observations)를…, release_id 하나의 발표 예정일을 [start, end] 구간으로 잘라 반환한다.…, 릴리스 단위로 한 번씩만 호출한다. 지표 14종이 릴리스 9개를 공유하므로(CPI·Core CPI가 release 10 하나) 지표마다 부르면…, fetch_gdpnow() (+5 more)
+### Community 398 - "fetch_release_dates"
+Cohesion: 0.50
+Nodes (5): fetch_batch(), fetch_release_dates(), date, release_id 하나의 발표 예정일을 [start, end] 구간으로 잘라 반환한다.…, 릴리스 단위로 한 번씩만 호출한다. 지표 14종이 릴리스 9개를 공유하므로(CPI·Core CPI가 release 10 하나) 지표마다 부르면…
 
 ### Community 399 - "Fundamentals"
 Cohesion: 0.33
@@ -2238,9 +2276,9 @@ Nodes (6): canonical 저장 모델, Fundamentals, 소유 구조, 스냅샷 보�
 Cohesion: 0.40
 Nodes (5): 30초 예시: Alphabet, Universe v1, 실행 흐름, 안전 규칙, 저장 계약
 
-### Community 401 - "is_earnings_item"
-Cohesion: 0.32
-Nodes (7): classify_8k_items(), extract_item_numbers(), is_earnings_item(), 8-K Item 번호를 외부 SDK 없이 분류한다., SEC metadata나 HTML 텍스트에서 중복 없는 Item 번호를 순서대로 뽑는다., 8-K를 실적·임원변동·기타 중 하나로 분류한다., 최초 Form 8-K의 Item 2.02인지 반환한다.
+### Community 401 - "training/baseline.py"
+Cohesion: 0.22
+Nodes (11): BaselineTrainingResult, _indexes(), _period_for_indexes(), Any, ResearchDataset을 기존 Naive/Ridge/GBM/XGB 학습 계약에 연결한다., 한 행짜리 validation/OOS도 artifact 기간 계약을 만족하게 표현한다., 호출자가 정한 시간 split을 섞지 않고 기존 baseline trainer를 실행한다., train_baseline_dataset() (+3 more)
 
 ### Community 402 - "validate_series"
 Cohesion: 0.39
@@ -2254,9 +2292,9 @@ Nodes (3): HarnessModuleAllowlistTest, 등록만 하고 allowlist에 안 넣으�
 Cohesion: 0.21
 Nodes (8): _imports(), Path, _python_files(), universe 계층 경계를 검증한다. fundamentals의 test_architecture.py와 같은 패턴., application은 infrastructure.sources와 domain만 안다.…, repository.py/persistence.py/watchlists/*는 application·commands가 소비하는 쪽이다 — 거꾸로…, 이 계층화 작업에서 지운 옛 평면 구조 파일이 재도입 shim으로 다시 생기지 않았는지 본다. stale import를 "고친다"며 한 줄짜리…, UniverseArchitectureTest
 
-### Community 405 - "test_filing_xbrl_fallback.py"
-Cohesion: 0.15
-Nodes (9): SEC EDGAR와 FSDS 외부 데이터 어댑터., CompanyFacts 최신 반영 지연 시 filing XBRL 변환 회귀 테스트., XbrlParserContractTests, _companyfacts_row(), _filing(), CompanyFacts가 덮는 공시는 문서를 받지 않는다. CompanyFacts는 XBRL **차원을 버린다.** 그래서 어떤 공시가…, CompanyFacts에 없다 = 차원이 있었다 = 문서를 봐야 클래스를 안다., 클래스를 나중에 만든 기업의 과거 기간이 사라지면 안 된다. 전에는 클래스가 하나라도 보이면 CompanyFacts를 통째로 버렸고, 게다가… (+1 more)
+### Community 405 - "test_edgar_parser.py"
+Cohesion: 0.08
+Nodes (13): SEC EDGAR와 FSDS 외부 데이터 어댑터., ExhibitExtractorTest, ItemClassifierTest, PressReleaseArchiveAdapterTest, 내재화한 SEC 8-K 파서의 표·EX-99·Item 계약을 네트워크 없이 검증한다., CompanyFacts 최신 반영 지연 시 filing XBRL 변환 회귀 테스트., XbrlParserContractTests, _companyfacts_row() (+5 more)
 
 ### Community 406 - "earnings/metrics.py"
 Cohesion: 0.23
@@ -2282,17 +2320,17 @@ Nodes (11): forecast_keeper, macro.economic_observations, macro.forecast_snapsho
 Cohesion: 0.20
 Nodes (10): 5.1 브랜드 원색, 5.2 라이트 모드 중성 원색, 5.3 다크 모드 중성 원색, 5.4 금융 방향 원색, 5.5 접근성 보정 방향 토큰, 5.6 상태색과 방향색의 분리, 5.7 라이트·다크 시맨틱 매핑, 5.8 색 사용 금지 (+2 more)
 
-### Community 412 - "resolve_flash_period"
-Cohesion: 0.29
-Nodes (10): _as_date(), fiscal_calendar(), _next_period(), project_forward(), date, 8-K 실적 속보를 회사의 실제 회계분기에 붙인다. 달력 월로 분기를 매기면 안 된다. 1월 결산…, 8-K 공시일에 대응하는 (회계연도, 회계분기, 기간종료일)을 돌려준다. 실적 8-K는 그 분기가 끝난 직후에 나온다. 따라서 공시일…, financial_versions 행을 period_end 순 회계력으로 정리한다. (+2 more)
+### Community 412 - "ToRecordTest"
+Cohesion: 0.15
+Nodes (5): CanonicalUrlTest, 추적 파라미터만 다른 같은 기사가 두 행이 되면 안 된다., URL이 없으면 중복 제거를 할 수 없다 — 저장하지 않는다., PIT 계산은 coalesce(available_at, first_seen_at)을 쓴다 — 빈칸을 수집 시각으로 채우면 그 계약이 거짓이…, ToRecordTest
 
 ### Community 413 - "저장 계층 전면 개편 인계 메모"
 Cohesion: 0.15
 Nodes (12): PostgreSQL DDL과 canonical writer, Research와 Intelligence, `src/` 패키지 구조 정리 결과, Storage foundation 전환 결과, 다음 작업 순서, 로컬 Runtime, 새 세션 시작 지시문, 저장 계층 전면 개편 인계 메모 (+4 more)
 
-### Community 414 - "_LabelRepository"
-Cohesion: 0.20
-Nodes (3): BuildLabelsEntryTest, _LabelRepository, label 생산 경로가 쓰는 조회만 흉내낸다.
+### Community 414 - "build_labels.py"
+Cohesion: 0.11
+Nodes (16): _benchmark_close_at(), build_labels(), _closes_by_date(), main(), _parse_args(), Any, datetime, Namespace (+8 more)
 
 ### Community 415 - "test_research_store_read_paths.py"
 Cohesion: 0.28
@@ -2310,9 +2348,9 @@ Nodes (4): 11.1 테마 선택, 11.2 동일하게 유지할 것, 11.3 테마마�
 Cohesion: 0.50
 Nodes (4): 14.1 기본 문체, 14.2 문장 순서, 14.3 데이터 확실성 문구, 14. 보이스 앤 톤
 
-### Community 419 - "social_source.py"
-Cohesion: 0.25
-Nodes (7): fetch_finnhub_sentiment(), fetch_reddit_posts(), fetch_stocktwits_messages(), TradingAgents Social Analyst를 위한 소셜 미디어(StockTwits/Reddit) 센티먼트 데이터 소스 어댑터., StockTwits 최근 심볼 메시지 스트림을 수집한다., Reddit 토론 검색 피드를 수집한다., Finnhub 소셜 감성(Reddit/Twitter 멘션 및 긍부정 스코어) 정량 데이터를 수집한다.
+### Community 419 - "_Repository"
+Cohesion: 0.22
+Nodes (3): _clean_summary(), PromoteModelEntryTest, _Repository
 
 ### Community 420 - "2. 핵심 헬퍼 모듈 사용법"
 Cohesion: 0.22
@@ -2330,17 +2368,21 @@ Nodes (4): 6.1 서체, 6.2 타입 스케일, 6.3 금융 숫자 표기, 6. 타이
 Cohesion: 0.50
 Nodes (4): 8.1 Radius, 8.2 보더, 8.3 그림자, 8. 모양, 보더, 깊이
 
-### Community 424 - "lifecycle.py"
-Cohesion: 0.23
-Nodes (10): AutonomyCriteria, AutonomyEvidence, LifecycleDecision, LifecyclePromotionGate, LifecycleStage, Enum, str, BACKTEST→SHADOW→PAPER→LIVE_MANUAL→LIVE_AUTONOMOUS 운영 승격 경계. (+2 more)
+### Community 424 - "_FakeBuilder"
+Cohesion: 0.17
+Nodes (3): _FakeBuilder, Any, SimpleNamespace
 
-### Community 425 - "SetMembershipTest"
-Cohesion: 0.25
-Nodes (4): 수집 게이트를 정하는 자리다. 여기서 틀리면 모든 하류가 조용히 더 돈다. 실제로 두 가지가 함께 틀려 있었다. * 과거 멤버 행에는…, `is_tracked` 키가 없는 행은 게이트에 대해 아무 말도 하지 않는다., 현재 멤버인데 마스터에 없으면 CIK를 모른다 — 지어내면 재무가 영영 안 붙는다., SetMembershipTest
+### Community 425 - "earnings_calendar/__init__.py"
+Cohesion: 0.17
+Nodes (5): 이번 주 실적 발표 예정 카드. 발표 예정일 스냅샷을 읽어 관심종목의 다음 발표를 미리 알린다. 예정일은 자주 바뀌고 틀리기도 하므로 카드는…, EarningsCalendarRoutingTest, 구독 대상이 캘린더 outbox 행으로 전달되는지 검증한다., CalendarPreflightTests, 발표 예정 알림의 preflight가 실제 상태 dict와 같은 키를 읽는지 지킨다. 이 진입점은 테스트가 없어서,…
 
 ### Community 426 - "Institutional — SEC 13F 원천·유효 포트폴리오"
 Cohesion: 0.40
 Nodes (5): Institutional — SEC 13F 원천·유효 포트폴리오, 거장을 한 명 늘리려면, 구조, 실행, 정확성 규칙
+
+### Community 427 - "day_window"
+Cohesion: 0.20
+Nodes (6): day_window(), `end`를 포함해 뒤로 `days`일. 증분 조회의 겹침 구간을 만들 때 쓴다., AsDateTest, DayWindowTest, 시간은 tz-aware만 받고, 읽을 수 없는 날짜는 예외 대신 None이다., 한 행 때문에 배치 전체가 멈추면 안 된다.
 
 ### Community 428 - "Market v1"
 Cohesion: 0.50
@@ -2354,9 +2396,9 @@ Nodes (8): build_pit_valuation(), _decimal(), _missing(), _ratio(), PIT 밸류�
 Cohesion: 0.17
 Nodes (3): fundamentals: 관심종목 실적 공시(10-Q/10-K) 알림. 트리거: 펀더멘탈·세그먼트 ETL 이후 실행 — 관심종목의 미발송 신규…, HistoricalCardTest, 연 단위는 점이 다섯 개뿐이라 계절성도 이번 분기 위치도 안 보인다.
 
-### Community 431 - "normalize_accession"
-Cohesion: 0.38
-Nodes (4): normalize_accession(), 공시 번호를 표준 모양으로. 읽을 수 없으면 `None`. 하이픈 없는 18자리로 오는 소스가 있다. 그대로 저장하면 같은 공시가 두 키로…, AccessionTest, 같은 공시가 두 키로 남으면 재처리가 영영 끝나지 않는다.
+### Community 431 - "EarningsCardTest"
+Cohesion: 0.20
+Nodes (5): EarningsCardTest, 블록 하나 = 질문 하나. 제목이 '뭐와 뭐'면 두 주제가 섞였다는 뜻이다., 1행은 배당 유무로 두 갈래다 — 한쪽에만 붙이면 배당 없는 회사에서 조용히 빠진다. 실측으로 UBER(배당 없음) 카드에서 '추정치 방향'이…, 블록 하나 = 질문 하나 = 그림 하나., 트랙이 먹는 면적 대비 정보가 '값 1 + 등급 1'뿐이라 글자로 내린다.
 
 ### Community 433 - "graphify reference: extra exports and benchmark"
 Cohesion: 0.22
@@ -2370,9 +2412,9 @@ Nodes (8): graphify reference: extra exports and benchmark, Step 6b - Wiki (only
 Cohesion: 0.25
 Nodes (6): SEC submissions JSON -> 내부 공시 dict 매핑 계약. 여기서 어긋나면 예외가 아니라 **0건**으로 끝난다. 세그먼트…, SEC submissions 응답의 모양을 그대로 흉내 낸다(키 이름이 계약의 전부다)., 두 날짜가 뒤바뀌면 조회 창이 영원히 빗나가고 보존 삭제가 엉뚱한 행을 지운다., 보고기간이 아니라 제출일로 잘라야 '최근 N일에 들어온 공시'가 된다., _submissions_document(), SubmissionsMappingTest
 
-### Community 436 - "VersionSelectionTest"
-Cohesion: 0.18
-Nodes (5): canonical 정책: 기간별 한 행만 있고, 정정 전 숫자는 복원하지 않는다 — 의도적 한계다(repository.py의…, PK에 accession_no가 없어도 기간별 최대 한 행이라는 계약은 지켜야 한다., canonical 정책에서는 '그때 우리가 알던 값'을 복원하지 않는다 — 그 시점에 아직 공시가 없었다는 사실만 반영해 행을 통째로 제외한다., canonical 정책은 정정 횟수를 재현하지 않는다 — 항상 빈 목록이다., VersionSelectionTest
+### Community 436 - "portfolio_weights"
+Cohesion: 0.29
+Nodes (6): portfolio_weights(), CUSIP별 비중. 합이 0이면 빈 결과 — 0으로 나누지 않는다. 비중은 신고된 시장가치 기준이다. 주식수 기준으로 하면 가격이 다른 종목을…, PortfolioWeightsTest, _position(), 풋을 보유로 세면 하락 베팅이 매수로 둔갑한다., 운용 재량별로 나눠 보고하는 매니저가 있다.
 
 ### Community 437 - "10_universe.sql"
 Cohesion: 0.53
@@ -2394,9 +2436,9 @@ Nodes (8): _calls_start_cli(), CliEntrypointContractTest, _entrypoints(), Path, 
 Cohesion: 0.31
 Nodes (8): _check_digest(), _check_namespace(), _parse_uri(), RuntimeError, 큰 산출물을 DB 밖에 두고, DB에는 주소와 지문만 남긴다. ## 왜 DB에서 뺐나 판단 근거 번들은 한 건에 수십 KB다. 그것을…, 저장물을 읽을 수 없거나 지문이 맞지 않는다., StorageError, 근거는 내용 주소로 쌓이고, 바뀌면 읽을 때 걸린다.
 
-### Community 442 - "EntityMention"
-Cohesion: 0.18
-Nodes (9): EntityMention, 어떤 글이 어떤 종목을 언급했다는 사실. `match_kind`는 그 사실을 어떻게 알았는지를 남긴다 — 조회해서 받은 것과 본문에서 찾아낸…, _article(), _post(), 90일 보존 경계. 기준 시각은 수집 시각이 아니라 발행 시각이다., 오래된 글을 오늘 수집해도 오래된 글이다., source_id만으로 지우면 보존 기간 안의 mention이 함께 사라진다. news와 social의 id 문자열 공간은 서로…, 뉴스와 소셜이 한 색인을 쓰므로, 정리 조회를 종류로 좁히지 않으면 뉴스 차례에 소셜 행까지 지운다 — 개수는 0으로 보고되면서. (+1 more)
+### Community 442 - "_article"
+Cohesion: 0.21
+Nodes (7): _article(), _post(), 90일 보존 경계. 기준 시각은 수집 시각이 아니라 발행 시각이다., 오래된 글을 오늘 수집해도 오래된 글이다., source_id만으로 지우면 보존 기간 안의 mention이 함께 사라진다. news와 social의 id 문자열 공간은 서로…, 뉴스와 소셜이 한 색인을 쓰므로, 정리 조회를 종류로 좁히지 않으면 뉴스 차례에 소셜 행까지 지운다 — 개수는 0으로 보고되면서., RetentionTest
 
 ### Community 443 - "NewsSocialPageTest"
 Cohesion: 0.27
@@ -2406,17 +2448,17 @@ Nodes (5): _imports(), NewsSocialPageTest, Path, News/Social 화면의 경계. �
 Cohesion: 0.33
 Nodes (3): PriceTargetTest, 발표를 보고 조정된 목표가 섞이면 같은 시점 비교가 깨진다., 컨센서스가 없어도 목표주가만으로 '주가'에 녹일 게 있다.
 
-### Community 445 - "decision_and_apply_dates"
-Cohesion: 0.33
-Nodes (5): decision_and_apply_dates(), DataFrame, date, 날짜 보조 함수 (기준일=decision·적용일=apply 계산)., 기준일(decision)=가장 최근 끝난 달의 마지막 날, 적용일(apply)=그 다음 달 1일. KST 기준.
+### Community 445 - "strategies/etl.py"
+Cohesion: 0.15
+Nodes (16): main(), _parse_yyyymm(), date, 전체 과정을 순서대로 실행하는 '시작 파일'(진입점). 사용법: python -m…, 지정한 달부터 이번 달 직전까지, 매달의 결과를 다시 계산해 저장한다(이미 보낸 것으로 표시)., _run_backfill(), 전략 계산용 상수 모음 (매매 대상 종목·계산 기간)., prune_history() (+8 more)
 
-### Community 446 - "releases/test_db.py"
+### Community 446 - "split_event_key"
 Cohesion: 0.10
-Nodes (5): AlfredParserTest, IdentityTest, IngestTest, ECON 자연키·원자료 단일 저장·시간 보존 경계의 오프라인 테스트., WriterTest
+Nodes (12): event_key(), date, 경제발표의 자연키를 화면·알림·적재에서 동일하게 읽고 만든다., split_event_key(), enriched_series(), Any, 경제지표 마스터·발표 자연키의 읽기 계약. 화면은 두 가지를 domain에 직접 물어보고 있었다 — 지표 마스터에 수집 계약을 결합하는…, 지표 마스터 행에 코드가 가진 수집 계약을 결합한다. 계약이 어긋난 지표는 domain이 예외로 막는다 — 잘못된 단위·시간대를 화면이… (+4 more)
 
-### Community 447 - "pending_filings"
-Cohesion: 0.36
-Nodes (5): pending_filings(), 완료 장부에 없는 XBRL 공시만 반환한다. A ticker with no stored fundamentals is seeded from…, _filing(), PendingFilingsTest, Fundamentals 일간 워터마크가 같은 날의 추가 공시를 놓치지 않는지 검증한다.
+### Community 447 - "Filing"
+Cohesion: 0.11
+Nodes (18): _as_datetime(), Filing, FilingError, Any, datetime, ValueError, 공시가 존재한다는 사실. 우리가 그것을 어떻게 처리했는지는 여기 없다., 시각 컬럼을 datetime으로. 없거나 읽을 수 없으면 None. (+10 more)
 
 ### Community 448 - "Native Autonomous Investment System"
 Cohesion: 0.25
@@ -2442,9 +2484,9 @@ Nodes (9): Architecture test 보강 (위 항목과 별개로 계속 추가), P3.
 Cohesion: 0.26
 Nodes (6): _imports(), MarketArchitectureTest, Path, _python_files(), market 계층 경계를 검증한다. universe의 test_architecture.py(최종 수정본)와 같은 패턴 — 이름이 실제로…, application은 infrastructure.sources와 domain만 안다. universe의 최종 리뷰에서 정착된 것과 같은…
 
-### Community 454 - "retry.py"
-Cohesion: 0.09
-Nodes (22): HTTPError, HTTPStatusError, _is_retryable(), is_transient(), network_retry(), _policy(), Any, BaseException (+14 more)
+### Community 454 - "is_transient"
+Cohesion: 0.13
+Nodes (13): HTTPError, HTTPStatusError, _is_retryable(), is_transient(), BaseException, 구 공통 API의 private 테스트 계약을 최종 platform 정책으로 연결한다., _status_is_transient(), CommonRetryTests (+5 more)
 
 ### Community 456 - "news_social.py"
 Cohesion: 0.15
@@ -2454,21 +2496,21 @@ Nodes (9): _freshness_frame(), Any, DataFrame, News/Social 수집 상태 화면.
 Cohesion: 0.18
 Nodes (5): InstitutionalSchemaContractTest, institutional v1 SQL이 §9의 세 표와 universe 매핑 경계를 지키는지 검증한다., manager(name/fund_name/is_active)는 SEC 사실이 아니라 우리가 고른 추적 대상이라 Supabase 표가 아니라…, SEC raw XML의 투표권·투자재량 상세는 더 이상 저장하지 않는다 — 사실 컬럼만 남기는 간소화다(파일 상단 주석 참고)., manager 사실(name/fund_name/is_active)과 화면 해석(strategy_group· signal_role 등)은…
 
-### Community 458 - "strategies/catalog.py"
-Cohesion: 0.29
-Nodes (5): 공용 카탈로그(`investment_agent.research.strategies.catalog`)에서 파생한 알림용 전략 라벨 모음., ensure_registered_strategies(), 계산기와 알림이 공유하는 전략 메타데이터., Fail fast when compute registration and metadata drift apart., StrategyMeta
+### Community 458 - "memory.py"
+Cohesion: 0.27
+Nodes (6): CaseMemory, MemoryRepository, datetime, Protocol, 평가가 끝난 과거 판단만 다음 판단의 사례 기억으로 제공한다., 미평가 판단은 배제해 자기확증 메모리가 생기지 않게 한다.
 
-### Community 459 - ".bars"
-Cohesion: 0.12
-Nodes (9): configure(), Any, date, datetime, 전체 market에서 가장 최근 거래일. 수집 잡의 진행 상태 로그용이다., 전체 종목의 특정 날짜 이후 시세 원시 행. `DailyBar.from_row()` 검증을 거치지 않는다 — 일별 수집이 기존 값과 비교만…, 구간 봉. ``known_at``은 API 호환성을 위해 받지만 시장 가격에는 적용하지 않는다. 일별 가격의 공개 가능성은 거래 세션으로…, 그날 종가만. 횡단면 조회의 주 경로다. (+1 more)
+### Community 459 - "build_card"
+Cohesion: 0.33
+Nodes (9): _as_row(), build_card(), _layout_for(), Any, 전략 하나의 Discord embed와 발송 메타를 만든다., AllocationRow, Any, _build_cards() (+1 more)
 
 ### Community 460 - "releases/baseline.py"
 Cohesion: 0.27
 Nodes (11): _diffs(), drift_forecast(), _predict(), _quantile(), 자체 베이스라인 예상값 — 외부 의존 없는 순수 로직. 무료 컨센서스가 없는 지표(23종 중 22종)를 위한 최소한의 기준선이다. **이건…, 선형 보간 분위수. 표본이 작아 numpy를 끌어오지 않는다., 최근 points개 시점에서 그 방법을 실제로 걸어 봤을 때의 중앙 절대오차., 이 지표에 지금 맞는 방법('drift' 또는 'naive'). 증거가 뚜렷할 때만 추세를 좇는다(SELECT_MARGIN). 채점이 안… (+3 more)
 
-### Community 461 - "_run_backfill"
-Cohesion: 0.33
-Nodes (7): main(), _parse_yyyymm(), date, 지정한 달부터 이번 달 직전까지, 매달의 결과를 다시 계산해 저장한다(이미 보낸 것으로 표시)., _run_backfill(), compute_all(), 6개 전략을 모두 계산한다. 하나라도 불완전하면 전체 실행을 실패시킨다.
+### Community 461 - "UniverseSnapshot"
+Cohesion: 0.29
+Nodes (4): 해당 날짜부터 신규·추가 매수가 허용된 point-in-time 종목 집합이다., UniverseSnapshot, BacktestContractsTest, bar()
 
 ### Community 462 - "FullPortfolioSchemaTest"
 Cohesion: 0.23
@@ -2482,21 +2524,21 @@ Nodes (5): operations_links(), Discord-first 운영 로그 위치와 확인 순�
 Cohesion: 0.22
 Nodes (4): 준비 단계는 composite action 하나로 모은다. 공통 설정을 한 곳에서 검증해 모든 workflow가 같은 Python·secret…, 로그는 공개될 수 있다. 없는 것의 이름만 말하고 값은 절대 찍지 않는다., 옮기고 나서 목록에 남겨두면 그 목록이 거짓말을 시작한다., SharedSetupTest
 
-### Community 465 - "us_market_today"
-Cohesion: 0.05
-Nodes (28): Clock, completed_us_daily_bar_cutoff(), day_window(), FixedClock, date, datetime, Protocol, 뉴욕 시장이 관측하는 날짜를 반환한다. (+20 more)
+### Community 465 - "datetime"
+Cohesion: 0.14
+Nodes (11): Clock, FixedClock, datetime, Protocol, 시간 출처. 테스트가 가짜를 끼울 수 있도록 함수가 아니라 타입으로 둔다., 실제 시계. 항상 tz-aware UTC를 준다., 멈춘 시계. 테스트가 특정 순간을 재현할 때 쓴다., 저장·전송용 문자열. 항상 UTC로 맞춘 뒤 찍는다. (+3 more)
 
 ### Community 466 - "actions_budget.py"
 Cohesion: 0.43
 Nodes (6): main(), _observed_minutes(), _parse_workflows(), GitHub Actions 월 사용량을 cron 빈도 × 실측 실행시간으로 추정한다. 무료 할당은 초과해도 경고가 오지 않고 그냥 잡이 돌지…, cron 한 줄이 한 달에 몇 번 도는지. 이 저장소가 쓰는 문법만 다룬다., _runs_per_month()
 
-### Community 467 - "twap.py"
-Cohesion: 0.20
-Nodes (7): datetime, 대량 주문 시간 분할(TWAP) 집행 슬라이서. 단일 주문의 시장 충격(Market Impact)과 슬리피지를 최소화하기 위해, 지정된 시간…, 주문을 N개의 TWAP 슬라이스로 분할한다 (총 수량 보존)., TWAPOrderSlicer, TWAPSlice, TWAPOrderSlicer 단위 테스트., TWAPTests
+### Community 467 - "context_hash"
+Cohesion: 0.31
+Nodes (6): context_hash(), is_reproducible(), Any, 판단에 넣은 자료의 지문. 부동소수와 `Decimal`이 섞이면 같은 값이 다른 지문을 갖는다. `canonical_json`이 그것을 한…, 지금 자료로 그때의 판단을 재현할 수 있는가. 거짓이면 판단이 틀렸다는 뜻이 아니라 **입력이 달라졌다**는 뜻이다. 그것을 구분해야 "모델이…, ContextHashTest
 
-### Community 468 - "main"
-Cohesion: 0.33
-Nodes (5): main(), build(), Any, Server Guide(온보딩)의 단일 기준(SSOT). 처음 들어온 사람이 보는 화면이다. 채널 16개를 한꺼번에 보여 주면 어디부터 열어야…, 채널·역할 key -> ID 표를 받아 Discord가 받는 온보딩 payload를 만든다. 서버에 없는 key는 조용히 빠진다 —…
+### Community 468 - "build"
+Cohesion: 0.40
+Nodes (4): build(), Any, Server Guide(온보딩)의 단일 기준(SSOT). 처음 들어온 사람이 보는 화면이다. 채널 16개를 한꺼번에 보여 주면 어디부터 열어야…, 채널·역할 key -> ID 표를 받아 Discord가 받는 온보딩 payload를 만든다. 서버에 없는 key는 조용히 빠진다 —…
 
 ### Community 469 - "SegmentSnapshotOrderTest"
 Cohesion: 0.46
@@ -2518,25 +2560,29 @@ Nodes (29): is_split_ratio(), normalize_split_adjusted_prices(), 주식분할 �
 Cohesion: 0.21
 Nodes (11): main(), _number(), _parse_args(), Any, Decimal, Namespace, 거래일마다 PIT 밸류에이션 관측값을 계산해 원장에 적재한다. Phase 0 감사 결론에 따라 **live_shadow만** 만든다. 과거…, Decimal을 JSON 직렬화 가능한 형태로 낮춘다. (+3 more)
 
-### Community 474 - "process_segment_cik"
-Cohesion: 0.33
-Nodes (6): process_segment_cik(), Any, date, 세그먼트 공시 처리 상태를 저장소 행으로 만든다., CIK 한 건의 새 공시 문서를 파싱해 저장 전 결과를 만든다., segment_filing_row()
+### Community 474 - "news_source.py"
+Cohesion: 0.27
+Nodes (9): _date_ok(), fetch_external_global_news(), fetch_external_news(), TradingAgents News Analyst를 위한 실시간 뉴스(yfinance/Alpha Vantage) 데이터 소스 어댑터., 선택한 upstream news vendor의 필수 설정을 네트워크 호출 전에 검증한다., 종목별 실시간 뉴스를 공급자(yfinance / Alpha Vantage)에서 수집한다., 시장 전반의 실시간 글로벌 뉴스를 수집한다., _symbol_ok() (+1 more)
 
 ### Community 475 - "test_channel_names_are_declared.py"
 Cohesion: 0.36
 Nodes (5): _declared_names(), MentionedChannelsExistTest, _mentions(), 문서와 코드가 부르는 Discord 채널 이름은 선언에 실재해야 한다. 채널 구조는 `discord_admin/manifest.py`가…, 대상을 못 찾으면 이 테스트는 공허하게 통과한다.
 
-### Community 476 - "change_manifest.py"
-Cohesion: 0.53
-Nodes (5): earliest_change_since(), manifest_path(), Path, Market 수집 변경 manifest. 가격 fact에 local ingestion timestamp를 중복 저장하지 않는다. feature…, record_change_dates()
+### Community 476 - "FakeLogger"
+Cohesion: 0.24
+Nodes (3): FakeAlerts, FakeLogger, HarnessReporterTest
+
+### Community 478 - "test_dashboard_readonly.py"
+Cohesion: 0.22
+Nodes (4): _FakeFunction, _FakeSchema, 대시보드 데이터 계층의 읽기 전용 경계를 오프라인으로 검증한다., RPC 응답을 흉내내되 필터·정렬은 제공하지 않는다(읽기 함수는 그대로 반환).
 
 ### Community 479 - "10. Intelligence: Parquet로 옮길 때 필요한 운영 계약"
 Cohesion: 0.29
 Nodes (7): 10.1 현재 데이터 보존과 책임, 10.2 파일 구성과 시간, 10.3 Parquet 게시와 중복 제거, 10.4 조회 예시의 한계, 10.5 DuckDB 동시성 보완, 10.6 TTL과 장애 상태, 10. Intelligence: Parquet로 옮길 때 필요한 운영 계약
 
-### Community 480 - "_complete_tail"
-Cohesion: 0.50
-Nodes (5): _complete_tail(), index_series(), Series, 최신 월을 포함한 연속 n개월 수익률만 반환한다., 수익률을 누적해 '가격 흐름' 곡선으로 바꾼다 (평균선 계산에 사용).
+### Community 480 - "animated_pipeline"
+Cohesion: 0.31
+Nodes (8): animated_pipeline(), normalise_pipeline_steps(), Any, Alpha Lab의 실행 단계를 움직이는 흐름으로 보여주는 Streamlit 컴포넌트., 현재 Streamlit 런타임에 컴포넌트를 등록한다., 외부 값을 HTML로 해석하지 않고 짧은 화면 문자열로 제한한다., Python 상태를 전달하고 애니메이션은 브라우저 안에서만 실행한다., _register_component()
 
 ### Community 481 - "PostgresSchemaLayoutTest"
 Cohesion: 0.22
@@ -2578,6 +2624,10 @@ Nodes (3): PackagingContractTest, v1 Python packaging 계약 회귀 테스트., 
 Cohesion: 0.31
 Nodes (7): _conflict_columns(), ConflictColumnsAreSentTest, _payload_key_sets(), Module, upsert가 `on_conflict`로 부르는 컬럼은 payload에 있어야 한다. `earnings_results` 저장은 행에서 허용…, `*_keys = {...}` 꼴의 문자열 집합 상수., 대상을 못 찾으면 이 테스트는 공허하게 통과한다.
 
+### Community 494 - "test_earnings_session_watch.py"
+Cohesion: 0.16
+Nodes (8): EarningsFlashOutbox, EarningsWatchStatus, 발표 세션(BMO/AMC) 분류·타겟 선정과 발송 상호 배제. 하루 한 번 훑던 시절에는 장전 발표가 최대 15시간 늦게 잡혔고, 로컬…, 속보는 전송 전에 outbox에 스냅샷을 등록한다., outbox 스냅샷 등록이 디스패치보다 먼저 일어난다., 디스패치 결과가 불명이어도 실행기는 성공으로 세지 않는다., 재시도 뒤에도 남은 수집·매핑 실패만 최종 상태에 반영한다., WorkflowSchedule
+
 ### Community 496 - "test_fundamentals_consensus.py"
 Cohesion: 0.25
 Nodes (3): PriceTrackTest, 공시 직전 컨센서스 선택·조립 회귀 테스트. 여기서 지키는 건 전부 "틀려도 카드는 그려지고 숫자만 거짓이 되는" 규칙이다., 목표가 52주 축 밖이면 끝에 눌려 '어디로 본다'가 안 읽힌다.
@@ -2587,8 +2637,8 @@ Cohesion: 0.31
 Nodes (7): _enqueued_kinds_without_thread(), _forum_envs(), _forum_kinds(), ForumKindsCarryAThreadNameTest, 포럼으로 선언된 목적지에는 스레드 제목을 함께 보내야 한다. Discord 포럼 채널은 `/channels/{id}/messages`를…, `enqueue(kind="x", ...)` 호출 중 `thread_name`이 없는 것., 대상을 못 고르면 위 테스트는 공허하게 통과한다.
 
 ### Community 498 - "DefaultPoolTest"
-Cohesion: 0.20
-Nodes (4): DefaultPoolTest, 기본 풀 구성 — 실제로 존재하는 모델 id만, 안전 우선순위로 나열한다., 예산이 큰 모델부터 시도해야 하루 처리량이 최대화된다., 실측(2026-09-03): gemini-2.5-flash-lite는 신규 계정에서 404, Gemini 3.x 계열은 벤더 클라이언트가…
+Cohesion: 0.17
+Nodes (5): DefaultPoolTest, 기본 풀 구성 — 실제로 존재하는 모델 id만, 안전 우선순위로 나열한다., 예산이 큰 모델부터 시도해야 하루 처리량이 최대화된다., 풀에서는 뺐지만 되살릴 때 엔드포인트를 다시 찾지 않아도 되게 남겨 둔다., 실측(2026-09-03): gemini-2.5-flash-lite는 신규 계정에서 404, Gemini 3.x 계열은 벤더 클라이언트가…
 
 ### Community 500 - "V1ResetContractTest"
 Cohesion: 0.33
@@ -2610,17 +2660,25 @@ Nodes (3): 11.1 목표 배치, 11.2 Strategy 관계형 구조, 11. Research: 대
 Cohesion: 0.67
 Nodes (3): 16.1 DDL·코드 변경 묶음, 16.2 Runtime 작업의 필수 정비 절차, 16. 구현 순서와 완료 기준
 
-### Community 509 - "fundamentals/test_service.py"
-Cohesion: 0.44
-Nodes (5): _Batch, FundamentalsWriterTest, _prepared_db(), v1 CompanyFacts writer의 원천→원장→wide 경로., _ref()
+### Community 508 - "non_liability_claims"
+Cohesion: 0.25
+Nodes (8): non_liability_claims(), Any, 자본 범위를 구분해 회계항등식의 비부채 청구권을 계산한다., 선택된 common_equity 태그의 포함 범위를 반환한다., 총자산에서 총부채를 제외한 청구권 합계를 계산한다., source_scope(), _derive_missing_liabilities(), 정확한 총부채 태그가 없을 때만 회계항등식 잔여값을 채운다. 부분 부채 태그를 총부채로 승격하지 않는다. 총자산과 보통주자본이 모두 보고됐고…
+
+### Community 509 - "refresh_fundamentals"
+Cohesion: 0.16
+Nodes (15): CompanyFactsSource, FactsNormalizer, _financial_row(), FundamentalsRefreshResult, Any, date, FilingSource, 발견→공시 원장→CompanyFacts 정규화→wide 적재를 CIK별로 끝낸다. 한 CIK가 실패해도 이미 검증된 다른 CIK는 보존한다.… (+7 more)
 
 ### Community 510 - "12. Runtime: SQLite에 돈의 사실과 안전 상태를 보존"
 Cohesion: 0.40
 Nodes (5): 12.1 최소 원장은 현재 안전 제약을 포함한다, 12.2 ID와 exact 값, 12.3 transaction과 crash 복구, 12.4 broker raw artifact와 계좌 snapshot, 12. Runtime: SQLite에 돈의 사실과 안전 상태를 보존
 
-### Community 511 - "institutional/db.py"
-Cohesion: 0.05
-Nodes (43): all_managers(), guru_display_name(), guru_tags(), guru_thread_topic(), presentation_for(), institutional 7인 레이더의 코드 상수. 추적 대상 manager(cik/name/fund_name/is_active)의 런타임…, 활성 여부와 무관한 전체 manager 사실 + 화면 해석. cik 오름차순., 관리자 사실에 붙일 화면용 해석. 미등록 manager도 수집은 가능하다. (+35 more)
+### Community 511 - "institutional_backfill.py"
+Cohesion: 0.04
+Nodes (53): main(), _parse_args(), Namespace, Gurus 13F backfill entrypoint., 13F 도메인 규칙. 외부 호출도 저장소도 모른다., all_managers(), guru_display_name(), guru_tags() (+45 more)
+
+### Community 512 - "_collect_news"
+Cohesion: 0.28
+Nodes (9): 수집 대상 종목. universe가 tracked 종목의 단일 기준이다. CLI와 하네스 잡이 같은 함수를 쓰도록 여기 둔다 — 각자 자기…, watchlist_tickers(), 언급으로 인정할 종목 집합. universe가 모르는 심볼은 언급이 아니다., tracked_tickers(), _collect_news(), _collect_social(), _prune_intelligence(), Any (+1 more)
 
 ### Community 513 - "StrategyWorkflowOrderingTest"
 Cohesion: 0.29
@@ -2670,49 +2728,61 @@ Nodes (5): For /graphify explain, For /graphify path, graphify reference: query,
 Cohesion: 0.40
 Nodes (5): 8.1 목표 구조, 8.2 market_observations, 8.3 economic_observation_versions, 8.4 forecast와 schedule, 8. Macro: fact를 분리하되 의미 metadata는 유지
 
-### Community 526 - "d_day_label"
-Cohesion: 0.67
-Nodes (3): d_day_label(), Any, Discord 예정 카드와 같은 방향으로 남은 날짜를 표시한다.
+### Community 525 - "institutional/test_persistence.py"
+Cohesion: 0.18
+Nodes (4): 13F 유스케이스 계층. 수집·적재·정리 흐름을 조립한다., InstitutionalRetentionTest, MappingCacheTest, institutional v1 저장소 경계를 검증한다.
+
+### Community 526 - "fundamentals_source.py"
+Cohesion: 0.36
+Nodes (8): _date_ok(), _domain_payload(), fetch_fundamentals(), fetch_macro_indicators(), TradingAgents Fundamentals Analyst를 위한 SEC 재무제표·Gurus·거시지표 데이터 소스 어댑터., 재무제표, 밸류에이션, 세그먼트, 13F 기관 대가 지분을 시점 일치 번들에서 읽는다., FRED/ECOS 거시경제 지표 및 경제 캘린더 발표 이력을 시점 일치 번들에서 읽는다., _symbol_ok()
 
 ### Community 527 - "DangerFloorTest"
 Cohesion: 0.47
 Nodes (3): DangerFloorTest, CLAUDE.md와 AGENTS.md의 안전 바닥이 어긋나지 않는지 본다. 두 문서에 같은 블록을 두는 것은 SSOT 원칙의 예외다. 그럴…, 길어지면 아무도 안 읽는다. 늘리고 싶으면 스킬이나 CLAUDE.md 본문으로.
 
+### Community 528 - "test_intelligence_job.py"
+Cohesion: 0.28
+Nodes (4): _context(), IntelligenceJobTest, 하네스 Intelligence 잡. 한 단계 실패가 나머지를 멈추지 않는다., 정리는 뒷정리다. 실패해도 그날 수집 결과를 되돌리지 않는다.
+
 ### Community 529 - "4. 500MB 예산을 올바르게 정의하기"
 Cohesion: 0.50
 Nodes (4): 4.1 중복 계산을 없앤 예산, 4.2 타입 변경만으로 얼마가 줄어드는지 확정하지 않기, 4.3 적용 전 실행할 읽기 전용 측정 SQL, 4. 500MB 예산을 올바르게 정의하기
 
-### Community 530 - "test_entrypoint.py"
-Cohesion: 0.25
-Nodes (6): MacroRefreshResult, _indicator(), MacroRunTest, MacroTransformTest, macro v1 진입점의 범위·모드·종료코드 계약을 검증한다., _series()
+### Community 530 - "refresh_macro"
+Cohesion: 0.11
+Nodes (15): SeriesValidator, SourceFetcher, MacroRefreshResult, Any, date, datetime, source별 결과를 독립 수집해 원천 수집 시각으로만 버전을 남긴다., refresh_macro() (+7 more)
 
 ### Community 531 - "5. Universe: identity를 보존하며 간소화"
 Cohesion: 0.50
 Nodes (4): 5.1 integer 전환, 5.2 index_memberships의 기간 계약, 5.3 watchlist와 tracking, 5. Universe: identity를 보존하며 간소화
 
-### Community 532 - "migrate_local_storage.py"
-Cohesion: 0.16
-Nodes (27): copy_duckdb_snapshot(), copy_sqlite_snapshot(), _duckdb_snapshot(), LocalStorageConflict, main(), MigrationPlan, _plan_dict(), plan_migrations() (+19 more)
+### Community 532 - "storage_paths.py"
+Cohesion: 0.06
+Nodes (62): copy_duckdb_snapshot(), copy_sqlite_snapshot(), _duckdb_snapshot(), LocalStorageConflict, main(), MigrationPlan, _plan_dict(), plan_migrations() (+54 more)
 
 ### Community 535 - "_imported_modules"
 Cohesion: 0.40
 Nodes (4): _imported_modules(), PresentationLayerDirectionTest, 모듈이 가져오는 절대 모듈 경로. 상대 import는 파일 위치로 풀어서 돌려준다. 상대 import를 그대로 두면 `from…, 대시보드는 도메인 구현 대신 공개된 읽기 계약만 소비한다. 아래 목록은 허용 목록이 아니라 아직…
 
-### Community 537 - "evidence/cache.py"
-Cohesion: 0.17
-Nodes (8): canonicalize_url(), 같은 문서를 가리키는 URL을 한 모양으로. 읽을 수 없으면 `None`. 같은 기사에 tracking 파라미터만 달라진 URL이 붙어…, _normalized_content(), 뉴스·소셜 원문을 Supabase 밖의 재생성 가능한 DuckDB에 보관한다., _sha(), main(), 로컬 뉴스·소셜 DuckDB의 90일 retention을 적용한다., CanonicalizeUrlTest
+### Community 536 - "holdings.py"
+Cohesion: 0.29
+Nodes (6): Position, 13F 보유 신고를 읽는 규칙. ## 정정이 원본을 대체하는 방식이 두 가지다 13F 정정(13F-HR/A)에는 두 종류가 있고, 처리가…, 주식 보유인가. 옵션과 섞으면 풋이 매수로 둔갑한다., 주식 보유만. 옵션은 성격이 달라 같은 목록에 두지 않는다., 신고서의 한 줄. `identifier`는 CUSIP이라 종목 매핑은 universe가 한다., share_positions()
 
-### Community 540 - "EarningsFlashOutbox"
-Cohesion: 0.33
-Nodes (4): EarningsFlashOutbox, 속보는 전송 전에 outbox에 스냅샷을 등록한다., outbox 스냅샷 등록이 디스패치보다 먼저 일어난다., 디스패치 결과가 불명이어도 실행기는 성공으로 세지 않는다.
+### Community 537 - "strategy/models.py"
+Cohesion: 0.39
+Nodes (5): analyze_allocation_change(), Allocation change analysis for strategy notifications., AllocationChange, AllocationDelta, Small data shapes used inside the strategy notification pipeline.
+
+### Community 540 - "test_domain_contracts.py"
+Cohesion: 0.25
+Nodes (4): CanonicalModuleContractTest, EarningsReleaseParserTest, FilingPolicyTest, 외부 I/O 없는 fundamentals 도메인 계약을 검증한다.
 
 ### Community 541 - "identifiers.py"
-Cohesion: 0.14
-Nodes (12): _cusip_char_value(), cusip_check_digit(), is_valid_identifier(), normalize_cusip(), 종목을 가리키는 이름들의 규칙. ## 왜 platform이 아니라 여기인가 ticker 정규화와 CUSIP 검증은 "투자 데이터"를 알아야만…, 앞 8자리로 검사숫자를 계산한다. 계산할 수 없으면 `None`. 13F 원문에는 자리가 밀리거나 문자가 빠진 CUSIP이 실제로 섞여 온다.…, CUSIP을 9자리 표기로. 모양이나 검사숫자가 틀리면 `None`., 저장소가 받아들일 모양인가. 넣기 전에 여기서 거른다. (+4 more)
+Cohesion: 0.11
+Nodes (15): _cusip_char_value(), cusip_check_digit(), is_valid_identifier(), normalize_cik(), normalize_cusip(), 종목을 가리키는 이름들의 규칙. ## 왜 platform이 아니라 여기인가 ticker 정규화와 CUSIP 검증은 "투자 데이터"를 알아야만…, CIK를 10자리 0채움 문자열로. 읽을 수 없으면 `None`. SEC은 같은 회사를 `320193`, `0000320193`,…, 앞 8자리로 검사숫자를 계산한다. 계산할 수 없으면 `None`. 13F 원문에는 자리가 밀리거나 문자가 빠진 CUSIP이 실제로 섞여 온다.… (+7 more)
 
-### Community 544 - "test_evaluator.py"
-Cohesion: 0.17
-Nodes (8): evaluate_returns(), PortfolioMetrics, 목표 비중 경로의 비용 포함 포트폴리오 성과를 계산한다., EvaluatorTest, FakeRepository, PortfolioEvaluatorTest, date, 성과 평가가 거래일과 SPY 공통 날짜로만 계산되는지 검증한다.
+### Community 544 - "evaluation/evaluator.py"
+Cohesion: 0.09
+Nodes (19): main(), Fixed horizons used by post-decision evaluation., _direction(), evaluate_case(), EvaluationRepository, date, Protocol, 저장된 판단을 5·20·60 거래일 뒤 SPY 대비 평가한다. (+11 more)
 
 ### Community 550 - "test_calculations_facade.py"
 Cohesion: 0.29
@@ -2726,6 +2796,10 @@ Nodes (5): _opens_a_store(), Path, Reporting의 배치를 못박는다. reportin
 Cohesion: 0.50
 Nodes (3): For /graphify add, For --watch, graphify reference: add a URL and watch a folder
 
+### Community 557 - "src/investment_agent/operations/commands/__init__.py"
+Cohesion: 0.20
+Nodes (5): 운영 점검과 하네스 실행 명령 패키지., DefaultPathsTest, CLI가 기록한 정비 보류와 잠금을 기본 라이브러리도 같은 위치에서 읽는다., 공통 Actions 실패 리포터가 원문을 안전한 사건 카드로 바꾸는지 검증한다., WorkflowFailureReporterTest
+
 ### Community 558 - "graphify reference: commit hook and native CLAUDE.md integration"
 Cohesion: 0.50
 Nodes (3): For git commit hook, For native CLAUDE.md integration, graphify reference: commit hook and native CLAUDE.md integration
@@ -2738,37 +2812,89 @@ Nodes (3): 외부 저장소와 무관한 fundamentals 도메인 모델과 계산
 Cohesion: 0.50
 Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphify reference: incremental update and cluster-only
 
+### Community 564 - "DashboardStaticBoundaryTests"
+Cohesion: 0.29
+Nodes (3): DashboardStaticBoundaryTests, `.rpc()` 예외를 허용할 유일한 메서드의 줄 범위를 소스에서 직접 찾는다., 같은 조회가 두 모듈에 각자 있으면 한쪽만 고치는 사고가 난다.
+
+### Community 565 - "_uncached"
+Cohesion: 0.32
+Nodes (3): OfflineBoundaryTests, account_daily_snapshots는 안전한 롤업 필드만 갖는 표라 raw_snapshot이 구조적으로 들어갈 자리가 없다 —…, _uncached()
+
+### Community 568 - "WebClientError"
+Cohesion: 0.29
+Nodes (6): Exception, RuntimeError, 웹 원천 수집 계약 위반의 공통 기반 예외., 외부 페이지 호출 또는 응답 파싱이 실패했다., WebClientError, WebProviderError
+
+### Community 570 - "strategy/__init__.py"
+Cohesion: 0.29
+Nodes (3): 전략 배분 월간 알림 — Discord embed., 상태가 진전되지 않는 전략 배치도 한 실행 안에서는 한 번만 처리한다., StrategyProgressTest
+
 ### Community 571 - "20_market.sql"
 Cohesion: 0.67
 Nodes (3): market.dividend_events, market.prices_daily, universe.securities
+
+### Community 572 - "parse_event_key"
+Cohesion: 0.33
+Nodes (4): parse_event_key(), `SERIES_ID:YYYY-MM-DD` 자연키를 (series_id, ref_period)로. 형식이 아니면 None., EconEventKeyTest, 화면은 자연키가 유효한지만 알면 된다 — domain의 예외 표현에 묶이지 않는다.
+
+### Community 573 - "._resolve"
+Cohesion: 0.38
+Nodes (3): DuplicateThreadResolutionTest, 이미 갈라진 스레드가 있을 때 어디에 쌓일지가 정해져 있어야 한다. 먼저 본 것을 쓰면 목적지가 Discord 응답 순서에 달린다 — 실행마다…, 생성 시각이 없어도 순서는 정해진다 — snowflake는 시간순으로 커진다.
 
 ### Community 574 - "40_notifications.sql"
 Cohesion: 0.67
 Nodes (3): notification_deliveries, notification_delivery_state, notification_outbox
 
+### Community 575 - "._tick_with_fakes"
+Cohesion: 0.38
+Nodes (4): 가짜 adapters로 한 tick 돌리고, 실제로 불린 adapter 이름을 돌려준다., 하나라도 안 불리면 그 자리에 진짜 provider가 들어와 있다는 뜻이다., 아무것도 안 불리는 tick이면 위 검사는 공허하게 통과한다., RegistryInjectionTest
+
+### Community 577 - "calculations/schedule.py"
+Cohesion: 0.40
+Nodes (5): date, 선택한 지평을 실제 날짜 구간으로 바꾼다. 반환값은 ``(시작일, 종료일, 기간별 분리 여부)``다. 모르는 라벨은 예외 대신 기본 창으로…, schedule_window(), today가 속한 주의 월요일~일요일. cron이 밀려도 같은 주를 가리킨다., week_window()
+
 ### Community 579 - "CandidateCoverageRepositoryTest"
 Cohesion: 0.33
 Nodes (4): CandidateCoverageRepositoryTest, 후보 coverage는 로컬 runtime 판단 원장에서 읽는다. 전에는 Postgres `trading.security_decisions`를…, 실패한 판단을 coverage로 세면 그 종목이 다시 분석되지 않는다., as_of 이후의 판단이 보이면 그 시점 재현이 아니다.
+
+### Community 581 - "export_dataset"
+Cohesion: 0.50
+Nodes (5): export_dataset(), Any, Path, 원장을 읽어 label이 확정된 행만 학습 dataset으로 결합한다., _snapshot()
+
+### Community 583 - "PPOAllocationTimingSpec"
+Cohesion: 0.40
+Nodes (3): PPOAllocationTimingSpec, Any, PPO가 broker나 종목 수량을 직접 만들지 않는 연구 명세.
 
 ### Community 586 - "test_fundamentals_integrity.py"
 Cohesion: 0.07
 Nodes (12): ColumnDriftTest, _fact(), ManifestTest, PersistedPayloadTest, fundamentals wide 적재의 의미 선택·출처 보존 계약을 검증한다., 저장 payload에 스키마에 없는 키가 섞이면 그 공시가 통째로 사라진다., 메모리 전용으로 떼어 내는 키는 스키마가 obsolete로 선언한 것과 같아야 한다., 스키마의 numeric 컬럼은 코드가 쓰는 wide 컬럼 전부와 같아야 한다. 한쪽만 고치면 라이브 스키마가 코드보다 넓거나 좁은 채로… (+4 more)
 
-### Community 591 - "test_universe_names.py"
-Cohesion: 0.13
-Nodes (5): universe 수집·정합성 명령 패키지., KoreanNameRefreshTest, KoreanNameSelectionTest, Universe 핵심 갱신과 로컬 전용 한글명 보강의 경계 테스트., UniverseWorkflowBoundaryTest
+### Community 590 - "reporting/notifications/__init__.py"
+Cohesion: 0.18
+Nodes (5): 알림용 reporting read model과 adapter 패키지., EarningsConsensusReaderTest, 실적 consensus reader와 v1 필드 계약을 검증한다., EarningsExtrasTest, 실적 알림에 붙는 세그먼트 요약의 기간·중복 방지 규칙을 검증한다.
 
-### Community 592 - "ResearchStoreTest"
-Cohesion: 0.11
-Nodes (7): 저장 기술별 연결 경계. 각 파일이 하나의 DB만 안다. 이 패키지는 재수출하지 않는다. `platform.db`만 적으면 세 저장소 중…, DuckDBStoreTest, 로컬 DuckDB 파일을 여는 공통 경계의 계약., intelligence 본문은 이제 Parquet가 소유하고 DuckDB는 작은 catalog/index metadata만 갖는다 —…, 읽기 전용 연결이 파일을 만들면, 화면이 빈 DB를 만들어 놓고 수집 잡의 쓰기 잠금을 빼앗는다., 읽기 전용 Research 조회와 재실행의 발송 상태 보존을 확인한다., ResearchStoreTest
+### Community 591 - "src/investment_agent/data/universe/__init__.py"
+Cohesion: 0.05
+Nodes (12): universe 수집·정합성 명령 패키지., 무엇을 다룰 것인가 — 회사·증권 identity와 지수 membership. 여기 없는 종목은 수집도 판단도 하지 않는다. 다른 모든…, MembershipHistoryStorageTest, append_memberships는 이제 자체 upsert 대신 UniverseRepository의 원자 replace RPC…, KoreanNameRefreshTest, KoreanNameSelectionTest, Universe 핵심 갱신과 로컬 전용 한글명 보강의 경계 테스트., UniverseWorkflowBoundaryTest (+4 more)
 
-### Community 596 - "test_watchlist_toss.py"
-Cohesion: 0.12
-Nodes (6): 토스 보유종목 관심목록 동기화의 안전장치를 검증한다., 관심 원장을 따로 두면 "활성인가"의 정의가 두 곳에 생긴다., TossClientPayloadTest, TossHoldingsTransformTest, TossMacOnlyConfigurationTest, TossSyncWriteBoundaryTest
+### Community 592 - "DuckDBStoreTest"
+Cohesion: 0.22
+Nodes (4): DuckDBStoreTest, 로컬 DuckDB 파일을 여는 공통 경계의 계약., intelligence 본문은 이제 Parquet가 소유하고 DuckDB는 작은 catalog/index metadata만 갖는다 —…, 읽기 전용 연결이 파일을 만들면, 화면이 빈 DB를 만들어 놓고 수집 잡의 쓰기 잠금을 빼앗는다.
+
+### Community 596 - "universe/infrastructure/sources/__init__.py"
+Cohesion: 0.07
+Nodes (12): fundamentals 수집·검증 명령 패키지., fundamentals 스키마용 Supabase 저장소 모음., universe 관심종목 멤버십과 Toss 보유 출처 동기화., 토스 보유종목 스냅샷을 통합 관심종목에 반영한다., 세그먼트 8년 보존 정책과 외래키 안전 삭제 순서를 검증한다., ShareEntrypointContractTest, 토스 보유종목 관심목록 동기화의 안전장치를 검증한다., 관심 원장을 따로 두면 "활성인가"의 정의가 두 곳에 생긴다. (+4 more)
+
+### Community 601 - "_pipeline_steps"
+Cohesion: 0.83
+Nodes (4): _pipeline_steps(), Any, _rows(), _status_label()
 
 ### Community 608 - "test_model_pool_providers.py"
 Cohesion: 0.12
 Nodes (8): AzureCandidateTest, GroqCandidateTest, PoolCapacityTest, 풀에 있는 후보가 실제로 호출 가능하고, 실제 프롬프트 크기를 견디는지 못박는다. 실측 2026-09-03 (도구 호출 2턴 + 실제…, 카탈로그에만 있는 이름을 넣으면 매번 404를 맞고 후보 하나를 낭비한다., 무료 TPM 8,000은 종목 하나의 프롬프트도 못 받는다 — 넣으면 매번 413이다., 왜 뺐는지 숫자로 남긴다 — 나중에 '한번 더 넣어보자'를 막는다., 단일화 결정(2026-09-03): 후보가 하나면 어느 키로 불렀는지가 항상 분명하다.
+
+### Community 616 - "update"
+Cohesion: 0.67
+Nodes (3): Path, values의 키를 갱신하고, 없으면 끝에 덧붙인다. 바뀐 키 이름 목록을 돌려준다., update()
 
 ### Community 637 - "30_fundamentals.sql"
 Cohesion: 0.23
@@ -2784,23 +2910,23 @@ Nodes (3): 러너 라벨은 `ubuntu-latest` 하나로 둔다. 버전을 박으�
 
 ## Knowledge Gaps
 - **613 isolated node(s):** `content_files`, `content_catalog_state`, `feature_sets`, `dataset_runs`, `local_job_state` (+608 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 5542 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **92 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 5587 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **88 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `get_logger()` connect `logging.py` to `web.py`, `EarningsCalendarStore`, `auth.py`, `Outbox`, `live_worker.py`, `ExecutionIntent`, `actuals.py`, `finite_float`, `fsds.py`, `companyfacts.py`, `process_filing.py`, `retry_on_5xx`, `investment_harness.py`, `commands/common_shares.py`, `github_actions.py`, `strategies.py`, `map_fiscal_periods.py`, `rl/contracts.py`, `ExecutionSafetyError`, `collection.py`, `reserve_provider_call`, `readers/intelligence.py`, `test_historical_earnings_estimates.py`, `supabase_repository.py`, `safe_fetch`, `universe/persistence.py`, `ProductionInvestmentAdapters`, `continuous_retrain.py`, `build_events.py`, `DiscordApprovalClient`, `MacroRepository`, `postgres.py`, `filings.py`, `TransactionCostModel`, `build_labels.py`, `fundamentals/repository.py`, `notifications/macro.py`, `ResearchDataset`, `discord_admin/client.py`, `shadow_daily.py`, `openfigi.py`, `retry.py`, `create_execution_intent.py`, `market_daily.py`, `tradingagents_adapter.py`, `features/db.py`, `worker.py`, `us_market_today`, `Database`, `construct.py`, `yahoo.py`, `ensure_aware`, `application/etl.py`, `build_valuations.py`, `application/service.py`, `HarnessReporter`, `social_normalize.py`, `application/backfill_history.py`, `portfolio_shadow.py`, `monitoring/discord.py`, `news_normalize.py`, `backtest/cli.py`, `detect_earnings_events.py`, `features/etl.py`, `infrastructure/sources/yfinance.py`, `parse_shares.py`, `sec13f.py`, `institutional/db.py`?**
-  _High betweenness centrality (0.136) - this node is a cross-community bridge._
-- **Why does `parse_datetime()` connect `parse_datetime` to `EvidenceBundle`, `live_worker.py`, `ExecutionIntent`, `Outbox`, `backtest/contracts.py`, `execution/db.py`, `fit_baseline`, `trading/contracts.py`, `artifacts.py`, `.create`, `investment_harness.py`, `ExecutionRepository`, `portfolio/contracts.py`, `PITValuationInputs`, `rl/contracts.py`, `ExecutionSafetyError`, `MarketQuote`, `fusion.py`, `validate_live_candidate_as_of`, `evidence/cache.py`, `json_value`, `FeatureDataset`, `_LabelRepository`, `supabase_repository.py`, `continuous_retrain.py`, `ProductionInvestmentAdapters`, `src/investment_agent/research/rl/__init__.py`, `build_events.py`, `HarnessScheduler`, `AccountSnapshot`, `valuation/engine.py`, `MacroRepository`, `market_schedule.py`, `postgres.py`, `filings.py`, `TransactionCostModel`, `build_labels.py`, `candidate_ranker.py`, `fundamentals/repository.py`, `ResearchDataset`, `shadow_daily.py`, `app_pages/intelligence.py`, `inputs.py`, `toss/client.py`, `capture_toss_account_snapshot`, `create_execution_intent.py`, `tradingagents_adapter.py`, `FakeRepository`, `worker.py`, `construct.py`, `SupabaseRepository`, `canonical_json`, `export_dataset`, `.from_row`, `build_valuations.py`, `attribution.py`, `layer.py`, `snapshots.py`, `logging.py`, `context.py`, `promotion/gate.py`, `LocalEvidenceCache`, `portfolio_shadow.py`, `BacktestRequest`, `parse_external_payload`, `services/investment/__init__.py`?**
-  _High betweenness centrality (0.045) - this node is a cross-community bridge._
-- **Why does `canonical_json()` connect `canonical_json` to `EvidenceBundle`, `live_worker.py`, `ExecutionIntent`, `Outbox`, `backtest/contracts.py`, `execution/db.py`, `fit_baseline`, `trading/contracts.py`, `artifacts.py`, `investment_harness.py`, `ExecutionRepository`, `dashboard/db.py`, `portfolio/contracts.py`, `json_value`, `rl/contracts.py`, `MarketQuote`, `switch.py`, `ExecutionSafetyError`, `PITValuationInputs`, `evidence/cache.py`, `FeatureDataset`, `supabase_repository.py`, `continuous_retrain.py`, `ProductionInvestmentAdapters`, `emergency.py`, `lifecycle.py`, `build_events.py`, `parse_datetime`, `HarnessScheduler`, `src/investment_agent/research/rl/__init__.py`, `valuation/engine.py`, `AccountSnapshot`, `TransactionCostModel`, `install_investment_harness.py`, `LocalArtifactStore`, `platform/artifacts.py`, `candidate_ranker.py`, `ResearchDataset`, `shadow_daily.py`, `TradingAgentsDecisionEngine`, `tradingagents_adapter.py`, `worker.py`, `construct.py`, `SupabaseRepository`, `attribution.py`, `layer.py`, `snapshots.py`, `HarnessReporter`, `context.py`, `portfolio_shadow.py`, `RunContext`, `services/investment/__init__.py`, `HarnessMode`?**
-  _High betweenness centrality (0.034) - this node is a cross-community bridge._
+- **Why does `get_logger()` connect `logging.py` to `web.py`, `earnings_calendar/run.py`, `toss.py`, `load_config`, `universe/repository.py`, `ExecutionIntent`, `actuals.py`, `fsds.py`, `companyfacts.py`, `investment_harness.py`, `us_market_today`, `strategies.py`, `map_fiscal_periods.py`, `serialization.py`, `rl/contracts.py`, `request_toss_approval.py`, `collection.py`, `reserve_provider_call`, `readers/intelligence.py`, `build_labels.py`, `refresh_earnings_season.py`, `earnings_report.py`, `SupabaseRepository`, `safe_fetch`, `universe/persistence.py`, `continuous_retrain.py`, `ResearchDataset`, `build_events.py`, `main`, `execution/contracts.py`, `MacroRepository`, `as_date`, `postgres.py`, `company_financials.py`, `earnings_report/candidates.py`, `build_features.py`, `strategies/etl.py`, `commands/refresh_expectations.py`, `discord_admin/client.py`, `retry.py`, `trading/contracts.py`, `openfigi.py`, `harness_adapters.py`, `create_execution_intent.py`, `market_daily.py`, `tradingagents_adapter.py`, `features/db.py`, `EarningsFlashStore`, `construct.py`, `yahoo.py`, `ensure_aware`, `application/etl.py`, `build_valuations.py`, `build_training_samples.py`, `social_normalize.py`, `sec13f.py`, `src/investment_agent/data/fundamentals/application/__init__.py`, `monitoring/discord.py`, `news_normalize.py`, `validate_subscriptions.py`, `backtest/cli.py`, `detect_earnings_events.py`, `parse_shares.py`, `infrastructure/sources/yfinance.py`, `institutional_backfill.py`?**
+  _High betweenness centrality (0.134) - this node is a cross-community bridge._
+- **Why does `parse_datetime()` connect `parse_datetime` to `EvidenceBundle`, `orders.py`, `ExecutionIntent`, `load_config`, `backtest/contracts.py`, `sqlite.py`, `fit_baseline`, `finite_float`, `decision/pipeline.py`, `artifacts.py`, `ApprovalRequest`, `investment_harness.py`, `fundamentals_source.py`, `training/baseline.py`, `serialization.py`, `PITValuationInputs`, `rl/contracts.py`, `MarketQuote`, `request_toss_approval.py`, `test_ensemble.py`, `validate_live_candidate_as_of`, `build_labels.py`, `FeatureDataset`, `SupabaseRepository`, `ResearchDataset`, `continuous_retrain.py`, `ProductionInvestmentAdapters`, `src/investment_agent/research/rl/__init__.py`, `build_events.py`, `tca.py`, `HarnessScheduler`, `SignalBook`, `execution/contracts.py`, `valuation/engine.py`, `MacroRepository`, `collect_candidates`, `market_schedule.py`, `postgres.py`, `company_financials.py`, `live_worker.py`, `ContractError`, `build_features.py`, `fast_ranker.py`, `VersionKey`, `build_research_dataset`, `Filing`, `trading/contracts.py`, `TrainingSample`, `alpha_lab.py`, `export_dataset`, `toss/client.py`, `risk_snapshot.py`, `harness_adapters.py`, `inputs.py`, `create_execution_intent.py`, `tradingagents_adapter.py`, `FakeRepository`, `worker.py`, `construct.py`, `JsonStateStore`, `test_dataset_export.py`, `.from_row`, `build_valuations.py`, `src/investment_agent/research/evaluation/__init__.py`, `build_training_samples.py`, `layer.py`, `news_source.py`, `logging.py`, `context.py`, `promotion/gate.py`, `LocalEvidenceCache`, `PortfolioRiskPolicy`, `TransactionCostModel`, `parse_external_payload`, `services/investment/__init__.py`?**
+  _High betweenness centrality (0.040) - this node is a cross-community bridge._
+- **Why does `Database` connect `logging.py` to `earnings_calendar/run.py`, `load_config`, `universe/repository.py`, `_db`, `dashboard/db.py`, `FundamentalsRepository`, `earnings_report.py`, `earnings_report_segment_state.py`, `SupabaseRepository`, `universe/persistence.py`, `FakeDatabase`, `MacroNotificationStore`, `MacroRepository`, `releases/db.py`, `as_date`, `ReportingQueries`, `postgres.py`, `run`, `earnings_report/candidates.py`, `TradingRepository`, `market/persistence.py`, `EarningsFlashStore`, `application/etl.py`, `RLRepositoryTest`, `UniverseRepository`, `SelectOnlyGateway`, `watchlists/db.py`, `InstitutionalRepository`, `LocalTradingDatabase`, `refresh_fundamentals`, `institutional_backfill.py`?**
+  _High betweenness centrality (0.033) - this node is a cross-community bridge._
 - **Are the 32 inferred relationships involving `parse_datetime()` (e.g. with `._validate_timing()` and `build_events()`) actually correct?**
   _`parse_datetime()` has 32 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 52 inferred relationships involving `FakeDatabase` (e.g. with `ConsensusTest` and `ProcessingTest`) actually correct?**
   _`FakeDatabase` has 52 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 55 inferred relationships involving `ExecutionSafetyError` (e.g. with `DiscordApprovalClient` and `._check_state()`) actually correct?**
-  _`ExecutionSafetyError` has 55 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 37 inferred relationships involving `ContractError` (e.g. with `AccountSnapshot` and `PositionSnapshot`) actually correct?**
+  _`ContractError` has 37 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `content_files`, `content_catalog_state`, `feature_sets` to the rest of the system?**
   _613 weakly-connected nodes found - possible documentation gaps or missing edges._

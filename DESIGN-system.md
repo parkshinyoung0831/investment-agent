@@ -1,4 +1,4 @@
-# Investment Agent Design System
+# 디자인 시스템 — 알림 카드와 대시보드 UI의 단일 기준
 
 > **상태:** Canonical SSOT
 >

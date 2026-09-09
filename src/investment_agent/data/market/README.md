@@ -1,4 +1,4 @@
-# Market v1
+# Market — 일봉과 corporate action
 
 `investment_agent.data.market`는 완료된 Yahoo 일봉과 corporate action을
 `security_id` 기준으로 저장한다. ticker는 외부 입력·표시용이고, market의 모든
