@@ -1,18 +1,17 @@
 """문서가 말하는 것이 저장소에 실제로 있는지 본다.
 
-문서는 코드와 달리 틀려도 아무도 알려주지 않는다. import 오류도, 테스트 실패도 없이
-**읽는 사람만 잘못된 곳을 찾아간다.** 실제로 그랬다 — 저장 계층을 Postgres 한 곳에서
-Postgres·SQLite·DuckDB 넷으로 나눈 뒤에도 여러 문서가 `notifications.outbox`,
-`execution.control_state`처럼 **Supabase에 있는 것처럼** 적고 있었고, 이름이 바뀐
-`fundamentals.company_financials`·`macro.observations`도 그대로 남아 있었다.
+문서는 코드와 달리 틀려도 아무도 알려주지 않는다. import 오류도 테스트 실패도 없이
+**읽는 사람만 잘못된 곳을 찾아간다.** 저장소가 넷(Postgres·SQLite·DuckDB 둘)이라
+"이 표가 어디 있나"가 특히 쉽게 어긋난다.
 
-세 가지를 본다.
+네 가지를 본다.
 
 1. 상대 링크가 실재하는 파일을 가리키는가.
-2. `schema.table` 꼴로 적힌 이름이 `db/**/v1/*.sql` 선언에 있는가.
-3. 모든 문서에 H1이 하나 있고, 문서 이름 노릇을 하는가.
+2. `schema.table` 꼴로 적힌 이름이 선언(`db/**/*.sql`)이나 읽기 계약에 있는가.
+3. 모든 문서에 H1이 하나 있고 첫 줄인가.
+4. 제목이 `이름 — 정체` 한 줄인가.
 
-**DB에 접속하지 않는다.** 선언 파일만 읽는다.
+**DB에 접속하지 않는다.** 선언 파일과 코드 상수만 읽는다.
 """
 from __future__ import annotations
 
@@ -53,28 +52,6 @@ NOT_A_TABLE = frozenset({
     "fundamentals.prune_expectation_snapshots", "macro.prune_release_snapshots",
     "execution.append_order_attempt_event",
 })
-
-STORAGE_MAP = ROOT / "docs" / "STORAGE_MAP.md"
-_MIGRATION_HEADING = "## 옮겨간 이름"
-
-
-def _removed_relations() -> set[str]:
-    """지금은 없는 표 이름. `docs/STORAGE_MAP.md`의 이사표가 소유한다.
-
-    없어진 이름을 문서가 쓰는 것은 **없어졌다는 사실을 적을 때**뿐이다. 그 목록을
-    테스트 안에 또 두면 두 곳이 갈라지므로, 사람이 읽는 그 표 하나만 본다.
-    """
-    text = STORAGE_MAP.read_text(encoding="utf-8")
-    section = text.split(_MIGRATION_HEADING, 1)[1].split(chr(10) + "## ", 1)[0]
-    removed: set[str] = set()
-    for line in section.splitlines():
-        if not line.startswith("|") or line.startswith("|---"):
-            continue
-        first_column = line.split("|")[1]
-        removed.update(
-            match.group(0).lower() for match in _REFERENCE.finditer(first_column))
-    return removed
-
 
 def _markdown_files() -> list[Path]:
     import subprocess
@@ -151,7 +128,6 @@ class DeclaredRelationTest(unittest.TestCase):
 
     def test_every_named_relation_is_declared(self) -> None:
         declared = _declared_relations()
-        removed = _removed_relations()
         offenders: list[str] = []
         for path in _markdown_files():
             relative = path.relative_to(ROOT).as_posix()
@@ -164,7 +140,7 @@ class DeclaredRelationTest(unittest.TestCase):
                     name = match.group(0).lower()
                     if match.group(2) in _FILE_SUFFIXES:
                         continue
-                    if name in declared or name in NOT_A_TABLE or name in removed:
+                    if name in declared or name in NOT_A_TABLE:
                         continue
                     # `schema.table.column`은 표가 아니라 컬럼을 가리킨다.
                     if line[match.end():match.end() + 1] == ".":
@@ -182,15 +158,6 @@ class DeclaredRelationTest(unittest.TestCase):
                         seen.add(match.group(0).lower())
         self.assertEqual(set(), NOT_A_TABLE - seen)
 
-    def test_the_migration_table_is_read(self) -> None:
-        """이사표를 못 읽으면 옛 이름이 전부 위반으로 잡히거나 그 반대가 된다."""
-        removed = _removed_relations()
-        self.assertIn("notifications.subscriptions", removed)
-        self.assertGreaterEqual(len(removed), 8)
-
-    def test_removed_relations_are_really_gone(self) -> None:
-        """되살아난 표가 이사표에 남아 있으면 문서가 그것을 계속 부정한다."""
-        self.assertEqual([], sorted(_removed_relations() & _declared_relations()))
 
 
 class DocumentShapeTest(unittest.TestCase):

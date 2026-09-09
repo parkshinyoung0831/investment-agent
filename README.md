@@ -13,9 +13,8 @@
 > Python 3.11 · Supabase(Postgres) · GitHub Actions · experimental research software
 
 > [!WARNING]
-> 이 저장소는 금융 조언이나 수익을 보장하지 않습니다. Live 주문은 기본적으로 차단되어
-> 있으며, 설치·테스트·모델 실행만으로 차단 플래그가 열리지 않습니다. 실제 계좌에 연결하기
-> 전에 코드, 데이터 품질, broker 계약, 법적·운영 요건을 직접 검토하세요.
+> Live 주문은 기본 차단입니다. 설치·테스트·모델 실행 중 어느 것도 차단 플래그를 열지
+> 않으며, `LIVE_ENABLED`·`TOSS_LIVE_ENABLED`는 사람이 명시적으로 켭니다.
 
 **목차**: [아키텍처](#아키텍처) · [먼저 알아야 할 현재 상태](#먼저-알아야-할-현재-상태) ·
 [핵심 안전 원칙](#핵심-안전-원칙) · [각 계층이 하는 일](#각-계층이-하는-일) ·
@@ -71,8 +70,7 @@ RiskGate 통과 실패 → 재구성), 실행 계층이 신호나 evidence를 �
 - Live와 Live Autonomous는 기본 비활성입니다. 이 저장소의 설치나 모델 실행이 안전 스위치를 자동으로
   열지 않습니다.
 
-날짜가 붙은 상세 상태는 [현재 구현 상태](docs/V1_STATUS.md)를 봅니다. 수집·알림
-실패는 GitHub Actions 원문 로그와 Discord `#시스템-로그`를 우선하고, 로컬 하네스 상태만
+수집·알림 실패는 GitHub Actions 원문 로그와 Discord `#시스템-로그`를 우선하고, 로컬 하네스 상태만
 아래 명령으로 확인합니다.
 
 ```powershell
@@ -249,34 +247,18 @@ python -m investment_agent.trading.portfolio.construct --batch-id <BATCH_ID> --s
 
 ## 문서
 
-문서를 어디서부터 읽을지 모르겠다면 [초보자용 시스템·폴더 지도](docs/README.md) 하나만
-먼저 읽으세요. 공개 사용·기여에 필요한 정책은 [오픈소스 공개 준비도](docs/OPEN_SOURCE_READINESS.md),
-[기여 가이드](CONTRIBUTING.md), [보안 정책](SECURITY.md), [행동 강령](CODE_OF_CONDUCT.md)에
-모았습니다. `docs`의 나머지 문서는 도메인 계약과 운영 참고서입니다.
+처음이면 [시스템·폴더 지도](docs/README.md) 하나만 읽으면 됩니다.
 
-처음에는 아래 두 문서면 충분합니다.
+| 문서 | 답하는 질문 |
+|---|---|
+| [docs/README.md](docs/README.md) | 폴더가 무엇이고 전체 흐름이 어떻게 이어지는가 |
+| [docs/STORAGE_MAP.md](docs/STORAGE_MAP.md) | 어떤 사실이 네 저장소 중 어디에 사는가 |
+| [docs/DATA.md](docs/DATA.md) | 수집·PIT·품질은 어떻게 동작하는가 |
+| [docs/INVESTMENT_SYSTEM.md](docs/INVESTMENT_SYSTEM.md) | 판단·ML/RL·backtest·RiskGate는 무엇을 하는가 |
+| [docs/AUTONOMOUS_SYSTEM.md](docs/AUTONOMOUS_SYSTEM.md) | 자율 판단 계층의 패키지 경계는 어떤 모양인가 |
+| [docs/EXECUTION_AND_SAFETY.md](docs/EXECUTION_AND_SAFETY.md) | 승인·broker·안전장치는 무엇인가 |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | 설치·Actions·하네스·장애 대응은 어떻게 하는가 |
+| [docs/ENV.md](docs/ENV.md) | 어떤 환경변수가 어디에 필요한가 |
 
-- [초보자용 시스템·폴더 지도](docs/README.md)
-- [현재 구현 상태](docs/V1_STATUS.md)
-
-필요할 때만 [저장 지도](docs/STORAGE_MAP.md), [데이터](docs/DATA.md), [투자 시스템](docs/INVESTMENT_SYSTEM.md),
-[자율 판단 계층](docs/AUTONOMOUS_SYSTEM.md), [실행과 안전](docs/EXECUTION_AND_SAFETY.md),
-[운영](docs/OPERATIONS.md)을 골라 읽습니다.
-
-현재 v1 구현과 schema 선언의 상태는 [v1 재구성 현황](docs/V1_STATUS.md)에 기록합니다.
-
-개발 규칙은 [CLAUDE.md](CLAUDE.md), 환경변수 전체 목록은 [docs/ENV.md](docs/ENV.md), UI 규칙은
-[DESIGN-system.md](DESIGN-system.md)입니다. 실제 API key와 broker credential은 repository에
-commit하지 않습니다.
-
-## 공개 저장소 정책
-
-- [기여 가이드](CONTRIBUTING.md)
-- [보안 취약점 신고](SECURITY.md)
-- [행동 강령](CODE_OF_CONDUCT.md)
-- [오픈소스 공개 준비도와 알려진 제한](docs/OPEN_SOURCE_READINESS.md)
-- [서드파티 고지](THIRD_PARTY_NOTICES.md)
-
-현재 저장소 루트에는 프로젝트 라이선스가 선언되어 있지 않습니다. 라이선스가 선택·추가되기
-전까지는 소스 사용 권한을 추정하지 마세요. 공개 배포 전에 저장소 관리자가 프로젝트 라이선스를
-선택하고 `LICENSE` 파일을 추가해야 합니다.
+개발 규칙은 [CLAUDE.md](CLAUDE.md), UI 규칙은 [DESIGN-system.md](DESIGN-system.md)입니다.
+API key와 broker credential은 커밋하지 않습니다.

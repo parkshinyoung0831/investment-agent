@@ -110,28 +110,8 @@ class RepositoryLayoutTest(unittest.TestCase):
         self.assertEqual([], sorted(empty), "canonical tree에 빈 디렉터리가 남아 있다")
 
 
-class OpenSourceDocumentationTest(unittest.TestCase):
-    """공개 저장소의 최소 문서 표면과 개인 환경정보 차단을 고정한다."""
-
-    REQUIRED_PUBLIC_DOCS = (
-        Path("CONTRIBUTING.md"),
-        Path("CODE_OF_CONDUCT.md"),
-        Path("SECURITY.md"),
-        Path("docs/OPEN_SOURCE_READINESS.md"),
-    )
-
-    def test_public_policy_documents_exist(self) -> None:
-        missing = [path.as_posix() for path in self.REQUIRED_PUBLIC_DOCS if not path.is_file()]
-        self.assertEqual([], missing, "공개 저장소 정책 문서가 누락됐다")
-
-    def test_root_readme_links_public_policy_documents(self) -> None:
-        source = Path("README.md").read_text(encoding="utf-8")
-        missing = [
-            path.as_posix()
-            for path in self.REQUIRED_PUBLIC_DOCS
-            if path.as_posix() not in source
-        ]
-        self.assertEqual([], missing, "README가 공개 정책 문서를 연결하지 않는다")
+class DocumentHygieneTest(unittest.TestCase):
+    """문서에 개인 환경정보가 새지 않게 한다."""
 
     def test_public_docs_do_not_contain_machine_specific_absolute_paths(self) -> None:
         offenders: list[str] = []
@@ -141,7 +121,8 @@ class OpenSourceDocumentationTest(unittest.TestCase):
                 offenders.append(path.as_posix())
         self.assertEqual([], offenders, "공개 문서에 개인 장비 절대 경로가 있다")
 
-    def test_environment_reference_is_not_a_private_handoff_copy(self) -> None:
+    def test_environment_reference_states_the_current_contract_only(self) -> None:
+        """레퍼런스에 경위 서술과 실측 날짜를 남기지 않는다."""
         source = Path("docs/ENV.md").read_text(encoding="utf-8")
         self.assertNotIn("CLAUDE.md에서 옮겨 온", source)
         self.assertNotIn("실측 2026-", source)

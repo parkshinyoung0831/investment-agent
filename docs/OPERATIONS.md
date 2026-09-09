@@ -158,7 +158,7 @@ python -m investment_agent.data.universe.commands.universe_names
 이름을 받지 못한 종목만 `--retry-after-days`(기본 90) 뒤에 다시 시도한다.
 
 재구축이 끝나면 두 가지를 따로 확인한다. 선언과 라이브 DB의 **모양**이 같은지,
-그리고 들어간 **값**이 말이 되는지다. 조회가 전부 성공하면서 값만 틀린 적이 있으므로
+그리고 들어간 **값**이 말이 되는지다. 조회가 전부 성공해도 값이 틀릴 수 있으므로
 한쪽만으로는 부족하다.
 
 ```powershell
@@ -564,7 +564,7 @@ lock file만 수동 삭제하면 checkpoint와 복구 정보가 어긋날 수 �
 
 core 환경 준비는 Live 활성화를 뜻하지 않는다. compile/test, DB 상태 조회, Shadow dry-run,
 kill-switch 상태 확인과 local secret/cache의 Git 제외가 확인되면 개발 환경이 준비된 것이다.
-단계별 실제 준비 범위는 [현재 구현 상태](V1_STATUS.md), 투자 논리는
+단계 정의는 [실행과 안전](EXECUTION_AND_SAFETY.md), 투자 논리는
 [투자 시스템](INVESTMENT_SYSTEM.md), 주문 안전은 [실행과 안전](EXECUTION_AND_SAFETY.md)을 본다.
 
 ## Research Actions 산출물과 로컬 운용

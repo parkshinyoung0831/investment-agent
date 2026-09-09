@@ -176,7 +176,6 @@ python -m investment_agent.operations.commands.reconcile_toss
 
 - [토스 실행과 단계별 안전](../../../docs/EXECUTION_AND_SAFETY.md)
 - [Operations](../../../docs/OPERATIONS.md)
-- [현재 구현 상태](../../../docs/V1_STATUS.md)
 
 ## 테스트
 

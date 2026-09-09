@@ -3,8 +3,7 @@
 `investment_agent.trading`는 구조화된 투자 근거를 분석 신호로 바꾸고, 그 신호를 포트폴리오와 검증 가능한
 위험 결정으로 변환하는 계층입니다. 증권사 credential을 갖거나 주문 API를 호출하지 않습니다.
 
-상위 불변 규칙은 [CONSTITUTION.md](CONSTITUTION.md), 날짜가 붙은 실제 준비 상태는
-[현재 구현 상태](../../../docs/V1_STATUS.md)를 봅니다.
+상위 불변 규칙은 [CONSTITUTION.md](CONSTITUTION.md)가 갖습니다.
 
 ## 이 package의 책임
 
@@ -327,5 +326,4 @@ python -m unittest tests.investment_agent.research.backtest.test_validation
 ```
 
 단위 테스트는 외부 provider, 실제 Supabase 쓰기, broker 계정을 호출하지 않습니다. 실제 연동은
-[운영](../../../docs/OPERATIONS.md)과 [현재 구현 상태](../../../docs/V1_STATUS.md)의 미검증
-항목을 확인한 뒤 단계별로 진행합니다.
+[운영](../../../docs/OPERATIONS.md)의 절차를 따라 단계별로 진행합니다.

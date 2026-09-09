@@ -4,7 +4,7 @@
 곳을 찾아간다 — 이름이 남아 있어도 그 대화·그 도구로는 **조회 자체가 불가능**해진다.
 
 각 저장소의 단일 선언은 `db/` 아래에 있고, 이 문서는 그 선언을 한 장으로 본 것이다.
-표 이름을 바꾸면 `python -m unittest tests.test_docs_consistency`가 문서와의 어긋남을 잡는다.
+문서가 선언에 없는 표를 부르면 `python -m unittest tests.test_docs_consistency`가 잡는다.
 
 ## 넷을 가르는 기준
 
@@ -68,24 +68,6 @@ Supabase                        ← GitHub Actions가 읽고 쓰는 유일한 �
 만든다.
 
 자세한 것은 [reporting/README.md](../src/investment_agent/reporting/README.md).
-
-## 옮겨간 이름
-
-과거 문서·프롬프트에 남아 있던 이름과 현재 자리다. 옛 이름으로 조회하면 **에러가 아니라
-빈 결과**가 오는 경우가 있어 특히 조용히 틀린다.
-
-| 옛 이름 | 지금 |
-|---|---|
-| `fundamentals.company_financials`, `fundamentals.financial_versions` | `fundamentals.financials` |
-| `fundamentals.v_company_metrics`, `v_security_valuation`, `mv_company_ttm` | 없음 — 원장에서 읽는 시점에 계산 |
-| `macro.observations`, `macro.observation_versions` | `macro.market_observations` · `macro.economic_observations` |
-| `universe.memberships`, `universe.sp500_membership_snapshots` | `universe.index_memberships` |
-| `notifications.outbox`, `notifications.deliveries` | SQLite `notification_outbox` · `notification_deliveries` |
-| `notifications.subscriptions` | 없음 — `DISCORD_CHANNEL_*` env와 `subscriptions.py`의 `KIND_ENV` |
-| `execution.control_state` | SQLite `execution_control` |
-| `execution.approval_requests` | SQLite `approvals` |
-| `trading.*` (model_versions·signals·proposals·risk_decisions) | SQLite 같은 이름 |
-| `tech_indicators`, `gurus`, `strategy` 스키마 | 없음 — DuckDB research / `institutional` 스키마 |
 
 ## 고칠 때 함께 볼 곳
 

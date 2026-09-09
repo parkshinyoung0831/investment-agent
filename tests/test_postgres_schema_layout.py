@@ -56,7 +56,7 @@ class PostgresSchemaLayoutTest(unittest.TestCase):
         )
         for path in (
             Path("docs/OPERATIONS.md"),
-            Path("docs/V1_STATUS.md"),
+            Path("docs/STORAGE_MAP.md"),
             Path("docs/AUTONOMOUS_SYSTEM.md"),
             Path("src/investment_agent/data/macro/releases/README.md"),
         ):

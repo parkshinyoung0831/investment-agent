@@ -62,8 +62,5 @@ GURUS_SHADOW_PARSER=on python -m investment_agent.data.institutional.commands.in
 - 운영 감시 목록(`operations/monitoring/channels.py`)도 같은 함수에서 나오므로,
   새 거장의 채널이 조용해지면 하트비트가 함께 묻는다.
 
-전에는 카탈로그·라우팅 표·manifest·GitHub 시크릿 네 곳을 함께 고쳐야 했고, 하나만
-빠뜨리면 그 사람의 카드가 갈 곳을 잃었다 — 그리고 그건 조용히 일어났다.
-
 `discord_admin` sync를 한 번 돌려 채널을 실제로 만들어야 카드가 그 포럼으로 간다.
 아직 없으면 요약 채널(`13f-요약`)로 떨어지고 그 이유가 로그에 남는다.

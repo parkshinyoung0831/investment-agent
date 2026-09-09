@@ -57,8 +57,7 @@ db/sqlite/runtime/v1/               로컬 실행·승인·알림 원장 선언
 db/duckdb/{research,intelligence}/v1/  로컬 연구·텍스트 저장소 선언
 ```
 
-저장소가 넷이라는 것이 이 시스템에서 가장 자주 오해되는 지점이다 — 무엇이 어디에 사는지는
-[docs/STORAGE_MAP.md](docs/STORAGE_MAP.md)가 한 장으로 갖는다.
+저장소는 넷이다. 무엇이 어디에 사는지는 [docs/STORAGE_MAP.md](docs/STORAGE_MAP.md)가 갖는다.
 
 ### 일부러 다르게 둔 모양
 
@@ -67,7 +66,7 @@ db/duckdb/{research,intelligence}/v1/  로컬 연구·텍스트 저장소 선언
 
 | 자주 나오는 제안 | 왜 안 하는가 | 지키는 것 |
 |---|---|---|
-| `config/*.toml` 층을 새로 만들기 | 참조 데이터는 최근에 DB→**코드** catalog로 옮긴 결과다. 게다가 hard risk limit(`trading/risk/gate.py`)이 편집 가능한 파일로 나가면 코드 리뷰 없이 라이브 게이트를 느슨하게 할 수 있다. 다만 **"같은 것을 두 곳이 주장한다"는 문제 자체는 실재했다** — 의존성 선언이 그랬고, 해결은 새 디렉터리가 아니라 이미 고른 자리(`pyproject.toml`)로 통일을 끝내는 것이었다 | `docs/ENV.md`(토글·비밀값) + 코드 catalog(참조 데이터) + `pyproject.toml`(의존성) |
+| `config/*.toml` 층을 새로 만들기 | 참조 데이터는 코드 catalog가 소유한다. hard risk limit(`trading/risk/gate.py`)이 편집 가능한 파일로 나가면 코드 리뷰 없이 라이브 게이트를 느슨하게 할 수 있다. 같은 것을 두 곳이 주장하는 문제는 새 디렉터리가 아니라 **이미 고른 자리로 통일**해서 푼다 | `docs/ENV.md`(토글·비밀값) + 코드 catalog(참조 데이터) + `pyproject.toml`(의존성) |
 | 워크플로 37→6개로 합치기 | 37개는 중복이 아니라 **서로 다른 스케줄 37개**다(장 마감 뒤·상류 뒤·혼잡 회피). 공통 설치 단계는 이미 `.github/actions/`로 빠져 31개가 그것을 쓴다. 합치면 cron이 `if:` 자기 게이트로 바뀐다 | 워크플로당 명시적 cron |
 | `notifications`를 `service.py`+`discord/`로 합치기 | 카드 패키지가 `render.py`/`templates/`를 공유하면 조용히 서로를 끌고 간다 — 규칙 15와 DESIGN-system.md가 그래서 분리를 강제한다. 공통 원시값은 이미 `notifications/quickchart.py`·`renderers/`·`channels/`에 있다 | 규칙 15, 알림별 패키지 |
 | research DuckDB를 4표로 줄이기 | 여덟 표는 세 묶음이다 — Parquet 뿌리 catalog 2, 연구 lineage 4, 전략 배분 2. 넷만 남기면 feature store 신선도와 월간 전략 계약이 사라진다 | `db/duckdb/research/v1/10_datasets.sql` 머리주석 |
@@ -252,9 +251,11 @@ python -m unittest tests.test_market_splits      # 단일 모듈
    Python 코드 안에서 검사하지 않습니다. *(테스트 강제)*
 8. **알림 실패는 ETL 결과를 가리지 않게.** 알림/ops 전송 실패는 잡아서 경고 로그만 남깁니다.
 9. **주석·docstring은 한국어**, 식별자·기술 용어는 영어.
-10. **주석은 "지금 왜 이런지"만.** "예전에는 X였다" 같은 경위 서술은 git이 갖고 있습니다.
-    같은 이유로 SQL 스키마 파일은 현재 모양만 선언합니다 — 적용이 끝난 `ALTER`/일회성
-    `UPDATE`는 `CREATE TABLE`에 접어 넣고 지웁니다.
+10. **주석·문서는 "지금 왜 이런지"만.** "예전에는 X였다" 같은 경위 서술은 git이 갖고
+    있습니다. 같은 이유로 SQL 스키마 파일은 현재 모양만 선언하고(적용이 끝난 `ALTER`·
+    일회성 `UPDATE`는 `CREATE TABLE`에 접어 넣고 지웁니다), 문서에는 날짜가 붙은 상태
+    보고서·이관 메모·마이그레이션 대조표를 남기지 않습니다. `.md`는 **이 코드가 무엇이고
+    왜 이 모양인지**만 담습니다.
 11. **워크플로 `name:`은 파일명과 같게**(snake_case). `workflow_run`의 `workflows:`가 이 이름을
     참조하는데, 한 번 어긋나면 조용히 발화하지 않습니다. *(테스트 강제)*
 12. **Discord는 선언이 SSOT입니다.** 채널·역할·안내문을 UI에서 고치지 않습니다.
@@ -272,7 +273,7 @@ python -m unittest tests.test_market_splits      # 단일 모듈
     - `universe.entities`의 산업분류는 **`sic_industry_name`/`sic_division_name`** — GICS 섹터가
       아니므로 `sector`라고 부르지 않습니다. `securities`에는 회사/SIC를 중복 저장하지 않습니다.
     - 스키마명을 테이블명이 반복하지 않습니다(`tech_indicators.tech_indicators_daily` ✗).
-    - 저장 형태(`_wide`)가 아니라 내용으로 이름 짓습니다 (`financial_versions`).
+    - 저장 형태(`_wide`)가 아니라 내용으로 이름 짓습니다 (`financials`, `share_class_snapshots`).
 15. **알림 패키지의 모양은 고정입니다.** `--kind X`가 부르는 것은 `<패키지>/run.py:run()`입니다.
     read model 조회는 `reporting/notifications/` 또는 원천 도메인의 저장소 owner가 담당하고,
     알림 패키지는 그 계약을 소비합니다. 패키지끼리 서로 import하지 않습니다. *(테스트 강제)*
@@ -285,13 +286,12 @@ python -m unittest tests.test_market_splits      # 단일 모듈
 있고, 목록과 사용법은 [docs/OPERATIONS.md](docs/OPERATIONS.md)에 있습니다.
 
 DB 검증은 **세 층이 서로 다른 질문에 답합니다** — 선언 적용 가능성(`v1_schema_probe`)·값
-(`verify_data`)·계약(`verify_integration`). 조회가 전부 성공하면서 값만 틀린 적이 있어
+(`verify_data`)·계약(`verify_integration`). 조회가 전부 성공해도 값이 틀릴 수 있으므로
 한 층으로는 부족합니다.
 
 ## 런타임 한계 (넘기면 조용히 틀립니다)
 
-예외를 던지지 않고 **성공한 척** 잘못된 결과를 주는 것들입니다. 배경과 대응은
-위 규칙은 이 문서와 스키마·통합 테스트가 기준입니다.
+예외를 던지지 않고 **성공한 척** 잘못된 결과를 주는 것들입니다.
 
 - **PostgREST 응답 1,000행 상한.** 대량 읽기는 반드시 `select_all_paged()`.
 - **PostgREST `authenticator` statement_timeout 8초.** 무거운 뷰는 기간·종목으로 좁힙니다.
@@ -349,8 +349,18 @@ hex를 인라인 하드코딩하지 말고 패키지별 `palette.py`/`thresholds
 ## 테스트
 
 - **표준 라이브러리 `unittest`** (`tests/test_*.py`, `tests/<pkg>/test_*.py`). pytest 설정 없음.
-- 순수 변환 로직을 외부 의존성 없이 검증합니다. **네트워크·DB를 때리지 마세요.**
+- 순수 변환 로직과 계약을 검증합니다. **네트워크·DB를 때리지 마세요.**
 - `python -m unittest discover -s tests -t .`로 전체 실행.
+- **가드를 쓰거나 고쳤으면 위반을 주입해 실패를 확인합니다.** 검사할 대상을 먼저 찾는
+  구조(정규식 상수·파일 수집)는 그 대상이 사라지면 실패하지 않고 **통과합니다.**
+  주입은 한 번에 하나씩 — 여러 개를 함께 넣으면 하나가 실패를 내는 동안 나머지가
+  확인되지 않은 채 지나갑니다.
+- 부작용이 아니라 **계약**을 묻습니다. 부작용은 환경(자격증명·네트워크·파일)에 따라
+  안 일어날 수 있고, 그러면 결함이 있어도 가드가 통과합니다.
+- 화면은 `DASHBOARD_OFFLINE=1`로 렌더해 검증합니다
+  (`tests/investment_agent/dashboard/test_page_wiring.py`).
+- 문서가 부르는 표 이름·상대 링크·제목 형식은
+  `tests/test_docs_consistency.py`가 강제합니다.
 
 ## 하지 말 것 (Don'ts)
 

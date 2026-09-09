@@ -361,7 +361,8 @@ python -m investment_agent.research.backtest.cli --input <INPUT.json> --output <
 `is_compatible=false`로 표시하며 차이를 평균 내거나 숨기지 않는다.
 
 adapter와 comparator 단위 테스트 통과는 장기간 실제 LumiBot run이 완료됐다는 뜻이 아니다.
-실제 준비 상태는 [현재 구현 상태](V1_STATUS.md)에서 구분한다.
+실제 실행 가능 여부는 `LIVE_ENABLED`·`TOSS_LIVE_ENABLED` 상태와
+[실행과 안전](EXECUTION_AND_SAFETY.md)의 단계 정의가 정한다.
 
 ## 평가와 승격 근거
 

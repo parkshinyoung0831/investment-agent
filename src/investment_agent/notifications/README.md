@@ -62,9 +62,8 @@ flowchart TD
 
 ### 수신 대상 구독
 알림 종류와 채널의 매핑은 `subscriptions.py`의 `KIND_ENV`가 소유합니다 — kind 하나에
-`DISCORD_CHANNEL_*` 환경변수 하나입니다. 한때 `notifications.subscriptions` 표에 같은 것을
-복제해 저장했지만 실사용이 전부 global(`security_id` 전부 NULL, `is_enabled` 전부 true)이라
-DB 왕복이 아무것도 더 말해 주지 않았습니다.
+`DISCORD_CHANNEL_*` 환경변수 하나이고, DB 표가 아닙니다. 종목별 구독이나 채널 비활성화가
+실제로 필요해지면 그때 저장소를 설계합니다.
 
 producer는 `discord_target(kind)`로 채널 하나를 받아 Outbox 목적지로 고정합니다. 채널이
 구성되지 않으면 조용히 건너뛰지 않고 실패합니다. **kind 하나에 채널은 하나**이므로 호출부가
