@@ -196,12 +196,43 @@ def collect_integrity_facts() -> dict:
         .select("accession_no,content_type,mapping_version,status"),
         order_by="accession_no,content_type,mapping_version",
     )
+    processing_accessions = sorted({
+        str(row.get("accession_no") or "") for row in processing_rows
+        if str(row.get("accession_no") or "")
+    })
+    filing_cik_by_accession = {
+        str(row["accession_no"]): str(row["cik"]).zfill(10)
+        for row in select_paged_in_chunks(
+            lambda chunk: sb.schema(SCHEMA_FUNDAMENTALS).table(T_FILINGS)
+            .select("accession_no,cik").in_("accession_no", chunk),
+            processing_accessions,
+            order_by="accession_no",
+        )
+        if row.get("accession_no") and row.get("cik")
+    } if processing_accessions else {}
     segment_accessions = {str(row["accession_no"]) for row in segment_rows}
     segment_processing = {
         str(row["accession_no"]): row for row in processing_rows
         if row.get("content_type") == "segments"
         and row.get("mapping_version") == segment_axes.SEGMENT_MAPPING_VERSION
     }
+    metric_ciks = {
+        str(row.get("cik") or "").zfill(10) for row in segment_rows
+        if row.get("cik")
+    }
+    terminal_segment_ciks = {
+        filing_cik_by_accession[str(row["accession_no"])]
+        for row in processing_rows
+        if row.get("content_type") == "segments"
+        and row.get("mapping_version") == segment_axes.SEGMENT_MAPPING_VERSION
+        and row.get("status") in {"parsed", "empty", "unsupported"}
+        and str(row.get("accession_no") or "") in filing_cik_by_accession
+    }
+    missing_segment_state_tickers = sorted(
+        str(row["ticker"]) for row in securities
+        if str(row.get("cik") or "").zfill(10)
+        not in metric_ciks | terminal_segment_ciks
+    )
     segment_integrity = {
         "metric_rows": len(segment_rows),
         "filing_rows": len(segment_processing),
@@ -210,11 +241,8 @@ def collect_integrity_facts() -> dict:
             if row.get("content_type") == "segments"
             and row.get("mapping_version") != segment_axes.SEGMENT_MAPPING_VERSION
         ),
-        "tracked_without_filing_rows": sum(
-            1 for row in securities
-            if str(row.get("cik") or "").zfill(10)
-            not in {str(metric.get("cik")) for metric in segment_rows}
-        ),
+        "tracked_without_filing_rows": len(missing_segment_state_tickers),
+        "tracked_without_segment_state_tickers": missing_segment_state_tickers,
         "orphan_metric_rows": sum(
             1 for accession in segment_accessions if accession not in segment_processing
         ),
