@@ -6,6 +6,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 import streamlit as st
+from streamlit.errors import StreamlitAPIException
 
 
 _HTML = """
@@ -527,7 +528,7 @@ def animated_pipeline(
     }
     try:
         _ANIMATED_PIPELINE(**mount_options)
-    except ValueError as exc:
+    except StreamlitAPIException as exc:
         # AppTest는 테스트별로 런타임 레지스트리를 비우지만 Python 모듈은
         # 재사용한다. 실제 앱의 일반 rerun에는 재등록하지 않는다.
         if "is not registered" not in str(exc):

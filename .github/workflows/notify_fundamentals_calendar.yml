@@ -22,7 +22,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: notify-fundamentals-calendar
+  group: notify-fundamentals
   cancel-in-progress: false
 
 jobs:
@@ -34,6 +34,10 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       DISCORD_CHANNEL_EARNINGS_CALENDAR: ${{ secrets.DISCORD_CHANNEL_EARNINGS_CALENDAR }}
+      # 주간 요약은 캘린더 채널에, 종목별 예정 안내는 실적 포럼 스레드에 남긴다.
+      # 이 값이 없으면 요약 카드만 보내고 세부 예정 알림을 조용히 건너뛴다.
+      DISCORD_CHANNEL_EARNINGS: ${{ secrets.DISCORD_CHANNEL_EARNINGS }}
+      DISCORD_GUILD_ID: ${{ secrets.DISCORD_GUILD_ID }}
       FUNDAMENTALS_CALENDAR_FORCE: ${{ inputs.force || 'false' }}
       LOG_LEVEL: INFO
       PYTHONUNBUFFERED: "1"
@@ -44,6 +48,10 @@ jobs:
       - uses: ./.github/actions/python-job
         with:
           group: notifications
+
+      - uses: ./.github/actions/runtime-ledger
+        with:
+          scope: fundamentals
 
       - name: Validate Supabase secrets
         run: |
@@ -65,9 +73,12 @@ jobs:
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
         run: |
           test -n "$DISCORD_BOT_TOKEN"
+          test -n "$DISCORD_GUILD_ID"
       - name: Validate notification subscription
         if: steps.pending.outputs.should_notify == 'true'
-        run: python -m investment_agent.operations.commands.validate_subscriptions --kind fundamentals_calendar
+        run: >-
+          python -m investment_agent.operations.commands.validate_subscriptions
+          --kind fundamentals_calendar --kind fundamentals_schedule
 
       - name: Install notification dependencies
         if: steps.pending.outputs.should_notify == 'true'

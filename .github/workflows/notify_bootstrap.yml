@@ -45,6 +45,7 @@ jobs:
       DISCORD_CHANNEL_GURUS: ${{ secrets.DISCORD_CHANNEL_GURUS }}
       # 거장 공시는 포럼 하나에 사람마다 스레드 하나로 쌓인다.
       DISCORD_CHANNEL_GURU_FORUM: ${{ secrets.DISCORD_CHANNEL_GURU_FORUM }}
+      DISCORD_GUILD_ID: ${{ secrets.DISCORD_GUILD_ID }}
       DISCORD_CHANNEL_STRATEGY_MONTHLY: ${{ secrets.DISCORD_CHANNEL_STRATEGY_MONTHLY }}
       DISCORD_CHANNEL_STRATEGY_FORUM: ${{ secrets.DISCORD_CHANNEL_STRATEGY_FORUM }}
       DISCORD_CHANNEL_AI_REPORTS: ${{ secrets.DISCORD_CHANNEL_AI_REPORTS }}
@@ -54,7 +55,10 @@ jobs:
       - uses: ./.github/actions/python-job
         with:
           group: notifications
-          require-env: "SUPABASE_URL SUPABASE_SERVICE_KEY DISCORD_BOT_TOKEN"
+          require-env: "SUPABASE_URL SUPABASE_SERVICE_KEY DISCORD_BOT_TOKEN DISCORD_GUILD_ID"
+      - uses: ./.github/actions/runtime-ledger
+        with:
+          scope: bootstrap
       - uses: ./.github/actions/card-render
         with:
           cache-key: uv.lock

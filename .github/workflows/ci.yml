@@ -26,18 +26,18 @@ jobs:
       - name: Install dependency group
         run: |
           python -m pip install uv==0.12.10
-          uv sync --locked --no-dev --group dev
+          uv sync --locked --group dev
           echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
       - name: Install offline test dependencies
         run: true # dev group prepared above
       - name: Compile Python modules
-        run: python -m compileall -q src tests
+        run: uv run python -m compileall -q src tests
       - name: Run offline unit tests
         env:
           TRADING_KILL_SWITCH: "on"
           LIVE_ENABLED: "false"
           AI_INVESTOR_EXTERNAL_NEWS_SOCIAL: "false"
-        run: python -m unittest discover -s tests
+        run: uv run python -m unittest discover -s tests -t .
 
   notify-error:
     if: ${{ failure() || cancelled() }}

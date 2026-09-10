@@ -18,7 +18,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: notify_econ_calendar_release
+  group: notify-econ-calendar-release
   cancel-in-progress: false
 
 jobs:
@@ -38,6 +38,9 @@ jobs:
         with:
           group: notifications
           require-env: "SUPABASE_URL SUPABASE_SERVICE_KEY DISCORD_BOT_TOKEN"
+      - uses: ./.github/actions/runtime-ledger
+        with:
+          scope: macro-releases
       - name: Validate notification subscription
         run: python -m investment_agent.operations.commands.validate_subscriptions --kind econ_calendar_release
       - name: Dispatch notify

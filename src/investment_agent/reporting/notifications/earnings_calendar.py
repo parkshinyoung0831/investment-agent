@@ -92,5 +92,16 @@ class EarningsCalendarStore:
             and str(row.get("notification_key", "")).startswith("calendar:")
         }
 
+    def sent_schedule_keys(self) -> set[str]:
+        """이미 등록된 종목별 일정 outbox 키를 읽는다."""
+        rows = read_runtime_rows("notification_outbox")
+        return {
+            str(row["notification_key"])
+            for row in rows
+            if row.get("producer") == "fundamentals"
+            and row.get("kind") == "fundamentals_schedule"
+            and row.get("status") in {"pending", "sent", "abandoned"}
+        }
+
 
 __all__ = ["EarningsCalendarStore"]

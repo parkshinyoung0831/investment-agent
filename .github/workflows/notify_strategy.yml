@@ -31,6 +31,7 @@ jobs:
       DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
       DISCORD_CHANNEL_STRATEGY_MONTHLY: ${{ secrets.DISCORD_CHANNEL_STRATEGY_MONTHLY }}
       DISCORD_CHANNEL_STRATEGY_FORUM: ${{ secrets.DISCORD_CHANNEL_STRATEGY_FORUM }}
+      DISCORD_GUILD_ID: ${{ secrets.DISCORD_GUILD_ID }}
     steps:
       - name: Decide whether to run
         id: gate
@@ -49,7 +50,11 @@ jobs:
         uses: ./.github/actions/python-job
         with:
           group: notifications
-          require-env: SUPABASE_URL SUPABASE_SERVICE_KEY DISCORD_BOT_TOKEN
+          require-env: SUPABASE_URL SUPABASE_SERVICE_KEY DISCORD_BOT_TOKEN DISCORD_GUILD_ID
+      - if: steps.gate.outputs.should_run == 'true'
+        uses: ./.github/actions/runtime-ledger
+        with:
+          scope: strategy
       - name: Validate notification subscriptions
         if: steps.gate.outputs.should_run == 'true'
         run: >-

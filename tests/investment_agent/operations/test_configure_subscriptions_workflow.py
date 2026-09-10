@@ -36,10 +36,12 @@ class StrategyWorkflowOrderingTest(unittest.TestCase):
             ),
             "notify_fundamentals.yml": (
                 "--kind fundamentals_flash", "--kind fundamentals_earnings",
-                "DISCORD_CHANNEL_EARNINGS",
+                "DISCORD_CHANNEL_EARNINGS", "DISCORD_GUILD_ID",
             ),
             "notify_fundamentals_calendar.yml": (
-                "--kind fundamentals_calendar", "DISCORD_CHANNEL_EARNINGS_CALENDAR",
+                "--kind fundamentals_calendar", "--kind fundamentals_schedule",
+                "DISCORD_CHANNEL_EARNINGS_CALENDAR", "DISCORD_CHANNEL_EARNINGS",
+                "DISCORD_GUILD_ID",
             ),
             "notify_investment.yml": (
                 "--kind investment_portfolio", "--kind investment_candidates",
@@ -49,11 +51,9 @@ class StrategyWorkflowOrderingTest(unittest.TestCase):
             "notify_strategy.yml": (
                 "--kind strategy_summary", "--kind strategy",
                 "DISCORD_CHANNEL_STRATEGY_MONTHLY", "DISCORD_CHANNEL_STRATEGY_FORUM",
+                "DISCORD_GUILD_ID",
             ),
             "institutional_13f.yml": ("--kind institutional", "DISCORD_CHANNEL_GURUS"),
-            "fundamentals_earnings_watch.yml": (
-                "--kind fundamentals_flash", "DISCORD_CHANNEL_EARNINGS",
-            ),
             "econ_calendar_watch.yml": (
                 "--kind econ_calendar_release", "DISCORD_CHANNEL_ECON_CALENDAR_RELEASE",
             ),

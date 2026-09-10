@@ -23,7 +23,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: notify_macro_core
+  group: notify-macro
   cancel-in-progress: false
 
 jobs:
@@ -50,6 +50,9 @@ jobs:
         with:
           group: notifications
           require-env: "SUPABASE_URL SUPABASE_SERVICE_KEY DISCORD_BOT_TOKEN"
+      - uses: ./.github/actions/runtime-ledger
+        with:
+          scope: macro
       - name: Validate notification subscription
         run: python -m investment_agent.operations.commands.validate_subscriptions --kind macro_core
       - uses: ./.github/actions/card-render

@@ -100,6 +100,70 @@ class PriceCollectionContractTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "incoherent OHLC"):
             source._validate_price_rows(repaired, ["BAD"])
 
+    def test_download_quarantines_one_bad_bar_and_keeps_the_ticker(self) -> None:
+        raw = pd.DataFrame(
+            {
+                ("DTE", "Open"): [100.0, 100.0, 102.0],
+                ("DTE", "High"): [101.0, 90.0, 103.0],
+                ("DTE", "Low"): [99.0, 99.0, 101.0],
+                ("DTE", "Close"): [100.0, 100.0, 102.0],
+                ("DTE", "Adj Close"): [100.0, 100.0, 102.0],
+                ("DTE", "Volume"): [100, 100, 100],
+                ("DTE", "Dividends"): [0.0, 0.0, 0.0],
+                ("DTE", "Stock Splits"): [0.0, 0.0, 0.0],
+            },
+            index=pd.to_datetime(["2026-09-07", "2026-09-08", "2026-09-09"]),
+        )
+        raw.columns = pd.MultiIndex.from_tuples(raw.columns)
+
+        with (
+            mock.patch.object(source, "_yf_download", return_value=raw),
+            mock.patch.object(
+                source, "completed_bar_cutoff", return_value=date(2026, 9, 9)
+            ),
+            mock.patch.object(
+                source,
+                "normalize_split_adjusted_prices",
+                side_effect=lambda rows: rows,
+            ),
+        ):
+            rows = source.download_ohlcv(["DTE"], 7)
+
+        self.assertEqual(
+            ["2026-09-07", "2026-09-09"],
+            [row["trade_date"] for row in rows],
+        )
+
+    def test_download_rejects_a_ticker_with_only_bad_bars(self) -> None:
+        raw = pd.DataFrame(
+            {
+                ("DTE", "Open"): [100.0],
+                ("DTE", "High"): [90.0],
+                ("DTE", "Low"): [99.0],
+                ("DTE", "Close"): [100.0],
+                ("DTE", "Adj Close"): [100.0],
+                ("DTE", "Volume"): [100],
+                ("DTE", "Dividends"): [0.0],
+                ("DTE", "Stock Splits"): [0.0],
+            },
+            index=pd.to_datetime(["2026-09-08"]),
+        )
+        raw.columns = pd.MultiIndex.from_tuples(raw.columns)
+
+        with (
+            mock.patch.object(source, "_yf_download", return_value=raw),
+            mock.patch.object(
+                source, "completed_bar_cutoff", return_value=date(2026, 9, 9)
+            ),
+            mock.patch.object(
+                source,
+                "normalize_split_adjusted_prices",
+                side_effect=lambda rows: rows,
+            ),
+            self.assertRaisesRegex(RuntimeError, "coverage incomplete"),
+        ):
+            source.download_ohlcv(["DTE"], 7)
+
     def test_download_validates_split_continuity_before_returning(self) -> None:
         raw = pd.DataFrame(
             {

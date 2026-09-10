@@ -21,7 +21,8 @@ from investment_agent.reporting.services.earnings import schedule as metrics
 class CalendarPreflightTests(unittest.TestCase):
     def test_preflight_reads_only_keys_the_real_state_provides(self) -> None:
         # 관심종목이 비면 collect가 조회 없이 끝난다 — 네트워크·DB를 때리지 않는다.
-        store = Mock(watchlist_members=lambda: [], sent_weeks=lambda: set())
+        store = Mock(watchlist_members=lambda: [], sent_weeks=lambda: set(),
+                     sent_schedule_keys=lambda: set())
         with patch.object(candidates, "_default_store", return_value=store):
             state = candidates.pending_state()
 
@@ -32,23 +33,36 @@ class CalendarPreflightTests(unittest.TestCase):
             self.assertEqual(output.read_text(encoding="utf-8"), "should_notify=false\n")
 
     def test_pending_state_keys_are_the_contract(self) -> None:
-        store = Mock(watchlist_members=lambda: [], sent_weeks=lambda: set())
+        store = Mock(watchlist_members=lambda: [], sent_weeks=lambda: set(),
+                     sent_schedule_keys=lambda: set())
         with patch.object(candidates, "_default_store", return_value=store):
             state = candidates.pending_state()
         self.assertEqual(
-            set(state), {"iso_week", "upcoming_releases", "should_notify"}
+            set(state), {"iso_week", "upcoming_releases", "schedule_updates", "should_notify"}
         )
         self.assertEqual(state["iso_week"], metrics.iso_week(date.today()))
         self.assertEqual(state["upcoming_releases"], 0)
+        self.assertEqual(state["schedule_updates"], 0)
         self.assertFalse(state["should_notify"])
 
     def test_output_says_true_when_something_is_waiting(self) -> None:
         row = {"ticker": "TEST"}
-        store = Mock(sent_weeks=lambda: set())
+        store = Mock(sent_weeks=lambda: set(), sent_schedule_keys=lambda: set())
         with patch.object(candidates, "collect", return_value=([row], None, "2026-W36")):
             state = candidates.pending_state(store=store)
         self.assertTrue(state["should_notify"])
         self.assertEqual(state["upcoming_releases"], 1)
+        self.assertEqual(state["schedule_updates"], 0)
+
+    def test_sent_week_with_a_new_schedule_still_runs_dispatch(self) -> None:
+        row = {"ticker": "TEST", "expected": "2026-09-08", "target_fiscal_year": 2026,
+               "target_fiscal_period": "Q3"}
+        store = Mock(sent_weeks=lambda: {"2026-W36"}, sent_schedule_keys=lambda: set())
+        with patch.object(candidates, "collect", return_value=([row], None, "2026-W36")):
+            state = candidates.pending_state(store=store)
+
+        self.assertEqual(state["schedule_updates"], 1)
+        self.assertTrue(state["should_notify"])
 
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "github-output.txt"

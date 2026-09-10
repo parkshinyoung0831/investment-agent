@@ -19,6 +19,18 @@ _WORKFLOWS = Path(__file__).resolve().parents[1] / ".github" / "workflows"
 _PROJECT_ROOT = _WORKFLOWS.parents[1]
 # 관심종목 공시를 실제로 Discord로 보내는 워크플로. 서로 겹치면 중복 발송이 난다.
 _EARNINGS_SENDERS = ("notify_fundamentals",)
+_RUNTIME_LEDGER_SCOPES = {
+    "notify_macro_core": "macro",
+    "notify_macro_watch": "macro",
+    "notify_fundamentals": "fundamentals",
+    "notify_fundamentals_calendar": "fundamentals",
+    "notify_econ_calendar_release": "macro-releases",
+    "econ_calendar_watch": "macro-releases",
+    "institutional_13f": "institutional",
+    "notify_strategy": "strategy",
+    "notify_bootstrap": "bootstrap",
+    "notify_investment": "investment",
+}
 
 
 def _text(name: str) -> str:
@@ -450,6 +462,71 @@ class SharedSetupTest(unittest.TestCase):
             if "actions/setup-python" not in (_WORKFLOWS / name).read_text(encoding="utf-8")
         )
         self.assertEqual([], stale)
+
+    def test_ci_installs_dev_and_discovers_from_the_project_root(self):
+        """tests 패키지가 src 패키지를 가리는 300여 import 오류를 막는다."""
+        text = _text("ci")
+
+        self.assertIn("uv sync --locked --group dev", text)
+        self.assertNotIn("uv sync --locked --no-dev --group dev", text)
+        self.assertIn(
+            "uv run python -m unittest discover -s tests -t .",
+            text,
+        )
+
+
+class RuntimeLedgerWorkflowTest(unittest.TestCase):
+    ACTION = _WORKFLOWS.parents[0] / "actions" / "runtime-ledger" / "action.yml"
+
+    def test_runtime_ledger_action_restores_then_initializes_sqlite(self):
+        text = self.ACTION.read_text(encoding="utf-8")
+
+        self.assertIn("uses: actions/cache@v4", text)
+        self.assertIn("data/local/runtime", text)
+        self.assertIn("${{ inputs.scope }}", text)
+        self.assertIn("${{ github.run_id }}-${{ github.run_attempt }}", text)
+        self.assertIn(
+            "python -m investment_agent.operations.commands.runtime_init",
+            text,
+        )
+
+    def test_every_hosted_runtime_reader_prepares_the_expected_ledger(self):
+        for name, scope in _RUNTIME_LEDGER_SCOPES.items():
+            with self.subTest(workflow=name):
+                text = _text(name)
+                setup_at = text.index("uses: ./.github/actions/python-job")
+                ledger_at = text.index("uses: ./.github/actions/runtime-ledger")
+                self.assertGreater(ledger_at, setup_at)
+                self.assertRegex(
+                    text[ledger_at:],
+                    rf"with:\s*\n\s*scope:\s*{re.escape(scope)}(?:\s|$)",
+                )
+
+    def test_shared_producers_share_concurrency_groups(self):
+        for names in (
+            ("notify_macro_core", "notify_macro_watch"),
+            ("notify_fundamentals", "notify_fundamentals_calendar"),
+            ("notify_econ_calendar_release", "econ_calendar_watch"),
+        ):
+            groups = {
+                re.search(r"(?m)^\s*group:\s*([^\s]+)", _text(name)).group(1)
+                for name in names
+            }
+            with self.subTest(workflows=names):
+                self.assertEqual(1, len(groups))
+
+    def test_earnings_watcher_leaves_discord_to_followup_notifier(self):
+        text = _text("fundamentals_earnings_watch")
+
+        self.assertNotIn("--notify", text)
+        self.assertIn(
+            'workflows: ["fundamentals_daily", "fundamentals_watchlist_fast", "fundamentals_earnings_watch"]',
+            _text("notify_fundamentals"),
+        )
+
+    def test_investment_notifier_is_manual_only_because_its_source_is_local(self):
+        self.assertEqual([], _crons("notify_investment"))
+        self.assertIn("workflow_dispatch:", _text("notify_investment"))
 
 
 class KillSwitchTest(unittest.TestCase):

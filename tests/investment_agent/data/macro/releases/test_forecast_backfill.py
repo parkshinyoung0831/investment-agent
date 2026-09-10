@@ -15,7 +15,8 @@ class HistoricalForecastTest(unittest.TestCase):
         from investment_agent.data.macro.infrastructure.releases.sources import actuals, alfred
 
         setting = {"series_id": "EIA_CRUDE_OIL_INVENTORIES", "actual_provider": "eia", "revision_provider": "none"}
-        with (patch.object(db, "configure"),
+        with (patch("investment_agent.platform.db.postgres.Database.from_config"),
+              patch.object(db, "configure"),
               patch.object(db, "seed_catalog"),
               patch.object(db, "collectible_series", return_value=[setting]),
               patch.object(alfred, "fetch_batch", return_value=({}, [])),

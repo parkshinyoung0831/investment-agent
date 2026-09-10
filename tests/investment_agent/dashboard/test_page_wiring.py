@@ -12,12 +12,14 @@ import·모듈 최상단 계산·레이아웃·자산 경로가 전부 실행된
 """
 from __future__ import annotations
 
+import re
 import unittest
 from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 PAGES = ROOT / "src" / "investment_agent" / "dashboard" / "app_pages"
+ENTRYPOINT = ROOT / "src" / "investment_agent" / "dashboard" / "app.py"
 
 OFFLINE_ENV = {
     "DASHBOARD_OFFLINE": "1",
@@ -27,7 +29,9 @@ OFFLINE_ENV = {
 
 
 def _page_files() -> list[Path]:
-    return sorted(path for path in PAGES.glob("*.py") if path.stem != "__init__")
+    entrypoint = ENTRYPOINT.read_text(encoding="utf-8")
+    registered = re.findall(r'st\.Page\("app_pages/([^"/]+\.py)"', entrypoint)
+    return [PAGES / name for name in registered]
 
 
 class PageRenderTest(unittest.TestCase):
@@ -43,8 +47,12 @@ class PageRenderTest(unittest.TestCase):
         offenders: list[str] = []
         for path in _page_files():
             with mock.patch.dict("os.environ", OFFLINE_ENV):
-                app = AppTest.from_file(str(path), default_timeout=120)
+                # st.navigation 페이지는 진입점에서 먼저 등록해야 상대 경로와
+                # CCv2 component registry가 실제 앱과 같은 수명주기를 갖는다.
+                app = AppTest.from_file(str(ENTRYPOINT), default_timeout=120)
                 app.run()
+                if path.stem != "home":
+                    app.switch_page(f"app_pages/{path.name}").run()
             for problem in app.exception:
                 message = " ".join(str(problem.message or "").split())[:200]
                 offenders.append(f"{path.stem}: {problem.type}: {message}")
