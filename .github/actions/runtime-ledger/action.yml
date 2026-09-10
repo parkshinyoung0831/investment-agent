@@ -12,7 +12,7 @@ runs:
     # A cache key is immutable. Every run therefore writes a unique key and restores
     # the newest prior key through the stable producer prefix below.
     - name: Restore runtime ledger
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: data/local/runtime
         key: ${{ runner.os }}-runtime-${{ inputs.scope }}-${{ github.run_id }}-${{ github.run_attempt }}

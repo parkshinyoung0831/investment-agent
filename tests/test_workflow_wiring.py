@@ -481,7 +481,7 @@ class RuntimeLedgerWorkflowTest(unittest.TestCase):
     def test_runtime_ledger_action_restores_then_initializes_sqlite(self):
         text = self.ACTION.read_text(encoding="utf-8")
 
-        self.assertIn("uses: actions/cache@v4", text)
+        self.assertIn("uses: actions/cache@v5", text)
         self.assertIn("data/local/runtime", text)
         self.assertIn("${{ inputs.scope }}", text)
         self.assertIn("${{ github.run_id }}-${{ github.run_attempt }}", text)
