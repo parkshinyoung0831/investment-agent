@@ -375,6 +375,7 @@ def backfill_segment_history(
         ),
         "source_accessions_skipped": len(skip_accessions),
         "reports_discovered": 0,
+        "deferred_ciks": [],
         "failures": [],
         "unmapped_concepts": set(),
         "scope": scope,
@@ -489,7 +490,7 @@ def backfill_segment_history(
                 "source_file": batch.source_file,
                 "error": repr(exc),
             })
-    if source_ciks and scope in {"all", "missing"} and not metrics["reports_discovered"]:
+    if source_ciks and scope == "all" and not metrics["reports_discovered"]:
         metrics["failures"].append({
             "source_file": None,
             "error": (
@@ -498,6 +499,17 @@ def backfill_segment_history(
                 f"scope={scope}, cutoff={cutoff.isoformat()})"
             ),
         })
+    elif source_ciks and scope == "missing" and not metrics["reports_discovered"]:
+        # SEC 분기 벌크 파일은 최신 일별 공시보다 늦게 공개된다. 이 경우는
+        # 실시간 dimensions 동기화가 보충하므로 워크플로 실패로 올리지 않는다.
+        metrics["deferred_ciks"] = sorted(source_ciks)
+        log.info(
+            "segments backfill deferred until SEC bulk data is published: "
+            "ciks=%d period=%s cutoff=%s",
+            len(source_ciks),
+            period_kind,
+            cutoff.isoformat(),
+        )
     return metrics
 
 

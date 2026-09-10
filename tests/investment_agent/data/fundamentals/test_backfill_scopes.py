@@ -95,6 +95,33 @@ class _CompanyRepository:
     def processed_filing_accessions(self) -> dict[str, set[str]]:
         return self._processed
 
+
+class _SegmentSource:
+    """최신 SEC 벌크 파일에 아직 공시가 반영되지 않은 상태를 재현한다."""
+
+    def ensure_data(self, *, cutoff: date) -> None:
+        self.cutoff = cutoff
+
+    def iter_batches(self, **_kwargs):
+        return iter(())
+
+
+class _SegmentRepository:
+    def tracked_ciks(self) -> set[str]:
+        return {"0000000001"}
+
+    def ciks_for_tickers(self, tickers: set[str]) -> set[str]:
+        if tickers != {"TEST"}:
+            raise ValueError("requested tickers are not in the tracked CIK universe")
+        return {"0000000001"}
+
+    def existing_accessions(self, _forms: tuple[str, str]) -> dict[str, set[str]]:
+        return {}
+
+    def ciks_missing_segments(self, _period_kind: str) -> set[str]:
+        return {"0000000001"}
+
+
 class BackfillScopeTest(unittest.TestCase):
     def test_company_default_window_is_ten_years(self) -> None:
         window = resolve_backfill_window(
@@ -239,6 +266,20 @@ class BackfillScopeTest(unittest.TestCase):
         )
 
         repository.reconcile_wide_history.assert_not_called()
+
+    def test_missing_segment_bulk_lag_is_deferred_without_failure(self) -> None:
+        """최신 분기 벌크 파일의 지연은 실시간 수집이 보충하므로 장애가 아니다."""
+        result = backfill_history.backfill_segment_history(
+            "quarter",
+            source=_SegmentSource(),
+            repository=_SegmentRepository(),
+            scope="missing",
+            target_tickers={"TEST"},
+        )
+
+        self.assertEqual(result["reports_discovered"], 0)
+        self.assertEqual(result["failures"], [])
+        self.assertEqual(result["deferred_ciks"], ["0000000001"])
 
 class BulkFilingContractTest(unittest.TestCase):
     """세그먼트 백필은 secfsdstools 파케이를 직접 읽는다. `sub` 컬럼 이름이
