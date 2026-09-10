@@ -1,4 +1,4 @@
-# Actions Discord Notification Recovery Implementation Plan
+# Actions Discord Notification Recovery — 구현 계획
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
