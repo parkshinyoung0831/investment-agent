@@ -39,6 +39,7 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       DISCORD_CHANNEL_EARNINGS: ${{ secrets.DISCORD_CHANNEL_EARNINGS }}
+      DISCORD_GUILD_ID: ${{ secrets.DISCORD_GUILD_ID }}
       FUNDAMENTALS_NOTIFY_LOOKBACK_DAYS: ${{ inputs.lookback_days || '7' }}
       LOG_LEVEL: INFO
       PYTHONUNBUFFERED: "1"
@@ -74,6 +75,7 @@ jobs:
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
         run: |
           test -n "$DISCORD_BOT_TOKEN"
+          test -n "$DISCORD_GUILD_ID"
 
       - name: Validate flash notification subscription
         if: steps.pending.outputs.should_flash == 'true'
