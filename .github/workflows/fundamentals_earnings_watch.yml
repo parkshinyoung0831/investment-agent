@@ -5,10 +5,8 @@ name: fundamentals_earnings_watch
 # 왜 두 번인가: 장전 발표는 06:00~09:30 ET, 장후 발표는 16:00~17:30 ET에 접수된다.
 # 하루 한 번만 훑으면 장전 발표가 최대 15시간 늦게 잡힌다. 세션마다 한 번씩 건다.
 #
-# 이 워크플로는 **안전망**이다. 노트북(로컬 하네스)이 켜져 있으면 같은 진입점을
-# 세션 창 안에서 짧은 주기로 돌려 훨씬 먼저 잡는다. 둘이 겹쳐 돌아도
-# notification producer가 Discord 발송 **전에** notifications.outbox 자리를
-# 선점하므로 정확히 한 쪽만 보낸다.
+# 이 워크플로는 **수집 안전망**이다. 완료 뒤 `notify_fundamentals`가 발화해
+# producer-scoped runtime 원장을 복원하고 Discord 발송을 담당한다.
 on:
   schedule:
     # 1차 — 13:00 UTC = 22:00 KST = 09:00 ET. 장전(BMO) 발표가 끝난 직후.
@@ -44,8 +42,6 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       EDGAR_USER_AGENT: ${{ secrets.EDGAR_USER_AGENT || vars.EDGAR_USER_AGENT }}
-      DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
-      DISCORD_CHANNEL_EARNINGS: ${{ secrets.DISCORD_CHANNEL_EARNINGS }}
       LOG_LEVEL: INFO
       PYTHONUNBUFFERED: "1"
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
@@ -55,10 +51,7 @@ jobs:
       - uses: ./.github/actions/python-job
         with:
           group: notifications
-          require-env: "SUPABASE_URL SUPABASE_SERVICE_KEY EDGAR_USER_AGENT DISCORD_BOT_TOKEN"
-
-      - name: Validate flash notification subscription
-        run: python -m investment_agent.operations.commands.validate_subscriptions --kind fundamentals_flash
+          require-env: "SUPABASE_URL SUPABASE_SERVICE_KEY EDGAR_USER_AGENT"
 
       # cron으로 들어오면 어느 스케줄이 깨웠는지로 세션을 정한다. auto도 같은 답을
       # 내지만, 워크플로 로그에 의도가 남는 편이 사후 추적에 낫다.
@@ -75,7 +68,6 @@ jobs:
         run: >-
           python -m investment_agent.operations.commands.watch_earnings
           --session "${{ steps.resolve.outputs.session }}"
-          --notify
           --poll-attempts 5
 
   notify-error:

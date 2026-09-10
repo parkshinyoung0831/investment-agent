@@ -51,6 +51,9 @@ jobs:
         with:
           group: notifications
           require-env: "SUPABASE_URL SUPABASE_SERVICE_KEY EDGAR_USER_AGENT"
+      - uses: ./.github/actions/runtime-ledger
+        with:
+          scope: institutional
       - name: Validate secret formats
         run: |
           printf '%s' "$EDGAR_USER_AGENT" | grep -qiE '[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}'

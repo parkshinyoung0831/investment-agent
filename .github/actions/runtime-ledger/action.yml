@@ -1,0 +1,26 @@
+name: runtime-ledger
+description: Restore, initialize, and persist one producer's runtime SQLite ledger.
+
+inputs:
+  scope:
+    description: Stable notification producer scope used to partition the cache.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # A cache key is immutable. Every run therefore writes a unique key and restores
+    # the newest prior key through the stable producer prefix below.
+    - name: Restore runtime ledger
+      uses: actions/cache@v4
+      with:
+        path: data/local/runtime
+        key: ${{ runner.os }}-runtime-${{ inputs.scope }}-${{ github.run_id }}-${{ github.run_attempt }}
+        restore-keys: |
+          ${{ runner.os }}-runtime-${{ inputs.scope }}-
+
+    # Notification readers deliberately open SQLite in mode=ro. Initializing here
+    # preserves that fail-closed contract while making a fresh hosted runner valid.
+    - name: Initialize runtime ledger
+      shell: bash
+      run: uv run python -m investment_agent.operations.commands.runtime_init

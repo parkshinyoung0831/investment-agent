@@ -177,6 +177,28 @@ def _validate_price_rows(rows: list[dict], tickers: list[str]) -> None:
         raise RuntimeError(f"yfinance invalid price rows: {invalid[:10]}")
 
 
+def _quarantine_invalid_price_rows(rows: list[dict]) -> list[dict]:
+    """Drop isolated malformed bars while leaving batch-level checks strict."""
+    accepted: list[dict] = []
+    rejected: list[tuple[str, str, str]] = []
+    for row in rows:
+        ticker = str(row.get("ticker") or "")
+        trade_date = str(row.get("trade_date") or "")
+        try:
+            _validate_price_rows([row], [ticker])
+        except (KeyError, OverflowError, RuntimeError, TypeError, ValueError) as exc:
+            rejected.append((ticker, trade_date, str(exc)))
+        else:
+            accepted.append(row)
+    if rejected:
+        log.warning(
+            "quarantined %d invalid yfinance price row(s): %s",
+            len(rejected),
+            rejected[:10],
+        )
+    return accepted
+
+
 def download_ohlcv(tickers: list[str], lookback_days: int) -> list[dict]:
     """Return validated, split-normalized daily bars for every requested ticker."""
     if not tickers:
@@ -200,7 +222,9 @@ def download_ohlcv(tickers: list[str], lookback_days: int) -> list[dict]:
             dropped,
             cutoff,
         )
-    rows = _repair_small_ohlc_bound_errors(completed_rows)
+    rows = _quarantine_invalid_price_rows(
+        _repair_small_ohlc_bound_errors(completed_rows)
+    )
 
     grouped: dict[str, list[dict]] = defaultdict(list)
     for row in rows:

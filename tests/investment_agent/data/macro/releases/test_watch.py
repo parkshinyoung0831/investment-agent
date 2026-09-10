@@ -90,6 +90,7 @@ class ReleaseWatchTest(unittest.TestCase):
              "first_actual_event_keys": ["US_CPI:2026-07-01"], "failures": []},
         ]
         with (
+            patch("investment_agent.platform.db.postgres.Database.from_config"),
             patch.object(db, "configure"),
             patch.object(db, "seed_catalog"),
             patch.object(watch_releases.etl, "watch_once", side_effect=responses) as watch,
@@ -104,6 +105,7 @@ class ReleaseWatchTest(unittest.TestCase):
 
     def test_notification_failure_can_be_retried_when_no_release_is_due(self) -> None:
         with (
+            patch("investment_agent.platform.db.postgres.Database.from_config"),
             patch.object(db, "configure"),
             patch.object(db, "seed_catalog"),
             patch.object(watch_releases.etl, "watch_once", return_value={"due": 0, "failures": []}),
@@ -121,6 +123,7 @@ class ReleaseWatchTest(unittest.TestCase):
             "failures": [{"series_id": "US_CPI", "type": "ActualProviderError"}],
         }
         with (
+            patch("investment_agent.platform.db.postgres.Database.from_config"),
             patch.object(db, "configure"),
             patch.object(db, "seed_catalog"),
             patch.object(watch_releases.etl, "watch_once", return_value=failure),
@@ -140,6 +143,7 @@ class ReleaseWatchTest(unittest.TestCase):
             "failures": [{"series_id": "KR_CPI", "type": "ActualProviderError"}],
         }
         with (
+            patch("investment_agent.platform.db.postgres.Database.from_config"),
             patch.object(db, "configure"),
             patch.object(db, "seed_catalog"),
             patch.object(etl, "run_daily", return_value=summary),

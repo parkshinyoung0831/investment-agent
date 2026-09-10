@@ -51,9 +51,6 @@ class StrategyWorkflowOrderingTest(unittest.TestCase):
                 "DISCORD_CHANNEL_STRATEGY_MONTHLY", "DISCORD_CHANNEL_STRATEGY_FORUM",
             ),
             "institutional_13f.yml": ("--kind institutional", "DISCORD_CHANNEL_GURUS"),
-            "fundamentals_earnings_watch.yml": (
-                "--kind fundamentals_flash", "DISCORD_CHANNEL_EARNINGS",
-            ),
             "econ_calendar_watch.yml": (
                 "--kind econ_calendar_release", "DISCORD_CHANNEL_ECON_CALENDAR_RELEASE",
             ),

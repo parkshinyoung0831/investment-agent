@@ -9,6 +9,7 @@ from investment_agent.platform.retry import network_retry
 from investment_agent.data.fundamentals.domain.normalization import (
     build_company_financials,
 )
+from investment_agent.data.fundamentals.domain.filings import filing_row
 from investment_agent.data.fundamentals.application.segment_metrics import (
     build_segment_metrics,
 )
@@ -30,6 +31,7 @@ def process_company_facts(
     *,
     repository: CompanyFinancialRepository,
     filings: list | None = None,
+    cik: object | None = None,
 ) -> dict[str, Any]:
     """표준 fact를 기업 전체 재무로 만들고 저장한다."""
     batch = build_company_financials(facts)
@@ -39,10 +41,12 @@ def process_company_facts(
         if accession_no:
             rows_by_accession[accession_no] = rows_by_accession.get(accession_no, 0) + 1
     if filings:
+        if cik is None:
+            raise ValueError("cik is required when filing references are persisted")
         upsert_filings = getattr(repository, "upsert_filings", None)
         if upsert_filings is None:
             raise TypeError("company repository must expose upsert_filings before financial writes")
-        upsert_filings(filings)
+        upsert_filings([filing_row(filing, cik) for filing in filings])
     core_count = repository.upsert_core_wide(batch.core_rows)
     quarantine_count = repository.report_anomalies(batch.quarantine_rows)
     return {

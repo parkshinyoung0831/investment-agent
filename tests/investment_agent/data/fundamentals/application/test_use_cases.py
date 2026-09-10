@@ -28,7 +28,12 @@ from investment_agent.data.fundamentals.application.sync_recent_filings import (
 class _CompanyRepository:
     def __init__(self) -> None:
         self.core: list[dict] = []
+        self.filings: list[dict] = []
         self.reported_anomalies: list[dict] = []
+
+    def upsert_filings(self, rows: list[dict]) -> int:
+        self.filings.extend(rows)
+        return len(rows)
 
     def upsert_core_wide(self, rows: list[dict]) -> int:
         self.core.extend(rows)
@@ -81,6 +86,30 @@ class ApplicationUseCaseTest(unittest.TestCase):
         self.assertEqual(result["rows"], 1)
         self.assertEqual(result["quarantined"], 1)
         self.assertEqual(result["rows_by_accession"], {})
+
+    def test_process_company_facts_applies_parent_cik_to_filing_refs(self) -> None:
+        repository = _CompanyRepository()
+        filing = FilingRef(
+            "0000320193-26-000001",
+            "2026-08-20",
+            "2026-06-30",
+            "10-Q",
+        )
+        batch = CompanyFinancialBatch(core_rows=[], quarantine_rows=[])
+
+        with patch(
+            "investment_agent.data.fundamentals.application.process_filing."
+            "build_company_financials",
+            return_value=batch,
+        ):
+            process_company_facts(
+                [],
+                cik="320193",
+                filings=[filing],
+                repository=repository,
+            )
+
+        self.assertEqual("0000320193", repository.filings[0]["cik"])
 
     def test_detect_earnings_event_composes_all_ports(self) -> None:
         filing = SimpleNamespace(

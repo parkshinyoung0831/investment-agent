@@ -50,6 +50,10 @@ jobs:
         with:
           group: notifications
 
+      - uses: ./.github/actions/runtime-ledger
+        with:
+          scope: fundamentals
+
       - name: Validate Supabase secrets
         run: |
           test -n "$SUPABASE_URL"

@@ -212,7 +212,10 @@ def backfill_company_history(
         if facts:
             try:
                 loaded = process_company_facts(
-                    facts, filings=filings, repository=repository
+                    facts,
+                    filings=filings,
+                    cik=cik_key,
+                    repository=repository,
                 )
                 rows_by_accession = loaded["rows_by_accession"]
                 parsed_targets = {

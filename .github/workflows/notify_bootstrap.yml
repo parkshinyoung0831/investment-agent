@@ -55,6 +55,9 @@ jobs:
         with:
           group: notifications
           require-env: "SUPABASE_URL SUPABASE_SERVICE_KEY DISCORD_BOT_TOKEN"
+      - uses: ./.github/actions/runtime-ledger
+        with:
+          scope: bootstrap
       - uses: ./.github/actions/card-render
         with:
           cache-key: uv.lock

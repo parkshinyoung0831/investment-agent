@@ -22,7 +22,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: notify-fundamentals-calendar
+  group: notify-fundamentals
   cancel-in-progress: false
 
 jobs:
@@ -44,6 +44,10 @@ jobs:
       - uses: ./.github/actions/python-job
         with:
           group: notifications
+
+      - uses: ./.github/actions/runtime-ledger
+        with:
+          scope: fundamentals
 
       - name: Validate Supabase secrets
         run: |

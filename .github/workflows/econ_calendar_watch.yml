@@ -21,7 +21,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: econ-calendar-watch
+  group: notify-econ-calendar-release
   cancel-in-progress: false
 
 jobs:
@@ -44,6 +44,9 @@ jobs:
       - uses: ./.github/actions/python-job
         with:
           group: data
+      - uses: ./.github/actions/runtime-ledger
+        with:
+          scope: macro-releases
       - name: Validate notification subscription
         if: env.DISCORD_BOT_TOKEN != ''
         run: python -m investment_agent.operations.commands.validate_subscriptions --kind econ_calendar_release
