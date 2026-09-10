@@ -184,11 +184,13 @@ def macro_indicator_rows(window_rows: Iterable[Mapping[str, Any]]) -> list[dict[
     tags. 계산은 `investment_agent.reporting.macro`의 순수 함수를 그대로 쓴다.
     """
     from investment_agent.reporting.services.macro.format import meta_tags
+    from investment_agent.reporting.services.macro.catalog import market_metadata_by_series
     from investment_agent.reporting.services.macro.metrics import compute_metrics_series, row_scalars
     from investment_agent.reporting.services.macro.thresholds import eval_row
 
     grouped: dict[str, list[Mapping[str, Any]]] = {}
     meta: dict[str, Mapping[str, Any]] = {}
+    catalog = market_metadata_by_series()
     for row in window_rows:
         series_id = str(row.get("series_id") or "").strip()
         if not series_id:
@@ -202,7 +204,14 @@ def macro_indicator_rows(window_rows: Iterable[Mapping[str, Any]]) -> list[dict[
         series = _macro_series_frame(ordered)
         if series.empty:
             continue
-        header = meta[series_id]
+        header = {
+            **catalog.get(series_id, {}),
+            **{
+                key: value
+                for key, value in meta[series_id].items()
+                if value not in (None, "")
+            },
+        }
         kind = str(header.get("series_kind") or "")
         frame = compute_metrics_series(series, kind)
         metrics = row_scalars(frame.iloc[-1]) if not frame.empty else {}
