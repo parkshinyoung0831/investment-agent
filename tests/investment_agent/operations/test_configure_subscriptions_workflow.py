@@ -39,7 +39,8 @@ class StrategyWorkflowOrderingTest(unittest.TestCase):
                 "DISCORD_CHANNEL_EARNINGS",
             ),
             "notify_fundamentals_calendar.yml": (
-                "--kind fundamentals_calendar", "DISCORD_CHANNEL_EARNINGS_CALENDAR",
+                "--kind fundamentals_calendar", "--kind fundamentals_schedule",
+                "DISCORD_CHANNEL_EARNINGS_CALENDAR", "DISCORD_CHANNEL_EARNINGS",
             ),
             "notify_investment.yml": (
                 "--kind investment_portfolio", "--kind investment_candidates",

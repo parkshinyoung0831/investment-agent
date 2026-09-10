@@ -112,8 +112,16 @@ async def run(*, store: EarningsCalendarStore | None = None,
     if not rows:
         log.info("calendar: %s 주에 발표 예정 종목 없음 — 종료", week)
         return 0
+    if service is None:
+        service = NotificationService(Outbox(store.database), DiscordChannel(config), clock=utc_now)
+
+    # 요약 카드는 주 1회지만, 종목별 일정은 예정일이 바뀌면 같은 주에도 갱신돼야
+    # 한다. 요약의 중복 방지가 스레드 안내까지 막으면 안 된다.
     if not force_resend() and week in store.sent_weeks():
-        log.info("calendar: %s 주는 이미 outbox에 등록됨 — 종료", week)
+        scheduled = await _post_schedules(rows, config=config, service=service, today=today)
+        if scheduled:
+            service.run_pending()
+        log.info("calendar: %s 주 요약은 이미 등록됨 — 종목별 예정 %d건 확인", week, scheduled)
         return 0
 
     target_id = discord_target("fundamentals_calendar", config=config, override=target)
@@ -122,9 +130,6 @@ async def run(*, store: EarningsCalendarStore | None = None,
         await shoot_png(render("calendar.html.j2", ctx)),
         kind="earnings_calendar", name=week,
     )
-    channel = DiscordChannel(config)
-    if service is None:
-        service = NotificationService(Outbox(store.database), channel, clock=utc_now)
     key = f"calendar:{week}:force" if force_resend() else f"calendar:{week}"
     result = service.enqueue(
         producer="fundamentals",
