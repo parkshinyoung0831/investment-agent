@@ -98,11 +98,23 @@ jobs:
           if [ -n "${{ inputs.tickers }}" ]; then
             EXTRA+=(--tickers "${{ inputs.tickers }}")
           fi
+          FAILED_PERIODS=()
+          run_period() {
+            local period="$1"
+            if python -m investment_agent.data.fundamentals.commands.backfill_history --content segments --period "$period" --scope "$SCOPE" "${EXTRA[@]}"; then
+              return 0
+            fi
+            FAILED_PERIODS+=("$period")
+          }
           if [ "$PERIOD" = "both" ] || [ "$PERIOD" = "quarter" ]; then
-            python -m investment_agent.data.fundamentals.commands.backfill_history --content segments --period quarter --scope "$SCOPE" "${EXTRA[@]}"
+            run_period quarter
           fi
           if [ "$PERIOD" = "both" ] || [ "$PERIOD" = "annual" ]; then
-            python -m investment_agent.data.fundamentals.commands.backfill_history --content segments --period annual --scope "$SCOPE" "${EXTRA[@]}"
+            run_period annual
+          fi
+          if [ "${#FAILED_PERIODS[@]}" -gt 0 ]; then
+            printf 'segment backfill failed periods: %s\n' "${FAILED_PERIODS[*]}" >&2
+            exit 1
           fi
 
   notify-error:
