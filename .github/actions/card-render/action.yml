@@ -32,13 +32,13 @@ runs:
     # 캐시에 들어가는 것은 러너 이미지에 링크된 브라우저 바이너리다. 키에 이미지를
     # 넣지 않으면 22.04에서 받은 chromium이 24.04 러너로 복원되고, 그때 나는 것은
     # 설치 오류가 아니라 렌더 시점의 실행 실패다.
-    - uses: actions/cache@v4
+    - uses: actions/cache@v5
       with:
         path: ~/.cache/ms-playwright
         key: playwright-chromium-${{ env.ImageOS }}-${{ hashFiles(inputs.cache-key) }}
 
     - name: Cache CJK font
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ~/.local/share/fonts
         key: noto-cjk-1
