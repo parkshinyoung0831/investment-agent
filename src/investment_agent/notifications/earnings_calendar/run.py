@@ -7,7 +7,9 @@ from collections.abc import Sequence
 from datetime import date
 
 from investment_agent.config import load_config
-from investment_agent.notifications.earnings_calendar.candidates import collect, force_resend
+from investment_agent.notifications.earnings_calendar.candidates import (
+    collect, force_resend, schedule_notification_key,
+)
 from investment_agent.notifications.earnings_calendar.render import render, shoot_png
 from investment_agent.notifications.playwright import persist_png
 from investment_agent.reporting.notifications.earnings_calendar import EarningsCalendarStore
@@ -73,8 +75,9 @@ async def _post_schedules(rows: list[dict], *, config, service, today: date) -> 
         if not ticker or expected is None:
             continue
         # 예정일이 바뀌면 다시 알린다 — 키에 날짜를 넣어 그것을 새 알림으로 만든다.
-        key = (f"schedule:{ticker}:{row.get('target_fiscal_year')}:"
-               f"{row.get('target_fiscal_period')}:{expected}")
+        key = schedule_notification_key(row)
+        if key is None:
+            continue
         result = service.enqueue(
             producer="fundamentals",
             notification_key=key,
@@ -110,7 +113,7 @@ async def run(*, store: EarningsCalendarStore | None = None,
     today = date.today()
     rows, snapshot_date, week = collect(store, today)
     if not rows:
-        log.info("calendar: %s 주에 발표 예정 종목 없음 — 종료", week)
+        log.info("calendar: %s 주에 발표 예정 종목 없음 - 종료", week)
         return 0
     if service is None:
         service = NotificationService(Outbox(store.database), DiscordChannel(config), clock=utc_now)
@@ -121,7 +124,7 @@ async def run(*, store: EarningsCalendarStore | None = None,
         scheduled = await _post_schedules(rows, config=config, service=service, today=today)
         if scheduled:
             service.run_pending()
-        log.info("calendar: %s 주 요약은 이미 등록됨 — 종목별 예정 %d건 확인", week, scheduled)
+        log.info("calendar: %s 주 요약은 이미 등록됨 - 종목별 예정 %d건 확인", week, scheduled)
         return 0
 
     target_id = discord_target("fundamentals_calendar", config=config, override=target)
@@ -145,7 +148,7 @@ async def run(*, store: EarningsCalendarStore | None = None,
     scheduled = await _post_schedules(rows, config=config, service=service, today=today)
     if result.status == "enqueued" or scheduled:
         service.run_pending()
-        log.info("calendar enqueued %s — 종목 %d개 · 종목별 예정 %d건",
+        log.info("calendar enqueued %s - 종목 %d개 · 종목별 예정 %d건",
                  week, len(rows), scheduled)
     return 0 if result.status in {"enqueued", "duplicate"} else 1
 

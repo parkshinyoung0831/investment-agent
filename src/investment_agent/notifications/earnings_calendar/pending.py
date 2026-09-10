@@ -17,8 +17,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     state = pending_state()
     log.info(
-        "calendar preflight: week=%s upcoming=%s should_notify=%s",
-        state["iso_week"], state["upcoming_releases"], state["should_notify"],
+        "calendar preflight: week=%s upcoming=%s schedule_updates=%s should_notify=%s",
+        state["iso_week"], state["upcoming_releases"], state["schedule_updates"],
+        state["should_notify"],
     )
     with Path(args.github_output).open("a", encoding="utf-8") as stream:
         stream.write(f"should_notify={'true' if state['should_notify'] else 'false'}\n")
