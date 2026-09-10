@@ -41,8 +41,8 @@ def capture_and_store_risk_snapshot(
     """브로커 조회만 수행한 뒤 계좌번호를 hash로 바꿔 private DB에 저장한다."""
     if not isinstance(account_seq, int) or isinstance(account_seq, bool) or account_seq <= 0:
         raise ExecutionSafetyError("Toss account_seq must be a positive integer")
+    snapshot = capture(account_seq=account_seq, captured_at=captured_at)
     current = parse_datetime(captured_at or datetime.now(timezone.utc))
-    snapshot = capture(account_seq=account_seq, captured_at=current)
     if snapshot.broker != "toss" or snapshot.account_id != str(account_seq):
         raise ExecutionSafetyError("Toss risk snapshot account identity does not match")
     snapshot.assert_usable(

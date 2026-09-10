@@ -46,6 +46,23 @@ class MacroIndicatorRowsTest(unittest.TestCase):
 
         self.assertLessEqual(len(rows[0]["spark"]), 5)
 
+    def test_reporting_observations_are_enriched_before_threshold_evaluation(self):
+        start = date(2026, 1, 1)
+        observations = [
+            {
+                "series_id": "SPY",
+                "obs_date": (start + timedelta(days=i)).isoformat(),
+                "value": 50.0 if i == 30 else 100.0,
+            }
+            for i in range(31)
+        ]
+
+        row = macro_indicator_rows(observations)[0]
+
+        self.assertEqual(row["name_ko"], "S&P 500")
+        self.assertEqual(row["series_kind"], "price")
+        self.assertEqual(row["tier"], "🔴 alert")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import os
+import time
+from uuid import uuid4
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -163,10 +165,18 @@ class JsonStateStore:
     def save(self, state: HarnessState) -> None:
         state.validate()
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        temp = self.path.with_name(f".{self.path.name}.{os.getpid()}.tmp")
+        temp = self.path.with_name(f".{self.path.name}.{os.getpid()}.{uuid4().hex}.tmp")
         try:
             temp.write_text(canonical_json(state.to_dict()) + "\n", encoding="utf-8")
-            os.replace(temp, self.path)
+            # Windows의 짧은 읽기 잠금은 기다리되 영구 권한 오류는 숨기지 않는다.
+            for attempt in range(6):
+                try:
+                    os.replace(temp, self.path)
+                    break
+                except PermissionError:
+                    if attempt == 5:
+                        raise
+                    time.sleep(0.02 * (2 ** attempt))
         finally:
             if temp.exists():
                 temp.unlink()

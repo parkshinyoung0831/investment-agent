@@ -32,10 +32,12 @@ httpx client와 SSL context가 따라 생긴다 — 호출 하나가 0.4초다. 
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Callable, Iterable, Sequence
 from functools import lru_cache
 from typing import Any
 
+from httpx import RemoteProtocolError
 from supabase import Client, create_client
 
 from investment_agent.config import Config
@@ -236,10 +238,18 @@ def select_all_paged(
     rows: list[dict[str, Any]] = []
     start = 0
     while True:
-        builder = builder_factory().range(start, start + page_size - 1)
-        for column in order_columns:
-            builder = builder.order(column)
-        chunk = builder.execute().data or []
+        # 연결 종료 시 이미 받은 행을 버리지 않고 같은 읽기 페이지만 재요청한다.
+        for attempt in range(3):
+            builder = builder_factory().range(start, start + page_size - 1)
+            for column in order_columns:
+                builder = builder.order(column)
+            try:
+                chunk = builder.execute().data or []
+                break
+            except RemoteProtocolError:
+                if attempt == 2:
+                    raise
+                time.sleep(0.1 * (2 ** attempt))
         rows.extend(chunk)
         if len(chunk) < page_size:
             return rows

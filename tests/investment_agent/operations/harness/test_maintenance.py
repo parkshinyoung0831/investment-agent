@@ -20,7 +20,7 @@ from investment_agent.operations.harness.maintenance import (
     read_maintenance_hold,
     set_maintenance_hold,
 )
-from investment_agent.operations.harness.state import HarnessState, JsonStateStore
+from investment_agent.operations.harness.state import HarnessState, JsonStateStore, utc_iso
 from investment_agent.operations.harness.switch import get_harness_status, start_harness_service
 
 
@@ -38,8 +38,17 @@ class MaintenanceHoldTest(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def _start(self):
+        child = MagicMock(pid=4242)
+        child.poll.return_value = None
+
+        def started(*args, **kwargs):
+            JsonStateStore(self.state_dir / "state.json").save(HarnessState(
+                process_id=child.pid, process_heartbeat_at=utc_iso(), stopped_cleanly=False,
+            ))
+            return child
+
         with patch("investment_agent.operations.harness.switch._find_running_harness_pids", return_value=[]), \
-             patch("subprocess.Popen", return_value=MagicMock(pid=4242)) as popen:
+             patch("subprocess.Popen", side_effect=started) as popen:
             result = start_harness_service(
                 mode="analysis_only",
                 state_dir=self.state_dir,

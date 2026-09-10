@@ -57,6 +57,38 @@ class _Repository:
 
 
 class ContextPointInTimeTest(unittest.TestCase):
+    def test_live_fundamentals_use_repository_available_at(self):
+        repository = _Repository()
+        rows = [{"ticker": "AAPL", "filed_at": "2025-01-02", "available_at": "2025-01-02T22:00:00+00:00"}]
+        with patch.object(repository, "fundamentals", return_value=rows):
+            bundle = ContextBuilder(repository).build("AAPL", datetime(2025, 1, 3, tzinfo=timezone.utc))
+        item = next(item for item in bundle.evidence if item.domain == "fundamentals")
+        self.assertEqual(item.available_at, rows[0]["available_at"])
+
+    def test_canonical_daily_bars_without_ingestion_timestamp_use_finalization(self):
+        repository = _Repository()
+        rows = [{"ticker": "AAPL", "trade_date": "2025-01-02", "close": 100}]
+        with patch.object(repository, "market_prices", return_value=rows):
+            bundle = ContextBuilder(repository).build(
+                "AAPL", datetime(2025, 1, 3, tzinfo=timezone.utc), source_kind="historical_replay",
+            )
+        market = next(item for item in bundle.evidence if item.domain == "market")
+        self.assertEqual(market.available_at, "2025-01-02T23:00:00+00:00")
+
+    def test_unfinished_daily_bar_is_excluded_from_statistics(self):
+        repository = _Repository()
+        rows = [
+            {"ticker": "AAPL", "trade_date": "2025-07-08", "close": 200},
+            {"ticker": "AAPL", "trade_date": "2025-07-07", "close": 100},
+        ]
+        with patch.object(repository, "market_prices", return_value=rows):
+            bundle = ContextBuilder(repository).build(
+                "AAPL", datetime(2025, 7, 8, 20, tzinfo=timezone.utc), source_kind="historical_replay",
+            )
+        market = next(item for item in bundle.evidence if item.domain == "market")
+        self.assertEqual(market.available_at, "2025-07-07T22:00:00+00:00")
+        self.assertEqual(market.payload["latest_bars"], [rows[1]])
+
     def test_future_economic_event_is_evidence_without_a_forecast(self):
         repository = _Repository()
         event = {"event_key": "US_CPI:2024-12-01", "scheduled_at": "2025-01-10T13:30:00Z",

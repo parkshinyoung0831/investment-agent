@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import tempfile
+import os
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier, Event, Lock
+from unittest.mock import patch
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -38,6 +42,71 @@ def running_state() -> HarnessState:
 
 
 class HarnessStateTest(unittest.TestCase):
+    def test_overlapping_saves_do_not_share_temporary_file(self):
+        with tempfile.TemporaryDirectory() as temp:
+            store = JsonStateStore(Path(temp) / "state.json")
+            barrier = Barrier(2)
+            original_write = Path.write_text
+            original_replace = os.replace
+            replaced = Event()
+            sequence_lock = Lock()
+            calls = []
+
+            def overlapping_write(path, *args, **kwargs):
+                result = original_write(path, *args, **kwargs)
+                barrier.wait(timeout=5)
+                return result
+
+            def ordered_replace(source, target):
+                with sequence_lock:
+                    calls.append(source)
+                    is_first = len(calls) == 1
+                if is_first:
+                    try:
+                        return original_replace(source, target)
+                    finally:
+                        replaced.set()
+                self.assertTrue(replaced.wait(timeout=5))
+                return original_replace(source, target)
+
+            with patch.object(Path, "write_text", overlapping_write), \
+                 patch("investment_agent.operations.harness.state.os.replace", ordered_replace), \
+                 ThreadPoolExecutor(max_workers=2) as pool:
+                futures = [pool.submit(store.save, running_state()) for _ in range(2)]
+                for future in futures:
+                    future.result(timeout=10)
+            self.assertEqual(store.load().jobs["investment_pipeline"].run_id, "run_one")
+            self.assertEqual(list(Path(temp).glob("*.tmp")), [])
+
+    def test_temporary_replace_permission_error_recovers(self):
+        with tempfile.TemporaryDirectory() as temp:
+            store = JsonStateStore(Path(temp) / "state.json")
+            replace = os.replace
+            attempts = []
+
+            def temporarily_locked(source, target):
+                attempts.append(source)
+                if len(attempts) < 3:
+                    raise PermissionError("sharing violation")
+                return replace(source, target)
+
+            with patch("investment_agent.operations.harness.state.os.replace", temporarily_locked):
+                store.save(running_state())
+            self.assertEqual(len(attempts), 3)
+            self.assertEqual(store.load().jobs["investment_pipeline"].run_id, "run_one")
+
+    def test_persistent_replace_permission_error_preserves_checkpoint(self):
+        with tempfile.TemporaryDirectory() as temp:
+            store = JsonStateStore(Path(temp) / "state.json")
+            store.save(running_state())
+            original = store.path.read_bytes()
+            with patch("investment_agent.operations.harness.state.os.replace", side_effect=PermissionError("locked")) as replace:
+                with self.assertRaises(PermissionError):
+                    store.save(HarnessState())
+            self.assertLessEqual(replace.call_count, 6)
+            self.assertEqual(store.path.read_bytes(), original)
+            self.assertEqual(list(Path(temp).glob("*.tmp")), [])
+
     def test_round_trip_and_recovery_preserve_run_identity(self):
         with tempfile.TemporaryDirectory() as temp:
             store = JsonStateStore(Path(temp) / "state.json")

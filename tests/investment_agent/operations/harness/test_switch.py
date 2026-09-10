@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -113,9 +115,18 @@ class TestHarnessSwitch(unittest.TestCase):
         # Mock Popen to simulate background process start
         mock_proc = MagicMock()
         mock_proc.pid = 98765
+        mock_proc.poll.return_value = None
+
+        def started(*args, **kwargs):
+            self.store.save(HarnessState(
+                process_id=mock_proc.pid,
+                process_heartbeat_at=utc_iso(),
+                stopped_cleanly=False,
+            ))
+            return mock_proc
 
         with patch("investment_agent.operations.harness.switch._find_running_harness_pids", return_value=[]), \
-             patch("subprocess.Popen", return_value=mock_proc):
+             patch("subprocess.Popen", side_effect=started):
             res = start_harness_service(
                 mode="analysis_only",
                 state_dir=self.state_dir,
@@ -126,6 +137,65 @@ class TestHarnessSwitch(unittest.TestCase):
         self.assertTrue(res["success"])
         self.assertEqual(res["process_id"], 98765)
         self.assertEqual(res["mode"], "analysis_only")
+
+    def test_start_reports_child_exit_and_keeps_diagnostics(self) -> None:
+        real_popen = subprocess.Popen
+        children = []
+
+        def failing_child(argv, **kwargs):
+            child = real_popen(
+                [sys.executable, "-c", "import sys; sys.stderr.write('startup fixture failure\\n'); sys.exit(7)"],
+                **kwargs,
+            )
+            children.append(child)
+            return child
+
+        with patch("investment_agent.operations.harness.switch._find_running_harness_pids", return_value=[]), \
+             patch("subprocess.Popen", side_effect=failing_child):
+            result = start_harness_service(state_dir=self.state_dir, root_dir=self.root_dir)
+        for child in children:
+            child.wait(timeout=5)
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"], "startup_failed")
+        self.assertEqual(result["return_code"], 7)
+        self.assertIn("startup fixture failure", Path(result["log_path"]).read_text(encoding="utf-8"))
+
+    def test_start_does_not_accept_stale_checkpoint(self) -> None:
+        self.store.save(HarnessState(process_id=111, process_heartbeat_at=utc_iso(), stopped_cleanly=False))
+        child = MagicMock(pid=222)
+        child.poll.return_value = None
+        with patch("investment_agent.operations.harness.switch._find_running_harness_pids", return_value=[]), \
+             patch("investment_agent.operations.harness.switch._is_pid_alive", return_value=False), \
+             patch("investment_agent.operations.harness.switch._terminate_pid", return_value=True) as terminate_tree, \
+             patch("subprocess.Popen", return_value=child), \
+             patch("investment_agent.operations.harness.switch.time.monotonic", side_effect=[0, 11]):
+            result = start_harness_service(state_dir=self.state_dir, root_dir=self.root_dir)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"], "startup_timeout")
+        if sys.platform == "win32":
+            terminate_tree.assert_called_once_with(child.pid)
+        else:
+            child.terminate.assert_called_once()
+
+    def test_start_accepts_new_checkpoint_from_virtualenv_worker(self) -> None:
+        child = MagicMock(pid=222)
+        child.poll.return_value = None
+
+        def started(*args, **kwargs):
+            self.store.save(HarnessState(
+                process_id=333, process_started_at=utc_iso(),
+                process_heartbeat_at=utc_iso(), stopped_cleanly=False,
+            ))
+            return child
+
+        with patch("investment_agent.operations.harness.switch._find_running_harness_pids", return_value=[]), \
+             patch("investment_agent.operations.harness.switch._is_pid_alive", return_value=True), \
+             patch("subprocess.Popen", side_effect=started), \
+             patch("investment_agent.operations.harness.switch.time.monotonic", side_effect=[0, 11]):
+            result = start_harness_service(state_dir=self.state_dir, root_dir=self.root_dir)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["process_id"], 333)
 
     def test_start_harness_service_already_running(self) -> None:
         state = HarnessState(

@@ -62,6 +62,16 @@ st.html("""
         [data-testid="stMainBlockContainer"] [data-testid="stCaptionContainer"] {
             line-height: 1.5 !important;
         }
+        /* 매크로 요약은 심리 지표가 두 줄로 찌그러지기 전에 레짐 아래로 이동한다. */
+        div[class*="st-key-macro_overview_grid"] > [data-testid="stLayoutWrapper"] > [data-testid="stHorizontalBlock"] {
+            display: grid !important;
+            grid-template-columns: minmax(0, 1fr) !important;
+            gap: 16px !important;
+        }
+        div[class*="st-key-macro_overview_grid"] [data-testid="stColumn"] {
+            width: auto !important;
+            min-width: 0 !important;
+        }
     }
     /* iPad mini: 카드와 주요 지표를 두 칸으로 재배치한다. */
     @media (max-width: 1023px) {

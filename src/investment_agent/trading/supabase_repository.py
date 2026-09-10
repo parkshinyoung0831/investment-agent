@@ -614,7 +614,9 @@ class SupabaseRepository:
                 "release": release,
                 "series_name_ko": row.get("series_name_ko"),
                 "unit": row.get("unit"),
-                "collected_at": row.get("first_actual_at") or row.get("scheduled_at"),
+                # owner가 cutoff 이전 버전만 조립한다. 발표 예정시각은 자료를
+                # 알게 된 시각이 아니므로 이 스냅샷의 cutoff를 보수적 상한으로 쓴다.
+                "collected_at": point.isoformat(),
             }
             # 발표 하나가 여러 목록에 들어간다 — 예정된 사건이면서 값이 나온 것이고
             # 예상도 있었던 것이다. 어느 목록에 넣을지는 그 행이 실제로 무엇을

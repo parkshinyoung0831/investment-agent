@@ -76,6 +76,18 @@ def to_record(
 ) -> NewsArticleRecord | None:
     """응답 한 건을 저장 레코드로 바꾼다. 식별할 수 없으면 `None`."""
     moment = ensure_aware(now)
+    content = payload.get("content")
+    if isinstance(content, Mapping):
+        canonical = content.get("canonicalUrl")
+        click_through = content.get("clickThroughUrl")
+        publisher = content.get("provider")
+        payload = {
+            **content,
+            "url": (canonical.get("url") if isinstance(canonical, Mapping) else None)
+            or (click_through.get("url") if isinstance(click_through, Mapping) else None),
+            "publisher": publisher.get("displayName") if isinstance(publisher, Mapping) else None,
+            "published_at": content.get("pubDate"),
+        }
     url = canonical_url(payload.get("link") or payload.get("url"))
     title = " ".join(str(payload.get("title") or "").split())
     if not url or not title:

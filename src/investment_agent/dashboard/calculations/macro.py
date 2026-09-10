@@ -261,6 +261,32 @@ def macro_value_text(row: Mapping[str, Any]) -> str:
     return fmt_val(row.get("curr"), str(row.get("series_id") or ""), row.get("unit"))
 
 
+def fear_greed_scale(value: Any) -> dict[str, Any] | None:
+    """공포·탐욕 지수의 진행률과 사람이 읽을 구간을 계산한다."""
+
+    current = finite_number(value)
+    if current is None:
+        return None
+    clamped = min(max(current, 0.0), 100.0)
+    if clamped < 25.0:
+        label, range_label, tone = "극단적 공포", "0–24", "red"
+    elif clamped < 45.0:
+        label, range_label, tone = "공포", "25–44", "orange"
+    elif clamped <= 55.0:
+        label, range_label, tone = "중립", "45–55", "gray"
+    elif clamped < 75.0:
+        label, range_label, tone = "탐욕", "56–74", "green"
+    else:
+        label, range_label, tone = "극단적 탐욕", "75–100", "green"
+    return {
+        "value": current,
+        "normalized": clamped / 100.0,
+        "label": label,
+        "range_label": range_label,
+        "tone": tone,
+    }
+
+
 def macro_sections(rows: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
     """Discord 코어 카드와 같은 4개 섹션·같은 순서로 지표를 배열한다."""
     from investment_agent.reporting.services.macro.constants import CORE_LAYOUT

@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import ast
 import unittest
+from datetime import datetime, timezone
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -46,6 +48,19 @@ def _offenders() -> list[str]:
 
 
 class ResearchStoreReadPathTest(unittest.TestCase):
+    def test_technical_snapshot_does_not_request_writer_connection(self) -> None:
+        from investment_agent.research.features import db
+        from investment_agent.research.storage.repository import ResearchStore
+
+        def read_snapshot(store, *args, **kwargs):
+            if not store.read_only:
+                raise PermissionError("writer conflicts with another process reader")
+            return [{"ticker": "AAPL"}]
+
+        with patch.object(ResearchStore, "latest_feature_as_of", read_snapshot):
+            rows = db.latest_signal_as_of("AAPL", datetime(2026, 9, 9, tzinfo=timezone.utc))
+        self.assertEqual(rows, [{"ticker": "AAPL"}])
+
     def test_there_are_read_calls_to_check(self) -> None:
         """호출이 없으면 아래 검사는 아무것도 보증하지 않는다."""
         tree = ast.parse(TARGET.read_text(encoding="utf-8"))

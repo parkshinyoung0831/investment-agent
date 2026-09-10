@@ -30,6 +30,20 @@ class CanonicalUrlTest(unittest.TestCase):
 
 
 class ToRecordTest(unittest.TestCase):
+    def test_nested_yfinance_content_is_preserved(self) -> None:
+        record = normalize.to_record({"id": "article-1", "content": {
+            "title": "실적 발표", "summary": "분기 실적 요약",
+            "canonicalUrl": {"url": "https://example.com/a?utm_source=yahoo"},
+            "provider": {"displayName": "Example Wire"},
+            "pubDate": "2026-09-06T10:00:00Z",
+        }}, provider="yfinance", now=NOW)
+        self.assertIsNotNone(record)
+        self.assertEqual(record.canonical_url, "https://example.com/a")
+        self.assertEqual(record.title, "실적 발표")
+        self.assertEqual(record.summary, "분기 실적 요약")
+        self.assertEqual(record.source_name, "Example Wire")
+        self.assertEqual(record.published_at, datetime(2026, 9, 6, 10, tzinfo=timezone.utc))
+
     def test_payload_without_a_url_is_rejected(self) -> None:
         """URL이 없으면 중복 제거를 할 수 없다 — 저장하지 않는다."""
         self.assertIsNone(

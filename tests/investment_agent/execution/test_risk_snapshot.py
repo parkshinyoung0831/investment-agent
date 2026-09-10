@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import unittest
+from unittest.mock import patch
 from datetime import datetime, timezone
 
 from investment_agent.execution.orders.snapshots import AccountSnapshot, PositionSnapshot
@@ -53,6 +54,14 @@ class RiskSnapshotTest(unittest.TestCase):
         self.assertNotIn("7", repository.account["raw_snapshot"])
         self.assertEqual(repository.positions[0]["ticker"], "AAPL")
         self.assertEqual(repository.positions[0]["weight"], 0.5)
+
+    def test_live_capture_does_not_freeze_clock_before_io(self):
+        def capture(**kwargs):
+            self.assertIsNone(kwargs["captured_at"])
+            return _snapshot()
+        with patch("investment_agent.execution.orders.risk_snapshot.datetime") as clock:
+            clock.now.return_value = _NOW
+            capture_and_store_risk_snapshot(account_seq=7, repository=_Repository(), capture=capture)
 
     def test_account_mismatch_fails_before_any_write(self):
         repository = _Repository()

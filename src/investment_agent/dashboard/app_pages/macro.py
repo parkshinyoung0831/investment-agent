@@ -17,6 +17,7 @@ import streamlit as st
 
 from investment_agent.dashboard.calculations import (
     finite_number,
+    fear_greed_scale,
     macro_alert_counts,
     macro_change,
     macro_indicator_rows,
@@ -37,7 +38,6 @@ from investment_agent.dashboard.components.ui import (
     open_detail,
     plot_selection_key,
     page_header,
-    render_source_help,
     result_payload,
     result_status,
     source_note,
@@ -66,6 +66,94 @@ _TIER_LABEL = {"alert": "위험", "caution": "주의", "watch": "관심"}
 # 오르는 게 좋은지 나쁜지가 지표마다 다른 종류는 델타에 색을 입히지 않는다.
 _NEUTRAL_KINDS = frozenset({"rate", "spread", "flow", "ratio"})
 _FILTERS = ("전체", "위험", "주의", "관심")
+
+# 카드 안의 별도 "상세" 버튼은 없애고, 접근 가능한 네이티브 버튼을 카드 전체에
+# 투명하게 덮는다. 그러면 카드·수치·스파크라인 어디를 눌러도 같은 선택 이벤트가 난다.
+st.html(
+    """
+    <style>
+    div[class*="st-key-macro_card_"]:not([class*="st-key-macro_card_grid_"]) {
+        position: relative !important;
+        isolation: isolate;
+        cursor: pointer;
+    }
+    div[class*="st-key-macro_card_"]:not([class*="st-key-macro_card_grid_"]) > div {
+        position: relative;
+    }
+    div[class*="st-key-macro_card_"]:not([class*="st-key-macro_card_grid_"]) [class*="st-key-macro_open_"] {
+        position: static !important;
+    }
+    div[class*="st-key-macro_card_"]:not([class*="st-key-macro_card_grid_"]) [data-testid="stButton"] {
+        position: absolute !important;
+        inset: 0;
+        z-index: 1000 !important;
+        display: block !important;
+        width: 100% !important;
+        height: 100% !important;
+        margin: 0 !important;
+        pointer-events: auto !important;
+    }
+    div[class*="st-key-macro_card_"]:not([class*="st-key-macro_card_grid_"]) [data-testid="stButton"] > button {
+        position: absolute !important;
+        inset: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        min-height: 0 !important;
+        display: block !important;
+        opacity: 0 !important;
+        border: 0 !important;
+        background: transparent !important;
+        cursor: pointer;
+    }
+    div[class*="st-key-macro_card_"]:not([class*="st-key-macro_card_grid_"]) [data-testid="stButton"] > button:focus-visible {
+        opacity: 0 !important;
+        outline: 2px solid var(--color-primary, #4b9cff) !important;
+        outline-offset: -2px;
+    }
+    .macro-fear-greed {
+        display: grid;
+        gap: 0.45rem;
+        margin: 0.35rem 0 0.15rem;
+    }
+    .macro-fear-greed__label {
+        color: var(--text-color, #f3f4f6);
+        font-size: 0.9rem;
+        font-weight: 600;
+    }
+    .macro-fear-greed__track {
+        position: relative;
+        height: 0.65rem;
+        border-radius: 999px;
+        background: linear-gradient(
+            to right,
+            #c84d59 0% 25%,
+            #d89035 25% 45%,
+            #858b96 45% 55%,
+            #3aa86e 55% 75%,
+            #1db477 75% 100%
+        );
+    }
+    .macro-fear-greed__line {
+        position: absolute;
+        top: -0.25rem;
+        width: 1px;
+        height: 1.15rem;
+        background: rgba(255, 255, 255, 0.82);
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2);
+    }
+    .macro-fear-greed__marker {
+        position: absolute;
+        top: -0.35rem;
+        width: 3px;
+        height: 1.35rem;
+        border-radius: 999px;
+        background: #ffffff;
+        box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.45);
+        transform: translateX(-50%);
+    }
+    </style>
+    """
+)
 
 
 def _tier_key(tier: Any) -> str:
@@ -129,10 +217,9 @@ def _render_card(row: dict[str, Any], *, selected: bool) -> None:
             + (f" · :orange[{freshness.get('age_days')}일 지연]" if stale else "")
         )
         st.button(
-            "닫기" if selected else "상세",
+            f"{name} 상세 닫기" if selected else f"{name} 상세 열기",
             key=f"macro_open_{series_id}",
-            type="primary" if selected else "tertiary",
-            icon=":material/expand_less:" if selected else ":material/expand_more:",
+            type="tertiary",
             width="stretch",
             on_click=_select,
             args=(series_id,),
@@ -381,11 +468,10 @@ def _render_detail(row: dict[str, Any]) -> None:
 
 
 page_header(
-    "매크로 시황",
-    "시장 레짐을 먼저 판단하고 신호가 걸린 지표만 자세히 확인해요",
-    discord="#오늘의-시장 (macro_core · macro_watch)",
+    "시장 환경",
+    discord=None,
+    show_badges=False,
 )
-render_source_help()
 
 window_result = load_macro_window("all")
 if not result_status(window_result, empty_text="저장된 매크로 관측값이 없습니다"):
@@ -410,14 +496,13 @@ with st.container(key="macro_overview_grid"):
 with regime_column.container(border=True):
     tone = {"up": "green", "down": "red"}.get(regime["tone"], "gray")
     st.markdown(f"#### 시장 레짐 · :{tone}[{regime['verdict']}]")
-    st.caption(f"판단에 사용한 지표 {regime['evaluated']}개 · 근거와 반대 신호를 함께 셉니다")
+    st.caption(f"핵심 지표 {regime['evaluated']}개 · 우호 신호와 경계 신호를 함께 반영합니다")
     if regime["supporting"]:
         st.markdown(":green[**위험 선호 근거**] · " + " · ".join(regime["supporting"]))
     if regime["opposing"]:
         st.markdown(":red[**반대 신호**] · " + " · ".join(regime["opposing"]))
     if not regime["supporting"] and not regime["opposing"]:
         st.info("레짐 판정에 쓸 수 있는 지표가 없습니다.")
-    source_note(SOURCE_DB, SOURCE_CALC, observed_at=getattr(window_result, "observed_at", None))
 
 with sentiment_column.container(border=True):
     fear_greed = by_series.get("FEAR_GREED")
@@ -443,15 +528,30 @@ with sentiment_column.container(border=True):
                 border=True,
             )
     if fear_greed:
-        level = finite_number(fear_greed.get("curr"))
-        if level is not None:
-            st.progress(
-                min(max(level / 100.0, 0.0), 1.0),
-                text=f"극단공포 0 —— {level:.0f} —— 극단탐욕 100",
+        scale = fear_greed_scale(fear_greed.get("curr"))
+        if scale is not None:
+            value = float(scale["value"])
+            position = float(scale["normalized"]) * 100
+            st.html(
+                f"""
+                <div class="macro-fear-greed" role="meter" aria-valuemin="0"
+                     aria-valuemax="100" aria-valuenow="{value:.1f}"
+                     aria-valuetext="{scale['label']}">
+                    <div class="macro-fear-greed__label">
+                        {scale['label']} · {value:.1f}/100
+                    </div>
+                    <div class="macro-fear-greed__track">
+                        <span class="macro-fear-greed__line" style="left: 25%"></span>
+                        <span class="macro-fear-greed__line" style="left: 45%"></span>
+                        <span class="macro-fear-greed__line" style="left: 55%"></span>
+                        <span class="macro-fear-greed__line" style="left: 75%"></span>
+                        <span class="macro-fear-greed__marker" style="left: {position:.2f}%"></span>
+                    </div>
+                </div>
+                """
             )
     if not fear_greed and not vix:
         st.info("심리 지표의 저장 관측값이 없습니다.")
-    source_note(SOURCE_DB, SOURCE_CALC, detail="Discord 리본과 같은 두 심리 지표")
 
 # ── 경보 필터 ─────────────────────────────────────────────────────────────
 alert_filter = view_selector(
@@ -481,7 +581,7 @@ listing_mode = view_selector(
 )
 st.caption(
     "지도에서는 **점이나 막대를 클릭**하면 그 지표가 선택됩니다. "
-    "상세를 어디에 펼칠지는 사이드바에서 고릅니다."
+    "선택한 지표의 전체 정보가 창으로 열립니다."
 )
 
 surface = detail_surface()
@@ -553,7 +653,7 @@ if selected_id and selected_id in by_series:
 else:
     with (side if side is not None else st.container()):
         st.caption(
-            "카드의 `상세`를 누르거나 지도에서 점을 클릭하면 그 지표 하나만 펼칩니다. "
+            "카드나 그래프를 클릭하면 해당 지표 하나만 펼칩니다. "
             "누르기 전에는 계산하지 않습니다."
         )
         st.caption(f"마지막 관측 기준 · {format_time(getattr(window_result, 'observed_at', None))}")
