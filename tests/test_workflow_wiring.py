@@ -486,7 +486,7 @@ class RuntimeLedgerWorkflowTest(unittest.TestCase):
         self.assertIn("${{ inputs.scope }}", text)
         self.assertIn("${{ github.run_id }}-${{ github.run_attempt }}", text)
         self.assertIn(
-            "uv run python -m investment_agent.operations.commands.runtime_init",
+            "python -m investment_agent.operations.commands.runtime_init",
             text,
         )
 

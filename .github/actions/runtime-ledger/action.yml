@@ -23,4 +23,8 @@ runs:
     # preserves that fail-closed contract while making a fresh hosted runner valid.
     - name: Initialize runtime ledger
       shell: bash
-      run: uv run python -m investment_agent.operations.commands.runtime_init
+      # python-job already placed its synchronized virtualenv first on PATH.  Do
+      # not invoke `uv run` here: it re-evaluates the full project environment
+      # and can download unrelated heavyweight packages in every notification
+      # run, delaying time-sensitive cards.
+      run: python -m investment_agent.operations.commands.runtime_init
