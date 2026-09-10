@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Protocol
 
 from investment_agent.trading.contracts import EvidenceBundle, EvidenceItem, parse_datetime
 from investment_agent.platform.serialization import canonical_json
+from investment_agent.platform.clock import US_DAILY_BAR_FINALIZATION_TIME, US_MARKET_TIMEZONE
 from investment_agent.research.features.layer import REQUIRED_BARS
 from investment_agent.trading.evidence.tools import (
     estimate_statistics,
@@ -33,10 +34,20 @@ def _latest_iso(rows: list[dict], column: str) -> str | None:
     return max(values) if values else None
 
 
+def _price_available_at(row: dict) -> datetime:
+    """수집시각 없는 canonical 봉도 미국 일봉 확정시각 이후에만 사용한다."""
+    finalized = datetime.combine(
+        date.fromisoformat(str(row["trade_date"])[:10]),
+        US_DAILY_BAR_FINALIZATION_TIME, tzinfo=US_MARKET_TIMEZONE,
+    ).astimezone(timezone.utc)
+    ingested = row.get("ingested_at")
+    return max(finalized, parse_datetime(str(ingested))) if ingested else finalized
+
+
 def _fundamentals_available_at(rows: list[dict], historical: bool) -> str | None:
     """재무 wide 행의 근거 시각을 Context 계약에 맞는 UTC 시각으로 만든다."""
     if not historical:
-        return _latest_iso(rows, "ingested_at")
+        return _latest_iso(rows, "available_at") or _latest_iso(rows, "ingested_at")
     values = [
         f"{str(row['filed_at'])}T00:00:00+00:00"
         for row in rows
@@ -92,10 +103,14 @@ class ContextBuilder:
         warnings: list[str] = []
 
         prices = self.repository.market_prices(ticker, as_of_at)
+        prices = sorted(
+            (row for row in prices if _price_available_at(row) <= as_of_at),
+            key=lambda row: str(row["trade_date"]), reverse=True,
+        )
         if prices:
             items.append(_item(
                 "market", "market.prices_daily", str(prices[0]["trade_date"]),
-                str(_latest_iso(prices, "ingested_at")),
+                max(_price_available_at(row) for row in prices).isoformat(),
                 # FeatureLayer가 20거래일 수익률을 계산하려면 21개 봉이 필요하다.
                 # 상수를 공유하지 않으면 그 feature가 조용히 영구 결측이 된다.
                 {"statistics": price_statistics(prices), "latest_bars": prices[:REQUIRED_BARS]},

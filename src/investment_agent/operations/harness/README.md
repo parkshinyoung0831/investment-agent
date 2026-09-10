@@ -147,6 +147,11 @@ stateDiagram-v2
 그 가드를 건너뛰어 같은 하네스가 두 벌 뜬다. `--run-once`·`--health`처럼 상시 데몬을 띄우지
 않는 1회성 호출은 `investment_harness.py`를 직접 불러도 안전하다.
 
+백그라운드 기동은 새 PID의 heartbeat checkpoint를 확인한 뒤 성공을 반환한다.
+기동 중 종료나 10초 내 checkpoint가 생기지 않는 경우에는 실패를 반환한다.
+하네스와 하위 잡의 stdout/stderr는 상태 디렉터리의 `service.log`에 이어서 기록한다.
+`--status`는 프로세스 상태, `--health`는 heartbeat와 잡 실패를 확인하는 경로다.
+
 ---
 
 ### OS 서비스(백그라운드 데몬) 등록

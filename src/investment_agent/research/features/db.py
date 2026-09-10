@@ -165,7 +165,7 @@ def latest_signal_as_of(ticker: str, as_of_at: datetime) -> list[dict]:
     """as_of 시점에 확정돼 있던 최신 로컬 기술지표 한 행."""
     if as_of_at.tzinfo is None:
         raise ValueError("as_of_at must include timezone")
-    return _store().latest_feature_as_of(
+    return _read_store().latest_feature_as_of(
         ticker, trade_date=as_of_at.date(), as_of_at=as_of_at.astimezone(timezone.utc)
     )
 

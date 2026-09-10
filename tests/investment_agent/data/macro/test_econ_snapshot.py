@@ -46,6 +46,11 @@ class EconSnapshotShapeTest(unittest.TestCase):
         self.assertEqual([], result["results"])
         self.assertEqual([], result["forecasts"])
 
+    def test_future_schedule_uses_snapshot_cutoff_as_availability(self) -> None:
+        result = self._snapshot([_summary_row()])
+        self.assertEqual(result["events"][0]["collected_at"], MOMENT.isoformat())
+        self.assertEqual(result["events"][0]["scheduled_at"], "2026-08-12T12:30:00+00:00")
+
     def test_a_released_value_also_becomes_a_result(self) -> None:
         result = self._snapshot([_summary_row(status="released", latest_actual_value=0.2,
                                               first_actual_value=0.1, revision=0.1)])

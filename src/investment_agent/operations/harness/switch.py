@@ -10,6 +10,7 @@ import re
 import signal
 import subprocess
 import sys
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -254,6 +255,7 @@ def start_harness_service(
 
     cmd = [
         python_exe,
+        "-u",
         "-m",
         "investment_agent.operations.commands.investment_harness",
         "--serve",
@@ -267,32 +269,66 @@ def start_harness_service(
 
     try:
         if background:
+            s_dir.mkdir(parents=True, exist_ok=True)
+            log_path = s_dir / "service.log"
+            kwargs: dict[str, Any] = {
+                "cwd": str(r_dir),
+                "stdin": subprocess.DEVNULL,
+                "close_fds": True,
+            }
             if sys.platform == "win32":
-                creation_flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
-                proc = subprocess.Popen(
-                    cmd,
-                    cwd=str(r_dir),
-                    creationflags=creation_flags,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    stdin=subprocess.DEVNULL,
-                    close_fds=True,
-                )
+                kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
             else:
-                proc = subprocess.Popen(
-                    cmd,
-                    cwd=str(r_dir),
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    stdin=subprocess.DEVNULL,
-                    start_new_session=True,
+                kwargs["start_new_session"] = True
+            # 부모가 끝나도 자식과 그 하위 잡의 진단을 로컬에 남긴다.
+            with log_path.open("ab", buffering=0) as output:
+                proc = subprocess.Popen(cmd, stdout=output, stderr=output, **kwargs)
+            deadline = time.monotonic() + 10.0
+            store = JsonStateStore(s_dir / "state.json")
+            while True:
+                return_code = proc.poll()
+                if return_code is not None:
+                    return {
+                        "success": False,
+                        "error": "startup_failed",
+                        "return_code": return_code,
+                        "log_path": str(log_path),
+                        "message": f"하네스가 기동 중 종료되었습니다 (exit={return_code}). 로그: {log_path}",
+                    }
+                state = store.load()
+                # Windows venv launcher는 별도 Python worker를 띄울 수 있다.
+                # 기존 checkpoint는 거부하고 이번 기동의 살아 있는 worker만 인정한다.
+                is_new_worker = (
+                    state.process_started_at is not None
+                    and state.process_started_at != status.started_at
+                    and _is_pid_alive(state.process_id)
                 )
+                if (state.process_id == proc.pid or is_new_worker) and state.process_heartbeat_at and not state.stopped_cleanly:
+                    break
+                if time.monotonic() >= deadline:
+                    if sys.platform == "win32":
+                        _terminate_pid(proc.pid)
+                    else:
+                        proc.terminate()
+                    try:
+                        proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.wait(timeout=5)
+                    return {
+                        "success": False,
+                        "error": "startup_timeout",
+                        "log_path": str(log_path),
+                        "message": f"하네스 기동 확인 시간이 초과되어 종료했습니다. 로그: {log_path}",
+                    }
+                time.sleep(0.1)
             return {
                 "success": True,
                 "mode": mode,
-                "process_id": proc.pid,
+                "process_id": state.process_id,
                 "background": True,
-                "message": f"하네스가 백그라운드에서 시작되었습니다 (PID: {proc.pid}, 모드: {mode}).",
+                "log_path": str(log_path),
+                "message": f"하네스가 백그라운드에서 시작되었습니다 (PID: {state.process_id}, 모드: {mode}).",
             }
         else:
             return {

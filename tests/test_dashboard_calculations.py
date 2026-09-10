@@ -13,6 +13,7 @@ from investment_agent.dashboard.calculations import (
     covariance_to_correlation,
     diagnose_macro,
     finite_number,
+    fear_greed_scale,
     free_cash_flow,
     guru_position_changes,
     historical_surprise_series,
@@ -135,6 +136,29 @@ class TechnicalAndMacroTests(unittest.TestCase):
         self.assertEqual(tied["verdict"], "중립")
         self.assertEqual(tied["tone"], "flat")
         self.assertEqual(tied["evaluated"], 2)
+
+    def test_fear_greed_scale_explains_value_and_range(self) -> None:
+        """공포·탐욕 값은 진행률뿐 아니라 사용자가 읽을 구간을 제공해야 한다."""
+        result = fear_greed_scale(40.5)
+
+        self.assertEqual(result["label"], "공포")
+        self.assertEqual(result["range_label"], "25–44")
+        self.assertAlmostEqual(result["normalized"], 0.405)
+        self.assertEqual(result["tone"], "orange")
+
+    def test_fear_greed_scale_clamps_out_of_range_values(self) -> None:
+        """외부 값이 범위를 벗어나도 막대가 깨지지 않고 끝점에 고정되어야 한다."""
+        low = fear_greed_scale(-5)
+        high = fear_greed_scale(120)
+
+        self.assertEqual(low["normalized"], 0.0)
+        self.assertEqual(low["label"], "극단적 공포")
+        self.assertEqual(high["normalized"], 1.0)
+        self.assertEqual(high["label"], "극단적 탐욕")
+
+    def test_fear_greed_scale_preserves_missing_value(self) -> None:
+        """결측 심리 지표는 가짜 중립값으로 바꾸지 않아야 한다."""
+        self.assertIsNone(fear_greed_scale(None))
 
 
 class EarningsAndGuruTests(unittest.TestCase):

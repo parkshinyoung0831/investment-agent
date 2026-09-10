@@ -22,7 +22,6 @@ def capture_toss_account_snapshot(
         raise ExecutionSafetyError("Toss account_seq must be a positive integer")
     if not math.isfinite(max_quote_age_seconds) or max_quote_age_seconds <= 0:
         raise ExecutionSafetyError("max_quote_age_seconds must be positive")
-    now = (captured_at or datetime.now(timezone.utc)).astimezone(timezone.utc)
     open_rows = toss.fetch_open_orders(account_seq)
     open_ids: list[str] = []
     for row in open_rows:
@@ -36,6 +35,9 @@ def capture_toss_account_snapshot(
     timestamps: dict[str, str | None] = {}
     if holdings:
         prices, timestamps = toss.fetch_prices(set(holdings))
+    cash = toss.fetch_buying_power(account_seq, currency="USD")
+    # 조회 중 도착한 시세도 수집 완료 시각에 대해 검증한다.
+    now = (captured_at or datetime.now(timezone.utc)).astimezone(timezone.utc)
     positions: list[PositionSnapshot] = []
     for ticker in sorted(holdings):
         timestamp = timestamps.get(ticker)
@@ -55,7 +57,6 @@ def capture_toss_account_snapshot(
             market_price=price,
             market_value=quantity * price,
         ))
-    cash = toss.fetch_buying_power(account_seq, currency="USD")
     return AccountSnapshot(
         broker="toss",
         account_id=str(account_seq),

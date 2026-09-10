@@ -28,6 +28,24 @@ class TossSnapshotTest(unittest.TestCase):
         self.assertEqual(snapshot.total_value, 700.0)
         self.assertAlmostEqual(snapshot.weights["AAPL"], 2 / 7)
 
+    def test_live_capture_uses_clock_after_network_reads(self):
+        from datetime import timedelta
+        start = datetime(2026, 8, 22, 1, 0, tzinfo=timezone.utc)
+        clock = [start]
+
+        def fetch_prices(_tickers):
+            clock[0] = start + timedelta(seconds=2)
+            return {"AAPL": 100.0}, {"AAPL": clock[0].isoformat()}
+
+        with mock.patch("investment_agent.execution.orders.toss_snapshot.datetime") as dt, \
+             mock.patch("investment_agent.execution.orders.toss_snapshot.toss.fetch_open_orders", return_value=[]), \
+             mock.patch("investment_agent.execution.orders.toss_snapshot.toss.fetch_holdings", return_value={"items": [{"marketCountry": "US", "symbol": "AAPL", "quantity": "2"}]}), \
+             mock.patch("investment_agent.execution.orders.toss_snapshot.toss.fetch_prices", side_effect=fetch_prices), \
+             mock.patch("investment_agent.execution.orders.toss_snapshot.toss.fetch_buying_power", return_value=500.0):
+            dt.now.side_effect = lambda *_: clock[0]
+            snapshot = capture_toss_account_snapshot(account_seq=7)
+        self.assertEqual(snapshot.captured_at, clock[0].isoformat())
+
     @mock.patch("investment_agent.execution.orders.toss_snapshot.toss.fetch_open_orders")
     def test_open_order_without_opaque_id_fails_closed(self, open_orders):
         open_orders.return_value = [{"symbol": "AAPL"}]

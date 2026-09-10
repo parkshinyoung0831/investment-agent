@@ -122,14 +122,22 @@ def plot_selection_key(state: Any, field: str = "key") -> str | None:
     return None
 
 
-def page_header(title: str, subtitle: str, *, discord: str) -> None:
+def page_header(
+    title: str,
+    subtitle: str | None = None,
+    *,
+    discord: str | None = None,
+    show_badges: bool = True,
+) -> None:
     """결론 중심 제목과 보조 맥락을 모든 워크스페이스에서 같은 순서로 그린다."""
 
     st.title(title)
-    st.write(subtitle)
-    with st.container(horizontal=True, gap="small", vertical_alignment="center"):
-        st.badge("읽기 전용", icon=":material/visibility:", color="gray")
-        st.badge(f"Discord · {discord}", icon=":material/forum:", color="blue")
+    if subtitle:
+        st.write(subtitle)
+    if show_badges and discord:
+        with st.container(horizontal=True, gap="small", vertical_alignment="center"):
+            st.badge("읽기 전용", icon=":material/visibility:", color="gray")
+            st.badge(f"Discord · {discord}", icon=":material/forum:", color="blue")
 
 
 def source_note(*sources: str, observed_at: Any = None, detail: str | None = None) -> None:
