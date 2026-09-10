@@ -135,8 +135,16 @@ def evaluate(
             **segment_state,
         ))
 
-        missing_segment_states = int(
-            segment.get("tracked_without_filing_rows") or 0
+        missing_segment_tickers = sorted({
+            str(ticker) for ticker in (
+                segment.get("tracked_without_segment_state_tickers") or []
+            ) if str(ticker).strip()
+        })
+        # 이전 fact 계약을 쓰는 호출자는 숫자만 주므로 호환성을 유지한다.
+        missing_segment_states = (
+            len(missing_segment_tickers)
+            if "tracked_without_segment_state_tickers" in segment
+            else int(segment.get("tracked_without_filing_rows") or 0)
         )
         checks.append(_check(
             "segment_tracked_coverage",
@@ -147,6 +155,7 @@ def evaluate(
                 else "모든 추적 ticker에 세그먼트 처리 상태가 있다"
             ),
             missing_tickers=missing_segment_states,
+            missing=missing_segment_tickers,
         ))
 
         contract_keys = (

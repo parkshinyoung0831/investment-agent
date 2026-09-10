@@ -150,6 +150,17 @@ class SegmentIntegrity(unittest.TestCase):
         ]
         self.assertEqual(check["severity"], ERROR)
 
+    def test_terminal_segment_states_without_metric_rows_are_covered(self):
+        """빈 세그먼트도 terminal processing state가 있으면 수집 누락이 아니다."""
+        segment = {
+            **HEALTHY["segment_integrity"],
+            "tracked_without_filing_rows": 0,
+            "tracked_without_segment_state_tickers": [],
+        }
+        check = _run(segment_integrity=segment)["segment_tracked_coverage"]
+        self.assertEqual(check["severity"], OK)
+        self.assertEqual(check["detail"]["missing"], [])
+
     def test_orphan_segment_metric_is_an_error(self):
         check = self._with_segment_error("orphan_metric_rows")[
             "segment_data_contract"

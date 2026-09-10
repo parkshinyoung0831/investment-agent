@@ -580,6 +580,20 @@ class FailureAlertTest(unittest.TestCase):
                 self.assertNotRegex(text, r"if:\s*(\$\{\{\s*)?failure\(\)\s*\}?\}?\s*$")
                 self.assertIn("failure() || cancelled()", text)
 
+    def test_ci_has_no_concurrency_group_that_cancels_pending_tests(self):
+        """CI는 읽기 전용이므로 새 push가 대기 검증을 취소할 이유가 없다."""
+        self.assertNotIn("concurrency:", _text("ci"))
+
+    def test_dimensions_backfill_runs_both_periods_before_reporting_failure(self):
+        """분기 실패가 연간 백필까지 막아 세그먼트 공백을 남기면 안 된다."""
+        text = _text("fundamentals_dimensions_backfill")
+
+        self.assertIn("FAILED_PERIODS=()", text)
+        self.assertIn("run_period quarter", text)
+        self.assertIn("run_period annual", text)
+        self.assertLess(text.index("run_period quarter"), text.index("run_period annual"))
+        self.assertIn('exit 1', text[text.index("run_period annual"):])
+
     def test_every_workflow_can_alert_at_all(self):
         """source workflow가 공통 리포터를 건너뛰면 조용한 장애가 생긴다."""
         for path in sorted(_WORKFLOWS.glob("*.yml")):
