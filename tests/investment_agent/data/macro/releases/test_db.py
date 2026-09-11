@@ -178,6 +178,16 @@ class AlfredParserTest(unittest.TestCase):
         self.assertEqual(values, {})
         self.assertEqual(failures, [])
 
+    def test_revision_failure_retains_the_safe_parser_reason(self) -> None:
+        """API 키·URL은 숨기되, 데이터 계약 오류는 Actions에서 진단할 수 있어야 한다."""
+        target = {"series_id": "US_CPI", "fred_id": "CPIAUCSL", "scale": None}
+        error = alfred.AlfredDataError("ALFRED revision row has no observation date")
+        with patch.object(alfred, "fetch_revisions", side_effect=error):
+            _values, failures = alfred.fetch_batch(
+                [target], observation_start=date(2026, 8, 12), revisions=True,
+            )
+        self.assertEqual(failures[0]["error"], "ALFRED revision row has no observation date")
+
 
 if __name__ == "__main__":
     unittest.main()

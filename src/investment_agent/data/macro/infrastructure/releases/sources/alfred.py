@@ -10,6 +10,7 @@ from typing import Any
 import requests
 
 from investment_agent.platform.clock import us_market_today
+from investment_agent.platform.logging import get_logger
 from investment_agent.platform.retry import retry_on_5xx
 from investment_agent.data.macro.infrastructure.releases.sources.actuals import _fred_slot
 
@@ -22,9 +23,21 @@ _MAX_VINTAGE_WINDOW_DAYS = 1800
 # CI/로컬 clock drift에서 미래 날짜를 보내 400을 내지 않도록 마지막 chunk에만 쓴다.
 _FRED_REALTIME_MAX = date(9999, 12, 31)
 
+log = get_logger(__name__)
+
 
 class AlfredDataError(ValueError):
     """ALFRED response가 vintage 계약을 만족하지 않을 때 발생한다."""
+
+
+def _failure_reason(exc: Exception) -> str:
+    """Actions 로그에 안전하게 남길 수 있는 provider 실패 요약."""
+    if isinstance(exc, AlfredDataError):
+        return str(exc)
+    if isinstance(exc, requests.HTTPError):
+        response = exc.response
+        return f"HTTP {response.status_code}" if response is not None else "HTTP error"
+    return type(exc).__name__
 
 
 @retry_on_5xx()
@@ -211,10 +224,12 @@ def fetch_batch(
                 raise AlfredDataError("ALFRED returned no matching vintages")
             collected[series_id] = rows
         except Exception as exc:  # noqa: BLE001 - source isolation.
+            reason = _failure_reason(exc)
+            log.warning("ALFRED %s failed (%s): %s", series_id, type(exc).__name__, reason)
             failures.append({
                 "series_id": series_id,
                 "step": "alfred_revision" if revisions else "alfred_first_print",
-                "error": f"{type(exc).__name__}",
+                "error": reason,
                 "type": type(exc).__name__,
             })
     return collected, failures
