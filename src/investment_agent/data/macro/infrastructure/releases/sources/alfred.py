@@ -204,6 +204,10 @@ def fetch_batch(
                 scale=target.get("scale"),
             )
             if not rows:
+                # revision audit의 짧은 구간에는 변경된 vintage가 없을 수 있다.
+                # 그것은 실제 원천/API 오류가 아니라 정상적인 no-op이다.
+                if revisions:
+                    continue
                 raise AlfredDataError("ALFRED returned no matching vintages")
             collected[series_id] = rows
         except Exception as exc:  # noqa: BLE001 - source isolation.

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -167,6 +167,16 @@ class AlfredParserTest(unittest.TestCase):
         parsed = alfred._parse_revisions(rows, fred_id="CPIAUCSL", scale=None)
         self.assertEqual([(row["ref_period"], row["released_on"], row["value"]) for row in parsed],
                          [("2026-07-01", "2026-08-12", 332.813), ("2026-07-01", "2026-09-10", 332.9)])
+
+    def test_revision_query_with_no_changed_vintages_is_a_successful_noop(self) -> None:
+        """짧은 감사 구간에 개정이 없다는 것은 외부 원천 장애가 아니다."""
+        target = {"series_id": "US_CPI", "fred_id": "CPIAUCSL", "scale": None}
+        with patch.object(alfred, "fetch_revisions", return_value=[]):
+            values, failures = alfred.fetch_batch(
+                [target], observation_start=date(2026, 8, 12), revisions=True,
+            )
+        self.assertEqual(values, {})
+        self.assertEqual(failures, [])
 
 
 if __name__ == "__main__":
