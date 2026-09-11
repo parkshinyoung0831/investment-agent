@@ -36,7 +36,19 @@ def _failure_reason(exc: Exception) -> str:
         return str(exc)
     if isinstance(exc, requests.HTTPError):
         response = exc.response
-        return f"HTTP {response.status_code}" if response is not None else "HTTP error"
+        if response is None:
+            return "HTTP error"
+        message = ""
+        try:
+            payload = response.json()
+            if isinstance(payload, dict):
+                message = str(payload.get("error_message") or payload.get("message") or "")
+        except ValueError:
+            pass
+        if message:
+            # URL이나 query string은 쓰지 않는다. provider의 구조화된 설명만 짧게 남긴다.
+            return f"HTTP {response.status_code}: {message[:240]}"
+        return f"HTTP {response.status_code}"
     return type(exc).__name__
 
 

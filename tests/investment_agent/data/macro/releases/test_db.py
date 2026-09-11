@@ -6,6 +6,8 @@ from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+import requests
+
 from investment_agent.data.macro.application import release_calendar as etl
 from investment_agent.data.macro.releases import db
 from investment_agent.data.macro.domain.releases.identity import event_key, split_event_key
@@ -187,6 +189,18 @@ class AlfredParserTest(unittest.TestCase):
                 [target], observation_start=date(2026, 8, 12), revisions=True,
             )
         self.assertEqual(failures[0]["error"], "ALFRED revision row has no observation date")
+
+    def test_revision_failure_retains_the_provider_error_message_without_a_request_url(self) -> None:
+        response = requests.Response()
+        response.status_code = 400
+        response._content = b'{"error_message":"Bad Request. Invalid realtime_start."}'
+        error = requests.HTTPError("request URL must never enter the diagnostic", response=response)
+        target = {"series_id": "US_CPI", "fred_id": "CPIAUCSL", "scale": None}
+        with patch.object(alfred, "fetch_revisions", side_effect=error):
+            _values, failures = alfred.fetch_batch(
+                [target], observation_start=date(2026, 8, 12), revisions=True,
+            )
+        self.assertEqual(failures[0]["error"], "HTTP 400: Bad Request. Invalid realtime_start.")
 
 
 if __name__ == "__main__":
