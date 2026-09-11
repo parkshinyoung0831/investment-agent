@@ -17,11 +17,49 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from investment_agent.platform.logging import get_logger
+from investment_agent.platform.storage_paths import runtime_database_path
 
 log = get_logger(__name__)
 
 
+def _runtime_ledger_available() -> bool:
+    """현재 실행기가 발송 원장을 읽을 수 있는지 확인한다.
+
+    GitHub-hosted 하트비트에는 실행 컴퓨터의 SQLite가 없다. 이때 ``mode=ro``로
+    억지로 열면 정상 점검이 경고를 남기며 모든 카운터를 버린다. 발송 워크플로는
+    runtime-ledger action이 원장을 복원하므로, 파일 존재 여부가 이 구분의 명시적
+    경계다.
+    """
+    return runtime_database_path().is_file()
+
+
+def _fundamentals_canonical() -> str:
+    """원장 없이도 Supabase가 소유한 관심종목 수는 표시한다."""
+    from investment_agent.reporting.notifications import earnings_report as db
+
+    return f"관심종목 {len(db.watchlist_members())}"
+
+
+def _calendar_canonical() -> str:
+    """원장 없이도 현재 주의 원천 일정 수는 표시한다."""
+    from investment_agent.notifications.earnings_calendar import candidates
+
+    rows, _, _ = candidates.collect(candidates._default_store())
+    return f"이번 주 발표 예정 {len(rows)}"
+
+
+def _gurus_canonical() -> str:
+    """원장 없이도 최신 13F 제출 현황은 표시한다."""
+    from investment_agent.notifications.institutional import card, dataset
+
+    data = dataset.load_snapshot()
+    period = card._latest_period(data)
+    return f"최신 13F {len(card._latest_filings(data, period))}건({period})"
+
+
 def _fundamentals() -> str:
+    if not _runtime_ledger_available():
+        return _fundamentals_canonical()
     from investment_agent.notifications.earnings_report import candidates
 
     state = candidates.pending_state()
@@ -29,6 +67,8 @@ def _fundamentals() -> str:
 
 
 def _calendar() -> str:
+    if not _runtime_ledger_available():
+        return _calendar_canonical()
     from investment_agent.notifications.earnings_calendar import candidates
 
     state = candidates.pending_state()
@@ -36,6 +76,8 @@ def _calendar() -> str:
 
 
 def _gurus() -> str:
+    if not _runtime_ledger_available():
+        return _gurus_canonical()
     from investment_agent.notifications.institutional import state as gurus_state
 
     state = gurus_state.pending_state()

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 from investment_agent.operations.monitoring import counters, digest
 
@@ -127,6 +128,17 @@ class EmbedTest(unittest.TestCase):
 
 
 class CountersTest(unittest.TestCase):
+    def test_hosted_heartbeat_uses_canonical_counters_without_local_ledger(self):
+        """GitHub runner에는 로컬 outbox가 없지만 점검 카드의 사실 카운터는 남긴다."""
+        with patch.object(counters, "_runtime_ledger_available", return_value=False), \
+             patch.object(counters, "_fundamentals_canonical", return_value="관심종목 50"), \
+             patch.object(counters, "_calendar_canonical", return_value="이번 주 발표 예정 3"), \
+             patch.object(counters, "_gurus_canonical", return_value="최신 13F 4건(2026-06-30)"):
+            self.assertEqual(
+                counters.collect(),
+                ["관심종목 50", "이번 주 발표 예정 3", "최신 13F 4건(2026-06-30)"],
+            )
+
     def test_a_broken_source_never_kills_the_digest(self):
         """카운터 하나가 실패했다고 점검이 사라지면 점검이 없는 것보다 나쁘다."""
         def boom() -> str:
