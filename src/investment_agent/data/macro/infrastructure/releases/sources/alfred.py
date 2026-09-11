@@ -30,6 +30,26 @@ class AlfredDataError(ValueError):
     """ALFRED response가 vintage 계약을 만족하지 않을 때 발생한다."""
 
 
+def _http_error_message(response: requests.Response) -> str:
+    try:
+        payload = response.json()
+    except ValueError:
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    return str(payload.get("error_message") or payload.get("message") or "")
+
+
+def _is_empty_vintage_window(exc: Exception) -> bool:
+    if not isinstance(exc, requests.HTTPError) or exc.response is None:
+        return False
+    return (
+        exc.response.status_code == 400
+        and "no vintage dates exist for the specified real-time period" in
+        _http_error_message(exc.response).casefold()
+    )
+
+
 def _failure_reason(exc: Exception) -> str:
     """Actions 로그에 안전하게 남길 수 있는 provider 실패 요약."""
     if isinstance(exc, AlfredDataError):
@@ -38,13 +58,7 @@ def _failure_reason(exc: Exception) -> str:
         response = exc.response
         if response is None:
             return "HTTP error"
-        message = ""
-        try:
-            payload = response.json()
-            if isinstance(payload, dict):
-                message = str(payload.get("error_message") or payload.get("message") or "")
-        except ValueError:
-            pass
+        message = _http_error_message(response)
         if message:
             # URL이나 query string은 쓰지 않는다. provider의 구조화된 설명만 짧게 남긴다.
             return f"HTTP {response.status_code}: {message[:240]}"
@@ -236,6 +250,8 @@ def fetch_batch(
                 raise AlfredDataError("ALFRED returned no matching vintages")
             collected[series_id] = rows
         except Exception as exc:  # noqa: BLE001 - source isolation.
+            if revisions and _is_empty_vintage_window(exc):
+                continue
             reason = _failure_reason(exc)
             log.warning("ALFRED %s failed (%s): %s", series_id, type(exc).__name__, reason)
             failures.append({

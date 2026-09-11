@@ -202,6 +202,22 @@ class AlfredParserTest(unittest.TestCase):
             )
         self.assertEqual(failures[0]["error"], "HTTP 400: Bad Request. Invalid realtime_start.")
 
+    def test_revision_window_without_provider_vintages_is_a_successful_noop(self) -> None:
+        """ALFRED가 빈 vintage 구간을 400으로 표현해도 개정 없음으로 처리한다."""
+        response = requests.Response()
+        response.status_code = 400
+        response._content = (
+            b'{"error_message":"Bad Request. No vintage dates exist for the specified real-time period."}'
+        )
+        error = requests.HTTPError(response=response)
+        target = {"series_id": "US_GDP", "fred_id": "A191RL1Q225SBEA", "scale": None}
+        with patch.object(alfred, "fetch_revisions", side_effect=error):
+            values, failures = alfred.fetch_batch(
+                [target], observation_start=date(2026, 8, 12), revisions=True,
+            )
+        self.assertEqual(values, {})
+        self.assertEqual(failures, [])
+
 
 if __name__ == "__main__":
     unittest.main()
