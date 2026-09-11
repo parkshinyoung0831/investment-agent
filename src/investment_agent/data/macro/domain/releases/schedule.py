@@ -38,7 +38,10 @@ _MONTH_LAG = {
 }
 _WEEKLY_LAG_DAYS = {
     "US_INITIAL_CLAIMS": 5,
-    "US_CONTINUING_CLAIMS": 5,
+    # CCSA is published with an additional reporting-week delay.  For example,
+    # the 2026-08-29 observation was released on 2026-09-10, while initial
+    # claims for that week were released on 2026-09-03.
+    "US_CONTINUING_CLAIMS": 12,
     "EIA_CRUDE_OIL_INVENTORIES": 5,
 }
 

@@ -63,6 +63,13 @@ class ReferencePeriodTest(unittest.TestCase):
             date(2026, 8, 22),
         )
 
+    def test_continuing_claims_use_the_week_reported_with_a_second_week_delay(self) -> None:
+        """The 2026-08-29 CCSA print was published on 2026-09-10, not 2026-09-03."""
+        self.assertEqual(
+            schedule.reference_period("US_CONTINUING_CLAIMS", "weekly", date(2026, 9, 10)),
+            date(2026, 8, 29),
+        )
+
     def test_rule_dates_are_deterministic(self) -> None:
         self.assertEqual(
             schedule.rule_dates("weekly_wednesday", start=date(2026, 8, 1), end=date(2026, 8, 15)),
