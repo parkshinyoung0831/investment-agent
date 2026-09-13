@@ -145,7 +145,11 @@ _GENERATED = frozenset({"expected_report_date"})
 
 def _write_versions(table: str, rows: list[dict], *, key: tuple, values: tuple, pk: str,
                     defaults: Mapping[str, object] | None = None) -> int:
-    """상태가 바뀐 행만 넣고, 같은 상태는 기존 버전의 last_seen_at만 옮긴다."""
+    """상태가 바뀐 행만 넣고, 같은 상태는 기존 버전의 last_seen_at만 옮긴다.
+
+    돌려주는 수는 이번에 관측해 반영한 상태 수(새 버전 + 확인)다. 호출자는 이 수로 수집이
+    무너졌는지 판정하므로, 값이 안 바뀐 날을 0건으로 세면 정상 실행이 실패로 보인다.
+    """
     payload = [{**(defaults or {}), **row} for row in _with_security_id(rows)]
     if not payload:
         return 0
@@ -163,7 +167,7 @@ def _write_versions(table: str, rows: list[dict], *, key: tuple, values: tuple, 
     _upsert(table, confirmations, pk)
     log.info("%s versions: new=%d confirmed=%d candidates=%d",
              table, len(plan.new_rows), len(confirmations), len(payload))
-    return len(plan.new_rows)
+    return len(plan.new_rows) + len(confirmations)
 
 
 def upsert_consensus(rows: list[dict]) -> int:
