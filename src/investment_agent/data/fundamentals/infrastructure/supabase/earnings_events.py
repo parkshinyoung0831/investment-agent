@@ -28,8 +28,22 @@ def load_fiscal_calendar(ticker: str) -> list[dict[str, Any]]:
     return expectations.fiscal_periods([ticker])
 
 
+def tracked_tickers_by_cik(securities: list[dict[str, Any]]) -> dict[str, list[str]]:
+    """수집 게이트를 지난 종목만 CIK별 ticker 목록으로 묶는다.
+
+    같은 CIK에는 우선주·채권·자리표시 종목도 있다. 그 ticker로 예상치를 만들면 보통주의
+    서프라이즈에 붙지 않는다. 의결권이 다른 보통주(GOOG/GOOGL)는 둘 다 남긴다.
+    """
+    out: dict[str, set[str]] = {}
+    for row in securities:
+        cik, ticker = str(row.get("cik") or ""), str(row.get("ticker") or "").upper()
+        if cik and ticker and row.get("is_tracked") and row.get("security_type") == "common_stock":
+            out.setdefault(cik, set()).add(ticker)
+    return {cik: sorted(tickers) for cik, tickers in out.items()}
+
+
 def load_earnings_results(tickers: list[str] | None) -> list[dict[str, Any]]:
-    """역사 예상치 재구성에 필요한 실적 속보 회계키만 읽는다."""
+    """역사 예상치 재구성에 필요한 실적 속보 회계키만 읽는다. 행은 수집 대상 보통주마다 하나다."""
     selected = (
         sorted({str(ticker).upper() for ticker in tickers if str(ticker).strip()})
         if tickers is not None
@@ -41,17 +55,18 @@ def load_earnings_results(tickers: list[str] | None) -> list[dict[str, Any]]:
     if selected:
         securities = select_paged_in_chunks(
             lambda chunk: sb.schema(SCHEMA_UNIVERSE).table(T_SECURITIES)
-            .select("ticker,cik").in_("ticker", chunk),
+            .select("ticker,cik,security_type,is_tracked").in_("ticker", chunk),
             selected,
             order_by="ticker",
             paged_reader=select_all_paged,
         )
     else:
         securities = select_all_paged(
-            lambda: sb.schema(SCHEMA_UNIVERSE).table(T_SECURITIES).select("ticker,cik"),
+            lambda: sb.schema(SCHEMA_UNIVERSE).table(T_SECURITIES)
+            .select("ticker,cik,security_type,is_tracked").eq("is_tracked", True),
             order_by="ticker",
         )
-    by_cik = {str(row["cik"]): str(row["ticker"]).upper() for row in securities if row.get("cik")}
+    by_cik = tracked_tickers_by_cik(securities)
     if not by_cik:
         return []
     results = select_paged_in_chunks(
@@ -73,11 +88,12 @@ def load_earnings_results(tickers: list[str] | None) -> list[dict[str, Any]]:
     return [
         {
             **row,
-            "ticker": by_cik.get(str(row.get("cik"))),
+            "ticker": ticker,
             "filed_at": filed_by_accession.get(str(row.get("accession_no"))),
         }
         for row in results
         if filed_by_accession.get(str(row.get("accession_no")))
+        for ticker in by_cik.get(str(row.get("cik")), [])
     ]
 
 

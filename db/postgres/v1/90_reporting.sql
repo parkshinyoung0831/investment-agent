@@ -94,9 +94,11 @@ ORDER BY v.security_id, v.target_fiscal_year, v.target_fiscal_period, v.snapshot
 COMMENT ON VIEW reporting.earnings_schedule IS '종목·대상 분기마다 현재 발표 예정 한 행과 직전 예정 시각.';
 
 -- 발표 전에 알려져 있던 컨센서스와 실제치를 비교한다.
---   * 대상 예상: captured_live(직접 수집)·vendor_pit(당시 값 보장)만. reconstructed와
---     latest_history는 발표 뒤에 만든 값일 수 있어 쓰지 않는다.
---   * 발표 전: 공시일보다 앞선 상태, 또는 공시일 당일에 공시를 손에 넣기 전에 수집한 상태.
+--   * 대상 예상: captured_live(직접 수집)·vendor_pit(당시 값 보장)를 먼저 쓴다.
+--     발표 전: 공시일보다 앞선 상태, 또는 공시일 당일에 공시를 손에 넣기 전에 수집한 상태.
+--   * 그런 예상이 없는 과거 발표만 reconstructed(공급자 발표 이력의 그 분기 예상)로 채운다.
+--     당시 값이라는 보장이 없으므로 estimate_kind로 드러내고, 발표일 허용 오차(3일)를
+--     넘겨 만든 상태는 쓰지 않는다. latest_history는 어느 발표의 예상인지 몰라 쓰지 않는다.
 --   * 비율은 분수다(0.05 = +5%). 이름에 ratio를 붙여 %로 오해하지 않게 한다.
 --   * EPS 정의가 서로 다르면(GAAP vs adjusted) EPS 서프라이즈를 내지 않고, 한쪽이라도
 --     unknown이면 값을 내되 eps_basis_match='unknown'으로 드러낸다.
@@ -138,7 +140,8 @@ SELECT
   r.press_release_url
 FROM fundamentals.earnings_results r
 JOIN fundamentals.filings f ON f.accession_no = r.accession_no
-JOIN universe.securities s ON s.cik = r.cik AND s.is_active_listing
+-- 회사 실적은 보통주에만 붙인다. 같은 CIK의 우선주·채권·워런트는 다른 증권이다.
+JOIN universe.securities s ON s.cik = r.cik AND s.is_active_listing AND s.security_type = 'common_stock'
 LEFT JOIN LATERAL (
   SELECT est.security_id, est.eps_avg, est.revenue_avg, est.eps_basis, est.snapshot_kind,
          est.snapshot_date, est.collected_at, est.eps_analysts
@@ -146,14 +149,18 @@ LEFT JOIN LATERAL (
   WHERE est.security_id = s.security_id
     AND est.target_fiscal_year = r.fiscal_year
     AND est.target_fiscal_period = r.fiscal_period
-    AND est.snapshot_kind IN ('captured_live', 'vendor_pit')
-    AND (est.snapshot_date < f.filing_date
-         OR (est.snapshot_date = f.filing_date AND est.collected_at < f.available_at))
-  ORDER BY est.snapshot_date DESC, est.collected_at DESC,
+    AND (
+      (est.snapshot_kind IN ('captured_live', 'vendor_pit')
+       AND (est.snapshot_date < f.filing_date
+            OR (est.snapshot_date = f.filing_date AND est.collected_at < f.available_at)))
+      OR (est.snapshot_kind = 'reconstructed' AND est.snapshot_date <= f.filing_date + 3)
+    )
+  ORDER BY CASE est.snapshot_kind WHEN 'reconstructed' THEN 1 ELSE 0 END,
+           est.snapshot_date DESC, est.collected_at DESC,
            CASE est.snapshot_kind WHEN 'captured_live' THEN 0 ELSE 1 END
   LIMIT 1
 ) e ON true;
-COMMENT ON VIEW reporting.earnings_surprise IS '실적 발표(8-K) 하나·상장 종목 하나 = 한 행. 발표 전에 알려진 컨센서스만 비교한다. *_surprise_ratio는 분수(0.05=+5%).';
+COMMENT ON VIEW reporting.earnings_surprise IS '실적 발표(8-K) 하나·상장 종목 하나 = 한 행. 발표 전에 수집한 컨센서스를 먼저 쓰고, 없으면 공급자 발표 이력 재구성값(estimate_kind=reconstructed)으로 채운다. *_surprise_ratio는 분수(0.05=+5%).';
 
 CREATE OR REPLACE VIEW reporting.institutional_filings WITH (security_invoker = true) AS
 SELECT f.accession_no, f.manager_cik, f.period_end, f.form_type, f.report_type, f.filing_date, f.accepted_at,
@@ -461,7 +468,7 @@ COMMENT ON COLUMN reporting.security_overview.cik IS '발행사 CIK.';
 CREATE OR REPLACE VIEW reporting.financial_statements WITH (security_invoker = true) AS
 SELECT
   (SELECT string_agg(s.ticker, '/' ORDER BY s.ticker) FROM universe.securities s
-    WHERE s.cik = f.cik AND s.is_active_listing) AS tickers,
+    WHERE s.cik = f.cik AND s.is_active_listing AND s.security_type = 'common_stock') AS tickers,
   e.company_name,
   f.fiscal_year,
   f.fiscal_period,
@@ -578,6 +585,7 @@ SELECT
     WHEN x.eps_estimate IS NULL AND x.revenue_estimate IS NULL THEN '발표 전 수집한 예상 없음'
     WHEN x.eps_basis_match = 'mismatch' THEN 'EPS 정의 불일치로 EPS 비교 제외'
     WHEN x.eps_basis_match = 'unknown' THEN 'EPS 정의 미확인'
+    WHEN x.estimate_kind = 'reconstructed' THEN '발표 이력에서 재구성한 예상(당시 값 보장 없음)'
   END AS comparability_note,
   x.accession_no,
   x.security_id
@@ -588,7 +596,7 @@ COMMENT ON COLUMN reporting.earnings_surprises.fiscal_year IS '발표 대상 회
 COMMENT ON COLUMN reporting.earnings_surprises.fiscal_period IS '발표 대상 기간.';
 COMMENT ON COLUMN reporting.earnings_surprises.filing_date IS '실적 8-K 제출일.';
 COMMENT ON COLUMN reporting.earnings_surprises.eps_actual IS '발표 EPS.';
-COMMENT ON COLUMN reporting.earnings_surprises.eps_estimate IS '발표 전 마지막 EPS 컨센서스.';
+COMMENT ON COLUMN reporting.earnings_surprises.eps_estimate IS '발표 전 마지막 EPS 컨센서스. estimate_kind=reconstructed면 발표 이력의 그 분기 예상.';
 COMMENT ON COLUMN reporting.earnings_surprises.eps_surprise_percent IS 'EPS 서프라이즈(%). 정의가 다르면 NULL.';
 COMMENT ON COLUMN reporting.earnings_surprises.eps_basis_match IS 'match=같은 정의, unknown=한쪽 정의 미확인, mismatch=정의 다름.';
 COMMENT ON COLUMN reporting.earnings_surprises.revenue_actual IS '발표 매출.';

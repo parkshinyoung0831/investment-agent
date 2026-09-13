@@ -485,8 +485,10 @@ class ExecutionRepository:
     @staticmethod
     def _with_security_identity(row: dict) -> dict:
         ticker = str(row.get("ticker") or "").strip().upper()
+        # 주문은 상장 중인 종목에만 낸다. 같은 ticker의 과거 자리표시 종목은 후보가 아니다.
         identities = (sb.schema(SCHEMA_UNIVERSE).table(T_SECURITIES).select("security_id")
-                      .eq("ticker", ticker).limit(2).execute().data or []) if ticker else []
+                      .eq("ticker", ticker).eq("is_active_listing", True)
+                      .limit(2).execute().data or []) if ticker else []
         if len(identities) != 1:
             raise ExecutionSafetyError("order ticker is not present in universe")
         security_id = int(identities[0]["security_id"])

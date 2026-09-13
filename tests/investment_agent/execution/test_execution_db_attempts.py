@@ -107,7 +107,7 @@ class ExecutionAttemptRepositoryTest(unittest.TestCase):
             self.assertIsNone(connection.execute("SELECT 1 FROM order_events LIMIT 1").fetchone())
 
     def test_position_snapshot_resolves_ticker_to_universe_security_id(self):
-        fake = FakeDatabase({("universe", "securities"): [{"security_id": 17, "ticker": "AAPL"}]})
+        fake = FakeDatabase({("universe", "securities"): [{"security_id": 17, "ticker": "AAPL", "is_active_listing": True}]})
         with patch("investment_agent.execution.db.sb", fake._client):
             self.repo.save_position_snapshots([{
                 "account_snapshot_id": 41,

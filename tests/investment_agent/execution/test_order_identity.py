@@ -44,7 +44,7 @@ class OrderIdentityTest(unittest.TestCase):
 
     def test_write_contains_security_identity_and_approved_ticker(self):
         row = self._row()
-        client = self._universe_client([{"security_id": 42, "ticker": "AAPL"}])
+        client = self._universe_client([{"security_id": 42, "ticker": "AAPL", "is_active_listing": True}])
         with patch.object(db, "sb", client):
             db.ExecutionRepository().create_planned_order(row)
 
@@ -58,7 +58,7 @@ class OrderIdentityTest(unittest.TestCase):
         self.assertNotIn("security_id", row)
 
     def test_missing_or_conflicting_identity_prevents_write(self):
-        for identities, supplied in (([], None), ([{"security_id": 42, "ticker": "AAPL"}], 99)):
+        for identities, supplied in (([], None), ([{"security_id": 42, "ticker": "AAPL", "is_active_listing": True}], 99)):
             with self.subTest(supplied=supplied):
                 row = self._row(client_order_id="order-2", security_id=supplied)
                 client = self._universe_client(identities)
@@ -71,14 +71,28 @@ class OrderIdentityTest(unittest.TestCase):
                         ).fetchone()
                     )
 
+    def test_past_placeholder_with_same_ticker_does_not_block_the_listing(self):
+        client = self._universe_client([
+            {"security_id": 42, "ticker": "AAPL", "is_active_listing": True},
+            # 과거 지수 이력의 자리표시 종목. 주문 후보가 아니다.
+            {"security_id": 1000999, "ticker": "AAPL", "is_active_listing": False},
+        ])
+        with patch.object(db, "sb", client):
+            db.ExecutionRepository().create_planned_order(self._row())
+        with runtime_connection(read_only=True) as connection:
+            stored = connection.execute(
+                "SELECT payload_json FROM orders WHERE client_order_id=?", ("order-1",)
+            ).fetchone()
+        self.assertEqual(42, json.loads(stored[0])["security_id"])
+
     def test_existing_different_security_is_not_reused(self):
-        client = self._universe_client([{"security_id": 42, "ticker": "AAPL"}])
+        client = self._universe_client([{"security_id": 42, "ticker": "AAPL", "is_active_listing": True}])
         with patch.object(db, "sb", client):
             db.ExecutionRepository().create_planned_order(self._row())
 
         # 같은 client_order_id를 다시 계획하는데, 이번에는 ticker가 다른 security_id로
         # 풀린다(예: 재배정) — 기존 행을 조용히 덮어써서는 안 된다.
-        reassigned_client = self._universe_client([{"security_id": 99, "ticker": "AAPL"}])
+        reassigned_client = self._universe_client([{"security_id": 99, "ticker": "AAPL", "is_active_listing": True}])
         with (
             patch.object(db, "sb", reassigned_client),
             self.assertRaisesRegex(ExecutionSafetyError, "conflicts"),

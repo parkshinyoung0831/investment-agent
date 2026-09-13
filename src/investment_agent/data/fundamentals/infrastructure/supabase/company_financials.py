@@ -116,7 +116,7 @@ def watchlist_expected_reports() -> list[dict]:
         return []
     securities = select_paged_in_chunks(
         lambda chunk: sb.schema(SCHEMA_UNIVERSE).table(T_SECURITIES)
-        .select("security_id,ticker").in_("ticker", chunk),
+        .select("security_id,ticker").in_("ticker", chunk).eq("is_active_listing", True),
         tickers,
         order_by="ticker",
         paged_reader=select_all_paged,

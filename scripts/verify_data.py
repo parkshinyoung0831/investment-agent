@@ -98,6 +98,10 @@ CHECKS: tuple[tuple[str, str, int], ...] = (
      " and not exists (select 1 from universe.security_identifiers i where i.security_id = s.security_id"
      " and i.identifier_type = 'TICKER' and i.mapping_status = 'verified' and i.valid_to is null"
      " and i.identifier = s.ticker)", 0),
+    # 회사 단위 실적이 보통주가 아닌 증권(우선주·채권)에 붙으면 한 발표가 여러 행으로 부푼다.
+    ("fundamentals.surprise_rows_are_common_stock",
+     "select count(*) from reporting.earnings_surprise x join universe.securities s using (security_id)"
+     " where s.security_type <> 'common_stock'", 0),
     ("universe.no_minus_infinity_starts",
      "select count(*) from universe.security_identifiers where valid_from = '-infinity'::date", 0),
 
@@ -140,10 +144,18 @@ CHECKS: tuple[tuple[str, str, int], ...] = (
      " lag(row(target_period_end, expected_report_at, expected_session, is_estimated)) over (partition by"
      " security_id, target_fiscal_year, target_fiscal_period, source order by snapshot_date, collected_at) as prev"
      " from fundamentals.earnings_schedule_versions) d where prev is not distinct from cur", 0),
-    # 서프라이즈가 발표 뒤에 모은 예상을 쓰면 없는 놀라움이 생긴다.
+    # 서프라이즈가 발표 뒤에 모은 예상을 쓰면 없는 놀라움이 생긴다. 재구성값은 발표일 오차만 허용한다.
     ("fundamentals.surprise_estimates_precede_release",
-     "select count(*) from reporting.earnings_surprise where estimate_snapshot_date is not null"
-     " and (estimate_kind not in ('captured_live', 'vendor_pit') or estimate_snapshot_date > filing_date)", 0),
+     "select count(*) from reporting.earnings_surprise where estimate_snapshot_date is not null and ("
+     " (estimate_kind in ('captured_live', 'vendor_pit') and estimate_snapshot_date > filing_date)"
+     " or (estimate_kind = 'reconstructed' and estimate_snapshot_date > filing_date + 3)"
+     " or estimate_kind not in ('captured_live', 'vendor_pit', 'reconstructed'))", 0),
+    # ±100%를 넘는 EPS 서프라이즈는 0에 가까운 예상에서 실제로 생긴다. 5%를 넘게 몰리면
+    # 기간·단위 연결을 의심한다.
+    ("fundamentals.eps_surprise_within_sane_range",
+     "select case when count(*) filter (where abs(eps_surprise_ratio) > 1) * 20"
+     " > count(eps_surprise_ratio) then count(*) filter (where abs(eps_surprise_ratio) > 1) else 0 end"
+     " from reporting.earnings_surprise", 0),
 
     # ── macro 단위 ──
     # 비교 단위가 %인 발표의 최초값이 수백이면 원지수를 measure로 읽은 것이다(CPI 334.131 사고).

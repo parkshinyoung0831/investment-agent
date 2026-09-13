@@ -623,7 +623,7 @@ def segment_snapshots_as_of(tickers: Sequence[str], as_of_at: datetime) -> dict[
     cutoff_date = as_of_at.astimezone(timezone.utc).date().isoformat()
     securities = select_paged_in_chunks(
         lambda chunk: sb.schema(SCHEMA_UNIVERSE).table(T_SECURITIES)
-        .select("ticker,cik").in_("ticker", chunk),
+        .select("ticker,cik").in_("ticker", chunk).eq("is_active_listing", True),
         symbols, order_by="ticker", paged_reader=select_all_paged,
     )
     tickers_by_cik: dict[str, list[str]] = defaultdict(list)
@@ -691,7 +691,7 @@ def segment_snapshot_as_of(ticker: str, as_of_at: datetime) -> dict:
     cutoff_date = as_of_at.astimezone(timezone.utc).date().isoformat()
     securities = select_all_paged(
         lambda: sb.schema(SCHEMA_UNIVERSE).table(T_SECURITIES)
-        .select("ticker,cik").eq("ticker", ticker),
+        .select("ticker,cik").eq("ticker", ticker).eq("is_active_listing", True),
         order_by="ticker",
     )
     if not securities or not securities[0].get("cik"):

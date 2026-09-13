@@ -58,15 +58,16 @@ def fiscal_periods(tickers: list[str]) -> list[dict]:
         return []
     securities = select_paged_in_chunks(
         lambda chunk: sb.schema(SCHEMA_UNIVERSE).table(T_SECURITIES)
-        .select("security_id,ticker,cik").in_("ticker", chunk),
+        .select("security_id,ticker,cik").in_("ticker", chunk).eq("is_active_listing", True),
         tickers,
         order_by="ticker",
         paged_reader=select_all_paged,
     )
-    by_cik = {
-        str(row["cik"]): str(row["ticker"]).upper()
-        for row in securities if row.get("cik")
-    }
+    # 한 회사의 보통주가 둘(GOOG/GOOGL)이면 회계력도 둘 다에 붙인다.
+    by_cik: dict[str, list[str]] = defaultdict(list)
+    for row in securities:
+        if row.get("cik"):
+            by_cik[str(row["cik"])].append(str(row["ticker"]).upper())
     if not by_cik:
         return []
     rows = select_paged_in_chunks(
@@ -77,13 +78,14 @@ def fiscal_periods(tickers: list[str]) -> list[dict]:
         order_by="cik,fiscal_year,fiscal_period,period_end",
         paged_reader=select_all_paged,
     )
-    return [{**row, "ticker": by_cik[str(row["cik"])]} for row in rows]
+    return [{**row, "ticker": ticker} for row in rows for ticker in by_cik[str(row["cik"])]]
 
 
 def _security_ids(tickers: list[str]) -> dict[str, int]:
+    """현재 ticker의 security_id. 과거 자리표시 종목이 같은 ticker를 가져도 상장 종목 하나만 고른다."""
     rows = select_paged_in_chunks(
         lambda chunk: sb.schema(SCHEMA_UNIVERSE).table(T_SECURITIES)
-        .select("security_id,ticker").in_("ticker", chunk),
+        .select("security_id,ticker").in_("ticker", chunk).eq("is_active_listing", True),
         sorted(set(tickers)),
         order_by="ticker",
         paged_reader=select_all_paged,
@@ -321,7 +323,7 @@ def securities_fundamentals_as_of(
         return []
     securities = select_paged_in_chunks(
         lambda chunk: sb.schema(SCHEMA_UNIVERSE).table(T_SECURITIES)
-        .select("ticker,cik").in_("ticker", chunk),
+        .select("ticker,cik").in_("ticker", chunk).eq("is_active_listing", True),
         symbols, order_by="ticker", paged_reader=select_all_paged,
     )
     tickers_by_cik: dict[str, list[str]] = defaultdict(list)

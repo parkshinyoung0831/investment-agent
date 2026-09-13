@@ -256,7 +256,7 @@ class LocalRuntimeViewTest(unittest.TestCase):
         intent = self._live_intent()
         repo = ExecutionRepository()
         repo.save_intent(intent.as_row())
-        universe = FakeDatabase({("universe", "securities"): [{"security_id": 1, "ticker": "AAPL"}]})
+        universe = FakeDatabase({("universe", "securities"): [{"security_id": 1, "ticker": "AAPL", "is_active_listing": True}]})
         with patch("investment_agent.execution.db.sb", universe._client):
             repo.create_planned_order({
                 "client_order_id": "order-1", "intent_id": intent.intent_id,

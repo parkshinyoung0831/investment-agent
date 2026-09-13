@@ -352,7 +352,7 @@ class SelectOnlyGatewayTests(unittest.TestCase):
                     "identifier": "037833100", "identifier_type": "CUSIP", "security_id": 7,
                     "mapping_status": "mapped", "updated_at": "2026-08-15T12:00:00Z",
                 }],
-                ("universe", "securities"): [{"security_id": 7, "ticker": "AAPL"}],
+                ("universe", "securities"): [{"security_id": 7, "ticker": "AAPL", "is_active_listing": True}],
             },
         )
         with (
@@ -590,7 +590,7 @@ class SelectOnlyGatewayTests(unittest.TestCase):
         (reporting.local_runtime)가 소유한다 — 실제 SQLite로 검증한다."""
         with tempfile.TemporaryDirectory() as directory:
             runtime_path = Path(directory) / "runtime.sqlite3"
-            universe = _FakeClient({("universe", "securities"): [{"security_id": 1, "ticker": "AAPL"}]})
+            universe = _FakeClient({("universe", "securities"): [{"security_id": 1, "ticker": "AAPL", "is_active_listing": True}]})
             with (
                 patch.dict("os.environ", {"AI_INVESTOR_RUNTIME_DB_PATH": str(runtime_path)}, clear=False),
                 patch.object(execution_db, "sb", universe),

@@ -163,6 +163,27 @@ class ReportedEarningsAdapterTests(unittest.TestCase):
                 reported_earnings.fetch_reported_earnings("ADI")
 
 
+class TrackedTickersByCikTests(unittest.TestCase):
+    def test_only_tracked_common_stock_carries_company_results(self) -> None:
+        from investment_agent.data.fundamentals.infrastructure.supabase.earnings_events import (
+            tracked_tickers_by_cik,
+        )
+
+        securities = [
+            {"cik": "0000947484", "ticker": "ACGL", "security_type": "common_stock", "is_tracked": True},
+            # 같은 CIK의 우선주가 알파벳 순으로 뒤에 와도 회사 실적을 가져가면 안 된다.
+            {"cik": "0000947484", "ticker": "ACGLO", "security_type": "preferred_stock", "is_tracked": False},
+            {"cik": "0001652044", "ticker": "GOOGL", "security_type": "common_stock", "is_tracked": True},
+            {"cik": "0001652044", "ticker": "GOOG", "security_type": "common_stock", "is_tracked": True},
+            {"cik": "0000000001", "ticker": "OLD", "security_type": "common_stock", "is_tracked": False},
+        ]
+
+        self.assertEqual(
+            {"0000947484": ["ACGL"], "0001652044": ["GOOG", "GOOGL"]},
+            tracked_tickers_by_cik(securities),
+        )
+
+
 class EarningsFlashViewContractTests(unittest.TestCase):
     def test_view_declares_observed_estimate_contract(self) -> None:
         with open("db/postgres/v1/30_fundamentals.sql", encoding="utf-8") as handle:
@@ -176,7 +197,14 @@ class EarningsFlashViewContractTests(unittest.TestCase):
         with open("db/postgres/v1/90_reporting.sql", encoding="utf-8") as handle:
             reporting_sql = handle.read()
         self.assertIn("est.snapshot_date < f.filing_date", reporting_sql)
-        self.assertNotIn("est.snapshot_date <= f.filing_date", reporting_sql)
+        # 발표 당일 이후 예상을 허용하는 조건은 재구성값 분기 하나뿐이어야 한다.
+        self.assertEqual(1, reporting_sql.count("est.snapshot_date <= f.filing_date"))
+        self.assertIn(
+            "est.snapshot_kind = 'reconstructed' AND est.snapshot_date <= f.filing_date + 3",
+            reporting_sql,
+        )
+        # 재구성값은 발표 전 관측이 없을 때만 쓴다.
+        self.assertIn("ORDER BY CASE est.snapshot_kind WHEN 'reconstructed' THEN 1 ELSE 0 END", reporting_sql)
 
     def test_consumers_read_the_derived_flash_view(self) -> None:
         with open("src/investment_agent/reporting/notifications/earnings_flash.py", encoding="utf-8") as handle:
