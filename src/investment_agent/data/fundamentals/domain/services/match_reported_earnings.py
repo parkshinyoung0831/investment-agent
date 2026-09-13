@@ -5,6 +5,9 @@ from collections.abc import Mapping
 from datetime import date
 
 REPORT_DATE_TOLERANCE_DAYS = 3
+# Yahoo의 실적 EPS·예상 EPS·추세는 모두 애널리스트 기준(조정) EPS다. 같은 원천끼리만
+# 비교가 성립하므로 세 경로가 이 값 하나를 함께 적어 서프라이즈 뷰가 정의 일치를 판정한다.
+YAHOO_EPS_BASIS = "adjusted"
 
 
 def match_reported_earnings(
@@ -36,4 +39,4 @@ def match_reported_earnings(
     return report_date, values
 
 
-__all__ = ["REPORT_DATE_TOLERANCE_DAYS", "match_reported_earnings"]
+__all__ = ["REPORT_DATE_TOLERANCE_DAYS", "YAHOO_EPS_BASIS", "match_reported_earnings"]

@@ -43,6 +43,7 @@ class HistoricalEpsEstimateBuilderTests(unittest.TestCase):
             "snapshot_date": "2026-08-19",
             "snapshot_kind": "reconstructed",
             "source": HISTORICAL_EPS_SOURCE,
+            "eps_basis": "adjusted",
             "eps_avg": 3.34,
         }])
 

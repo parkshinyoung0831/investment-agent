@@ -7,6 +7,7 @@ from typing import Any
 
 from investment_agent.platform.logging import get_logger
 
+from investment_agent.data.fundamentals.domain.services.match_reported_earnings import YAHOO_EPS_BASIS
 from investment_agent.data.fundamentals.domain.services.classify_report_session import (
     ET,
     UNKNOWN,
@@ -251,6 +252,7 @@ def normalize_consensus(
             "snapshot_date": snapshot_date.isoformat(),
             "snapshot_kind": kind,
             "source": "yfinance",
+            "eps_basis": YAHOO_EPS_BASIS,
             "eps_avg": row.get("eps_avg"),
             **_coherent_range("eps", row.get("eps_low"), row.get("eps_high")),
             "eps_analysts": row.get("eps_analysts"),

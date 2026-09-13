@@ -7,6 +7,7 @@ from math import isfinite
 from typing import Any
 
 from investment_agent.data.fundamentals.domain.services.match_reported_earnings import (
+    YAHOO_EPS_BASIS,
     match_reported_earnings,
 )
 
@@ -79,6 +80,7 @@ def build_historical_eps_estimates(
             "snapshot_date": report_date,
             "snapshot_kind": "reconstructed",
             "source": HISTORICAL_EPS_SOURCE,
+            "eps_basis": YAHOO_EPS_BASIS,
             "eps_avg": eps_estimate,
         })
 

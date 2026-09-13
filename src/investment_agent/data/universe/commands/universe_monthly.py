@@ -19,7 +19,10 @@ def main(argv: list[str] | None = None) -> int:
     from investment_agent.data.universe.infrastructure.sources import sec
 
     t0 = time.monotonic()
-    etl.sync_exchange_listings(sec_get_json=sec.get_json)
+    from investment_agent.data.universe import REFERENCE_PRICE_TICKERS
+
+    # 시세 기준 ETF도 수집 계획이 security_id로 찾을 수 있게 같은 동기화로 등록한다.
+    etl.sync_exchange_listings(sec_get_json=sec.get_json, fund_tickers=REFERENCE_PRICE_TICKERS)
     etl.sync_sec_entities(sec_get_json=sec.get_json)
     membership = etl.reconcile_membership(audit_history=True)
     write_changed_output(bool(membership["changed"]))

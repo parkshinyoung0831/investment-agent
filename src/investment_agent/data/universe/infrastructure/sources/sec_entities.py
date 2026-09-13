@@ -17,6 +17,8 @@ from investment_agent.platform.logging import get_logger
 log = get_logger(__name__)
 
 _TICKERS_EXCHANGE_JSON = "https://www.sec.gov/files/company_tickers_exchange.json"
+# 투자회사(ETF·뮤추얼펀드) 클래스 목록. 자산군·섹터 ETF는 기업 목록에 없고 여기에만 있다.
+_TICKERS_FUND_JSON = "https://www.sec.gov/files/company_tickers_mf.json"
 _US_LISTING_EXCHANGES = {"Nasdaq", "NYSE", "CBOE"}
 
 
@@ -59,6 +61,46 @@ def fetch_exchange_listed_tickers(
             f"listed-security title coverage is unsafe: {titled}/{len(rows)}"
         )
     log.info("  SEC exchange-listed tickers: %d (titles=%d)", len(rows), titled)
+    return rows
+
+
+def fetch_fund_listings(
+    tickers: tuple[str, ...] | list[str], *, get_json: Callable[[str], Any]
+) -> list[dict]:
+    """요청한 ETF ticker만 SEC 투자회사 클래스 목록에서 찾아 상장 행으로 만든다.
+
+    전 세계 펀드 수만 개를 마스터에 넣지 않는다 — 시세 기준으로 쓰는 ETF만 등록한다.
+    한 ticker가 두 클래스에 걸리면 어느 쪽인지 정하지 않고 뺀다(신원 보류).
+    회사명은 비워 두고 SEC entity 보강 단계가 CIK로 채운다.
+    """
+    wanted = {norm_ticker(ticker) for ticker in tickers if norm_ticker(ticker)}
+    if not wanted:
+        return []
+    raw = get_json(_TICKERS_FUND_JSON)
+    fields = raw.get("fields") or []
+    matches: dict[str, list[dict]] = {}
+    for values in raw.get("data") or []:
+        row = dict(zip(fields, values))
+        ticker = norm_ticker(row.get("symbol"))
+        if ticker in wanted and row.get("cik") is not None:
+            matches.setdefault(ticker, []).append(row)
+    rows = []
+    for ticker in sorted(matches):
+        candidates = {(str(int(item["cik"])).zfill(10), item.get("classId")) for item in matches[ticker]}
+        if len(candidates) != 1:
+            log.warning("  fund ticker is ambiguous across share classes: %s %s", ticker, sorted(candidates))
+            continue
+        cik, class_id = next(iter(candidates))
+        rows.append({
+            "ticker": ticker,
+            "cik": cik,
+            "company_name": cik,
+            "exchange_code": None,
+            "security_type": "etf",
+            "security_title": f"SEC class {class_id}" if class_id else None,
+            "is_active_listing": True,
+        })
+    log.info("  SEC fund classes matched: %d/%d", len(rows), len(wanted))
     return rows
 
 

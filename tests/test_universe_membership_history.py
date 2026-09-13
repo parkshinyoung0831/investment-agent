@@ -122,6 +122,29 @@ class MembershipHistoryStorageTest(unittest.TestCase):
         chosen = [call.kwargs["security_ids"] for call in record.call_args_list]
         self.assertEqual([[1000009, 1000002], [1000002], [1000001, 1000002]], chosen)
 
+    def test_a_monthly_rerun_only_applies_snapshots_after_what_is_stored(self):
+        """월간 감사는 전체 이력을 다시 만든다. 이미 반영된 날짜를 다시 넣으면 DB 함수가
+        시간순 위반으로 거절해 다음 달 실행이 통째로 멈춘다."""
+        from investment_agent.data.universe.repository import UniverseRepository
+        from tests.investment_agent.fakes import FakeDatabase
+
+        fake = FakeDatabase()
+        fake.put("universe", "securities", [
+            {"security_id": 1000001, "ticker": "AAA", "cik": "0000000001", "is_active_listing": True,
+             "is_identity_verified": True, "is_tracked": True},
+        ])
+        fake.put("universe", "index_memberships", [
+            {"index_code": "SP500", "security_id": 1000001, "valid_from": "2021-01-04", "valid_to": None},
+        ])
+        rows = [
+            {"effective_date": "2020-01-02", "symbols": ["AAA"], "source": "t", "source_hash": "a" * 64},
+            {"effective_date": "2021-01-04", "symbols": ["AAA"], "source": "t", "source_hash": "b" * 64},
+            {"effective_date": "2022-01-03", "symbols": ["AAA"], "source": "t", "source_hash": "c" * 64},
+        ]
+        with mock.patch.object(db, "_database", fake),                 mock.patch.object(UniverseRepository, "record_membership", return_value=1) as record:
+            self.assertEqual(1, db.append_memberships(rows))
+        self.assertEqual([date(2022, 1, 3)], [call.args[0].effective_date for call in record.call_args_list])
+
     def test_schema_keeps_history_readable_and_append_only(self):
         sql = Path("db/postgres/v1/10_universe.sql").read_text(encoding="utf-8").lower()
         self.assertIn("create table if not exists universe.entities", sql)

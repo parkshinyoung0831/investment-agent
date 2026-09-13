@@ -78,6 +78,82 @@ CHECKS: tuple[tuple[str, str, int], ...] = (
      "select count(*) from fundamentals.filings where form_type not in"
      " ('10-Q', '10-Q/A', '10-K', '10-K/A', '8-K')", 0),
 
+    # ── identity ──
+    # 수집 게이트는 신원이 확인된 상장 종목에만 켠다. 자리표시 종목에 켜지면 다른 회사 자료를 받는다.
+    ("universe.tracked_is_verified_active_listing",
+     "select count(*) from universe.securities where is_tracked"
+     " and not (is_identity_verified and is_active_listing)", 0),
+    # 현재 S&P 500 구성과 수집 게이트가 어긋나면 편입 종목이 조용히 빠진다.
+    ("universe.current_sp500_members_are_tracked",
+     "select count(*) from universe.index_memberships m join universe.securities s using (security_id)"
+     " where m.index_code = 'SP500' and m.valid_to is null and not s.is_tracked", 0),
+    ("universe.current_sp500_size_in_range",
+     "select case when count(*) between 495 and 510 then 0 else count(*) end"
+     " from universe.index_memberships where index_code = 'SP500' and valid_to is null", 0),
+    # 새 세대 번호대. 옛 로컬 원장 번호(1~8천대)와 겹치면 판단 기록이 다른 종목으로 읽힌다.
+    ("universe.security_ids_use_the_new_range",
+     "select count(*) from universe.securities where security_id < 1000000", 0),
+    ("universe.active_listing_has_current_ticker_mapping",
+     "select count(*) from universe.securities s where s.is_active_listing and s.is_identity_verified"
+     " and not exists (select 1 from universe.security_identifiers i where i.security_id = s.security_id"
+     " and i.identifier_type = 'TICKER' and i.mapping_status = 'verified' and i.valid_to is null"
+     " and i.identifier = s.ticker)", 0),
+    ("universe.no_minus_infinity_starts",
+     "select count(*) from universe.security_identifiers where valid_from = '-infinity'::date", 0),
+
+    # ── market ──
+    ("market.every_price_target_has_prices",
+     "select count(*) from universe.securities s where s.is_tracked"
+     " and not exists (select 1 from market.prices_daily p where p.security_id = s.security_id)", 0),
+    # 가격이 며칠 끊긴 종목. 거래정지·상장폐지면 원인을 봐야 하고, 수집 누락이면 복구 대상이다.
+    ("market.tracked_prices_are_fresh",
+     "select count(*) from universe.securities s where s.is_tracked and"
+     " (select max(trade_date) from market.prices_daily p where p.security_id = s.security_id)"
+     " < (select max(trade_date) from market.prices_daily) - 5", 0),
+    ("market.no_bars_for_unverified_placeholders",
+     "select count(*) from market.prices_daily p join universe.securities s using (security_id)"
+     " where not s.is_identity_verified", 0),
+    ("market.dividend_currency_pairs",
+     "select count(*) from market.actions_daily where (dividend_amount is null) <> (dividend_currency is null)", 0),
+
+    # ── fundamentals ──
+    ("fundamentals.version_cik_matches_filing",
+     "select count(*) from fundamentals.financial_versions v join fundamentals.filings f using (accession_no)"
+     " where f.cik <> v.cik", 0),
+    ("fundamentals.single_mapping_version_per_filing_period",
+     "select count(*) from (select cik, period_end, fiscal_period, accession_no from fundamentals.financial_versions"
+     " group by 1, 2, 3, 4 having count(distinct mapping_version) > 1) d", 0),
+    ("fundamentals.estimate_kinds_known",
+     "select count(*) from fundamentals.earnings_estimates where snapshot_kind not in"
+     " ('captured_live', 'vendor_pit', 'reconstructed', 'latest_history')", 0),
+    # 연속된 두 버전이 같은 상태면 변경분 저장이 깨진 것이다.
+    ("fundamentals.estimate_versions_are_changes",
+     "select count(*) from (select *, lag(row(target_period_end, eps_basis, currency, eps_avg, eps_low, eps_high,"
+     " eps_analysts, revenue_avg, revenue_low, revenue_high, revenue_analysts, revisions_up_7d, revisions_up_30d,"
+     " revisions_down_7d, revisions_down_30d)) over w as prev, row(target_period_end, eps_basis, currency, eps_avg,"
+     " eps_low, eps_high, eps_analysts, revenue_avg, revenue_low, revenue_high, revenue_analysts, revisions_up_7d,"
+     " revisions_up_30d, revisions_down_7d, revisions_down_30d) as cur from fundamentals.earnings_estimates"
+     " window w as (partition by security_id, target_fiscal_year, target_fiscal_period, source, snapshot_kind"
+     " order by snapshot_date, collected_at)) d where prev is not distinct from cur", 0),
+    ("fundamentals.schedule_versions_are_changes",
+     "select count(*) from (select row(target_period_end, expected_report_at, expected_session, is_estimated) as cur,"
+     " lag(row(target_period_end, expected_report_at, expected_session, is_estimated)) over (partition by"
+     " security_id, target_fiscal_year, target_fiscal_period, source order by snapshot_date, collected_at) as prev"
+     " from fundamentals.earnings_schedule_versions) d where prev is not distinct from cur", 0),
+    # 서프라이즈가 발표 뒤에 모은 예상을 쓰면 없는 놀라움이 생긴다.
+    ("fundamentals.surprise_estimates_precede_release",
+     "select count(*) from reporting.earnings_surprise where estimate_snapshot_date is not null"
+     " and (estimate_kind not in ('captured_live', 'vendor_pit') or estimate_snapshot_date > filing_date)", 0),
+
+    # ── macro 단위 ──
+    # 비교 단위가 %인 발표의 최초값이 수백이면 원지수를 measure로 읽은 것이다(CPI 334.131 사고).
+    ("macro.percent_measures_are_not_index_levels",
+     "select count(*) from reporting.macro_release_summary where unit in ('%', 'percent')"
+     " and abs(coalesce(first_actual_value, 0)) > 100", 0),
+    ("macro.surprise_only_after_release",
+     "select count(*) from reporting.macro_release_summary where market_surprise is not null"
+     " and first_actual_at is null", 0),
+
     ("institutional.position_has_filing",
      "select count(*) from institutional.positions p"
      " left join institutional.filings f using (accession_no)"

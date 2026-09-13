@@ -128,6 +128,8 @@ class TestFundamentalsFlash(unittest.TestCase):
         )
 
         self.assertEqual(captured[0]["eps_actual"], 2.22)
+        # Yahoo 발표 EPS는 조정 EPS다. 정의가 적혀야 서프라이즈 뷰가 같은 정의끼리만 비교한다.
+        self.assertEqual(captured[0]["eps_basis"], "adjusted")
 
     def test_reported_eps_failure_keeps_sec_row_but_marks_run_failed(self):
         filing_source = MagicMock()

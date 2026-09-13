@@ -105,7 +105,7 @@ def upsert_earnings_results(rows: list[dict[str, Any]]) -> int:
     # 없다는 것이 곧 모순이고, 아래 테스트가 그 모순을 잡는다.
     payload_keys = {
         "cik", "accession_no", "fiscal_year", "fiscal_period", "period_end",
-        "revenue_actual", "eps_actual", "operating_income_actual", "net_income_actual",
+        "revenue_actual", "eps_actual", "eps_basis", "operating_income_actual", "net_income_actual",
         "guidance_summary", "press_release_url", "source",
     }
     payload = [{key: value for key, value in row.items() if key in payload_keys} for row in rows]

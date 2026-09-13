@@ -17,6 +17,7 @@ from investment_agent.data.fundamentals.application import (
     ReportedEarningsSource,
 )
 from investment_agent.data.fundamentals.domain.services.match_reported_earnings import (
+    YAHOO_EPS_BASIS,
     match_reported_earnings,
 )
 
@@ -145,6 +146,7 @@ def detect_earnings_events_for_ticker(
                     reported_earnings,
                     filing.filing_date,
                 ),
+                eps_basis=YAHOO_EPS_BASIS,
                 operating_income_actual=operating_income_actual,
                 net_income_actual=net_income_actual,
                 guidance_summary=guidance_summary,

@@ -10,6 +10,7 @@ from investment_agent.data.universe import persistence as db
 from investment_agent.data.universe.infrastructure.sources.sec_entities import (
     fetch_entity_results,
     fetch_exchange_listed_tickers,
+    fetch_fund_listings,
 )
 from investment_agent.data.universe.infrastructure.sources.toss import fetch_korean_names as fetch_toss_korean_names
 from investment_agent.data.universe.infrastructure.sources.wikipedia_sp500 import (
@@ -28,9 +29,22 @@ def _missing_sec_get_json(_: str) -> Any:
     raise RuntimeError("SEC client must be injected by the entrypoint")
 
 
-def sync_exchange_listings(*, sec_get_json: Callable[[str], Any] | None = None) -> None:
-    """SEC 거래소 master를 동기화하고 새 CIK의 entity 이름만 seed한다."""
-    rows = fetch_exchange_listed_tickers(get_json=sec_get_json or _missing_sec_get_json)
+def sync_exchange_listings(
+    *,
+    sec_get_json: Callable[[str], Any] | None = None,
+    fund_tickers: tuple[str, ...] = (),
+) -> None:
+    """SEC 거래소 master와 시세 기준 ETF를 동기화하고 새 CIK의 entity 이름만 seed한다.
+
+    ETF는 매번 함께 넘긴다. 빠지면 같은 CIK(예: Select Sector SPDR Trust)의 상장 종목이
+    목록에서 사라진 것으로 보여 개명 판정이 틀어진다.
+    """
+    get_json = sec_get_json or _missing_sec_get_json
+    rows = fetch_exchange_listed_tickers(get_json=get_json)
+    listed = {row["ticker"] for row in rows}
+    rows += [row for row in fetch_fund_listings(
+        [ticker for ticker in fund_tickers if ticker not in listed], get_json=get_json,
+    )]
     log.info("  미국 거래소 종목 동기화: %d", db.upsert_securities(rows))
 
 

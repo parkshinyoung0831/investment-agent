@@ -398,6 +398,9 @@ def append_memberships(rows: list[dict]) -> int:
         raise ValueError("historical membership snapshots must not be empty")
     repository = UniverseRepository(_db())
     ordered = sorted(rows, key=lambda item: str(item["effective_date"]))
+    # 연속성은 받은 이력 전체로 판정하고, 쓰기는 아직 반영되지 않은 날짜만 한다. 월간 감사는
+    # 매번 전체 이력을 다시 만드는데, DB 함수는 반영된 날짜보다 이른 스냅샷을 거절한다.
+    boundary = repository.latest_membership_boundary()
     ticker_sets = [
         tuple(sorted({str(value).upper() for value in row.get("symbols") or []}))
         for row in ordered
@@ -422,7 +425,13 @@ def append_memberships(rows: list[dict]) -> int:
     })
     placeholders = _placeholders(needs_placeholder) if needs_placeholder else {}
     written = 0
-    for row, tickers, stable in zip(ordered, ticker_sets, continuous):
+    pending = [
+        (row, tickers, stable) for row, tickers, stable in zip(ordered, ticker_sets, continuous)
+        if boundary is None or str(row["effective_date"]) > boundary.isoformat()
+    ]
+    if len(pending) < len(ordered):
+        log.info("  membership snapshots already applied through %s: skipped=%d", boundary, len(ordered) - len(pending))
+    for row, tickers, stable in pending:
         snapshot = MembershipSnapshot.from_row({
             "index_code": INDEX_SP500,
             "effective_date": str(row["effective_date"]),

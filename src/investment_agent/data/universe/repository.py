@@ -278,6 +278,16 @@ class UniverseRepository:
             "source": str(active[0].get("source") or ""),
         })
 
+    def latest_membership_boundary(self, *, index_code: str = INDEX_SP500) -> date | None:
+        """이미 반영된 가장 늦은 편입·편출 효력일. 스냅샷은 이 날짜 뒤로만 적용할 수 있다."""
+        rows = self._db.select_paged(
+            lambda: self._db.table(SCHEMA, T_MEMBERSHIPS).select("valid_from,valid_to").eq("index_code", index_code),
+            order_by="valid_from",
+        )
+        values = [date.fromisoformat(str(value)) for row in rows
+                  for value in (row.get("valid_from"), row.get("valid_to")) if value]
+        return max(values) if values else None
+
     def latest_membership(self, *, index_code: str = INDEX_SP500) -> MembershipSnapshot | None:
         rows = self._db.select_paged(
             lambda: self._db.table(SCHEMA, T_MEMBERSHIPS).select("valid_from,valid_to").eq("index_code", index_code),

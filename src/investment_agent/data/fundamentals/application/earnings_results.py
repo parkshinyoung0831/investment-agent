@@ -16,6 +16,7 @@ def build_earnings_results(
     report_date: str | None = None,
     revenue_actual: float | None = None,
     eps_actual: float | None = None,
+    eps_basis: str = "unknown",
     operating_income_actual: float | None = None,
     net_income_actual: float | None = None,
     guidance_summary: str | None = None,
@@ -44,6 +45,8 @@ def build_earnings_results(
         "report_date": report_date or period_end,
         "revenue_actual": revenue_actual,
         "eps_actual": eps_actual,
+        # 값이 없으면 정의도 없다. 빈 EPS에 정의를 붙이면 뷰가 일치로 셈한다.
+        "eps_basis": eps_basis if eps_actual is not None else "unknown",
         "operating_income_actual": operating_income_actual,
         "net_income_actual": net_income_actual,
         "guidance_summary": guidance_summary,
