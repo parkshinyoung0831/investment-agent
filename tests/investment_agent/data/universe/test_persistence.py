@@ -152,7 +152,8 @@ class SetMembershipTest(unittest.TestCase):
         self.assertEqual(1, written)
         (_key, payload), = self.fake.inserts
         self.assertEqual(
-            [{"ticker": "YHOO", "cik": None, "is_active_listing": False, "is_tracked": False}],
+            [{"ticker": "YHOO", "cik": None, "is_active_listing": False,
+              "is_identity_verified": False, "is_tracked": False}],
             payload,
         )
 
@@ -167,25 +168,57 @@ class SetMembershipTest(unittest.TestCase):
 class ListingSyncDoesNotOwnTheGateTest(unittest.TestCase):
     """거래소 master 동기화는 수집 게이트에 대해 아무 말도 하지 않는다.
 
-    전에는 `upsert_securities`가 매번 `is_tracked=False`를 실어 7천여 종목의 게이트를
-    통째로 껐다. `universe_membership` 워크플로는 그 직후 `reconcile_membership`을
-    부르는데, S&P 변동이 없는 날은 **조기 반환**해서 게이트를 되돌리지 않는다.
-    결과는 tracked 0 — 모든 하류 수집이 0종목이 되고 에러는 하나도 나지 않는다.
-
-    upsert는 payload에 있는 컬럼만 갱신하므로, 싣지 않는 것이 곧 "건드리지 않음"이다.
+    전에는 이 동기화가 매번 `is_tracked=False`를 실어 7천여 종목의 게이트를 통째로 껐다.
+    결과는 tracked 0 — 모든 하류 수집이 0종목이 되고 에러는 하나도 나지 않았다.
     """
 
-    def test_the_listing_payload_carries_no_tracked_flag(self) -> None:
-        fake = FakeDatabase()
-        db.configure(fake)
+    def setUp(self) -> None:
+        self.fake = FakeDatabase()
+        db.configure(self.fake)
         self.addCleanup(db.configure, None)
-        db.upsert_securities([
-            {"ticker": "AAPL", "cik": "320193", "exchange_code": "Nasdaq"},
-        ])
-        securities = [entry for entry in fake.upserts if entry[0][1] == T_SECURITIES]
-        self.assertEqual(1, len(securities))
-        (_key, rows, conflict) = securities[0]
-        self.assertEqual("ticker", conflict)
+
+    def _securities_writes(self):
+        upserts = [rows for key, rows, _conflict in self.fake.upserts if key[1] == T_SECURITIES]
+        inserts = [payload for key, payload in self.fake.inserts if key[1] == T_SECURITIES]
+        return upserts, inserts
+
+    def test_a_new_listing_is_inserted_without_a_gate_value(self) -> None:
+        db.upsert_securities([{"ticker": "AAPL", "cik": "320193", "exchange_code": "Nasdaq"}])
+        upserts, inserts = self._securities_writes()
+        self.assertEqual([], upserts)
+        (rows,) = inserts
         self.assertNotIn("is_tracked", rows[0])
-        # 상장 여부는 반대로 이 동기화가 소유한다.
-        self.assertIn("is_active_listing", rows[0])
+        self.assertNotIn("security_id", rows[0])
+        self.assertTrue(rows[0]["is_identity_verified"])
+
+    def test_the_same_ticker_and_cik_update_by_security_id(self) -> None:
+        self.fake.put(SCHEMA, T_SECURITIES, [_security(7, "AAPL", "0000320193")])
+        db.upsert_securities([{"ticker": "AAPL", "cik": "320193", "exchange_code": "Nasdaq"}])
+        upserts, inserts = self._securities_writes()
+        self.assertEqual([], inserts)
+        (rows,) = upserts
+        self.assertEqual(7, rows[0]["security_id"])
+        self.assertNotIn("is_tracked", rows[0])
+        self.assertEqual("security_id", [c for key, _rows, c in self.fake.upserts if key[1] == T_SECURITIES][0])
+
+    def test_a_ticker_reused_by_another_company_is_held_not_merged(self) -> None:
+        """같은 표기, 다른 발행사. 확인 전에 합치면 다른 회사의 자료가 한 종목에 섞인다."""
+        self.fake.put(SCHEMA, T_SECURITIES, [_security(7, "META", "0001683471")])
+        db.upsert_securities([{"ticker": "META", "cik": "1326801", "exchange_code": "Nasdaq"}])
+        self.assertEqual(([], []), self._securities_writes())
+
+    def test_a_single_class_rename_keeps_the_security_id(self) -> None:
+        """FB→META: 같은 CIK의 상장 종목 하나가 목록에서 사라지고 새 ticker 하나가 나타났다."""
+        self.fake.put(SCHEMA, T_SECURITIES, [_security(7, "FB", "0001326801")])
+        self.fake.put(SCHEMA, "security_identifiers", [
+            {"mapping_id": 3, "identifier": "FB", "identifier_type": "TICKER", "namespace": "us_listing",
+             "security_id": 7, "mapping_status": "verified", "valid_from": "2020-01-02", "valid_to": None},
+        ])
+        db.upsert_securities([{"ticker": "META", "cik": "1326801", "exchange_code": "Nasdaq"}])
+        upserts, inserts = self._securities_writes()
+        self.assertEqual([], inserts)
+        (rows,) = upserts
+        self.assertEqual((7, "META"), (rows[0]["security_id"], rows[0]["ticker"]))
+        closed = [values for key, values in self.fake.updates if key[1] == "security_identifiers"]
+        self.assertEqual(1, len(closed))
+        self.assertIn("valid_to", closed[0])

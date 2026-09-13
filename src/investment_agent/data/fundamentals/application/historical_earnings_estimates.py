@@ -79,7 +79,6 @@ def build_historical_eps_estimates(
             "snapshot_date": report_date,
             "snapshot_kind": "reconstructed",
             "source": HISTORICAL_EPS_SOURCE,
-            "source_horizon": "q+0",
             "eps_avg": eps_estimate,
         })
 

@@ -204,8 +204,10 @@ class EntitySchemaTest(unittest.TestCase):
 
         sql = Path("db/postgres/v1/10_universe.sql").read_text(encoding="utf-8").lower()
         self.assertIn("create table if not exists universe.securities", sql)
-        self.assertIn("ticker            text not null unique", sql)
-        self.assertIn("is_tracked        boolean not null default false", sql)
+        # ticker는 identity가 아니다. 상장 중인 종목끼리만 겹치지 않는다.
+        self.assertNotIn("text not null unique", sql)
+        self.assertIn("on universe.securities (ticker) where is_active_listing", sql)
+        self.assertIn("is_tracked           boolean not null default false", sql)
         self.assertIn("create table if not exists universe.index_memberships", sql)
 
 

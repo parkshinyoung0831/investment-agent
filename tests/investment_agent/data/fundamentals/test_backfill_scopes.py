@@ -319,7 +319,8 @@ class FilingSchemaContractTest(unittest.TestCase):
 
     def test_security_filing_view_does_not_reintroduce_operational_error_columns(self) -> None:
         sql = Path("db/postgres/v1/30_fundamentals.sql").read_text(encoding="utf-8")
-        self.assertNotIn("CREATE OR REPLACE VIEW fundamentals.", sql)
+        # fundamentals에 둔 뷰는 버전 표에서 최신을 고르는 financials 하나뿐이다.
+        self.assertEqual(1, sql.count("CREATE OR REPLACE VIEW fundamentals."))
         self.assertNotIn("error_reason", sql)
         self.assertIn("available_at timestamptz NOT NULL DEFAULT now()", sql)
         self.assertIn("updated_at      timestamptz NOT NULL DEFAULT now()", sql)

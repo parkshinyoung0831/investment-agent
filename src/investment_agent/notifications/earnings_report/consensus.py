@@ -79,7 +79,7 @@ def pick_snapshot(
     for row in snapshots:
         if str(row.get("ticker")) != ticker:
             continue
-        if row.get("snapshot_kind") != "observed":
+        if row.get("snapshot_kind") != "captured_live":
             continue
         snapped = _as_date(row.get("snapshot_date"))
         if snapped is None:
@@ -121,7 +121,7 @@ def pick_next_quarter(snapshots: list[dict], picked: dict | None) -> dict | None
             and str(row.get("snapshot_date")) == str(picked.get("snapshot_date"))
             and str(row.get("target_fiscal_year")) == str(next_year)
             and str(row.get("target_fiscal_period")) == next_period
-            and row.get("snapshot_kind") == "observed"
+            and row.get("snapshot_kind") == "captured_live"
         ):
             estimate = f(row.get("eps_avg"))
             if estimate is None:

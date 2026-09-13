@@ -6,10 +6,10 @@ from datetime import date, datetime, timezone
 
 from investment_agent.data.market.domain.models import DailyBar, MarketDataError
 from investment_agent.data.market.repository import (
+    RPC_MERGE_ACTIONS,
     SCHEMA,
-    T_DIVIDENDS,
+    T_ACTIONS,
     T_PRICES,
-    T_SPLITS,
     MarketRepository,
 )
 from investment_agent.platform.db.postgres import READ_PAGE_SIZE
@@ -154,7 +154,7 @@ class BadRowTest(unittest.TestCase):
     def test_a_ratio_of_one_is_not_a_split(self) -> None:
         """조정을 아무것도 안 하면서 '분할이 있었다'고 말하는 행이다."""
         db = FakeDatabase()
-        db.put(SCHEMA, T_SPLITS, [
+        db.put(SCHEMA, T_ACTIONS, [
             {"security_id": 1, "action_date": "2026-09-04", "split_ratio": 1.0, "source": "yfinance"},
         ])
         with self.assertRaises(MarketDataError):
@@ -162,11 +162,42 @@ class BadRowTest(unittest.TestCase):
 
     def test_a_negative_dividend_is_refused(self) -> None:
         db = FakeDatabase()
-        db.put(SCHEMA, T_DIVIDENDS, [
-            {"security_id": 1, "ex_date": "2026-09-04", "div_amount": -1.0, "source": "yfinance"},
+        db.put(SCHEMA, T_ACTIONS, [
+            {"security_id": 1, "action_date": "2026-09-04", "dividend_amount": -1.0, "source": "yfinance"},
         ])
         with self.assertRaises(MarketDataError):
             MarketRepository(db).dividends([1])
+
+
+class ActionsTest(unittest.TestCase):
+    def test_splits_and_dividends_are_read_from_the_same_daily_row(self) -> None:
+        db = FakeDatabase()
+        db.put(SCHEMA, T_ACTIONS, [
+            {"security_id": 1, "action_date": "2024-06-10", "split_ratio": 10.0, "dividend_amount": 0.01},
+            {"security_id": 1, "action_date": "2024-09-12", "split_ratio": None, "dividend_amount": 0.01},
+        ])
+        repo = MarketRepository(db)
+        self.assertEqual([date(2024, 6, 10)], [event.action_date for event in repo.splits([1])])
+        self.assertEqual([date(2024, 6, 10), date(2024, 9, 12)], [event.ex_date for event in repo.dividends([1])])
+
+    def test_one_call_never_sends_the_same_day_twice(self) -> None:
+        """같은 (종목, 날짜)가 두 번 오면 ON CONFLICT가 거절한다. 분할과 배당을 한 행으로 합친다."""
+        db = FakeDatabase()
+        db.rpc_result = 1
+        MarketRepository(db).merge_actions([
+            {"security_id": 1, "action_date": "2024-06-10", "split_ratio": 10.0},
+            {"security_id": 1, "action_date": "2024-06-10", "dividend_amount": 0.01, "dividend_currency": "USD"},
+        ])
+        ((_schema, name, params),) = db.rpc_calls
+        self.assertEqual(RPC_MERGE_ACTIONS, name)
+        self.assertEqual([{"security_id": 1, "action_date": "2024-06-10", "split_ratio": 10.0,
+                           "dividend_amount": 0.01, "dividend_currency": "USD"}], params["p_rows"])
+
+    def test_a_bad_action_is_refused_before_the_database(self) -> None:
+        db = FakeDatabase()
+        with self.assertRaises(MarketDataError):
+            MarketRepository(db).merge_actions([{"security_id": 1, "action_date": "2024-06-10", "split_ratio": 1.0}])
+        self.assertEqual([], db.rpc_calls)
 
 
 class WriteTest(unittest.TestCase):

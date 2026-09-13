@@ -217,7 +217,7 @@ def normalize_consensus(
         periods = calendars.get(ticker, [])
         target = _as_date(row.get("target_period_end"))
         mapping_on = _as_date(row.get("mapping_date")) or collected_on
-        kind = "reconstructed" if row.get("source") == "yfinance:eps_trend" else "observed"
+        kind = "reconstructed" if row.get("source") == "yfinance:eps_trend" else "captured_live"
 
         mapped: dict | None
         if horizon in ("q+0", "q+1"):
@@ -251,7 +251,6 @@ def normalize_consensus(
             "snapshot_date": snapshot_date.isoformat(),
             "snapshot_kind": kind,
             "source": "yfinance",
-            "source_horizon": horizon,
             "eps_avg": row.get("eps_avg"),
             **_coherent_range("eps", row.get("eps_low"), row.get("eps_high")),
             "eps_analysts": row.get("eps_analysts"),
@@ -270,7 +269,7 @@ def normalize_consensus(
         report_lag = (expected - mapped["period_end"]).days if expected else None
         if (
             horizon == "q+0"
-            and kind == "observed"
+            and kind == "captured_live"
             and report_lag is not None
             and 0 < report_lag <= _MAX_REPORT_LAG_DAYS
         ):

@@ -267,7 +267,7 @@ class ViewContractTest(unittest.TestCase):
         self.assertIn("fundamentals.is_finite_numbers", sql)
         self.assertIn("'unmapped_unlisted'", sql)
         self.assertIn("snapshot_date <= (collected_at AT TIME ZONE 'America/New_York')::date", sql)
-        self.assertIn("PRIMARY KEY (cik, period_end, fiscal_period)", sql)
+        self.assertIn("PRIMARY KEY (cik, period_end, fiscal_period, accession_no, mapping_version)", sql)
         self.assertIn("PRIMARY KEY (cik, share_class_key, as_of_date, accession_no)", sql)
 
     def test_views_do_not_depend_on_every_core_column(self):
@@ -278,13 +278,16 @@ class ViewContractTest(unittest.TestCase):
     def test_view_names_say_whose_fact_they_carry(self):
         sql = Path("db/postgres/v1/30_fundamentals.sql").read_text(encoding="utf-8")
 
-        # v1 fundamentals DDL은 writer-owned tables만 선언하고, 계산 read model은
-        # reporting 경계에서 소유한다.
-        for table in ("filings", "financials", "share_class_snapshots",
+        # fundamentals DDL은 writer-owned tables와, 버전 표에서 최신을 고르는 뷰 하나만 둔다.
+        # 계산 read model은 reporting 경계에서 소유한다.
+        for table in ("filings", "financial_versions", "share_class_snapshots",
                       "segment_metrics", "earnings_results", "earnings_estimates",
                       "earnings_schedule_versions", "analyst_consensus_snapshots"):
             self.assertIn(f"CREATE TABLE IF NOT EXISTS fundamentals.{table}", sql)
-        self.assertNotIn("CREATE VIEW fundamentals.", sql)
+        self.assertEqual(
+            ["fundamentals.financials"],
+            re.findall(r"CREATE OR REPLACE VIEW (fundamentals\.\w+)", sql),
+        )
 
 
 class SchemaContractTest(unittest.TestCase):
@@ -299,7 +302,7 @@ class SchemaContractTest(unittest.TestCase):
 
         self.assertIn("is_liabilities_derived", sql)
         self.assertIn("common_equity_scope", sql)
-        self.assertIn("PRIMARY KEY (cik, period_end, fiscal_period)", sql)
+        self.assertIn("PRIMARY KEY (cik, period_end, fiscal_period, accession_no, mapping_version)", sql)
 
     def test_estimates_and_segments_tables_are_absorbed(self):
         sql = Path("db/postgres/v1/30_fundamentals.sql").read_text(encoding="utf-8")
@@ -315,12 +318,15 @@ class SchemaContractTest(unittest.TestCase):
         self.assertIn("CREATE TABLE IF NOT EXISTS fundamentals.earnings_schedule_versions", sql)
         self.assertIn("CREATE TABLE IF NOT EXISTS fundamentals.analyst_consensus_snapshots", sql)
 
-    def test_company_replace_is_state_idempotent_without_timestamp_churn(self):
+    def test_restatements_are_kept_and_latest_is_a_view(self):
+        """정정 공시는 새 버전 행이고, 최신 값은 저장이 아니라 뷰가 고른다."""
         sql = Path("db/postgres/v1/30_fundamentals.sql").read_text(encoding="utf-8")
 
-        self.assertIn("PRIMARY KEY (cik, period_end, fiscal_period)", sql)
+        self.assertIn("PRIMARY KEY (cik, period_end, fiscal_period, accession_no, mapping_version)", sql)
         self.assertIn("available_at timestamptz NOT NULL DEFAULT now()", sql)
-        self.assertIn("mapping_version text        NOT NULL", sql)
+        self.assertIn("mapping_version text NOT NULL", sql)
+        self.assertIn("CREATE OR REPLACE VIEW fundamentals.financials", sql)
+        self.assertNotIn("guard_canonical_financials", sql)
 
     def test_segment_integrity_rpc_is_private_and_covers_cross_table_contracts(self):
         sql = Path("db/postgres/v1/30_fundamentals.sql").read_text(encoding="utf-8")
@@ -410,7 +416,7 @@ class ColumnDriftTest(unittest.TestCase):
         실제로 두 사고가 모두 있었다.
         """
         sql = Path("db/postgres/v1/30_fundamentals.sql").read_text(encoding="utf-8")
-        declared = self._numeric_columns(sql, "financials") - self._CORE_NON_METRIC_NUMERIC
+        declared = self._numeric_columns(sql, "financial_versions") - self._CORE_NON_METRIC_NUMERIC
 
         self.assertEqual(
             declared,

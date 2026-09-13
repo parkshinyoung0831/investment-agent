@@ -81,12 +81,15 @@
 
 원장(원본 테이블):
 
-- universe.entities / universe.securities        회사·증권 identity (cik ↔ ticker)
+- universe.entities / universe.securities        회사·증권 identity (cik ↔ security_id ↔ 현재 ticker)
+- universe.security_identifiers                  과거 ticker·CUSIP의 기간별 연결(verified만 쓴다)
 - fundamentals.filings / fundamentals.filing_processing   공시 접수와 처리 상태
-- fundamentals.financials                        공시별 재무 버전(원장 진실)
+- fundamentals.financial_versions                공시별 재무 버전(원장 진실, 정정 전 값도 남는다)
+- fundamentals.financials                        (뷰) 회계기간마다 최신 공시 버전 한 행
 - fundamentals.share_class_snapshots             종류주별 발행주식수
 - fundamentals.segment_metrics                   세그먼트 축별 값
-- fundamentals.earnings_results / earnings_estimates      실적 결과·시장 예상
+- fundamentals.earnings_results / earnings_estimates      실적 결과·시장 예상(snapshot_kind가 captured_live·vendor_pit인 것만 발표 전 값)
+- market.actions_daily                           날짜별 분할·배당
 - market.prices_daily                            일봉(조정 전 관측값)
 - institutional.filings / institutional.positions          13F 원문
 - macro.market_observations / macro.economic_observations  시장 관측·경제지표
@@ -313,8 +316,8 @@ N. 기관투자자
 사용할 원천:
 - market.prices_daily                 거래일 종가
 - fundamentals.share_class_snapshots  그 시점의 발행주식수(종류주 합산)
-- fundamentals.financials             그 시점에 공개돼 있던 재무 버전
-- fundamentals.filings                각 재무 버전의 접수일(`filed_at`)
+- fundamentals.financial_versions     그 시점에 공개돼 있던 재무 버전(기간마다 cutoff 이전 최신 공시 하나)
+- fundamentals.filings                각 재무 버전의 접수일(`filing_date`)과 우리가 받은 시각(`available_at`)
 
 역사적 밸류에이션 계산 시 반드시 look-ahead bias를 방지한다.
 
@@ -644,7 +647,8 @@ G. REITs·부동산
 표:
 | 객체 | 종류 | 용도 | 사용 여부 |
 |---|---|---|---|
-| fundamentals.financials | 원본 테이블 | 재무제표 원천 데이터 |  |
+| fundamentals.financial_versions | 원본 테이블 | 공시별 재무제표 버전 |  |
+| fundamentals.financials | 뷰 | 회계기간별 최신 재무 |  |
 | fundamentals.filings | 원본 테이블 | 공시 접수일(시점정합의 기준) |  |
 | reporting.company_financials_latest | 뷰 | cik별 최신 재무 |  |
 | reporting.earnings_surprise | 뷰 | 실적 서프라이즈 |  |

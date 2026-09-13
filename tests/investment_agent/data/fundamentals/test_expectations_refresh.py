@@ -6,9 +6,6 @@ from datetime import date, datetime, timezone
 from threading import Barrier
 from unittest.mock import patch
 
-from investment_agent.data.fundamentals.application.analyst_coverage import (
-    changed_analyst_snapshots,
-)
 from investment_agent.data.fundamentals.application.refresh_expectations import (
     refresh_expectations,
 )
@@ -50,9 +47,6 @@ class _Source:
 class _Repository:
     def __init__(self) -> None:
         self.upserts: list[tuple[str, list[dict]]] = []
-        self.latest: list[dict] = []
-        self.pruned = 0
-        self.period_pruned = 0
 
     def tickers_missing_consensus(self, _tickers: list[str]) -> set[str]:
         return set()
@@ -65,9 +59,6 @@ class _Repository:
             "period_end": "2026-09-30",
         } for ticker in tickers]
 
-    def latest_analyst_snapshots(self, _tickers: list[str]) -> list[dict]:
-        return self.latest
-
     def upsert_consensus(self, rows: list[dict]) -> int:
         self.upserts.append(("consensus", rows))
         return len(rows)
@@ -79,18 +70,6 @@ class _Repository:
     def upsert_analyst_snapshots(self, rows: list[dict]) -> int:
         self.upserts.append(("analyst", rows))
         return len(rows)
-
-    def prune_earnings_estimates(self, days: int = 1095) -> dict:
-        self.pruned += 1
-        return {
-            "cutoff": "2023-08-28",
-            "consensus_deleted": 0,
-            "days": days,
-        }
-
-    def prune_expectation_snapshots(self, recent_days: int = 180) -> dict:
-        self.period_pruned += 1
-        return {"estimates_deleted": 3, "schedules_deleted": 2, "consensus_deleted": 0}
 
 
 class RefreshExpectationsTest(unittest.TestCase):
@@ -129,7 +108,6 @@ class RefreshExpectationsTest(unittest.TestCase):
 
         self.assertNotIn("BBB", source.called)
         self.assertEqual(repository.upserts, [])
-        self.assertEqual(repository.pruned, 0)
         self.assertTrue(metrics["discarded"])
         self.assertEqual(metrics["rows"], 0)
         self.assertEqual(metrics["failures"][0]["type"], "collection_budget_exceeded")
@@ -154,15 +132,8 @@ class RefreshExpectationsTest(unittest.TestCase):
         self.assertEqual([name for name, _rows in repository.upserts], [
             "consensus", "schedules", "analyst",
         ])
-        self.assertEqual(repository.pruned, 1)
-        # 나이 기준 정리와 발표 기준 정리는 서로를 대신하지 못한다 — 둘 다 돌아야 한다.
-        self.assertEqual(repository.period_pruned, 1)
-        self.assertEqual(metrics["retention"]["consensus_deleted"], 0)
-        self.assertEqual(metrics["retention"]["estimates_deleted"], 3)
-        self.assertEqual(metrics["retention"]["schedules_deleted"], 2)
-        # 정리 단계가 조용히 실패하면 여기 failure로만 남고 지표는 그대로 0이 된다.
-        self.assertEqual([], [item for item in metrics["failures"]
-                              if item.get("stage") == "consensus_retention"])
+        # 발표 전 예상 이력은 다시 받을 수 없어 수집 뒤에 지우는 단계가 없다.
+        self.assertNotIn("retention", metrics)
 
     def test_collection_uses_the_configured_bounded_concurrency(self) -> None:
         barrier = Barrier(2)
@@ -208,14 +179,14 @@ class RefreshExpectationsTest(unittest.TestCase):
         self.assertGreater(metrics["rows"], 0)
         self.assertEqual(metrics["failures"][0]["ticker"], "AAA")
         self.assertEqual(metrics["failures"][0]["stage"], "calendar")
-        self.assertEqual(repository.pruned, 0)
 
-    def test_unchanged_analyst_coverage_does_not_create_a_daily_row(self) -> None:
+    def test_every_observed_coverage_goes_to_the_versioning_store(self) -> None:
+        """바뀌었는지는 저장소가 직전 버전과 비교해 정한다. 여기서 미리 걸러 내면
+        같은 상태를 다시 본 사실(last_seen_at)이 남지 않아 수집 중단과 구별할 수 없다."""
         source = _Source()
         repository = _Repository()
-        repository.latest = [source.fetch_consensus("AAA", today=self._TODAY)["analyst_snapshot"]]
 
-        metrics = refresh_expectations(
+        refresh_expectations(
             ["AAA"],
             source=source,
             expectations_repository=repository,
@@ -224,44 +195,28 @@ class RefreshExpectationsTest(unittest.TestCase):
         )
 
         analyst_rows = next(rows for name, rows in repository.upserts if name == "analyst")
-        self.assertEqual(analyst_rows, [])
-        self.assertEqual(metrics["counts"]["analyst_coverage"], 0)
-
-    def test_changed_analyst_coverage_keeps_only_the_changed_ticker(self) -> None:
-        snapshots = [
-            {"ticker": "AAA", "source": "yfinance", "target_mean": 100.0},
-            {"ticker": "BBB", "source": "yfinance", "target_mean": 120.0},
-        ]
-        latest = [
-            {"ticker": "AAA", "source": "yfinance", "target_mean": 100.0},
-            {"ticker": "BBB", "source": "yfinance", "target_mean": 110.0},
-        ]
-
-        changed = changed_analyst_snapshots(snapshots, latest)
-
-        self.assertEqual([row["ticker"] for row in changed], ["BBB"])
+        self.assertEqual(["AAA"], [row["ticker"] for row in analyst_rows])
 
 
 class ExpectationsRepositoryPagingTest(unittest.TestCase):
     def test_point_in_time_fundamentals_exclude_late_availability(self) -> None:
-        """canonical 정책은 우리 처리 시각(ingested_at)이 아니라 공시 자체의
-        provenance(source_filing_date + filings.available_at)로 PIT 경계를 긋는다."""
+        """운영 재현은 SEC 제출일뿐 아니라 우리가 공시를 손에 넣은 시각(available_at)으로 자른다."""
         as_of_at = datetime(2026, 8, 31, 12, tzinfo=timezone.utc)
         versions = [
             {
                 "cik": "0000000001",
-                "source_accession_no": "0001",
+                "accession_no": "0001",
                 "period_end": "2026-06-30",
-                "source_filing_date": "2026-08-01",
+                "fiscal_period": "Q2",
                 "revenue": 100,
             },
             {
                 "cik": "0000000001",
-                "source_accession_no": "0002",
+                "accession_no": "0002",
                 "period_end": "2026-03-31",
+                "fiscal_period": "Q1",
                 # filing_date 자체는 cutoff 이전이지만, 실제로 공개된(available_at)
                 # 시각은 cutoff 이후다 — 늦게 알려진 공시는 제외해야 한다.
-                "source_filing_date": "2026-07-01",
                 "revenue": 90,
             },
         ]

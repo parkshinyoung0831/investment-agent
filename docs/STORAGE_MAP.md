@@ -28,8 +28,8 @@ Supabase                        ← GitHub Actions가 읽고 쓰는 유일한 �
 | 스키마 | 표 |
 |---|---|
 | `universe` | `entities` · `securities` · `security_identifiers` · `index_memberships` |
-| `market` | `prices_daily` · `split_events` · `dividend_events` |
-| `fundamentals` | `filings` · `filing_processing` · `financials` · `share_class_snapshots` · `segment_metrics` · `earnings_results` · `earnings_estimates` · `earnings_schedule_versions` · `analyst_consensus_snapshots` |
+| `market` | `prices_daily` · `actions_daily` |
+| `fundamentals` | `filings` · `filing_processing` · `financial_versions` · `share_class_snapshots` · `segment_metrics` · `earnings_results` · `earnings_estimates` · `earnings_schedule_versions` · `analyst_consensus_snapshots` |
 | `macro` | `series` · `measures` · `market_observations` · `economic_observations` · `release_events` · `release_schedule_versions` · `forecast_snapshots` |
 | `institutional` | `filings` · `positions` |
 | `notifications` | `topics` · `notices` · `deliveries` · `threads` |

@@ -92,7 +92,7 @@ def _estimate_provenance(row: dict[str, Any]) -> str:
     """속보 예상치가 발표 전 관측값인지 사후 재구성값인지 화면에 드러낸다."""
     kind = str(row.get("estimate_kind") or "")
     snapshot_date = str(row.get("estimate_snapshot_date") or "")
-    if kind == "observed":
+    if kind == "captured_live":
         return f"발표 전 관측 컨센서스 · {snapshot_date}" if snapshot_date else "발표 전 관측 컨센서스"
     if kind == "reconstructed":
         return "Yahoo 발표 이력 재구성값"
@@ -2029,7 +2029,7 @@ elif view == "발표 예정":
                             "Hold": selected.get("hold"),
                             "Sell": selected.get("sell"),
                             "Strong sell": selected.get("strong_sell"),
-                            "source horizon": selected.get("source_horizon"),
+                            "EPS basis": selected.get("eps_basis"),
                             "collected at": selected.get("collected_at"),
                         }
                     ],
@@ -2189,7 +2189,7 @@ elif view == "발표 결과":
             surprise_history = historical_surprise_series(ticker_core_all, consensus_rows)
             valid_surprises = [
                 row for row in surprise_history
-                if row.get("revenue_surprise_pct") is not None
+                if row.get("revenue_surprise_ratio") is not None
             ]
             if not valid_surprises:
                 st.info(f"{ticker}의 사전 컨센서스가 결합된 과거 분기 서프라이즈 이력이 없습니다.")
@@ -2215,7 +2215,7 @@ elif view == "발표 결과":
                     )
 
                 labels = [f"FY{r.get('fiscal_year')} {r.get('fiscal_period')}" for r in display_history]
-                pct_values = [float(r.get("revenue_surprise_pct") or 0.0) * 100.0 for r in display_history]
+                pct_values = [float(r.get("revenue_surprise_ratio") or 0.0) * 100.0 for r in display_history]
                 colors = [UP if val >= 0 else DOWN for val in pct_values]
                 text_labels = [f"{val:+.1f}%" for val in pct_values]
 
@@ -2254,7 +2254,7 @@ elif view == "발표 결과":
                         "공시일": str(r.get("filed_at") or "—"),
                         "매출 실제": display_money(r.get("revenue_actual")),
                         "매출 예상": display_money(r.get("revenue_estimate")),
-                        "서프라이즈": display_percent(r.get("revenue_surprise_pct"), signed=True),
+                        "서프라이즈": display_percent(r.get("revenue_surprise_ratio"), signed=True),
                         "판정": status_text,
                     })
                 dataframe(table_rows, key=f"earnings_surprise_table_{ticker}")

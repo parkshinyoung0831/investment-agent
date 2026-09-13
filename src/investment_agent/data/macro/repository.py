@@ -16,9 +16,6 @@ from investment_agent.platform.db.postgres import Database
 
 SCHEMA = "macro"
 T_SERIES = "series"
-RPC_PRUNE_RELEASES = "prune_release_snapshots"
-# 발표가 끝났어도 이 기간 안쪽은 통째로 남긴다 — 그래야 그 시점 판단을 재현할 수 있다.
-PRUNE_RECENT_DAYS = 180
 T_MEASURES = "measures"
 T_MARKET_OBSERVATIONS = "market_observations"
 T_ECONOMIC_OBSERVATIONS = "economic_observations"
@@ -167,21 +164,6 @@ class MacroRepository:
         return [{**row, "series_id": meta[key[0]]} for key, row in sorted(latest.items())
                 if not row.get("is_cancelled") and str(row["scheduled_at"])[:10] >= on_or_after.isoformat()]
 
-    def prune_release_snapshots(self, recent_days: int = PRUNE_RECENT_DAYS) -> dict[str, int]:
-        """실제치가 나온 발표의 일정·예상 스냅샷을 계약이 읽는 한 건씩만 남긴다.
-
-        발표 전에는 일정 변경과 예상 변동 자체가 신호지만, 실제치가 나오면 계속
-        읽히는 것은 확정된 마지막 일정과 실제치 직전의 예상뿐이다.
-        """
-        if recent_days < 1:
-            raise ValueError("recent_days must be at least 1")
-        rows = self._db.rpc(SCHEMA, RPC_PRUNE_RELEASES, {"p_recent_days": recent_days}).execute().data or []
-        row = rows[0] if isinstance(rows, list) and rows else (rows if isinstance(rows, dict) else {})
-        return {
-            "schedules_deleted": int(row.get("schedules_deleted") or 0),
-            "forecasts_deleted": int(row.get("forecasts_deleted") or 0),
-        }
-
     def upsert_measures(self, rows: Iterable[dict[str, Any]]) -> int:
         """코드 catalog의 measure를 물리 series_key로 변환해 적재한다."""
         items = [dict(row) for row in rows]
@@ -212,4 +194,4 @@ class MacroRepository:
         return self._db.upsert(schema=SCHEMA, table=T_MARKET_OBSERVATIONS, rows=market_rows, on_conflict="series_key,observation_date") + self._db.upsert(schema=SCHEMA, table=T_ECONOMIC_OBSERVATIONS, rows=economic_rows, on_conflict="series_key,observation_date,vintage_at,available_at")
 
 
-__all__ = ["DOMAINS", "DOMAIN_MARKET", "DOMAIN_RELEASE", "MacroRepository", "SCHEMA", "T_ECONOMIC_OBSERVATIONS", "T_FORECASTS", "T_MARKET_OBSERVATIONS", "T_MEASURES", "T_OBSERVATIONS", "T_RELEASE_EVENTS", "T_RELEASE_SCHEDULE", "T_SERIES", "RPC_PRUNE_RELEASES"]
+__all__ = ["DOMAINS", "DOMAIN_MARKET", "DOMAIN_RELEASE", "MacroRepository", "SCHEMA", "T_ECONOMIC_OBSERVATIONS", "T_FORECASTS", "T_MARKET_OBSERVATIONS", "T_MEASURES", "T_OBSERVATIONS", "T_RELEASE_EVENTS", "T_RELEASE_SCHEDULE", "T_SERIES"]

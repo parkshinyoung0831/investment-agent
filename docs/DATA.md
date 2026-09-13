@@ -29,7 +29,7 @@ PIT correctness → freshness → data quality → feature → backtest → ML �
 | 폴더 | 데이터 | 대표 저장 영역 |
 |---|---|---|
 | `src/investment_agent/data/universe` | 회사/SEC 등록인, 거래 ticker, S&P 구성 이력 | `universe.entities`·`securities`·membership |
-| `src/investment_agent/data/market` | 일봉 OHLCV, corporate actions | `market.prices_daily`·`split_events`·`dividend_events` |
+| `src/investment_agent/data/market` | 일봉 OHLCV, corporate actions | `market.prices_daily`·`actions_daily` |
 | `src/investment_agent/research/features` | RSI, MACD 등 기술지표 | 로컬 ResearchStore `feature_signals_daily` |
 | `src/investment_agent/data/fundamentals` | SEC 공시, 재무, 실적, 세그먼트, 기대치 | `fundamentals` schema |
 | `src/investment_agent/data/institutional` | 13F 매니저·공시·보유 | `institutional` schema |

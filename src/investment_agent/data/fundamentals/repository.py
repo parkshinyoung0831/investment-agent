@@ -7,10 +7,11 @@ SEC CompanyFacts는 등록인(CIK) 단위로 온다. 한 CIK에 상장 종목이
 펼쳐 저장하면 같은 숫자가 여러 행에 복사되고, 정정이 들어올 때 일부만 갱신되는 길이
 열린다.
 
-## 정정은 canonical 기간 행을 갱신한다
+## 재무는 공시 버전으로 쌓는다
 
-재무 수치는 `(cik, period_end, fiscal_period)`마다 한 행만 둔다. 공시 원장과 source
-accession은 남기되 숫자 revision 자체는 Macro처럼 재현하지 않는다.
+정정 공시는 `financial_versions`에 새 행으로 들어가고, 기간별 최신 값은
+`fundamentals.financials` 뷰가 고른다. 쓰기는 `infrastructure/supabase/company_financials.py`,
+과거 시점 조회는 `infrastructure/supabase/expectations.py`가 맡는다.
 
 ## 처리 상태와 공시 사실을 나눠 읽는다
 
@@ -25,7 +26,6 @@ from datetime import date, datetime
 from typing import Any
 
 from investment_agent.data.fundamentals.domain.filings import Filing, filing_row
-from investment_agent.data.fundamentals.domain.versions import VersionKey
 from investment_agent.platform.clock import as_date
 from investment_agent.platform.db.postgres import Database
 from investment_agent.platform.logging import get_logger
@@ -36,7 +36,8 @@ SCHEMA = "fundamentals"
 
 T_FILINGS = "filings"
 T_PROCESSING = "filing_processing"
-T_FINANCIALS = "financials"
+T_FINANCIALS = "financials"  # 뷰: 기간별 최신 공시 버전
+T_FINANCIAL_VERSIONS = "financial_versions"
 T_SHARE_CLASSES = "share_class_snapshots"
 T_SEGMENTS = "segment_metrics"
 T_EARNINGS = "earnings_results"
@@ -94,64 +95,6 @@ class FundamentalsRepository:
             for filing in self.filings_for(ciks)
             if filing.accession_no not in known
         ]
-
-    # ── 재무 (canonical) ─────────────────────────────────────────────────
-    def financial_versions(
-        self, cik: str, *, period_end: date | None = None
-    ) -> dict[date, list[VersionKey]]:
-        """기간별 canonical provenance.
-
-        호환을 위해 목록 모양은 유지하지만 각 기간에는 최대 한 행만 들어간다.
-        """
-        def factory() -> Any:
-            query = (
-                self._db.table(SCHEMA, T_FINANCIALS)
-                .select("period_end, source_accession_no, source_filing_date")
-                .eq("cik", cik)
-            )
-            if period_end is not None:
-                query = query.eq("period_end", period_end.isoformat())
-            return query
-
-        by_period: dict[date, list[VersionKey]] = {}
-        for row in self._db.select_paged(factory, order_by="period_end, source_accession_no"):
-            period = as_date(row.get("period_end"))
-            filing_date = as_date(row.get("source_filing_date"))
-            if period is None or filing_date is None:
-                continue
-            by_period.setdefault(period, []).append(VersionKey(
-                accession_no=row["source_accession_no"],
-                filing_date=filing_date,
-                available_at=None,
-            ))
-        return by_period
-
-    def financials(
-        self,
-        cik: str,
-        columns: str,
-        *,
-        period_end: date | None = None,
-        as_of: datetime | None = None,
-    ) -> list[dict[str, Any]]:
-        """canonical 재무 행.
-
-        정정 전 숫자는 저장하지 않으므로 ``as_of``는 source filing date보다 앞선 행을
-        제외한다. 이후의 정정은 현재 canonical 값만 제공한다는 한계를 명시한다.
-        """
-        def factory() -> Any:
-            query = self._db.table(SCHEMA, T_FINANCIALS).select(columns).eq("cik", cik)
-            if period_end is not None:
-                query = query.eq("period_end", period_end.isoformat())
-            if as_of is not None:
-                query = query.lte("source_filing_date", as_of.date().isoformat())
-            return query
-
-        return self._db.select_paged(factory, order_by="period_end")
-
-    def restated_periods(self, cik: str) -> list[date]:
-        """canonical 정책에서는 재무 숫자 정정 횟수를 재현하지 않는다."""
-        return []
 
     # ── 실적 ──────────────────────────────────────────────────────────────
     def earnings_results(self, ciks: Sequence[str], *, since: date | None = None) -> list[dict[str, Any]]:
@@ -234,15 +177,15 @@ class FundamentalsRepository:
         versions = self._db.select_in_chunks(
             schema=SCHEMA,
             table=T_FINANCIALS,
-            columns="cik,fiscal_year,fiscal_period,period_end,source_accession_no,source_filing_date",
+            columns="cik,fiscal_year,fiscal_period,period_end,accession_no,filing_date",
             filter_column="cik",
             values=list(ciks),
             order_by="cik,period_end",
         )
         return [
-            {**row, "accession_no": row.get("source_accession_no"), "filed_at": row.get("source_filing_date")}
+            {**row, "filed_at": row.get("filing_date")}
             for row in versions
-            if row.get("source_filing_date")
+            if row.get("filing_date")
         ]
 
     # ── 쓰기 ──────────────────────────────────────────────────────────────
@@ -253,15 +196,6 @@ class FundamentalsRepository:
             table=T_FILINGS,
             rows=[filing_row(filing) for filing in filings],
             on_conflict="accession_no",
-        )
-
-    def upsert_financials(self, rows: Sequence[dict[str, Any]]) -> int:
-        """기간별 canonical 행을 최신 공시 provenance와 함께 갱신한다."""
-        return self._db.upsert(
-            schema=SCHEMA,
-            table=T_FINANCIALS,
-            rows=rows,
-            on_conflict="cik,period_end,fiscal_period",
         )
 
     def record_processing(
@@ -298,6 +232,7 @@ __all__ = [
     "T_ESTIMATES",
     "T_FILINGS",
     "T_FINANCIALS",
+    "T_FINANCIAL_VERSIONS",
     "T_PROCESSING",
     "T_SCHEDULE",
     "T_SEGMENTS",

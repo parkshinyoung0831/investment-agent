@@ -27,8 +27,9 @@ log = get_logger(__name__)
 SCHEMA = "market"
 
 T_PRICES = "prices_daily"
-T_SPLITS = "split_events"
-T_DIVIDENDS = "dividend_events"
+T_ACTIONS = "actions_daily"
+RPC_MERGE_ACTIONS = "merge_actions"
+_ACTION_BATCH = 1000
 
 _PRICE_COLUMNS = "security_id, trade_date, open, high, low, close, volume, is_repaired"
 
@@ -96,33 +97,33 @@ class MarketRepository:
 
         return as_date(rows[0]["trade_date"]) if rows else None
 
-    def splits(self, security_ids: Sequence[int], *, since: date | None = None) -> list[SplitEvent]:
-        rows = self._db.select_in_chunks(
+    def _actions(self, security_ids: Sequence[int], *, column: str, since: date | None) -> list[dict[str, Any]]:
+        def configure(query: Any) -> Any:
+            query = query.not_.is_(column, "null")
+            return query.gte("action_date", since.isoformat()) if since is not None else query
+
+        return self._db.select_in_chunks(
             schema=SCHEMA,
-            table=T_SPLITS,
-            columns="security_id, action_date, split_ratio",
+            table=T_ACTIONS,
+            columns=f"security_id, action_date, {column}",
             filter_column="security_id",
             values=[str(value) for value in security_ids],
-            configure=(lambda query: query.gte("action_date", since.isoformat()))
-            if since is not None else None,
+            configure=configure,
             order_by="security_id, action_date",
         )
+
+    def splits(self, security_ids: Sequence[int], *, since: date | None = None) -> list[SplitEvent]:
+        rows = self._actions(security_ids, column="split_ratio", since=since)
         return [SplitEvent.from_row(row) for row in rows]
 
     def dividends(
         self, security_ids: Sequence[int], *, since: date | None = None
     ) -> list[DividendEvent]:
-        rows = self._db.select_in_chunks(
-            schema=SCHEMA,
-            table=T_DIVIDENDS,
-            columns="security_id, ex_date, div_amount",
-            filter_column="security_id",
-            values=[str(value) for value in security_ids],
-            configure=(lambda query: query.gte("ex_date", since.isoformat()))
-            if since is not None else None,
-            order_by="security_id, ex_date",
-        )
-        return [DividendEvent.from_row(row) for row in rows]
+        rows = self._actions(security_ids, column="dividend_amount", since=since)
+        return [DividendEvent.from_row({
+            "security_id": row["security_id"], "ex_date": row["action_date"],
+            "div_amount": row["dividend_amount"],
+        }) for row in rows]
 
     # ── 쓰기 ──────────────────────────────────────────────────────────────
     def upsert_bars(self, bars: Iterable[DailyBar]) -> int:
@@ -134,21 +135,32 @@ class MarketRepository:
         record_change_dates([str(row["trade_date"]) for row in rows])
         return written
 
-    def upsert_splits(self, events: Iterable[SplitEvent]) -> int:
-        return self._db.upsert(
-            schema=SCHEMA,
-            table=T_SPLITS,
-            rows=[event.as_row() for event in events],
-            on_conflict="security_id,action_date",
-        )
+    def merge_actions(self, rows: Iterable[dict[str, Any]]) -> int:
+        """기업행위를 병합한다(`market.merge_actions`). 실제로 바뀐 행 수를 돌려준다.
 
-    def upsert_dividends(self, events: Iterable[DividendEvent]) -> int:
-        return self._db.upsert(
-            schema=SCHEMA,
-            table=T_DIVIDENDS,
-            rows=[event.as_row() for event in events],
-            on_conflict="security_id,ex_date",
-        )
+        같은 (종목, 날짜)가 한 호출에 두 번 오면 SQL의 ON CONFLICT가 거절하므로 여기서 먼저
+        합친다. 응답에 없는 값은 싣지 않는다 — 병합 함수가 기존 값을 보존한다.
+        """
+        merged: dict[tuple[int, str], dict[str, Any]] = {}
+        for row in rows:
+            key = (int(row["security_id"]), str(row["action_date"]))
+            merged.setdefault(key, {"security_id": key[0], "action_date": key[1]}).update(
+                {k: v for k, v in row.items() if v is not None}
+            )
+        payload = [merged[key] for key in sorted(merged)]
+        for event in payload:
+            if "split_ratio" in event:
+                SplitEvent.from_row(event)
+            if "dividend_amount" in event:
+                DividendEvent.from_row({**event, "ex_date": event["action_date"],
+                                        "div_amount": event["dividend_amount"]})
+        changed = 0
+        for start in range(0, len(payload), _ACTION_BATCH):
+            result = self._db.rpc(SCHEMA, RPC_MERGE_ACTIONS, {
+                "p_rows": payload[start:start + _ACTION_BATCH],
+            }).execute().data
+            changed += int(result or 0)
+        return changed
 
     # ── 전체 조회 ─────────────────────────────────────────────────────────
     def latest_price_date(self) -> date | None:
@@ -189,4 +201,4 @@ class MarketRepository:
         return {int(row["security_id"]) for row in rows}
 
 
-__all__ = ["MarketRepository", "SCHEMA", "T_DIVIDENDS", "T_PRICES", "T_SPLITS"]
+__all__ = ["MarketRepository", "RPC_MERGE_ACTIONS", "SCHEMA", "T_ACTIONS", "T_PRICES"]

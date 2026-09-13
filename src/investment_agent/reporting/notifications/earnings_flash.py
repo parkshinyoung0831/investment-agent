@@ -72,7 +72,7 @@ class EarningsFlashStore:
             columns=(
                 "ticker,cik,fiscal_year,fiscal_period,period_end,filing_date,available_at,"
                 "accession_no,revenue_actual,eps_actual,eps_estimate,revenue_estimate,"
-                "estimate_snapshot_date,eps_analysts,eps_surprise_pct,revenue_surprise_pct,"
+                "estimate_snapshot_date,eps_analysts,eps_surprise_ratio,revenue_surprise_ratio,"
                 "guidance_summary,operating_income_actual,net_income_actual,press_release_url"
             ),
             filter_column="ticker",

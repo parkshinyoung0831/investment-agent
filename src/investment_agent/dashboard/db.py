@@ -62,7 +62,7 @@ T_SHARE_CLASS_SNAPSHOTS = "share_class_snapshots"
 T_SEGMENT_METRICS = "segment_metrics"
 T_ENTITIES = "entities"
 T_PRICES_DAILY = "prices_daily"
-T_SPLIT_EVENTS = "split_events"
+T_ACTIONS_DAILY = "actions_daily"
 V_EARNINGS_SURPRISE = "earnings_surprise"
 T_INSTITUTIONAL_FILINGS = "filings"
 T_INSTITUTIONAL_POSITIONS = "positions"
@@ -71,7 +71,7 @@ T_SECURITIES = "securities"
 
 FILING_CONTENT_COMPANY = "company"
 FILING_CONTENT_SEGMENTS = "segments"
-CONSENSUS_KIND_OBSERVED = "observed"
+CONSENSUS_KIND_OBSERVED = "captured_live"
 
 
 def _membership_chunks(
@@ -133,7 +133,7 @@ def _attach_entity_profiles(gateway: Any, rows: list[dict[str, Any]]) -> list[di
 
 # 기업 전체 재무 wide 컬럼. 업종 특수 계정(은행·금융)이 이 표로 흡수돼 함께 온다.
 _FINANCIAL_COLUMNS = (
-    "cik,fiscal_year,fiscal_period,source_accession_no,source_filing_date,period_end,"
+    "cik,fiscal_year,fiscal_period,accession_no,filing_date,period_end,"
     "revenue,cost_of_goods_and_services_sold,gross_profit,"
     "research_and_development_expenses,selling_general_and_admin_expenses,"
     "operating_income_loss,interest_expense,"
@@ -155,12 +155,12 @@ _FINANCIAL_COLUMNS = (
     "operating_lease_non_current_debt_equivalent,shares_average,"
     "shares_fully_diluted_average,net_interest_income,provision_for_credit_losses,"
     "net_loans_and_leases,total_deposits,common_equity_scope,is_liabilities_derived,"
-    "mezzanine_equity,preferred_stock,mapping_version,updated_at"
+    "mezzanine_equity,preferred_stock,mapping_version,ingested_at"
 )
 # 컨센서스 스냅샷 전 컬럼. 최신 관측 축약도 공시 전 결합도 이 원본에서만 나온다.
 _CONSENSUS_COLUMNS = (
     "security_id,target_fiscal_year,target_fiscal_period,target_period_end,snapshot_date,"
-    "snapshot_kind,source,source_horizon,eps_avg,eps_low,eps_high,eps_analysts,"
+    "snapshot_kind,source,eps_basis,eps_avg,eps_low,eps_high,eps_analysts,"
     "revenue_avg,revenue_low,revenue_high,revenue_analysts,revisions_up_7d,"
     "revisions_up_30d,revisions_down_7d,revisions_down_30d,collected_at"
 )
@@ -178,9 +178,10 @@ def _security_identity(gateway: Any, tickers: Sequence[str]) -> tuple[dict[str, 
     rows = gateway.select_rows(
         schema=SCHEMA_UNIVERSE,
         table=T_SECURITIES,
-        columns="security_id,ticker,cik",
+        columns="security_id,ticker,cik,is_active_listing",
         in_values={"ticker": wanted},
-        order=(("ticker", False),),
+        # 같은 ticker를 옛 종목과 지금 종목이 함께 가질 수 있다 — 상장 중인 행이 마지막에 와 이긴다.
+        order=(("ticker", False), ("is_active_listing", False), ("security_id", False)),
         page_size=1_000,
         max_rows=2_000,
     )
@@ -204,11 +205,11 @@ def _canonical_financial_rows(
         table=T_FINANCIALS,
         columns=_FINANCIAL_COLUMNS,
         in_values={"cik": sorted(by_cik)},
-        order=(("period_end", True), ("cik", False), ("source_accession_no", False)),
+        order=(("period_end", True), ("cik", False), ("accession_no", False)),
         page_size=1_000,
         max_rows=limit or 20_000,
     )
-    accessions = sorted({str(row["source_accession_no"]) for row in rows if row.get("source_accession_no")})
+    accessions = sorted({str(row["accession_no"]) for row in rows if row.get("accession_no")})
     filings = gateway.select_rows(
         schema=SCHEMA_FUNDAMENTALS,
         table=T_FILINGS,
@@ -222,12 +223,12 @@ def _canonical_financial_rows(
     projected: list[dict[str, Any]] = []
     for row in rows:
         security = by_cik.get(str(row.get("cik")).zfill(10))
-        filing = filing_by_accession.get(str(row.get("source_accession_no")), {})
+        filing = filing_by_accession.get(str(row.get("accession_no")), {})
         if not security or not filing.get("filing_date"):
             continue
         projected.append({
             **row,
-            "accession_no": row.get("source_accession_no"),
+            "accession_no": row.get("accession_no"),
             "ticker": str(security["ticker"]).upper(),
             "filed_at": filing.get("filing_date"),
             "form_type": filing.get("form_type"),
@@ -827,7 +828,7 @@ def load_ticker_data_quality(ticker: str) -> DataResult:
     """한 종목의 분할 이력과 회사 단위 시가총액 완전성을 읽는다."""
 
     symbol = str(ticker or "").strip().upper()
-    source = f"{DB_SOURCE} · market.split_events/universe.securities"
+    source = f"{DB_SOURCE} · market.actions_daily/universe.securities"
     if not re.fullmatch(r"[A-Z0-9][A-Z0-9.-]{0,14}", symbol):
         return DataResult.blocked(source=source, message="유효한 종목 코드가 필요합니다.")
     blocked = _preflight()
@@ -852,24 +853,25 @@ def load_ticker_data_quality(ticker: str) -> DataResult:
         identity, _ = _security_identity(gateway, [symbol])
         security = identity.get(symbol)
         if security and security.get("security_id") is not None:
-            split_rows = gateway.select_rows(
+            action_rows = gateway.select_rows(
                 schema=SCHEMA_MARKET,
-                table=T_SPLIT_EVENTS,
+                table=T_ACTIONS_DAILY,
                 columns="security_id,action_date,split_ratio",
                 equal={"security_id": int(security["security_id"])},
                 order=(("action_date", True),),
-                limit=60,
+                page_size=1_000,
+                max_rows=5_000,
             )
             payload["splits"] = [
-                {**row, "ticker": symbol} for row in split_rows
-            ]
+                {**row, "ticker": symbol} for row in action_rows if row.get("split_ratio") is not None
+            ][:60]
         # 밸류에이션 view는 v1에 없으므로 issuer에는 universe identity만 노출한다.
         try:
             cik_rows = gateway.select_rows(
                 schema=SCHEMA_UNIVERSE,
                 table=T_SECURITIES,
                 columns="ticker,cik,security_id",
-                equal={"ticker": symbol},
+                equal={"ticker": symbol, "is_active_listing": True},
                 limit=1,
             )
             if cik_rows:
@@ -954,6 +956,7 @@ def load_tickers() -> DataResult:
                 columns=(
                     "ticker,cik,exchange_code,is_tracked"
                 ),
+                equal={"is_active_listing": True},
                 in_values={"ticker": chunk},
                 order=(("ticker", False),),
                 limit=len(chunk),
@@ -1032,7 +1035,7 @@ def load_ai_data(ticker: str) -> DataResult:
             schema=SCHEMA_UNIVERSE,
             table=T_SECURITIES,
             columns="security_id,ticker",
-            equal={"ticker": symbol},
+            equal={"ticker": symbol, "is_active_listing": True},
             limit=1,
         )
         security_id = securities[0].get("security_id") if securities else None
@@ -1406,6 +1409,7 @@ def load_earnings_data(ticker: str | None = None, *, section: str = "all") -> Da
             schema=SCHEMA_UNIVERSE,
             table=T_SECURITIES,
             columns="ticker,cik",
+            equal={"is_active_listing": True},
             in_values={"ticker": tracked_tickers},
             order=(("ticker", False),),
             page_size=1_000,
@@ -1422,7 +1426,7 @@ def load_earnings_data(ticker: str | None = None, *, section: str = "all") -> Da
             columns=(
                 "ticker,cik,fiscal_year,fiscal_period,period_end,filing_date,available_at,accession_no,"
                 "revenue_actual,eps_actual,eps_estimate,revenue_estimate,estimate_snapshot_date,"
-                "eps_analysts,eps_surprise_pct,revenue_surprise_pct,guidance_summary,"
+                "eps_analysts,eps_surprise_ratio,revenue_surprise_ratio,guidance_summary,"
                 "operating_income_actual,net_income_actual,press_release_url"
             ),
             **({"equal": ticker_filter} if symbol else {"in_values": {"ticker": tracked_tickers}}),

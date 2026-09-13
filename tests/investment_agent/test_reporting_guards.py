@@ -109,11 +109,17 @@ def view_columns(sql):
     return result
 
 
-_INTERNAL_VIEWS = {"macro_observation_history"}  # 다른 view가 조합해 쓰는 내부 뷰. 공개 계약이 아니다.
+# 코드 계약(VIEWS)이 아닌 뷰. 다른 뷰가 조합해 쓰는 내부 뷰와, 사람이 직접 여는 6개 뷰다.
+_INTERNAL_VIEWS = {"macro_observation_history"}
+HUMAN_VIEWS = {
+    "security_overview", "financial_statements", "earnings_outlook",
+    "earnings_surprises", "economic_calendar", "institutional_holdings",
+}
 
 
 def assert_contract(specs, sql):
-    declared = {view: columns for view, columns in view_columns(sql).items() if view not in _INTERNAL_VIEWS}
+    declared = {view: columns for view, columns in view_columns(sql).items()
+                if view not in _INTERNAL_VIEWS | HUMAN_VIEWS}
     assert len(declared) == len(specs)
     assert set(specs) == set(declared)
     for view, spec in specs.items():
@@ -121,7 +127,6 @@ def assert_contract(specs, sql):
         assert spec.order_by and set(spec.order_by.split(",")) <= set(declared[view]), view
         assert spec.time_column is None or spec.time_column in declared[view], view
         assert spec.scope_column is None or spec.scope_column in declared[view], view
-        assert "security_id" not in declared[view], view
 
 
 class ReportingGuardsTest(unittest.TestCase):
@@ -181,7 +186,7 @@ class ReportingGuardsTest(unittest.TestCase):
         mutations = [
             replace(base, columns=base.columns.replace("trade_date", "missing_date")),
             replace(base, order_by="missing_key"), replace(base, order_by=""),
-            replace(base, time_column="missing_time"), replace(base, scope_column="security_id"),
+            replace(base, time_column="missing_time"), replace(base, scope_column="missing_scope"),
         ]
         sql = SQL.read_text(encoding="utf-8")
         for changed in mutations:
@@ -192,3 +197,21 @@ class ReportingGuardsTest(unittest.TestCase):
         del specs["prices_daily"]
         self.assert_guard_fails(lambda: assert_contract(specs, sql))
         self.assert_guard_fails(lambda: assert_contract(remote_views, sql.replace("p.trade_date,", "p.missing_date,")))
+
+
+class HumanViewTest(unittest.TestCase):
+    """사람이 여는 뷰는 이름을 영문으로 두고 뜻을 한국어 COMMENT로 적는다."""
+
+    def test_every_human_view_and_column_has_a_korean_comment(self) -> None:
+        sql = SQL.read_text(encoding="utf-8")
+        columns = view_columns(sql)
+        for view in sorted(HUMAN_VIEWS):
+            with self.subTest(view=view):
+                self.assertIn(f"COMMENT ON VIEW reporting.{view} IS '[", sql)
+                for column in columns[view]:
+                    self.assertIn(f"COMMENT ON COLUMN reporting.{view}.{column} IS", sql)
+
+    def test_human_views_do_not_need_quoted_identifiers(self) -> None:
+        sql = SQL.read_text(encoding="utf-8")
+        start = sql.index("-- 사람이 여는 뷰")
+        self.assertNotRegex(sql[start:], r' AS "')

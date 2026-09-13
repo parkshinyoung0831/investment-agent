@@ -119,7 +119,7 @@ class ReportingTest(unittest.TestCase):
         result = ReportingQueries(Database(client)).read("securities")
         self.assertEqual(rows, result.rows)
         self.assertEqual([(0, 999), (1000, 1999), (2000, 2999)], [b.bounds for b in client.builders])
-        self.assertTrue(all(b.orders == ["ticker"] for b in client.builders))
+        self.assertTrue(all(b.orders == ["ticker", "security_id"] for b in client.builders))
 
     def test_filters_survive_every_page_and_range_is_inclusive(self):
         rows = [row_for("prices_daily", ticker="A", trade_date=f"2026-09-{i:02}") for i in (1, 2, 3)]
@@ -159,7 +159,7 @@ class ReportingTest(unittest.TestCase):
     def test_invalid_queries_fail_before_connection(self):
         cases = [
             ("orders", {}), ("prices_daily", {}),
-            ("securities", {"equals": {"security_id": "x"}}),
+            ("securities", {"equals": {"private_column": "x"}}),
             ("prices_daily", {"equals": {"ticker": ""}}),
             ("prices_daily", {"start": "2026-01-01"}),
             ("prices_daily", {"start": "2026-02-01", "end": "2026-01-01"}),
@@ -174,16 +174,16 @@ class ReportingTest(unittest.TestCase):
         self.assertEqual([], client.tables)
 
     def test_unexpected_or_missing_columns_are_contract_errors(self):
-        for row in ({"ticker": "A"}, row_for("securities", security_id="private")):
+        for row in ({"ticker": "A"}, row_for("securities", private_column="x")):
             result = ReportingQueries(Database(Client([row]))).read("securities")
             self.assertEqual("error", result.status)
             self.assertEqual([], result.rows)
 
     def test_surprise_numbers_are_not_recalculated(self):
-        row = row_for("earnings_surprise", ticker="A", eps_surprise_pct=0.15, revenue_surprise_pct=None)
+        row = row_for("earnings_surprise", ticker="A", eps_surprise_ratio=0.15, revenue_surprise_ratio=None)
         result = ReportingQueries(Database(Client([row]))).read("earnings_surprise", equals={"ticker": "A"})
-        self.assertEqual(0.15, result.rows[0]["eps_surprise_pct"])
-        self.assertIsNone(result.rows[0]["revenue_surprise_pct"])
+        self.assertEqual(0.15, result.rows[0]["eps_surprise_ratio"])
+        self.assertIsNone(result.rows[0]["revenue_surprise_ratio"])
 
 
 class LocalRuntimeViewTest(unittest.TestCase):

@@ -36,8 +36,6 @@ T_ENTITIES = "entities"
 T_EARNINGS_ESTIMATES = "earnings_estimates"
 V_EARNINGS_SURPRISE = "earnings_surprise"
 T_PRICES_DAILY = "prices_daily"
-T_DIVIDEND_EVENTS = "dividend_events"
-T_SPLIT_EVENTS = "split_events"
 # ----------------------------------------------------------------------
 
 
@@ -91,7 +89,7 @@ def watchlist_members() -> list[dict]:
 
 
 _FINANCIAL_COLUMNS = (
-    "cik,period_end,source_accession_no,source_filing_date,fiscal_year,fiscal_period,revenue,"
+    "cik,period_end,accession_no,filing_date,fiscal_year,fiscal_period,revenue,"
     "operating_income_loss,net_income,eps_diluted_gaap,assets,liabilities,"
     "is_liabilities_derived,common_equity,common_equity_scope,minority_interest_balance,"
     "mezzanine_equity,preferred_stock,net_cash_from_operating_activities,"
@@ -129,9 +127,9 @@ def _financial_rows(tickers: list[str]) -> list[dict]:
         columns=_FINANCIAL_COLUMNS,
         filter_column="cik",
         values=list(by_cik),
-        order_by="cik,period_end,source_accession_no",
+        order_by="cik,period_end,accession_no",
     )
-    accessions = [str(row["source_accession_no"]) for row in rows if row.get("source_accession_no")]
+    accessions = [str(row["accession_no"]) for row in rows if row.get("accession_no")]
     filing_rows = database.select_in_chunks(
         schema=SCHEMA_FUNDAMENTALS,
         table=T_FILINGS,
@@ -143,7 +141,7 @@ def _financial_rows(tickers: list[str]) -> list[dict]:
     filings = {str(row["accession_no"]): row for row in filing_rows}
     out: list[dict] = []
     for row in rows:
-        accession_no = str(row.get("source_accession_no") or "")
+        accession_no = str(row.get("accession_no") or "")
         filing = filings.get(accession_no, {})
         ticker = by_cik.get(str(row.get("cik")))
         if not ticker or not filing.get("filing_date"):
@@ -234,13 +232,13 @@ def load_earnings_estimates(tickers: list[str]) -> list[dict]:
         table=T_EARNINGS_ESTIMATES,
         columns=(
             "security_id,target_fiscal_year,target_fiscal_period,target_period_end,"
-            "snapshot_date,snapshot_kind,source,source_horizon,eps_avg,eps_low,eps_high,eps_analysts,"
+            "snapshot_date,snapshot_kind,source,eps_basis,eps_avg,eps_low,eps_high,eps_analysts,"
             "revenue_avg,revenue_low,revenue_high,revenue_analysts,revisions_up_7d,"
             "revisions_up_30d,revisions_down_7d,revisions_down_30d"
         ),
         filter_column="security_id",
         values=list(by_id),
-        configure=lambda query: query.eq("snapshot_kind", "observed"),
+        configure=lambda query: query.eq("snapshot_kind", "captured_live"),
         order_by="security_id,target_fiscal_year,target_fiscal_period,snapshot_date",
     )
     return [{**row, "ticker": by_id.get(int(row["security_id"]))} for row in rows]
@@ -266,7 +264,7 @@ def load_surprise_history(tickers: list[str]) -> dict[str, list[dict]]:
     rows = database.select_in_chunks(
         schema=SCHEMA_REPORTING,
         table=V_EARNINGS_SURPRISE,
-        columns="ticker,period_end,eps_actual,eps_estimate,eps_surprise_pct",
+        columns="ticker,period_end,eps_actual,eps_estimate,eps_surprise_ratio",
         filter_column="ticker",
         values=normalized,
         order_by="ticker,period_end",
@@ -282,7 +280,7 @@ def load_surprise_history(tickers: list[str]) -> dict[str, list[dict]]:
             "quarter_end": period_end,
             "eps_actual": row.get("eps_actual"),
             "eps_estimate": row.get("eps_estimate"),
-            "surprise_pct": row.get("eps_surprise_pct"),
+            "surprise_pct": row.get("eps_surprise_ratio"),
         })
     return out
 
@@ -521,7 +519,7 @@ def load_valuation_snapshots(tickers: list[str]) -> dict[str, list[dict]]:
         for end in range(4, len(rows) + 1):
             window = rows[:end]
             current = window[-1]
-            available = str(current.get("filed_at") or current.get("source_filing_date") or "")
+            available = str(current.get("filed_at") or current.get("filing_date") or "")
             if not available:
                 continue
             snapshots.append({

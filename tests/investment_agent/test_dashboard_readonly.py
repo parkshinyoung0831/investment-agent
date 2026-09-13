@@ -376,7 +376,7 @@ class SelectOnlyGatewayTests(unittest.TestCase):
         client = _FakeClient(
             {
                 ("fundamentals", db.T_FINANCIALS): [
-                    {"cik": "0000320193", "source_accession_no": "0000320193-26-000001",
+                    {"cik": "0000320193", "accession_no": "0000320193-26-000001",
                      "fiscal_year": 2026, "fiscal_period": "Q2", "period_end": "2026-06-30"}
                 ],
                 ("fundamentals", db.T_FILINGS): [{
@@ -489,7 +489,7 @@ class SelectOnlyGatewayTests(unittest.TestCase):
             {
                 **row,
                 "cik": "0000320193" if row["ticker"] == "AAPL" else "0000789019",
-                "source_accession_no": ("0000320193" if row["ticker"] == "AAPL" else "0000789019")
+                "accession_no": ("0000320193" if row["ticker"] == "AAPL" else "0000789019")
                     + f"-26-{index:06d}",
                 "fiscal_year": 2026,
                 "fiscal_period": "Q2",
@@ -501,7 +501,7 @@ class SelectOnlyGatewayTests(unittest.TestCase):
             {
             ("fundamentals", db.T_FINANCIALS): canonical_rows,
             ("fundamentals", db.T_FILINGS): [
-                {"accession_no": row["source_accession_no"], "filing_date": row["period_end"],
+                {"accession_no": row["accession_no"], "filing_date": row["period_end"],
                  "form_type": "10-Q", "available_at": "2026-08-01T00:00:00Z"}
                 for row in canonical_rows
             ],

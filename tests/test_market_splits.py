@@ -102,10 +102,13 @@ class PriceRepairValidationTest(unittest.TestCase):
 
 
 class SplitSqlContractTest(unittest.TestCase):
-    def test_schema_has_split_events_table(self):
+    def test_splits_live_in_the_daily_actions_table(self):
         sql = Path("db/postgres/v1/20_market.sql").read_text(encoding="utf-8")
-        self.assertIn("CREATE TABLE IF NOT EXISTS market.split_events", sql)
-        self.assertIn("CHECK (split_ratio > 0 AND split_ratio <> 1)", sql)
+        self.assertIn("CREATE TABLE IF NOT EXISTS market.actions_daily", sql)
+        self.assertNotIn("market.split_events", sql)
+        self.assertIn("split_ratio > 0 AND split_ratio <> 1", sql)
+        # 부분 응답이 기존 분할을 지우지 않는다.
+        self.assertIn("split_ratio = coalesce(EXCLUDED.split_ratio, a.split_ratio)", sql)
         self.assertNotIn("split_from", sql)
         self.assertNotIn("split_to", sql)
         self.assertNotIn("market.split_backfill_queue", sql)

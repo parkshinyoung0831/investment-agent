@@ -49,7 +49,7 @@ NOT_A_TABLE = frozenset({
     # 계층 이름(패키지 안의 domain/application)
     "fundamentals.domain", "fundamentals.application",
     # SQL 함수
-    "fundamentals.prune_expectation_snapshots", "macro.prune_release_snapshots",
+    "macro.measure_value", "market.merge_actions",
     "execution.append_order_attempt_event",
 })
 

@@ -72,6 +72,7 @@ class Security:
     security_type: str = "common_stock"
     security_title: str | None = None
     is_active_listing: bool = True
+    is_identity_verified: bool = True
     is_tracked: bool = False
 
     @classmethod
@@ -91,6 +92,7 @@ class Security:
             security_type=str(row.get("security_type") or "common_stock"),
             security_title=row.get("security_title"),
             is_active_listing=bool(row.get("is_active_listing", True)),
+            is_identity_verified=bool(row.get("is_identity_verified", True)),
             is_tracked=bool(row.get("is_tracked", False)),
         )
 

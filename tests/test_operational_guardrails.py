@@ -11,6 +11,7 @@ import pandas as pd
 from investment_agent.platform.db import postgres as common_supabase
 from investment_agent.data.macro.infrastructure.fetch import safe_fetch
 from investment_agent.data.market.commands import market_backfill, market_daily
+from investment_agent.data.market.domain.models import PriceTarget
 
 
 class LazySupabaseClientTest(unittest.TestCase):
@@ -39,7 +40,7 @@ class EmptySourceTest(unittest.TestCase):
 
     def test_market_daily_empty_universe_is_failure(self):
         with (
-            mock.patch("investment_agent.data.market.persistence.universe_tracked", return_value=[]),
+            mock.patch("investment_agent.data.market.persistence.price_targets", return_value=[]),
             mock.patch("investment_agent.data.market.persistence.latest_price_date", return_value=None),
             self.assertRaisesRegex(RuntimeError, "is_tracked=true returned no rows"),
         ):
@@ -47,9 +48,10 @@ class EmptySourceTest(unittest.TestCase):
 
     def test_market_backfill_empty_response_is_failure(self):
         with (
-            mock.patch("investment_agent.data.market.persistence.universe_missing_prices", return_value=["AAPL"]),
+            mock.patch("investment_agent.data.market.persistence.missing_price_targets",
+                       return_value=[PriceTarget(1000001, "AAPL")]),
             mock.patch("investment_agent.data.market.infrastructure.sources.yahoo.download_ohlcv", return_value=[]),
-            self.assertRaisesRegex(RuntimeError, "빈 응답"),
+            self.assertRaisesRegex(RuntimeError, "no rows"),
         ):
             market_backfill._backfill_prices(30, "missing")
 

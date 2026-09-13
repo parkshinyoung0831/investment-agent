@@ -12,6 +12,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from investment_agent.config import load_config
+from investment_agent.data.macro.domain.releases import normalize
 from investment_agent.data.macro.domain.releases.identity import event_key, row_event_key, split_event_key
 from investment_agent.data.macro.domain.releases.release_catalog import enrich_series, series_config
 from investment_agent.data.macro.domain.releases.schedule import schedule_window
@@ -256,7 +257,7 @@ def append_observations(rows: list[dict[str, Any]]) -> int:
         if not source:
             raise ValueError(f"{sid}: observation has no source")
         times = _times(raw, now)
-        payloads.append({"series_key": _series_key(sid), "observation_date": period, "value": _finite(raw["value"]), "source_code": source, "time_precision": _precision(raw), "vintage_at": times["effective_at"], "available_at": times["collected_at"], "revision_no": int(raw.get("revision_no") or 0)})
+        payloads.append({"series_key": _series_key(sid), "observation_date": period, "value": _finite(raw["value"]), "source_code": source, "time_precision": _precision(raw), "vintage_at": times["effective_at"], "available_at": times["collected_at"]})
     payloads.sort(key=lambda row: (row["series_key"], row["observation_date"], row["vintage_at"], row["available_at"]))
     return _db().upsert(schema=SCHEMA_MACRO, table=T_OBSERVATIONS, rows=payloads, on_conflict="series_key,observation_date,vintage_at,available_at")
 
@@ -292,42 +293,102 @@ SUMMARY_ROW_KEYS = frozenset({
 })
 
 
+def _moment(value: Any) -> datetime:
+    return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+
+
+def _measure_value(measure: dict[str, Any], frequency: str, series_rows: list[dict[str, Any]],
+                   ref_period: str, *, vintage_cutoff: datetime | None) -> float | None:
+    """원값 빈티지에서 measure 값을 계산한다. SQL `macro.measure_value`와 같은 규칙이다.
+
+    `vintage_cutoff`까지 공개된 원값만 쓴다. 최초 발표 값은 최초 빈티지 시각, 현재 값은 None.
+    """
+    known: dict[date, tuple[tuple[datetime, datetime], float]] = {}
+    for row in series_rows:
+        effective = _moment(row["effective_at"])
+        if vintage_cutoff is not None and effective > vintage_cutoff:
+            continue
+        period = date.fromisoformat(str(row["ref_period"])[:10])
+        marker = (effective, _moment(row.get("collected_at") or row["effective_at"]))
+        if period not in known or marker > known[period][0]:
+            known[period] = (marker, float(row["value"]))
+    values = normalize.calculate_family(
+        [{**measure, "frequency": frequency}], {period: value for period, (_m, value) in known.items()}
+    )
+    return values.get(date.fromisoformat(ref_period[:10]), {}).get(str(measure["measure_id"]))
+
+
 def _summary_rows(*, start: datetime, end: datetime, as_of: datetime) -> list[dict[str, Any]]:
+    """발표 하나 = 한 행. 실제·예상·서프라이즈는 전부 대표 measure 단위다.
+
+    `reporting.macro_release_summary`와 같은 규칙이다. 최초 발표 값은 최초 빈티지로 계산하고,
+    closing 예상은 그 빈티지 시점까지 공개된(effective_at) 같은 measure의 마지막 예상이다.
+    실제치가 없으면 closing과 서프라이즈를 만들지 않는다. `as_of` 이후에 수집한 행은 보지 않는다.
+    """
     series = {str(row["series_id"]): row for row in _series_rows() if row["domain"] == "economic_release"}
+    primary = primary_measures()
     events = _select(lambda: _table(T_RELEASE_EVENTS).select("series_key,ref_period").gte("ref_period", start.date().isoformat()).lte("ref_period", end.date().isoformat()), order_by="series_key,ref_period")
     schedules = _latest_by(_select(lambda: _table(T_SCHEDULE_VERSIONS).select("*"), order_by="series_key,ref_period,collected_at"), ("series_id", "ref_period"), as_of=as_of)
     observations = _select(lambda: _table(T_OBSERVATIONS).select("*"), order_by="series_key,observation_date,vintage_at,available_at")
-    obs_by_event: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    obs_by_series: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in observations:
-        obs_by_event[(str(row["series_id"]), str(row["ref_period"]))].append(row)
+        if _moment(row["collected_at"]) <= as_of:
+            obs_by_series[str(row["series_id"])].append(row)
     forecasts = _select(lambda: _table(T_FORECAST_VERSIONS).select("*"), order_by="series_key,ref_period,measure_id,forecast_kind,effective_at,collected_at")
     forecast_by_event: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in forecasts:
-        forecast_by_event[(str(row["series_id"]), str(row["ref_period"]))].append(row)
+        if _moment(row["collected_at"]) <= as_of:
+            forecast_by_event[(str(row["series_id"]), str(row["ref_period"]))].append(row)
     output = []
     for event in events:
         key = (str(event["series_id"]), str(event["ref_period"]))
-        setting, schedule_row = series.get(key[0]), schedules.get(key)
-        if setting is None or schedule_row is None:
+        setting, schedule_row, measure = series.get(key[0]), schedules.get(key), primary.get(key[0])
+        if setting is None or schedule_row is None or measure is None:
             continue
-        actuals = [row for row in obs_by_event[key] if datetime.fromisoformat(str(row["collected_at"]).replace("Z", "+00:00")) <= as_of]
-        actuals.sort(key=lambda row: (str(row.get("effective_at")), str(row.get("collected_at"))))
-        first, latest = (actuals[0] if actuals else None), (actuals[-1] if actuals else None)
+        series_rows = obs_by_series[key[0]]
+        vintages = sorted(
+            (row for row in series_rows if str(row["ref_period"])[:10] == key[1][:10]),
+            key=lambda row: (_moment(row["effective_at"]), _moment(row["collected_at"])),
+        )
+        first = vintages[0] if vintages else None
+        first_at = _moment(first["effective_at"]) if first else None
+        frequency = str(setting.get("frequency") or "monthly")
+        first_value = _measure_value(measure, frequency, series_rows, key[1], vintage_cutoff=first_at) if first else None
+        latest_value = _measure_value(measure, frequency, series_rows, key[1], vintage_cutoff=None) if first else None
         scheduled_at = _utc_iso(schedule_row["scheduled_at"])
-        status = "cancelled" if schedule_row.get("is_cancelled") else ("released" if latest else "not_available_yet" if datetime.fromisoformat(scheduled_at) <= as_of else "scheduled")
-        by_kind: dict[str, dict[str, Any]] = {}
-        for row in forecast_by_event[key]:
-            if datetime.fromisoformat(str(row["collected_at"]).replace("Z", "+00:00")) <= as_of:
-                by_kind[str(row["forecast_kind"])] = row
-        actual_value = latest.get("value") if latest else None
-        survey_value = by_kind.get("survey", {}).get("value") if by_kind.get("survey") else None
-        yield_row = {
-            "event_key": event_key(key[0], key[1]), "series_id": key[0], "ref_period": key[1], "series_name_ko": setting.get("name_ko"), "category": setting.get("category"), "unit": setting.get("unit"), "frequency": setting.get("frequency"), "scheduled_at": scheduled_at, "schedule_confidence": schedule_row.get("schedule_precision"), "status": status, "first_actual_at": first.get("effective_at") if first else None, "first_actual_value": first.get("value") if first else None, "latest_actual_value": actual_value, "closing_survey_value": survey_value, "closing_nowcast_value": by_kind.get("nowcast", {}).get("value") if by_kind.get("nowcast") else None, "closing_own_model_value": by_kind.get("own_model", {}).get("value") if by_kind.get("own_model") else None, "market_surprise": actual_value - survey_value if actual_value is not None and survey_value is not None else None, "revision": actual_value - first.get("value") if actual_value is not None and first and first.get("value") is not None else None,
-        }
-        yield_row["model_error"] = (actual_value - yield_row["closing_own_model_value"] if actual_value is not None and yield_row["closing_own_model_value"] is not None else None)
-        yield_row["series_kind"] = setting.get("series_kind")
-        yield_row["source"] = setting.get("source")
-        output.append(yield_row)
+        status = "cancelled" if schedule_row.get("is_cancelled") else ("released" if first else "not_available_yet" if datetime.fromisoformat(scheduled_at) <= as_of else "scheduled")
+        closing: dict[str, Any] = {}
+        if first_at is not None:
+            for row in forecast_by_event[key]:
+                if str(row.get("measure_id")) != str(measure["measure_id"]) or _moment(row["effective_at"]) > first_at:
+                    continue
+                kind = str(row["forecast_kind"])
+                before = closing.get(kind)
+                if before is None or (_moment(row["effective_at"]), _moment(row["collected_at"])) >= (
+                        _moment(before["effective_at"]), _moment(before["collected_at"])):
+                    closing[kind] = row
+
+        def closing_value(kind: str) -> float | None:
+            return None if kind not in closing or closing[kind].get("value") is None else float(closing[kind]["value"])
+
+        def gap(value: float | None) -> float | None:
+            return None if first_value is None or value is None else first_value - value
+
+        output.append({
+            "event_key": event_key(key[0], key[1]), "series_id": key[0], "ref_period": key[1],
+            "series_name_ko": setting.get("name_ko"), "category": setting.get("category"),
+            "unit": measure.get("unit"), "frequency": setting.get("frequency"),
+            "scheduled_at": scheduled_at, "schedule_confidence": schedule_row.get("schedule_precision"),
+            "status": status, "first_actual_at": first.get("effective_at") if first else None,
+            "first_actual_value": first_value, "latest_actual_value": latest_value,
+            "closing_survey_value": closing_value("survey"),
+            "closing_nowcast_value": closing_value("nowcast"),
+            "closing_own_model_value": closing_value("own_model"),
+            "market_surprise": gap(closing_value("survey")),
+            "revision": None if first_value is None or latest_value is None else latest_value - first_value,
+            "model_error": gap(closing_value("own_model")),
+            "series_kind": setting.get("series_kind"), "source": setting.get("source"),
+        })
     if output and set(output[0]) != SUMMARY_ROW_KEYS:
         raise ValueError("macro release summary row does not match its declared contract")
     return output
@@ -396,15 +457,6 @@ def measure_history(series_id: str, measure_id: str, limit: int = 60) -> list[fl
 def forecast_history(key: str) -> list[dict[str, Any]]:
     sid, period = split_event_key(key)
     return _select(lambda: _table(T_FORECAST_VERSIONS).select("*").eq("series_key", _series_key(sid)).eq("ref_period", period), order_by="measure_id,forecast_kind,source_code,effective_at,collected_at")
-
-
-def prune_release_snapshots(recent_days: int | None = None) -> dict[str, int]:
-    """발표가 끝난 회차의 일정·예상 스냅샷을 계약이 읽는 한 건씩만 남긴다."""
-    from investment_agent.data.macro.repository import PRUNE_RECENT_DAYS, MacroRepository
-
-    return MacroRepository(_db()).prune_release_snapshots(
-        PRUNE_RECENT_DAYS if recent_days is None else recent_days
-    )
 
 
 def validation_snapshot() -> dict[str, list[dict[str, Any]]]:

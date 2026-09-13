@@ -22,7 +22,21 @@ CIK_RE = re.compile(r"^[0-9]{10}$")
 CUSIP_RE = re.compile(r"^[A-Z0-9]{9}$")
 FIGI_RE = re.compile(r"^[A-Z0-9]{12}$")
 
-IDENTIFIER_TYPES = ("CUSIP", "CINS", "FIGI", "TICKER")
+IDENTIFIER_TYPES = (
+    "TICKER", "CUSIP", "CINS", "FIGI_COMPOSITE", "FIGI_SHARE_CLASS", "FIGI_VENUE", "PROVIDER_SYMBOL",
+)
+# 식별자 유형마다 기본 코드 체계. 같은 문자열도 체계가 다르면 다른 사실이다.
+DEFAULT_NAMESPACE = {
+    "TICKER": "us_listing",
+    "CUSIP": "cgs",
+    "CINS": "cgs",
+    "FIGI_COMPOSITE": "openfigi",
+    "FIGI_SHARE_CLASS": "openfigi",
+    "FIGI_VENUE": "openfigi",
+}
+# ticker는 재사용된다. 시작일을 모르는 ticker 연결은 과거 문서 해석에 쓰지 않는다.
+# 발행 증권 코드(CUSIP·FIGI)는 재사용되지 않으므로 시작일을 몰라도 귀속이 유효하다.
+HISTORY_REQUIRES_START = frozenset({"TICKER", "PROVIDER_SYMBOL"})
 
 
 def normalize_ticker(value: object) -> str | None:

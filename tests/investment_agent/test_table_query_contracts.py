@@ -75,7 +75,7 @@ class TableQueryContractsTest(unittest.TestCase):
 
     def test_static_queries_match_their_table(self):
         tables = declared_columns()
-        self.assertEqual(29, len(tables))
+        self.assertEqual(28, len(tables))
         issues = []
         for path in (ROOT / "src").rglob("*.py"):
             issues.extend((str(path.relative_to(ROOT)), *issue)

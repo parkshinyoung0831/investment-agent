@@ -35,21 +35,29 @@ Supabase query builder는 `infrastructure/supabase/`와 공용
 | 클래스별 발행주식수 | `fundamentals.share_class_snapshots` | CIK · class · as-of date · accession |
 | 세그먼트 지표 | `fundamentals.segment_metrics` | CIK · accession · fiscal period · segment hash |
 | 실적 결과 | `fundamentals.earnings_results` | security · fiscal period · accession |
-| 예상치 | `fundamentals.earnings_estimates` | security · snapshot · horizon · source |
-| 발표 일정 | `fundamentals.earnings_schedule_versions` | security · fiscal period · snapshot · source |
-| 애널리스트 스냅샷 | `fundamentals.analyst_consensus_snapshots` | security · snapshot date · source |
+| 예상치 | `fundamentals.earnings_estimates` | security · fiscal period · source · 수집 성격 · 상태 시작일 |
+| 발표 일정 | `fundamentals.earnings_schedule_versions` | security · fiscal period · source · 상태 시작일 |
+| 애널리스트 스냅샷 | `fundamentals.analyst_consensus_snapshots` | security · source · 상태 시작일 |
 
-### 스냅샷 보존
+### 예상치·일정은 바뀔 때만 새 행이다
 
-예상치·발표 일정·애널리스트 커버리지는 매일 한 행씩 쌓인다. **발표 전에는 그 누적
-자체가 값이지만(예정일이 밀린 것, 컨센서스가 움직인 것), 발표가 끝나면 계속 읽히는
-것은 하나뿐이다** — `reporting.earnings_surprise`가 집는 "발표일 직전 마지막
-스냅샷"이다.
+예상치·발표 일정·애널리스트 커버리지는 직전 저장 상태와 다를 때만 새 행을 쓰고, 같으면
+그 행의 `last_seen_at`만 옮긴다(`domain/services/state_versions.py`). 인접 비교라서 값이
+A→B→A로 돌아온 사건은 세 행으로 남고, "값이 안 바뀜"과 "수집이 멈춤"은 `last_seen_at`으로
+가른다. 반복 행이 없으므로 보존 기간으로 지우는 정리도 없다 — 발표 전 예상 이력은 다시 받을
+수 없다.
 
-그래서 지우는 기준은 나이가 아니라 발표 여부다. `fundamentals.prune_expectation_snapshots()`가
-발표가 끝난 기간만, 그것도 최근 180일 밖의 것만 그 한 건씩 남기고 정리한다
-(`refresh_expectations`가 적재 성공 회차에만 호출한다). 나이로만 자르면 아직 발표
-안 한 분기의 드리프트가 먼저 사라지고, 반대로 오래된 분기의 매일치가 그대로 남는다.
+`snapshot_kind`는 자료가 당시 값임을 얼마나 보장하는지 말한다.
+
+| 값 | 뜻 | 발표 서프라이즈에 쓰나 |
+|---|---|---|
+| `captured_live` | 그날 우리가 직접 수집 | 쓴다 |
+| `vendor_pit` | 공급자가 당시 값임을 보장한 과거 자료 | 쓴다 |
+| `reconstructed` | 현재 API의 발표 이력에서 되살린 값 | 쓰지 않는다 |
+| `latest_history` | 당시 값 보장이 없는 과거 요약 | 쓰지 않는다 |
+
+backfill 명령으로 받았다는 이유로 과거 시점 신뢰도가 생기지 않는다. 표지는 명령이 아니라
+원천의 보장으로 정한다.
 
 기업 재무는 ticker가 아니라 CIK와 accession을 저장 identity로 사용한다. ticker와 CIK
 승계는 `universe`에서 읽어 fan-out하고, 표시용 reporting view가 이를 투영한다.

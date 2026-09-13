@@ -5,11 +5,13 @@ import unittest
 from datetime import date, datetime, timezone
 
 from investment_agent.data.fundamentals.domain.filings import Filing
+from investment_agent.data.fundamentals.infrastructure.supabase.expectations import (
+    _project_fundamental_rows,
+)
 from investment_agent.data.fundamentals.repository import (
     SCHEMA,
     T_ESTIMATES,
     T_FILINGS,
-    T_FINANCIALS,
     T_PROCESSING,
     T_SCHEDULE,
     FundamentalsRepository,
@@ -21,63 +23,67 @@ ORIGINAL = "0000320193-25-000001"
 RESTATED = "0000320193-25-000009"
 
 
-def _financial_row(
-    *, accession: str = RESTATED, filing_date: str = "2026-06-01", revenue: float = 95.0,
-    period_end: str = "2025-12-31", fiscal_period: str = "Q4",
-) -> dict:
-    return {
-        "cik": CIK, "period_end": period_end, "fiscal_period": fiscal_period,
-        "revenue": revenue, "source_accession_no": accession, "source_filing_date": filing_date,
-    }
+def _version(accession: str, revenue: float, *, ingested_at: str) -> dict:
+    return {"cik": CIK, "period_end": "2025-12-31", "fiscal_period": "Q4", "fiscal_year": 2025,
+            "accession_no": accession, "mapping_version": "v1", "revenue": revenue,
+            "ingested_at": ingested_at}
+
+
+PROVENANCE = {
+    ORIGINAL: {"accession_no": ORIGINAL, "filing_date": "2026-02-01", "form_type": "10-K",
+               "available_at": "2026-02-02T00:00:00+00:00"},
+    RESTATED: {"accession_no": RESTATED, "filing_date": "2026-06-01", "form_type": "10-K/A",
+               "available_at": "2026-06-03T00:00:00+00:00"},
+}
+VERSIONS = [
+    _version(ORIGINAL, 100.0, ingested_at="2026-02-02T00:00:00+00:00"),
+    _version(RESTATED, 95.0, ingested_at="2026-06-03T00:00:00+00:00"),
+]
+
+
+def _as_of(when: datetime, *, include_available_at: bool = True) -> list[dict]:
+    return _project_fundamental_rows("AAPL", VERSIONS, PROVENANCE, when,
+                                     include_available_at=include_available_at, limit=12)
 
 
 class VersionSelectionTest(unittest.TestCase):
-    """canonical 정책: 기간별 한 행만 있고, 정정 전 숫자는 복원하지 않는다 —
-    의도적 한계다(repository.py의 ``financials``/``restated_periods`` 문서 참고)."""
+    """정정 공시가 원본을 지우지 않고, cutoff마다 그때 알 수 있던 버전 하나를 고른다."""
 
-    def setUp(self) -> None:
-        self.db = FakeDatabase()
-        self.db.put(SCHEMA, T_FINANCIALS, [_financial_row()])
-        self.repo = FundamentalsRepository(self.db)
+    def test_before_the_restatement_the_original_value_is_returned(self) -> None:
+        rows = _as_of(datetime(2026, 3, 1, tzinfo=timezone.utc))
+        self.assertEqual([(ORIGINAL, 100.0)], [(row["accession_no"], row["revenue"]) for row in rows])
 
-    def test_both_versions_are_kept(self) -> None:
-        """PK에 accession_no가 없어도 기간별 최대 한 행이라는 계약은 지켜야 한다."""
-        versions = self.repo.financial_versions(CIK)
-        self.assertEqual([date(2025, 12, 31)], list(versions))
-        self.assertEqual(1, len(versions[date(2025, 12, 31)]))
-        self.assertEqual(RESTATED, versions[date(2025, 12, 31)][0].accession_no)
+    def test_after_the_restatement_only_the_restated_value_is_returned(self) -> None:
+        rows = _as_of(datetime(2026, 7, 1, tzinfo=timezone.utc))
+        self.assertEqual([(RESTATED, 95.0)], [(row["accession_no"], row["revenue"]) for row in rows])
 
-    def test_without_as_of_the_restated_value_is_returned(self) -> None:
-        rows = self.repo.financials(CIK, "cik, period_end, source_accession_no, revenue")
-        self.assertEqual([RESTATED], [row["source_accession_no"] for row in rows])
-        self.assertEqual(95.0, rows[0]["revenue"])
+    def test_before_anything_arrived_is_empty(self) -> None:
+        self.assertEqual([], _as_of(datetime(2026, 1, 1, tzinfo=timezone.utc)))
 
-    def test_as_of_before_the_restatement_returns_the_original(self) -> None:
-        """canonical 정책에서는 '그때 우리가 알던 값'을 복원하지 않는다 — 그 시점에
-        아직 공시가 없었다는 사실만 반영해 행을 통째로 제외한다."""
-        rows = self.repo.financials(
-            CIK, "cik, period_end, source_accession_no, revenue",
-            as_of=datetime(2026, 3, 1, tzinfo=timezone.utc),
-        )
-        self.assertEqual([], rows)
+    def test_operational_replay_waits_until_we_actually_had_the_filing(self) -> None:
+        """SEC 제출일(6/1)이 지났어도 우리가 받은 것은 6/3이다 — 운영 재현은 원본을 쓴다."""
+        versions = [VERSIONS[0], {**VERSIONS[1], "ingested_at": None}]
+        when = datetime(2026, 6, 2, tzinfo=timezone.utc)
 
-    def test_as_of_before_anything_arrived_is_empty(self) -> None:
-        rows = self.repo.financials(
-            CIK, "cik, period_end, source_accession_no, revenue",
-            as_of=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        )
-        self.assertEqual([], rows)
+        def pick(include: bool) -> list[str]:
+            return [row["accession_no"] for row in _project_fundamental_rows(
+                "AAPL", versions, PROVENANCE, when, include_available_at=include, limit=12)]
 
-    def test_as_of_after_the_filing_shows_the_current_canonical_value(self) -> None:
-        rows = self.repo.financials(
-            CIK, "cik, period_end, source_accession_no, revenue",
-            as_of=datetime(2026, 7, 1, tzinfo=timezone.utc),
-        )
-        self.assertEqual(95.0, rows[0]["revenue"])
+        self.assertEqual([ORIGINAL], pick(True))
+        self.assertEqual([RESTATED], pick(False))
 
-    def test_restated_periods_lists_only_what_changed(self) -> None:
-        """canonical 정책은 정정 횟수를 재현하지 않는다 — 항상 빈 목록이다."""
-        self.assertEqual([], self.repo.restated_periods(CIK))
+    def test_operational_replay_also_waits_until_the_version_was_stored(self) -> None:
+        """공시는 받았어도 재처리한 버전 행이 cutoff 뒤에 생겼으면 그때는 몰랐던 값이다."""
+        provenance = {**PROVENANCE, RESTATED: {**PROVENANCE[RESTATED], "available_at": "2026-06-01T12:00:00+00:00"}}
+        when = datetime(2026, 6, 2, tzinfo=timezone.utc)
+        rows = _project_fundamental_rows("AAPL", VERSIONS, provenance, when, include_available_at=True, limit=12)
+        self.assertEqual([ORIGINAL], [row["accession_no"] for row in rows])
+
+    def test_a_version_without_its_filing_is_an_error(self) -> None:
+        with self.assertRaises(ValueError):
+            _project_fundamental_rows("AAPL", VERSIONS, {ORIGINAL: PROVENANCE[ORIGINAL]},
+                                      datetime(2026, 7, 1, tzinfo=timezone.utc),
+                                      include_available_at=True, limit=12)
 
 
 class ProcessingTest(unittest.TestCase):
@@ -122,11 +128,11 @@ class ConsensusTest(unittest.TestCase):
         self.db.put(SCHEMA, T_ESTIMATES, [
             {"security_id": 1, "target_fiscal_year": 2026, "target_fiscal_period": "Q1",
              "snapshot_date": "2026-04-20", "eps_avg": 1.50, "revenue_avg": 90.0,
-             "eps_analysts": 30, "snapshot_kind": "observed"},
+             "eps_analysts": 30, "snapshot_kind": "captured_live"},
             # 발표 뒤에 갱신된 값. 서프라이즈 계산에 쓰이면 안 된다.
             {"security_id": 1, "target_fiscal_year": 2026, "target_fiscal_period": "Q1",
              "snapshot_date": "2026-05-10", "eps_avg": 1.62, "revenue_avg": 95.0,
-             "eps_analysts": 31, "snapshot_kind": "observed"},
+             "eps_analysts": 31, "snapshot_kind": "captured_live"},
         ])
         self.repo = FundamentalsRepository(self.db)
 
@@ -176,17 +182,6 @@ class ScheduleTest(unittest.TestCase):
 
 
 class WriteTest(unittest.TestCase):
-    def test_financial_upsert_conflicts_on_the_fiscal_period_not_the_accession(self) -> None:
-        """accession_no가 충돌 키에 있으면 정정마다 새 행이 쌓여 canonical 정책이
-        깨진다 — 기간 키만으로 충돌해야 정정이 같은 행을 덮어쓴다."""
-        db = FakeDatabase()
-        FundamentalsRepository(db).upsert_financials([
-            {"cik": CIK, "period_end": "2025-12-31", "fiscal_period": "Q4",
-             "source_accession_no": RESTATED, "revenue": 95.0},
-        ])
-        (_key, _rows, conflict) = db.upserts[0]
-        self.assertEqual("cik,period_end,fiscal_period", conflict)
-
     def test_filings_upsert_does_not_send_available_at(self) -> None:
         db = FakeDatabase()
         FundamentalsRepository(db).upsert_filings([

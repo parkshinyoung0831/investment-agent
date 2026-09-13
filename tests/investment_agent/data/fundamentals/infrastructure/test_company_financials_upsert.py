@@ -1,4 +1,4 @@
-"""기업 전체 재무가 canonical financials에 적재되는지 검증한다."""
+"""기업 전체 재무가 공시 버전(financial_versions)으로 적재되는지 검증한다."""
 from __future__ import annotations
 
 import unittest
@@ -27,13 +27,14 @@ class CompanyFinancialsUpsertTest(unittest.TestCase):
             stored = company_financials.upsert_core_wide(rows)
 
         self.assertEqual(stored, 1)
-        schema.table.assert_called_with(company_financials.T_FINANCIALS)
+        schema.table.assert_called_with(company_financials.T_FINANCIAL_VERSIONS)
         payload = schema.table.return_value.upsert.call_args.args[0]
         self.assertNotIn("source_manifest", payload[0])
         self.assertEqual(payload[0]["revenue"], 100)
-        self.assertEqual(payload[0]["source_accession_no"], "0000320193-26-000001")
+        self.assertEqual(payload[0]["accession_no"], "0000320193-26-000001")
 
-    def test_period_and_fiscal_conflicts_use_canonical_primary_key(self):
+    def test_a_restatement_is_a_new_version_not_an_overwrite(self):
+        """충돌 키에 공시와 매핑 버전이 있어야 정정 공시가 원본 수치를 지우지 않는다."""
         schema = mock.MagicMock()
         schema.table.return_value.upsert.return_value.execute.return_value.data = [{}]
         client = mock.MagicMock()
@@ -53,7 +54,7 @@ class CompanyFinancialsUpsertTest(unittest.TestCase):
 
         self.assertEqual(
             schema.table.return_value.upsert.call_args.kwargs["on_conflict"],
-            "cik,period_end,fiscal_period",
+            "cik,period_end,fiscal_period,accession_no,mapping_version",
         )
 
 

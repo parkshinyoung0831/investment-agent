@@ -64,8 +64,9 @@ CHECKS: tuple[tuple[str, str, int], ...] = (
      "select count(*) from universe.entities"
      " where is_watchlisted and watch_from is null", 0),
 
-    ("fundamentals.one_row_per_fiscal_period_and_filing",
-     "select count(*) from (select cik, period_end, source_accession_no"
+    # 최신 뷰는 회계기간마다 한 행이어야 한다. 둘이면 화면이 같은 분기를 두 번 센다.
+    ("fundamentals.latest_view_one_row_per_period",
+     "select count(*) from (select cik, period_end, fiscal_period"
      " from fundamentals.financials group by 1, 2, 3 having count(*) > 1) d", 0),
     ("fundamentals.segment_cik_exists",
      "select count(*) from fundamentals.segment_metrics m"

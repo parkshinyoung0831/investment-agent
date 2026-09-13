@@ -17,16 +17,23 @@
 밖에서 들어오는 이름은 여전히 ticker다(사람이 쓰는 이름이므로). 하지만 다른
 스키마에 넘기는 것은 `security_id`다 — ticker는 바뀌고 재사용되므로 저장된 관계의
 기준이 될 수 없다.
+
+같은 ticker를 상장이 끝난 옛 종목과 지금 종목이 함께 가질 수 있다. ticker로 물으면
+상장 중인 종목 → 신원이 확인된 종목 → 가장 최근에 만든 종목 순으로 하나를 고른다.
+과거 문서의 ticker처럼 날짜가 중요한 조회는 `resolve_identifiers(on_date=...)`를 쓴다.
 """
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any
 
-from investment_agent.data.universe.domain.identifiers import normalize_ticker
+from investment_agent.data.universe.domain.identifiers import (
+    DEFAULT_NAMESPACE,
+    HISTORY_REQUIRES_START,
+    normalize_ticker,
+)
 from investment_agent.data.universe.domain.models import (
-    Entity,
     MembershipSnapshot,
     Security,
     WatchlistMember,
@@ -47,9 +54,24 @@ RPC_REPLACE_MEMBERSHIP = "replace_index_membership"
 # 지수 코드. 저장소 CHECK가 SP500의 정원 범위를 따로 갖고 있다.
 INDEX_SP500 = "SP500"
 
-_SECURITY_COLUMNS = (
-    "security_id, ticker, cik, exchange_code, security_type, security_title, is_active_listing, is_tracked"
+SECURITY_COLUMNS = (
+    "security_id, ticker, cik, exchange_code, security_type, security_title, "
+    "is_active_listing, is_identity_verified, is_tracked"
 )
+IDENTIFIER_CONFLICT = "identifier_type,namespace,identifier,security_id,valid_from"
+
+
+def preferred_security(candidates: Iterable[Security]) -> Security | None:
+    """같은 ticker 후보 중 하나. 상장 중 → 신원 확인 → 최근 발급 순이다."""
+    return max(
+        candidates,
+        key=lambda s: (s.is_active_listing, s.is_identity_verified, s.security_id),
+        default=None,
+    )
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 class UniverseRepository:
@@ -63,7 +85,7 @@ class UniverseRepository:
         """수집·판단 대상. 다른 파이프라인은 전부 이 목록에서 시작한다."""
         rows = self._db.select_paged(
             lambda: self._db.table(SCHEMA, T_SECURITIES)
-            .select(_SECURITY_COLUMNS)
+            .select(SECURITY_COLUMNS)
             .eq("is_tracked", True),
             # 500건이 넘을 수 있고, 정렬 없이 페이지를 넘기면 종목이 조용히 빠진다.
             order_by="ticker",
@@ -74,19 +96,26 @@ class UniverseRepository:
         return [security.ticker for security in self.tracked_securities()]
 
     def securities_by_ticker(self, tickers: Sequence[str]) -> dict[str, Security]:
-        """ticker → Security. 없는 ticker는 결과에 없다 — 빈 껍데기를 만들지 않는다."""
+        """ticker → Security. 없는 ticker는 결과에 없다 — 빈 껍데기를 만들지 않는다.
+
+        같은 ticker의 후보가 여럿이면 `preferred_security` 규칙으로 하나를 고른다.
+        """
         wanted = [t for t in (normalize_ticker(v) for v in tickers) if t]
         if not wanted:
             return {}
         rows = self._db.select_in_chunks(
             schema=SCHEMA,
             table=T_SECURITIES,
-            columns=_SECURITY_COLUMNS,
+            columns=SECURITY_COLUMNS,
             filter_column="ticker",
             values=wanted,
-            order_by="ticker",
+            order_by="ticker,security_id",
         )
-        return {row["ticker"]: Security.from_row(row) for row in rows}
+        grouped: dict[str, list[Security]] = {}
+        for row in rows:
+            security = Security.from_row(row)
+            grouped.setdefault(security.ticker, []).append(security)
+        return {ticker: preferred_security(group) for ticker, group in grouped.items()}
 
     def security_ids(self, tickers: Sequence[str]) -> dict[str, int]:
         """다른 스키마에 넘길 키. 못 찾은 것은 부르는 쪽이 보고 판단한다."""
@@ -96,28 +125,33 @@ class UniverseRepository:
         }
 
     def all_securities(self) -> list[Security]:
-        """추적 여부와 무관한 전체 증권. entity 후보 선정처럼 전체 집합이
-        필요한 자리에서만 쓴다 — 일반 조회는 `tracked_securities()`를 쓴다."""
+        """추적 여부와 무관한 전체 증권. 동기화처럼 전체 집합이 필요한 자리에서만 쓴다."""
         rows = self._db.select_paged(
-            lambda: self._db.table(SCHEMA, T_SECURITIES).select(_SECURITY_COLUMNS),
-            order_by="ticker",
+            lambda: self._db.table(SCHEMA, T_SECURITIES).select(SECURITY_COLUMNS),
+            order_by="security_id",
         )
         return [Security.from_row(row) for row in rows]
 
-    def tickers_by_security_id(self, security_ids: Sequence[int]) -> dict[int, str]:
-        """다른 스키마에서 받은 identity를 사람이 읽는 현재 ticker로 되돌린다."""
+    def securities_by_id(self, security_ids: Sequence[int]) -> dict[int, Security]:
         wanted = sorted({int(value) for value in security_ids})
         if not wanted:
             return {}
         rows = self._db.select_in_chunks(
             schema=SCHEMA,
             table=T_SECURITIES,
-            columns="security_id,ticker",
+            columns=SECURITY_COLUMNS,
             filter_column="security_id",
             values=wanted,
             order_by="security_id",
         )
-        return {int(row["security_id"]): str(row["ticker"]) for row in rows}
+        return {int(row["security_id"]): Security.from_row(row) for row in rows}
+
+    def tickers_by_security_id(self, security_ids: Sequence[int]) -> dict[int, str]:
+        """다른 스키마에서 받은 identity를 사람이 읽는 현재 ticker로 되돌린다."""
+        return {
+            security_id: security.ticker
+            for security_id, security in self.securities_by_id(security_ids).items()
+        }
 
     # ── 식별자 ────────────────────────────────────────────────────────────
     def resolve_identifiers(
@@ -126,22 +160,25 @@ class UniverseRepository:
         identifier_type: str,
         *,
         on_date: date | None = None,
+        namespace: str | None = None,
     ) -> dict[str, int]:
-        """CUSIP·과거 ticker 같은 외부 식별자를 security_id로 옮긴다.
+        """CUSIP·과거 ticker 같은 외부 식별자를 확인된(verified) security_id로 옮긴다.
 
-        `on_date`를 주면 그 시점에 유효했던 매핑만 본다. 시점 없이 매핑하면 재사용된
-        ticker 때문에 **서로 다른 회사가 한 종목으로 합쳐진다** — 13F처럼 몇 년치를
-        한꺼번에 읽는 자리에서 실제로 일어난다.
+        `on_date`가 없으면 지금 유효한 연결만, 있으면 그날 유효했던 연결만 본다. 시점
+        없이 매핑하면 재사용된 ticker 때문에 **서로 다른 회사가 한 종목으로 합쳐진다**.
+        ticker 연결은 시작일을 알 때만 과거 날짜에 쓴다(`HISTORY_REQUIRES_START`) — SQL의
+        `universe.security_on`과 같은 규칙이다.
         """
         values = [str(v).strip().upper() for v in identifiers if str(v or "").strip()]
         if not values:
             return {}
+        space = namespace or DEFAULT_NAMESPACE.get(identifier_type)
+        if space is None:
+            raise ValueError(f"{identifier_type} requires an explicit namespace")
 
         def configure(query: Any) -> Any:
-            query = query.eq("identifier_type", identifier_type).not_.is_("security_id", "null")
-            if on_date is not None:
-                query = query.lte("valid_from", on_date.isoformat())
-            return query
+            return (query.eq("identifier_type", identifier_type).eq("namespace", space)
+                    .eq("mapping_status", "verified"))
 
         rows = self._db.select_in_chunks(
             schema=SCHEMA,
@@ -150,16 +187,71 @@ class UniverseRepository:
             filter_column="identifier",
             values=values,
             configure=configure,
-            order_by="identifier",
+            order_by="identifier,valid_from",
         )
-        resolved: dict[str, int] = {}
+        day = on_date.isoformat() if on_date is not None else None
+        best: dict[str, tuple[str, int]] = {}
         for row in rows:
-            # valid_to는 PostgREST에서 `gte` 필터와 NULL을 함께 걸 수 없어 여기서 판정한다.
-            if on_date is not None and row.get("valid_to"):
-                if str(row["valid_to"]) <= on_date.isoformat():
+            start, end = row.get("valid_from"), row.get("valid_to")
+            if day is None:
+                if end:
                     continue
-            resolved[row["identifier"]] = int(row["security_id"])
-        return resolved
+            else:
+                if end and str(end) <= day:
+                    continue
+                if start is None and identifier_type in HISTORY_REQUIRES_START:
+                    continue
+                if start is not None and str(start) > day:
+                    continue
+            rank = str(start or "")
+            current = best.get(row["identifier"])
+            if current is None or rank > current[0]:
+                best[row["identifier"]] = (rank, int(row["security_id"]))
+        return {identifier: security_id for identifier, (_rank, security_id) in best.items()}
+
+    def current_identifiers(
+        self, identifier_type: str, *, namespace: str | None = None
+    ) -> list[dict[str, Any]]:
+        """한 유형의 지금 유효한 연결 전체(valid_to IS NULL). 동기화가 한 번에 비교한다."""
+        space = namespace or DEFAULT_NAMESPACE[identifier_type]
+        return self._db.select_paged(
+            lambda: self._db.table(SCHEMA, T_IDENTIFIERS)
+            .select("mapping_id,identifier,security_id,mapping_status,valid_from,valid_to")
+            .eq("identifier_type", identifier_type).eq("namespace", space)
+            .is_("valid_to", "null"),
+            order_by="mapping_id",
+        )
+
+    def upsert_identifiers(self, rows: Iterable[dict[str, Any]]) -> int:
+        """외부 식별자 연결을 적는다.
+
+        같은 (유형, 체계, 식별자, 종목, 시작일)은 한 행이라 재실행은 같은 행을 갱신한다.
+        시작일을 모르면 NULL 그대로 둔다 — 무한과거로 바꾸면 모르는 기간을 아는 척한다.
+        매핑 실패는 unresolved·conflict로 남기고 verified로 꾸미지 않는다.
+        """
+        payload = []
+        for row in rows:
+            identifier_type = str(row["identifier_type"])
+            # 한 번의 bulk upsert는 키가 같은 행이어야 한다. valid_to는 싣지 않는다 — 재실행이
+            # 이미 닫힌 연결을 다시 열면 안 된다(닫기는 close_identifier만 한다).
+            payload.append({
+                "security_id": None,
+                "valid_from": None,
+                "evidence_ref": None,
+                **{key: value for key, value in row.items() if key != "valid_to"},
+                "namespace": row.get("namespace") or DEFAULT_NAMESPACE[identifier_type],
+                "identifier": str(row["identifier"]).strip().upper(),
+                "updated_at": _now_iso(),
+            })
+        return self._db.upsert(
+            schema=SCHEMA, table=T_IDENTIFIERS, rows=payload, on_conflict=IDENTIFIER_CONFLICT,
+        )
+
+    def close_identifier(self, mapping_id: int, *, valid_to: date) -> None:
+        """지금 유효한 연결 하나를 그날로 끝낸다(배타적 종료)."""
+        self._db.table(SCHEMA, T_IDENTIFIERS).update(
+            {"valid_to": valid_to.isoformat(), "updated_at": _now_iso()}
+        ).eq("mapping_id", mapping_id).execute()
 
     # ── 지수 membership ───────────────────────────────────────────────────
     def membership_on(
@@ -207,7 +299,7 @@ class UniverseRepository:
         rows = self._db.select_in_chunks(
             schema=SCHEMA,
             table=T_SECURITIES,
-            columns=_SECURITY_COLUMNS,
+            columns=SECURITY_COLUMNS,
             filter_column="cik",
             values=wanted,
             # 대표를 뽑는 기준이 정렬이다. 정렬이 없으면 실행마다 대표가 바뀐다.
@@ -313,8 +405,8 @@ class UniverseRepository:
 
         그래서 **upsert가 아니라 UPDATE다.** Postgres는 `ON CONFLICT DO UPDATE`에서도
         후보 행의 NOT NULL을 먼저 검사하므로, `company_name`을 빼고 upsert하면
-        기존 행이 있어도 `23502`로 거절당한다 — 즉 관심 기업 추가가 한 번도 성공할
-        수 없었다. 발행사 행은 `securities.cik` FK가 이미 보장하므로 UPDATE로 족하다.
+        기존 행이 있어도 `23502`로 거절당한다. 발행사 행은 `securities.cik` FK가 이미
+        보장하므로 UPDATE로 족하다.
         """
         self._db.table(SCHEMA, T_ENTITIES).update({
             "watchlist_sources": sorted(set(sources)),
@@ -322,79 +414,46 @@ class UniverseRepository:
             "watchlist_removed_at": removed_at,
         }).eq("cik", cik).execute()
 
-    def upsert_entities(self, entities: Iterable[Entity]) -> int:
-        rows = [
-            {
-                "cik": entity.cik,
-                "company_name": entity.company_name,
-                "company_name_ko": entity.company_name_ko,
-                "sic_code": entity.sic_code,
-                "sic_industry_name": entity.sic_industry_name,
-                "sic_division_name": entity.sic_division_name,
-                "fiscal_year_end": entity.fiscal_year_end,
-                "entity_type": entity.entity_type,
-                "state_of_incorporation": entity.state_of_incorporation,
-                "former_names": list(entity.former_names),
-            }
-            for entity in entities
-        ]
-        return self._db.upsert(schema=SCHEMA, table=T_ENTITIES, rows=rows, on_conflict="cik")
-
-    def upsert_securities(self, securities: Iterable[Security]) -> int:
-        """`security_id`는 저장소가 만든다. 여기서 보내면 identity를 코드가 정하게 된다."""
-        rows = [
-            {
-                "ticker": security.ticker,
-                "cik": security.cik,
-                "exchange_code": security.exchange_code,
-                "security_type": security.security_type,
-                "security_title": security.security_title,
-                "is_active_listing": security.is_active_listing,
-                "is_tracked": security.is_tracked,
-            }
-            for security in securities
-        ]
-        return self._db.upsert(schema=SCHEMA, table=T_SECURITIES, rows=rows, on_conflict="ticker")
-
-    def upsert_identifiers(self, rows: Iterable[dict[str, Any]]) -> int:
-        """원천 식별자를 identity 브리지에 적는다.
-
-        현재 ticker도 명시적으로 남겨야 과거 ticker/CUSIP writer가 같은 계약으로
-        조회한다. ``valid_from``은 원천이 정확한 시작일을 주지 않을 때의 정직한
-        `-infinity` 값이며, mapping 실패를 mapped로 꾸미지 않는다.
-        """
-        return self._db.upsert(
-            schema=SCHEMA,
-            table=T_IDENTIFIERS,
-            rows=list(rows),
-            on_conflict="identifier,identifier_type,valid_from",
-        )
-
-    def record_membership(self, snapshot: MembershipSnapshot, *, source_hash: str) -> int:
+    def record_membership(
+        self,
+        snapshot: MembershipSnapshot,
+        *,
+        source_hash: str,
+        security_ids: Sequence[int] | None = None,
+    ) -> int:
         """새 스냅샷을 security interval로 반영한다.
 
-        이 경계에서는 ticker를 current security identity로만 변환한다. historical
-        ticker 해석은 security_identifiers가 담당한다.
+        `security_ids`를 주면 그대로 쓴다 — 과거 스냅샷은 부르는 쪽이 ticker의 연속성으로
+        종목을 이미 골랐다. 주지 않으면 ticker를 지금 종목으로 옮긴다(현재 스냅샷).
         """
         if snapshot.index_code == INDEX_SP500 and not 450 <= len(snapshot.tickers) <= 520:
             raise ValueError("S&P 500 membership must contain 450..520 unique securities")
-        resolved = self.security_ids(snapshot.tickers)
-        if len(resolved) != len(snapshot.tickers):
-            missing = sorted(set(snapshot.tickers) - set(resolved))
-            raise ValueError("membership has unknown securities: " + ",".join(missing))
+        if security_ids is None:
+            resolved = self.security_ids(snapshot.tickers)
+            if len(resolved) != len(snapshot.tickers):
+                missing = sorted(set(snapshot.tickers) - set(resolved))
+                raise ValueError("membership has unknown securities: " + ",".join(missing))
+            ids = sorted(resolved.values())
+        else:
+            ids = sorted({int(value) for value in security_ids})
+            if len(ids) != len(snapshot.tickers):
+                raise ValueError("membership security ids must match its tickers one to one")
         result = self._db.rpc(SCHEMA, RPC_REPLACE_MEMBERSHIP, {
             "p_index_code": snapshot.index_code, "p_effective_date": snapshot.effective_date.isoformat(),
-            "p_security_ids": sorted(resolved.values()), "p_source": snapshot.source, "p_source_hash": source_hash,
+            "p_security_ids": ids, "p_source": snapshot.source, "p_source_hash": source_hash,
         }).execute().data
         return int(result)
 
 
 __all__ = [
+    "IDENTIFIER_CONFLICT",
     "INDEX_SP500",
     "SCHEMA",
+    "SECURITY_COLUMNS",
     "T_ENTITIES",
     "T_IDENTIFIERS",
     "T_MEMBERSHIPS",
     "T_SECURITIES",
     "UniverseRepository",
+    "preferred_security",
 ]

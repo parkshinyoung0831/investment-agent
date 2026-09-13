@@ -43,7 +43,6 @@ class HistoricalEpsEstimateBuilderTests(unittest.TestCase):
             "snapshot_date": "2026-08-19",
             "snapshot_kind": "reconstructed",
             "source": HISTORICAL_EPS_SOURCE,
-            "source_horizon": "q+0",
             "eps_avg": 3.34,
         }])
 
@@ -169,7 +168,8 @@ class EarningsFlashViewContractTests(unittest.TestCase):
             sql = handle.read()
 
         self.assertIn("snapshot_kind", sql)
-        self.assertIn("source_horizon", sql)
+        self.assertIn("'captured_live', 'vendor_pit', 'reconstructed', 'latest_history'", sql)
+        self.assertNotIn("source_horizon", sql)
         self.assertIn("estimates_not_from_the_future_check", sql)
 
         with open("db/postgres/v1/90_reporting.sql", encoding="utf-8") as handle:
@@ -185,7 +185,7 @@ class EarningsFlashViewContractTests(unittest.TestCase):
 
         self.assertIn('V_EARNINGS_SURPRISE = "earnings_surprise"', notify_db)
         self.assertIn("table=V_EARNINGS_SURPRISE", notify_db)
-        for column in ("eps_analysts", "eps_surprise_pct", "revenue_surprise_pct", "snapshot_date"):
+        for column in ("eps_analysts", "eps_surprise_ratio", "revenue_surprise_ratio", "snapshot_date"):
             self.assertIn(column, dashboard_db)
 
 

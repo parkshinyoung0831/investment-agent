@@ -39,14 +39,14 @@ VIEWS: Mapping[str, ViewSpec] = MappingProxyType({
     "institutional_filings": ViewSpec(
         "accession_no,manager_cik,period_end,form_type,report_type,filing_date,accepted_at,amendment_type,amendment_no,reported_value_usd,reported_line_count,confidential_omitted,source_url,content_sha256", "manager_cik,period_end", "period_end", "manager_cik"),
     "institutional_positions": ViewSpec(
-        "accession_no,source_row_no,issuer_name,cusip,identifier_type,value_usd,quantity,quantity_type,position_kind,ticker", "accession_no,source_row_no", None, "accession_no"),
+        "accession_no,source_row_no,issuer_name,cusip,identifier_type,value_usd,quantity,quantity_type,position_kind,security_id,ticker", "accession_no,source_row_no", None, "accession_no"),
     "securities": ViewSpec(
-        "ticker,company_name,company_name_ko,sic_industry_name,sic_division_name,"
-        "exchange_code,security_type,is_active_listing,is_tracked,"
-        "is_watchlisted,watchlist_sources,watch_from", "ticker"),
+        "security_id,ticker,cik,company_name,company_name_ko,sic_industry_name,sic_division_name,"
+        "exchange_code,security_type,is_active_listing,is_identity_verified,is_tracked,"
+        "is_watchlisted,watchlist_sources,watch_from", "ticker,security_id"),
     "prices_daily": ViewSpec(
-        "ticker,trade_date,open,high,low,close,volume,is_repaired",
-        "ticker,trade_date", "trade_date", "ticker"),
+        "security_id,ticker,trade_date,open,high,low,close,volume,is_repaired",
+        "security_id,trade_date", "trade_date", "ticker"),
     "company_financials_latest": ViewSpec(
         "cik,period_end,fiscal_year,fiscal_period,accession_no,filing_date,form_type,"
         "available_at,revenue,operating_income_loss,net_income,eps_diluted_gaap,mapping_version",
@@ -67,7 +67,7 @@ VIEWS: Mapping[str, ViewSpec] = MappingProxyType({
         "series_id,ref_period,measure_id,forecast_kind,source,value,as_of,collected_at,previous_value,change_amount",
         "series_id,ref_period,measure_id,forecast_kind,as_of,collected_at", "collected_at", "series_id"),
     "macro_release_actuals": ViewSpec(
-        "series_id,ref_period,measure_id,value,effective_at,collected_at,time_precision,source",
+        "series_id,ref_period,measure_id,value,raw_value,effective_at,collected_at,time_precision,source",
         "series_id,ref_period,effective_at,collected_at", "collected_at", "series_id"),
     # measure master는 이력이 아니다 — time_column이 없어 scope를 걸면 범위로 풀 길이
     # 없고, 전체를 읽는 것이 유일한 용법이다(화면도 read model도 그렇게 부른다).
@@ -82,13 +82,14 @@ VIEWS: Mapping[str, ViewSpec] = MappingProxyType({
         "decision_id,run_id,as_of_at,stage,status,source_type,confidence,risk_approved,"
         "approved_weights,violations,created_at", "decision_id", "as_of_at", "run_id"),
     "earnings_schedule": ViewSpec(
-        "ticker,target_fiscal_year,target_fiscal_period,target_period_end,expected_report_at,"
-        "expected_report_date,expected_session,is_estimated,snapshot_date,previous_report_at",
-        "ticker,target_fiscal_year,target_fiscal_period", "expected_report_date", "ticker"),
+        "security_id,ticker,target_fiscal_year,target_fiscal_period,target_period_end,expected_report_at,"
+        "expected_report_date,expected_session,is_estimated,snapshot_date,last_seen_at,previous_report_at",
+        "security_id,target_fiscal_year,target_fiscal_period", "expected_report_date", "ticker"),
     "earnings_surprise": ViewSpec(
-        "ticker,cik,fiscal_year,fiscal_period,period_end,filing_date,available_at,accession_no,"
-        "revenue_actual,eps_actual,eps_estimate,revenue_estimate,estimate_snapshot_date,"
-        "eps_analysts,eps_surprise_pct,revenue_surprise_pct,guidance_summary,"
+        "security_id,ticker,cik,fiscal_year,fiscal_period,period_end,filing_date,available_at,accession_no,"
+        "revenue_actual,eps_actual,eps_actual_basis,eps_estimate,revenue_estimate,eps_estimate_basis,"
+        "estimate_kind,estimate_snapshot_date,estimate_collected_at,eps_analysts,eps_basis_match,"
+        "eps_surprise_ratio,revenue_surprise_ratio,guidance_summary,"
         "operating_income_actual,net_income_actual,press_release_url",
         "ticker,accession_no", "filing_date", "ticker"),
     "job_health": ViewSpec(

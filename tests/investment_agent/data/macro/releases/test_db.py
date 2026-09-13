@@ -42,7 +42,7 @@ class WriterTest(unittest.TestCase):
         self.assertEqual(database.upsert.call_args.kwargs["table"], db.T_OBSERVATIONS)
         self.assertEqual(set(rows[0]), {
             "series_key", "observation_date", "value", "source_code", "time_precision",
-            "vintage_at", "available_at", "revision_no",
+            "vintage_at", "available_at",
         })
         self.assertEqual(rows[0]["source_code"], "fred")
         self.assertEqual(rows[0]["time_precision"], "collector_seen")

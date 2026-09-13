@@ -38,10 +38,14 @@ def _identifier_map() -> list[dict]:
         for row in securities
         if row.get("security_id") is not None and row.get("ticker")
     }
-    identifiers = _all(
-        SCHEMA_UNIVERSE, T_IDENTIFIERS,
-        "identifier,identifier_type,security_id",
-    )
+    # 확인된 CUSIP/CINS 연결만 쓴다. 미확인·충돌 행의 ticker를 카드에 싣지 않는다.
+    identifiers = [
+        row for row in _all(
+            SCHEMA_UNIVERSE, T_IDENTIFIERS,
+            "identifier,identifier_type,security_id,mapping_status,valid_to",
+        )
+        if row.get("mapping_status") == "verified" and not row.get("valid_to")
+    ]
     return [
         {
             "cusip": str(row["identifier"]),

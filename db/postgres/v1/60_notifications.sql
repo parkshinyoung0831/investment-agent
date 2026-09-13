@@ -94,6 +94,49 @@ ALTER TABLE notifications.deliveries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications.threads ENABLE ROW LEVEL SECURITY;
 
 
+COMMENT ON TABLE notifications.topics IS '알림 주제 하나 = 한 행. baseline_at 이전에 생긴 사실은 보내지 않고 suppressed로만 적는다. 행이 없는 주제는 아무것도 보내지 않는다.';
+COMMENT ON COLUMN notifications.topics.topic IS '주제 이름(econ.release, earnings.report 등). 코드 notifications/topics.py와 같다.';
+COMMENT ON COLUMN notifications.topics.baseline_at IS '이 시각 이후에 생긴 사실만 알린다. 백필·초기 적재가 옛 소식을 쏟아내지 않게 한다.';
+COMMENT ON COLUMN notifications.topics.created_at IS '주제를 등록한 시각.';
+
+COMMENT ON TABLE notifications.notices IS '알림 하나(주제·대상·발생)의 현재 상태 = 한 행. 같은 정체성은 한 번만 보내고, 내용이 바뀌면 주제 규칙에 따라 원 메시지를 고친다.';
+COMMENT ON COLUMN notifications.notices.topic IS '주제.';
+COMMENT ON COLUMN notifications.notices.subject IS '무엇에 대한 알림인가(티커·지표 코드·운용사 등).';
+COMMENT ON COLUMN notifications.notices.occurrence IS '그 대상의 어느 사건인가(공시 번호·기간·날짜 등).';
+COMMENT ON COLUMN notifications.notices.revision IS '카드에 싣는 사실(basis)의 SHA-256. 바뀌면 내용이 바뀐 것이다.';
+COMMENT ON COLUMN notifications.notices.fact_at IS '사실이 생긴 시각. baseline과 비교한다.';
+COMMENT ON COLUMN notifications.notices.status IS 'reserved=예약, sending=전송 중, sent=보냄, failed=실패(재시도 가능), abandoned=재시도 한도 초과, unknown=응답을 못 받음(자동 재발송 안 함), suppressed=baseline 이전이라 보내지 않음.';
+COMMENT ON COLUMN notifications.notices.attempts IS '전송 시도 횟수.';
+COMMENT ON COLUMN notifications.notices.owner IS '지금 예약을 쥔 실행(러너·하네스 프로세스). 예약 중이 아니면 NULL.';
+COMMENT ON COLUMN notifications.notices.lease_until IS '예약 만료 시각. 지나면 다른 실행이 가져갈 수 있다.';
+COMMENT ON COLUMN notifications.notices.retry_at IS '실패 뒤 다시 시도해도 되는 시각.';
+COMMENT ON COLUMN notifications.notices.location_id IS '보낸 채널 또는 포럼 스레드 ID.';
+COMMENT ON COLUMN notifications.notices.message_id IS '보낸 Discord 메시지 ID. 정정할 때 이 메시지를 고친다.';
+COMMENT ON COLUMN notifications.notices.sent_revision IS '마지막으로 Discord에 반영된 revision.';
+COMMENT ON COLUMN notifications.notices.failure_code IS '마지막 실패 사유 코드.';
+COMMENT ON COLUMN notifications.notices.first_seen_at IS '이 알림을 처음 예약한 시각.';
+COMMENT ON COLUMN notifications.notices.updated_at IS '상태를 마지막으로 바꾼 시각.';
+
+COMMENT ON TABLE notifications.deliveries IS '알림 하나에 대한 전송·정정·억제 시도 하나 = 한 행. 상태가 아니라 이력이다.';
+COMMENT ON COLUMN notifications.deliveries.delivery_id IS '시도 ID.';
+COMMENT ON COLUMN notifications.deliveries.topic IS '주제.';
+COMMENT ON COLUMN notifications.deliveries.subject IS '대상.';
+COMMENT ON COLUMN notifications.deliveries.occurrence IS '발생.';
+COMMENT ON COLUMN notifications.deliveries.action IS 'create=새 메시지, edit=원 메시지 수정, suppress=보내지 않음.';
+COMMENT ON COLUMN notifications.deliveries.outcome IS '시도 결과.';
+COMMENT ON COLUMN notifications.deliveries.revision IS '이 시도가 실은 revision.';
+COMMENT ON COLUMN notifications.deliveries.location_id IS '채널·스레드 ID.';
+COMMENT ON COLUMN notifications.deliveries.message_id IS 'Discord 메시지 ID.';
+COMMENT ON COLUMN notifications.deliveries.failure_code IS '실패 사유 코드.';
+COMMENT ON COLUMN notifications.deliveries.attempted_at IS '시도 시각.';
+
+COMMENT ON TABLE notifications.threads IS '포럼 채널 안의 스레드 하나 = 한 행. 같은 대상(거장·종목)의 알림을 같은 스레드로 모은다.';
+COMMENT ON COLUMN notifications.threads.channel_id IS '포럼 채널 ID.';
+COMMENT ON COLUMN notifications.threads.thread_key IS '스레드를 고르는 키(대상 이름).';
+COMMENT ON COLUMN notifications.threads.thread_id IS 'Discord 스레드 ID.';
+COMMENT ON COLUMN notifications.threads.created_at IS '스레드를 기억한 시각.';
+
+
 -- 보낼 차례인 알림을 이 실행 몫으로 잡는다.
 --
 -- p_items: [{subject, occurrence, revision, fact_at}]

@@ -1,4 +1,4 @@
-"""Market history backfill for prices, splits, and dividends."""
+"""일봉·기업행위 과거 이력 복구. daily와 같은 수집 절차를 쓰고 대상·기간만 다르다."""
 from __future__ import annotations
 
 import argparse
@@ -6,11 +6,7 @@ import argparse
 from investment_agent.operations.backfill import add_backfill_from_arg, resolve_backfill_window
 from investment_agent.platform.logging import get_logger
 from investment_agent.data.market import BACKFILL_YEARS
-from investment_agent.data.market.commands.market_daily import (
-    clean_price_row,
-    extract_dividend_events,
-    extract_split_events,
-)
+from investment_agent.data.market.application.price_collection import collect_prices
 
 log = get_logger(__name__)
 
@@ -23,8 +19,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=("missing", "all-current"),
         default="missing",
         help=(
-            "missing seeds only tickers with no rows; all-current re-fetches every "
-            "current S&P 500 member to extend or repair existing history."
+            "missing seeds only securities with no rows; all-current re-fetches every "
+            "current collection target to extend or repair existing history."
         ),
     )
     parser.add_argument(
@@ -34,62 +30,35 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _targets(scope: str, tickers: str | None = None, *, missing_loader, all_loader) -> list[str]:
-    if tickers:
-        return [t.strip().upper() for t in tickers.split(",") if t.strip()]
-    return all_loader() if scope == "all-current" else missing_loader()
-
-
 def _backfill_prices(lookback_days: int, scope: str, tickers: str | None = None) -> None:
-    """시세 이력 백필 — 평시는 신규만, 수동 보수 시 현재 멤버 전체."""
-    from investment_agent.data.market.persistence import (
-        universe_missing_prices,
-        universe_tracked,
-        upsert_dividend_events,
-        upsert_prices,
-        upsert_split_events,
-    )
+    """계획을 한 번 고정한 뒤 받아 archive → 기업행위 병합 → 가격 저장 순으로 반영한다."""
+    from investment_agent.data.market import persistence as store
+    from investment_agent.data.market.domain.retention import compact_price_rows
+    from investment_agent.data.market.infrastructure.archive import archive_daily_rows
     from investment_agent.data.market.infrastructure.sources.yahoo import download_ohlcv
 
-    targets = _targets(
-        scope,
-        tickers,
-        missing_loader=universe_missing_prices,
-        all_loader=universe_tracked,
-    )
+    if tickers:
+        targets = store.targets_for_tickers([t.strip() for t in tickers.split(",") if t.strip()])
+    elif scope == "all-current":
+        targets = store.price_targets()
+    else:
+        targets = store.missing_price_targets()
     if not targets:
         log.info("시세 백필 대상 0건 — skip (scope=%s)", scope)
         return
-    log.info(
-        "시세 백필 대상: %d 티커 · scope=%s · lookback_days=%d",
-        len(targets),
-        scope,
-        lookback_days,
+    log.info("시세 백필 대상: %d 종목 · scope=%s · lookback_days=%d", len(targets), scope, lookback_days)
+
+    # 운영 DB용 compact 전에 공급자 원본 일봉을 보존한다. archive가 실패하면 DB 쓰기를
+    # 시작하지 않아, 복구할 수 없는 축소만 남기지 않는다.
+    batch = collect_prices(
+        targets, lookback_days=lookback_days, download=download_ohlcv, archive=archive_daily_rows,
     )
-    raw_rows = download_ohlcv(targets, lookback_days=lookback_days)
-    if not raw_rows:
-        raise RuntimeError(
-            f"yfinance 빈 응답 ({len(targets)} 티커) — 백필을 실패 처리합니다"
-        )
-
-    # 운영 DB용 compact 전에 provider 원본 일봉을 보존한다. archive가 실패하면
-    # event/price write를 시작하지 않아, 복구할 수 없는 축소만 남기지 않는다.
-    from investment_agent.data.market.infrastructure.archive import archive_daily_rows
-    archive_daily_rows(raw_rows)
-
-    split_events = extract_split_events(raw_rows)
-    dividend_events = extract_dividend_events(raw_rows)
-    clean_prices = [clean_price_row(r) for r in raw_rows]
-
-    if split_events:
-        upsert_split_events(split_events)
-    if dividend_events:
-        upsert_dividend_events(dividend_events)
-
-    from investment_agent.data.market.domain.retention import compact_price_rows
-    clean_prices = compact_price_rows(clean_prices)
-    n = upsert_prices(clean_prices)
-    log.info("✅ 시세 백필: %d rows (splits=%d, divs=%d) × %d 티커", n, len(split_events), len(dividend_events), len(targets))
+    changed_actions = store.merge_actions(batch.actions)
+    written = store.upsert_prices(compact_price_rows(batch.prices))
+    log.info(
+        "✅ 시세 백필: prices=%d actions=%d(changed=%d) × %d 종목",
+        written, len(batch.actions), changed_actions, len(targets),
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

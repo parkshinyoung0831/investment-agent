@@ -52,9 +52,9 @@ class MembershipHistoryTransformTest(unittest.TestCase):
 
 class MembershipHistoryStorageTest(unittest.TestCase):
     def test_full_security_sync_writes_v1_entities_and_securities(self):
-        fake = mock.Mock()
-        fake.upsert.return_value = 1001
-        fake.select_in_chunks.return_value = []
+        from tests.investment_agent.fakes import FakeDatabase
+
+        fake = FakeDatabase()
         rows = [
             {
                 "ticker": f"X{i:04d}",
@@ -67,24 +67,60 @@ class MembershipHistoryStorageTest(unittest.TestCase):
         ]
         with mock.patch.object(db, "_database", fake):
             self.assertEqual(db.upsert_securities(rows), 1001)
-        self.assertEqual(fake.upsert.call_count, 2)
-        self.assertEqual(fake.upsert.call_args_list[0].kwargs["table"], "entities")
-        self.assertEqual(fake.upsert.call_args_list[1].kwargs["table"], "securities")
+        self.assertEqual({"entities"}, {key[1] for key, _rows, _c in fake.upserts
+                                        if key[1] != "security_identifiers"})
+        inserted = [payload for key, payload in fake.inserts if key[1] == "securities"]
+        self.assertEqual([500, 500, 1], [len(payload) for payload in inserted])
 
     def test_append_writes_canonical_membership_rows(self):
-        """append_memberships는 이제 자체 upsert 대신 UniverseRepository의 원자
-        replace RPC 경로(record_membership)로 위임한다."""
+        """과거 스냅샷은 부르는 쪽이 ticker 연속성으로 고른 security_id로 원자 replace한다."""
         from investment_agent.data.universe.repository import UniverseRepository
+        from tests.investment_agent.fakes import FakeDatabase
 
+        fake = FakeDatabase()
+        fake.put("universe", "securities", [
+            {"security_id": 1000001, "ticker": "AAPL", "cik": "0000320193", "is_active_listing": True,
+             "is_identity_verified": True, "is_tracked": True},
+            {"security_id": 1000002, "ticker": "MSFT", "cik": "0000789019", "is_active_listing": True,
+             "is_identity_verified": True, "is_tracked": True},
+        ])
         rows = [{"effective_date": "2025-01-02", "symbols": ["aapl", "AAPL", "MSFT"],
                  "member_count": 2, "source": "test", "source_hash": "a" * 64}]
-        with mock.patch.object(UniverseRepository, "record_membership", return_value=1) as record:
+        with mock.patch.object(db, "_database", fake), \
+                mock.patch.object(UniverseRepository, "record_membership", return_value=1) as record:
             self.assertEqual(db.append_memberships(rows), 1)
         record.assert_called_once()
         snapshot = record.call_args.args[0]
         self.assertEqual(("AAPL", "MSFT"), snapshot.tickers)
         self.assertEqual(date(2025, 1, 2), snapshot.effective_date)
         self.assertEqual("a" * 64, record.call_args.kwargs["source_hash"])
+        self.assertEqual([1000001, 1000002], record.call_args.kwargs["security_ids"])
+
+    def test_a_ticker_that_left_and_came_back_is_not_merged_into_the_current_security(self):
+        """최근 스냅샷까지 끊김 없이 이어진 ticker만 지금 종목이다. 중간에 빠진 ticker는
+        다른 회사가 재사용했을 수 있어 신원 미확인 자리표시 종목에 붙인다."""
+        from investment_agent.data.universe.repository import UniverseRepository
+        from tests.investment_agent.fakes import FakeDatabase
+
+        fake = FakeDatabase()
+        fake.put("universe", "securities", [
+            {"security_id": 1000001, "ticker": "AAA", "cik": "0000000001", "is_active_listing": True,
+             "is_identity_verified": True, "is_tracked": True},
+            {"security_id": 1000009, "ticker": "AAA", "cik": None, "is_active_listing": False,
+             "is_identity_verified": False, "is_tracked": False},
+            {"security_id": 1000002, "ticker": "BBB", "cik": "0000000002", "is_active_listing": True,
+             "is_identity_verified": True, "is_tracked": True},
+        ])
+        rows = [
+            {"effective_date": "2020-01-02", "symbols": ["AAA", "BBB"], "source": "t", "source_hash": "a" * 64},
+            {"effective_date": "2021-01-04", "symbols": ["BBB"], "source": "t", "source_hash": "b" * 64},
+            {"effective_date": "2022-01-03", "symbols": ["AAA", "BBB"], "source": "t", "source_hash": "c" * 64},
+        ]
+        with mock.patch.object(db, "_database", fake), \
+                mock.patch.object(UniverseRepository, "record_membership", return_value=1) as record:
+            db.append_memberships(rows)
+        chosen = [call.kwargs["security_ids"] for call in record.call_args_list]
+        self.assertEqual([[1000009, 1000002], [1000002], [1000001, 1000002]], chosen)
 
     def test_schema_keeps_history_readable_and_append_only(self):
         sql = Path("db/postgres/v1/10_universe.sql").read_text(encoding="utf-8").lower()

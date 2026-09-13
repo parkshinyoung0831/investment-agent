@@ -3,12 +3,26 @@
 이 모듈은 ETL 호출부가 필요한 작은 조합만 제공한다. 실제 표 이름과
 identity 변환은 ``UniverseRepository``가 소유하고, 이 계층에는 v1 표/RPC가 아닌
 구현을 남기지 않는다.
+
+## 신원 판정은 동기화가 하고, 확실하지 않으면 멈춘다
+
+SEC 거래소 목록은 "지금 무엇이 상장돼 있나"만 말한다. 그것을 ticker로 upsert하면
+티커 재사용 때 옛 종목을 새 회사로 덮어쓰고, 개명 때 같은 종목이 두 ID로 갈라진다.
+그래서 `upsert_securities`는 기존 종목과 대조해 네 가지로 가른다.
+
+* 같은 ticker·같은 CIK — 같은 종목. 표기 metadata만 갱신한다.
+* 같은 ticker·다른 CIK — 신원 충돌. 건드리지 않고 경고로 남긴다.
+* 새 ticker이고 그 CIK의 상장 종목 중 목록에서 사라진 것이 정확히 하나 — 개명.
+  같은 ID의 ticker를 바꾸고 TICKER 이력을 닫고 연다(FB→META).
+* 그 밖의 새 ticker — 새 종목.
 """
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 import hashlib
 import json
+from collections import defaultdict
+from zoneinfo import ZoneInfo
 
 from investment_agent.platform.db.postgres import sb
 from investment_agent.platform.logging import get_logger
@@ -64,6 +78,7 @@ def _security_to_row(security: Security) -> dict:
         "security_type": security.security_type,
         "security_title": security.security_title,
         "is_active_listing": security.is_active_listing,
+        "is_identity_verified": security.is_identity_verified,
         "is_tracked": security.is_tracked,
     }
 
@@ -184,51 +199,130 @@ def select_entity_pending(*, tracked_only: bool = False, now: datetime | None = 
     return [row for row in candidates if due(str(row["cik"]))]
 
 
+def _us_market_today() -> date:
+    return datetime.now(ZoneInfo("America/New_York")).date()
+
+
+def _listing_payload(row: dict, *, security_id: int | None = None) -> dict:
+    payload = {
+        "ticker": str(row["ticker"]),
+        "cik": str(row["cik"]).zfill(10),
+        "exchange_code": row.get("exchange_code"),
+        "security_type": row.get("security_type") or "common_stock",
+        "security_title": row.get("security_title"),
+        "is_active_listing": True,
+        "is_identity_verified": True,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if security_id is not None:
+        payload = {"security_id": security_id, **payload}
+    return payload
+
+
 def upsert_securities(rows: list[dict]) -> int:
+    """SEC 거래소 목록을 기존 종목과 대조해 반영한다. 반영한 종목 수를 돌려준다.
+
+    `is_tracked`는 **싣지 않는다.** 거래소 목록은 "무엇이 상장돼 있나"를 말할 뿐
+    "무엇을 수집하나"는 멤버십이 정한다. 한 upsert에 섞였을 때 게이트가 통째로 꺼져
+    모든 하류 수집이 에러 없이 0종목이 된 적이 있다.
+    """
     if not rows:
         return 0
     db = _db()
+    repository = UniverseRepository(db)
     entities: dict[str, dict] = {}
     for row in rows:
         cik = str(row.get("cik") or "").zfill(10)
         if cik and cik not in entities:
-            entities[cik] = {
-                "cik": cik,
-                "company_name": str(row.get("company_name") or cik),
-                "former_names": [],
-            }
+            entities[cik] = {"cik": cik, "company_name": str(row.get("company_name") or cik), "former_names": []}
     if entities:
         existing = db.select_in_chunks(
-            schema=SCHEMA,
-            table=T_ENTITIES,
-            columns="cik",
-            filter_column="cik",
-            values=list(entities),
-            order_by="cik",
+            schema=SCHEMA, table=T_ENTITIES, columns="cik", filter_column="cik",
+            values=list(entities), order_by="cik",
         )
         existing_ciks = {str(row["cik"]) for row in existing}
         new_entities = [row for cik, row in entities.items() if cik not in existing_ciks]
         if new_entities:
             db.upsert(schema=SCHEMA, table=T_ENTITIES, rows=new_entities, on_conflict="cik")
-    securities = [
-        {
-            "ticker": str(row["ticker"]),
-            "cik": str(row["cik"]).zfill(10),
-            "exchange_code": row.get("exchange_code"),
-            "security_type": row.get("security_type") or "common_stock",
-            "security_title": row.get("security_title"),
-            "is_active_listing": bool(row.get("is_active_listing", True)),
-        }
-        for row in rows
-    ]
-    # `is_tracked`를 **일부러 싣지 않는다.** upsert는 payload에 있는 컬럼만 갱신하므로
-    # 빼면 기존 값이 그대로 남고, 새 행은 선언의 기본값(false)을 받는다.
-    #
-    # 전에는 여기서 매번 false를 실어 7천여 종목의 게이트를 통째로 껐다. 거래소
-    # master는 "무엇이 상장돼 있나"를 말할 뿐 "무엇을 수집하나"는 멤버십이 정한다.
-    # 그 둘이 한 upsert에 섞여 있어서, S&P 변동이 없는 날 `universe_membership`이
-    # 게이트를 끄고 조기 반환해 **모든 하류 수집이 0종목이 됐다** — 에러 없이.
-    return db.upsert(schema=SCHEMA, table=T_SECURITIES, rows=securities, on_conflict="ticker")
+
+    listed = {str(row["ticker"]): row for row in rows}
+    securities = repository.all_securities()
+    active_by_ticker = {s.ticker: s for s in securities if s.is_active_listing}
+    active_by_cik: dict[str, list] = defaultdict(list)
+    for security in active_by_ticker.values():
+        if security.cik:
+            active_by_cik[security.cik].append(security)
+    new_by_cik: dict[str, list[dict]] = defaultdict(list)
+    for ticker, row in listed.items():
+        if ticker not in active_by_ticker:
+            new_by_cik[str(row["cik"]).zfill(10)].append(row)
+
+    updates: list[dict] = []
+    inserts: list[dict] = []
+    renames: list[tuple[object, dict]] = []
+    conflicts: list[str] = []
+    for ticker, row in sorted(listed.items()):
+        cik = str(row["cik"]).zfill(10)
+        current = active_by_ticker.get(ticker)
+        if current is not None:
+            if current.cik and current.cik != cik:
+                conflicts.append(f"{ticker}: listed cik={cik} stored cik={current.cik} id={current.security_id}")
+                continue
+            updates.append(_listing_payload(row, security_id=current.security_id))
+            continue
+        vanished = [s for s in active_by_cik.get(cik, []) if s.ticker not in listed]
+        if len(vanished) == 1 and len(new_by_cik[cik]) == 1 and vanished[0].security_type == (
+            row.get("security_type") or "common_stock"
+        ):
+            renames.append((vanished[0], row))
+            updates.append(_listing_payload(row, security_id=vanished[0].security_id))
+            continue
+        inserts.append(_listing_payload(row))
+
+    for conflict in conflicts:
+        log.warning("  identity conflict held (not merged): %s", conflict)
+    if updates:
+        db.upsert(schema=SCHEMA, table=T_SECURITIES, rows=updates, on_conflict="security_id")
+    if inserts:
+        for start in range(0, len(inserts), 500):
+            db.table(SCHEMA, T_SECURITIES).insert(inserts[start:start + 500]).execute()
+    _sync_ticker_history(repository, listed, renames)
+    log.info(
+        "  listing sync: updated=%d renamed=%d inserted=%d conflicts=%d",
+        len(updates) - len(renames), len(renames), len(inserts), len(conflicts),
+    )
+    return len(updates) + len(inserts)
+
+
+def _sync_ticker_history(repository: UniverseRepository, listed: dict[str, dict], renames: list) -> None:
+    """상장 중인 종목마다 지금 유효한 TICKER 연결이 하나 있게 한다.
+
+    시작일은 우리가 그 표기를 처음 확인한 날이다. 실제 거래 시작일이 아니라 "적어도
+    이날부터 이 표기였다"는 보수적 사실이다. 개명은 옛 연결을 오늘로 닫고 새로 연다.
+    """
+    today = _us_market_today()
+    current = {str(row["identifier"]): row for row in repository.current_identifiers("TICKER")
+               if row.get("mapping_status") == "verified"}
+    for old, _row in renames:
+        previous = current.get(old.ticker)
+        if previous is not None and int(previous["security_id"]) == old.security_id:
+            repository.close_identifier(int(previous["mapping_id"]), valid_to=today)
+            current.pop(old.ticker, None)
+    ids = repository.security_ids(list(listed))
+    missing = []
+    for ticker, security_id in sorted(ids.items()):
+        row = current.get(ticker)
+        if row is not None and int(row["security_id"]) == security_id:
+            continue
+        if row is not None:
+            # 같은 표기를 다른 종목이 들고 있다 — 충돌 경로가 이미 경고했으므로 여기서 덮지 않는다.
+            continue
+        missing.append({
+            "identifier_type": "TICKER", "identifier": ticker, "security_id": security_id,
+            "mapping_status": "verified", "valid_from": today.isoformat(), "source": "sec_listing",
+        })
+    if missing:
+        repository.upsert_identifiers(missing)
 
 
 def set_membership(rows: list[dict]) -> int:
@@ -238,13 +332,11 @@ def set_membership(rows: list[dict]) -> int:
 
     * ``is_tracked``가 있는 행 — 수집 게이트를 그 값으로 정한다.
     * ``is_tracked``가 없는 행(과거 멤버) — **게이트를 건드리지 않는다.** 없으면
-      상장 종료 상태로 ticker만 등록한다. 과거 멤버십 snapshot이 그 ticker를
-      가리키므로 행이 없으면 `record_membership`이 통째로 거절한다.
+      신원 미확인 자리표시 종목으로 ticker만 등록한다. 과거 멤버십 snapshot이 그
+      ticker를 가리키므로 행이 없으면 `record_membership`이 통째로 거절한다.
 
-    전에는 둘을 구분하지 않고 `is_tracked`가 없으면 True로 기본값을 줬다. 그래서
-    지수에서 빠진 과거 멤버가 다시 tracked가 됐고(실측 129종목), 그만큼 모든
-    하류 파이프라인이 영구히 더 돌았다. 없는 ticker는 UPDATE가 0행을 고쳐도
-    성공으로 세어서, 과거 멤버 등록이 안 된 사실도 함께 가려졌다.
+    게이트는 신원이 확인된 종목에만 켠다. ticker만 같은 자리표시 종목에 켜면 다른 회사의
+    자료를 수집한다.
     """
     db = _db()
     wanted = []
@@ -255,31 +347,38 @@ def set_membership(rows: list[dict]) -> int:
     if not wanted:
         return 0
 
-    known = set(UniverseRepository(db).security_ids([ticker for ticker, _ in wanted]))
+    known = UniverseRepository(db).securities_by_ticker([ticker for ticker, _ in wanted])
     changed = 0
     missing_rows = []
     for ticker, is_tracked in wanted:
-        if ticker not in known:
+        security = known.get(ticker)
+        if security is None:
             if is_tracked:
-                # 현재 멤버인데 증권 마스터에 없다 — 발행사(CIK)를 모르면 재무를
-                # 붙일 수 없으므로 조용히 만들지 않고 상류가 보게 둔다.
                 log.warning("  현재 멤버인데 securities에 없음: %s", ticker)
                 continue
-            missing_rows.append({
-                "ticker": ticker, "cik": None,
-                "is_active_listing": False, "is_tracked": False,
-            })
+            missing_rows.append(_placeholder(ticker))
             continue
         if is_tracked is None:
             continue  # 이미 있는 과거 멤버 — 게이트는 그대로 둔다.
+        if is_tracked and not (security.is_active_listing and security.is_identity_verified):
+            log.warning("  현재 멤버인데 상장·신원 확인된 종목이 없음: %s", ticker)
+            continue
         db.table(SCHEMA, T_SECURITIES).update(
             {"is_tracked": bool(is_tracked)}
-        ).eq("ticker", ticker).execute()
+        ).eq("security_id", security.security_id).execute()
         changed += 1
     if missing_rows:
         db.table(SCHEMA, T_SECURITIES).insert(missing_rows).execute()
         changed += len(missing_rows)
     return changed
+
+
+def _placeholder(ticker: str) -> dict:
+    """과거 지수 기록에서만 이름이 나온 종목. 발행사를 모르고 수집 대상이 될 수 없다."""
+    return {
+        "ticker": ticker, "cik": None, "is_active_listing": False,
+        "is_identity_verified": False, "is_tracked": False,
+    }
 
 
 def select_latest_sp500_symbols() -> set[str]:
@@ -288,22 +387,94 @@ def select_latest_sp500_symbols() -> set[str]:
 
 
 def append_memberships(rows: list[dict]) -> int:
+    """과거 멤버십 스냅샷을 시간순으로 반영한다.
+
+    과거 스냅샷의 ticker는 그때의 표기다. 지금 같은 ticker가 같은 회사라고 믿을 수 있는
+    것은 **가장 최근 스냅샷부터 그 스냅샷까지 끊김 없이 지수에 있었던 경우**뿐이다.
+    중간에 빠졌다가 다시 나타난 ticker는 다른 회사가 표기를 재사용했을 수 있으므로
+    신원 미확인 자리표시 종목에 붙인다 — 다른 회사의 과거를 지금 종목에 섞지 않는다.
+    """
     if not rows:
         raise ValueError("historical membership snapshots must not be empty")
     repository = UniverseRepository(_db())
+    ordered = sorted(rows, key=lambda item: str(item["effective_date"]))
+    ticker_sets = [
+        tuple(sorted({str(value).upper() for value in row.get("symbols") or []}))
+        for row in ordered
+    ]
+    continuous: list[set[str]] = [set()] * len(ordered)
+    running: set[str] | None = None
+    for index in range(len(ordered) - 1, -1, -1):
+        members = set(ticker_sets[index])
+        running = members if running is None else running & members
+        continuous[index] = set(running)
+
+    everything = sorted({ticker for tickers in ticker_sets for ticker in tickers})
+    current = repository.securities_by_ticker(everything)
+
+    def is_current(ticker: str, stable: set[str]) -> bool:
+        security = current.get(ticker)
+        return ticker in stable and security is not None and security.is_identity_verified
+
+    needs_placeholder = sorted({
+        ticker for tickers, stable in zip(ticker_sets, continuous)
+        for ticker in tickers if not is_current(ticker, stable)
+    })
+    placeholders = _placeholders(needs_placeholder) if needs_placeholder else {}
     written = 0
-    for row in sorted(rows, key=lambda item: str(item["effective_date"])):
-        raw_tickers = [str(value).upper() for value in row.get("symbols") or []]
-        tickers = tuple(sorted(set(raw_tickers)))
+    for row, tickers, stable in zip(ordered, ticker_sets, continuous):
         snapshot = MembershipSnapshot.from_row({
             "index_code": INDEX_SP500,
             "effective_date": str(row["effective_date"]),
             "tickers": list(tickers),
-            "member_count": row.get("member_count", len(raw_tickers)),
+            "member_count": row.get("member_count", len(tickers)),
             "source": str(row.get("source") or "universe_membership"),
         })
-        written += repository.record_membership(snapshot, source_hash=str(row["source_hash"]))
+        ids = [
+            current[ticker].security_id if is_current(ticker, stable) else placeholders[ticker]
+            for ticker in snapshot.tickers
+        ]
+        written += repository.record_membership(
+            snapshot, source_hash=str(row["source_hash"]), security_ids=ids,
+        )
     return written
+
+
+def _placeholders(tickers: list[str]) -> dict[str, int]:
+    """ticker마다 자리표시 종목 ID. 없으면 만든다."""
+    db = _db()
+    rows = db.select_in_chunks(
+        schema=SCHEMA, table=T_SECURITIES, columns="security_id,ticker,is_identity_verified,is_active_listing",
+        filter_column="ticker", values=tickers, order_by="ticker,security_id",
+    )
+    found: dict[str, int] = {}
+    for row in rows:
+        if not row.get("is_identity_verified") and not row.get("is_active_listing"):
+            found.setdefault(str(row["ticker"]), int(row["security_id"]))
+    missing = [ticker for ticker in tickers if ticker not in found]
+    if missing:
+        for start in range(0, len(missing), 500):
+            db.table(SCHEMA, T_SECURITIES).insert(
+                [_placeholder(ticker) for ticker in missing[start:start + 500]]
+            ).execute()
+        return _placeholders_existing(tickers)
+    return found
+
+
+def _placeholders_existing(tickers: list[str]) -> dict[str, int]:
+    db = _db()
+    rows = db.select_in_chunks(
+        schema=SCHEMA, table=T_SECURITIES, columns="security_id,ticker,is_identity_verified,is_active_listing",
+        filter_column="ticker", values=tickers, order_by="ticker,security_id",
+    )
+    found: dict[str, int] = {}
+    for row in rows:
+        if not row.get("is_identity_verified") and not row.get("is_active_listing"):
+            found.setdefault(str(row["ticker"]), int(row["security_id"]))
+    unresolved = sorted(set(tickers) - set(found))
+    if unresolved:
+        raise RuntimeError(f"placeholder securities were not created: {unresolved[:10]}")
+    return found
 
 
 def apply_toss_names(names: dict[str, str], attempted: list[str]) -> None:

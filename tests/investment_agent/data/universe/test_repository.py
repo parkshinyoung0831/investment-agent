@@ -115,15 +115,21 @@ class ResolveIdentifiersTest(unittest.TestCase):
         self.db = FakeDatabase()
         self.db.put(SCHEMA, T_IDENTIFIERS, [
             # 같은 ticker가 두 회사에 쓰였다. 시점이 없으면 어느 쪽인지 알 수 없다.
-            {"identifier": "TWTR", "identifier_type": "TICKER", "security_id": 10,
+            {"identifier": "TWTR", "identifier_type": "TICKER", "namespace": "us_listing",
+             "mapping_status": "verified", "security_id": 10,
              "valid_from": "2013-11-07", "valid_to": "2022-10-27"},
-            {"identifier": "TWTR", "identifier_type": "TICKER", "security_id": 11,
+            {"identifier": "TWTR", "identifier_type": "TICKER", "namespace": "us_listing",
+             "mapping_status": "verified", "security_id": 11,
              "valid_from": "2024-01-01", "valid_to": None},
-            {"identifier": "037833100", "identifier_type": "CUSIP", "security_id": 1,
-             "valid_from": "-infinity", "valid_to": None},
+            # CUSIP은 재사용되지 않는다. 시작일을 몰라도 과거 날짜에 쓸 수 있다.
+            {"identifier": "037833100", "identifier_type": "CUSIP", "namespace": "cgs",
+             "mapping_status": "verified", "security_id": 1, "valid_from": None, "valid_to": None},
             # 못 찾은 식별자도 저장소에 남아 있다. 매핑 결과에는 나오면 안 된다.
-            {"identifier": "999999999", "identifier_type": "CUSIP", "security_id": None,
-             "valid_from": "-infinity", "valid_to": None},
+            {"identifier": "999999999", "identifier_type": "CUSIP", "namespace": "cgs",
+             "mapping_status": "unresolved", "security_id": None, "valid_from": None, "valid_to": None},
+            # 시작일을 모르는 ticker 연결. 지금 표기로는 쓰지만 과거 원문 해석에는 쓰지 않는다.
+            {"identifier": "GOOG", "identifier_type": "TICKER", "namespace": "us_listing",
+             "mapping_status": "verified", "security_id": 20, "valid_from": None, "valid_to": None},
         ])
         self.repo = UniverseRepository(self.db)
 
@@ -148,6 +154,17 @@ class ResolveIdentifiersTest(unittest.TestCase):
         self.assertEqual(
             {}, self.repo.resolve_identifiers(["TWTR"], "TICKER", on_date=date(2023, 6, 1))
         )
+
+    def test_cusip_with_unknown_start_resolves_on_a_past_date(self) -> None:
+        self.assertEqual({"037833100": 1},
+                         self.repo.resolve_identifiers(["037833100"], "CUSIP", on_date=date(2015, 3, 31)))
+
+    def test_ticker_with_unknown_start_is_current_only(self) -> None:
+        self.assertEqual({"GOOG": 20}, self.repo.resolve_identifiers(["GOOG"], "TICKER"))
+        self.assertEqual({}, self.repo.resolve_identifiers(["GOOG"], "TICKER", on_date=date(2020, 1, 2)))
+
+    def test_without_a_date_only_the_current_mapping_answers(self) -> None:
+        self.assertEqual({"TWTR": 11}, self.repo.resolve_identifiers(["TWTR"], "TICKER"))
 
     def test_case_and_padding_are_normalised(self) -> None:
         self.assertEqual({"TWTR": 11}, self.repo.resolve_identifiers([" twtr "], "TICKER",
@@ -281,16 +298,27 @@ class WatchlistMemberWriteTest(unittest.TestCase):
 
 
 class WriteTest(unittest.TestCase):
-    def test_securities_upsert_never_sends_the_identity(self) -> None:
-        """security_id를 코드가 정하면 identity의 주인이 저장소가 아니게 된다."""
+    def test_identifier_upsert_uses_the_natural_key_and_never_reopens(self) -> None:
+        """재실행이 같은 행을 갱신하고, 이미 닫힌 연결(valid_to)을 다시 열지 않는다."""
         db = FakeDatabase()
-        repo = UniverseRepository(db)
-        from investment_agent.data.universe.domain.models import Security
-
-        repo.upsert_securities([Security(security_id=99, ticker="AAPL", cik="0000320193")])
+        UniverseRepository(db).upsert_identifiers([
+            {"identifier_type": "CUSIP", "identifier": " 037833100 ", "security_id": 1,
+             "mapping_status": "verified", "valid_to": None, "source": "openfigi"},
+        ])
         (_key, rows, conflict) = db.upserts[0]
-        self.assertNotIn("security_id", rows[0])
-        self.assertEqual("ticker", conflict)
+        self.assertEqual("identifier_type,namespace,identifier,security_id,valid_from", conflict)
+        self.assertEqual("037833100", rows[0]["identifier"])
+        self.assertEqual("cgs", rows[0]["namespace"])
+        self.assertIsNone(rows[0]["valid_from"])
+        self.assertNotIn("valid_to", rows[0])
+
+    def test_an_active_listing_wins_over_an_ended_one_with_the_same_ticker(self) -> None:
+        db = FakeDatabase()
+        db.put(SCHEMA, T_SECURITIES, [
+            {**_security(5, "META"), "is_active_listing": False, "is_identity_verified": False},
+            _security(1000001, "META"),
+        ])
+        self.assertEqual({"META": 1000001}, UniverseRepository(db).security_ids(["META"]))
 
     def test_membership_write_replaces_via_rpc_with_resolved_security_ids(self) -> None:
         """정정 가능한 원자 replace를 RPC로 위임한다 — 부분 upsert는 겹친 기간을 남긴다."""

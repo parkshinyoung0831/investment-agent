@@ -288,17 +288,8 @@ def run_daily(*, now: datetime, horizon_days: int) -> dict[str, Any]:
                                                      starts_by_series=starts)
     failures.extend(item for item in actual_failures if item.get("status") == "failed")
     ingest = ingest_raw(raw_values)
-    # 적재가 끝난 뒤에만 줄인다. 실패한 회차에서 지우면 아직 안 들어온 실제치를
-    # 기다리던 예상 스냅샷이 먼저 사라진다.
-    retention: dict[str, int] = {}
-    if not failures:
-        try:
-            retention = db.prune_release_snapshots()
-        except Exception as exc:  # noqa: BLE001 - 정리 실패가 적재 결과를 가리지 않게 한다
-            log.warning("econ retention skipped: %r", exc)
     return {**schedule_summary, **ingest, "forecast_inserted": forecast_inserted,
             "unsupported_sources": sum(item.get("status") == "unsupported" for item in actual_failures),
-            "retention": retention,
             "failure_count": len(failures), "failures": failures[:30]}
 
 

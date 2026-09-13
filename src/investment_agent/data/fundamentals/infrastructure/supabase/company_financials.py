@@ -19,7 +19,8 @@ from investment_agent.data.fundamentals.domain.taxonomy.financial_columns import
 # --- DB 식별자 (SSOT) ---------------------------------------------------
 SCHEMA_FUNDAMENTALS = "fundamentals"
 SCHEMA_UNIVERSE = "universe"
-T_FINANCIALS = "financials"
+T_FINANCIALS = "financials"  # 뷰: 기간별 최신 공시 버전
+T_FINANCIAL_VERSIONS = "financial_versions"
 T_FILINGS = "filings"
 T_FILING_PROCESSING = "filing_processing"
 T_EARNINGS_SCHEDULE = "earnings_schedule_versions"
@@ -301,7 +302,12 @@ def mark_processed_filing_targets(
 
 
 def reconcile_wide_history(cik_ceiling: dict[str, str], floor: date) -> int:
-    """전체 재처리 뒤 현재 정책·보관 기간 밖의 wide 행을 제거한다."""
+    """전체 재처리 뒤 현재 매핑 버전이 아닌 행과 보관 기간 밖의 행을 제거한다.
+
+    같은 공시를 현재 매핑 버전으로 다시 처리했을 때만 부른다. 옛 매핑 버전 행을 남기면
+    최신 뷰가 처리 시각으로 고르긴 하지만, 재처리 범위 밖 기간과 섞여 한 시계열에 두 규칙이
+    공존한다. 정정 공시(다른 accession)의 이전 버전은 지우지 않는다.
+    """
     if not cik_ceiling:
         return 0
     removed = 0
@@ -309,7 +315,7 @@ def reconcile_wide_history(cik_ceiling: dict[str, str], floor: date) -> int:
     for cik, ceiling in cik_ceiling.items():
         stale = (
             sb.schema(SCHEMA_FUNDAMENTALS)
-            .table(T_FINANCIALS)
+            .table(T_FINANCIAL_VERSIONS)
             .delete()
             .eq("cik", cik)
             .neq("mapping_version", concepts.SEMANTIC_POLICY_VERSION)
@@ -322,7 +328,7 @@ def reconcile_wide_history(cik_ceiling: dict[str, str], floor: date) -> int:
     for chunk in chunk_filter_values(ciks, _UPSERT_BATCH):
         expired = (
             sb.schema(SCHEMA_FUNDAMENTALS)
-            .table(T_FINANCIALS)
+            .table(T_FINANCIAL_VERSIONS)
             .delete()
             .in_("cik", chunk)
             .lt("period_end", floor.isoformat())
@@ -350,15 +356,12 @@ def ciks_missing_financials() -> list[str]:
 
 
 def upsert_core_wide(rows: list[dict]) -> int:
-    """Upsert persisted core wide rows.
+    """공시별 재무 버전을 저장한다.
 
-    `source_manifest`는 컬럼별 채택 근거를 담은 메모리 전용 값이다. wide 표에는
-    수치만 남기기로 했으므로(01_schema.sql이 obsolete로 선언한다) 저장 경계에서
-    떼어 낸다. 남겨 두면 PostgREST가 payload 전체를 PGRST204로 거절해 그 공시의
-    수치까지 통째로 사라진다.
-
-    source accession과 filing date를 남기고, 같은 회계기간의 정정 수치는 canonical
-    행을 갱신한다. 정정 전 수치의 full vintage는 이 저장 계층의 계약이 아니다.
+    키는 (cik, period_end, fiscal_period, accession_no, mapping_version)이다. 정정 공시는
+    새 행이 되어 정정 전 숫자가 남고, 같은 공시를 같은 매핑 버전으로 다시 처리하면 같은
+    행을 갱신한다. `source_manifest`는 컬럼별 채택 근거를 담은 메모리 전용 값이라 떼어 낸다
+    — 남기면 PostgREST가 payload 전체를 PGRST204로 거절한다.
     """
     if not rows:
         return 0
@@ -373,10 +376,10 @@ def upsert_core_wide(rows: list[dict]) -> int:
     ]
     if invalid:
         raise ValueError(
-            "financials rows require cik, period_end, accession_no and no ticker"
+            "financial version rows require cik, period_end, accession_no and no ticker"
         )
     persisted = {
-        "cik", "period_end", "source_accession_no", "source_filing_date", "fiscal_year", "fiscal_period",
+        "cik", "period_end", "accession_no", "fiscal_year", "fiscal_period",
         "mapping_version", "common_equity_scope", "is_liabilities_derived",
         *ALL_WIDE_COLUMNS,
     }
@@ -386,8 +389,6 @@ def upsert_core_wide(rows: list[dict]) -> int:
             for key, value in {
                 **row,
                 "mapping_version": row.get("mapping_version") or concepts.SEMANTIC_POLICY_VERSION,
-                "source_accession_no": row["accession_no"],
-                "source_filing_date": row.get("filing_date") or row.get("filed_at"),
             }.items()
             if key not in _MEMORY_ONLY_KEYS and key in persisted
         }
@@ -396,12 +397,14 @@ def upsert_core_wide(rows: list[dict]) -> int:
     upserted = 0
     for start in range(0, len(payload), _UPSERT_BATCH):
         chunk = payload[start:start + _UPSERT_BATCH]
-        response = sb.schema(SCHEMA_FUNDAMENTALS).table(T_FINANCIALS).upsert(
-            chunk, on_conflict="cik,period_end,fiscal_period"
+        sb.schema(SCHEMA_FUNDAMENTALS).table(T_FINANCIAL_VERSIONS).upsert(
+            chunk, on_conflict="cik,period_end,fiscal_period,accession_no,mapping_version"
         ).execute()
-        upserted += len(response.data or chunk)
-    log.info("financials upserted: written=%d", upserted)
+        upserted += len(chunk)
+    log.info("financial versions upserted: written=%d", upserted)
     return upserted
+
+
 def _issue_key(row: dict) -> str:
     """로그에서 같은 데이터 이상을 묶어 찾을 수 있는 결정적 키를 만든다."""
     detail = row.get("detail") or {}

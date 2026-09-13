@@ -16,7 +16,8 @@ from tests.investment_agent.fakes import FakeDatabase
 class MappingCacheTest(unittest.TestCase):
     def test_mapping_conclusions_are_cached_in_universe(self) -> None:
         fake = FakeDatabase()
-        fake.put("universe", "securities", [{"security_id": 1, "ticker": "AAPL"}])
+        fake.put("universe", "securities", [{"security_id": 1, "ticker": "AAPL", "cik": "0000320193",
+                                              "is_active_listing": True, "is_identity_verified": True}])
         db.configure(fake)
         mapping = [
             MappingResult(
@@ -29,15 +30,31 @@ class MappingCacheTest(unittest.TestCase):
         self.assertEqual(stored, 1)
         schema_table, rows, conflict = fake.upserts[0]
         self.assertEqual(("universe", "security_identifiers"), schema_table)
-        self.assertEqual("identifier,identifier_type,valid_from", conflict)
+        self.assertEqual("identifier_type,namespace,identifier,security_id,valid_from", conflict)
         row = rows[0]
-        self.assertEqual(row["mapping_status"], "mapped")
+        self.assertEqual((row["mapping_status"], row["security_id"]), ("verified", 1))
+        self.assertIsNone(row["valid_from"])
+        self.assertIn("figi=BBG000B9XRY4", row["evidence_ref"])
         self.assertNotIn("error", row)
+        # 확인된 연결이 생기면 옛 미확인 행을 지운다.
+        self.assertEqual([("universe", "security_identifiers")], [key for key, _eq in fake.deletes])
+
+    def test_a_ticker_nobody_lists_now_is_unresolved_not_guessed(self) -> None:
+        """OpenFIGI의 ticker는 지금 표기다. 상장이 끝났으면 다른 회사가 재사용했을 수 있다."""
+        fake = FakeDatabase()
+        fake.put("universe", "securities", [{"security_id": 5, "ticker": "TWTR", "cik": None,
+                                              "is_active_listing": False, "is_identity_verified": False}])
+        db.configure(fake)
+        mapping = [MappingResult("90184L102", "CUSIP", "TWTR", None, "mapped", "openfigi")]
+        db.cache_mappings(mapping, universe_tickers=set())
+        row = fake.upserts[0][1][0]
+        self.assertEqual((row["mapping_status"], row["security_id"]), ("unresolved", None))
+        self.assertIn("ticker=TWTR", row["evidence_ref"])
 
     def test_domain_conclusions_have_a_thirty_day_recheck_window(self) -> None:
         now = datetime(2026, 8, 27, tzinfo=timezone.utc)
         recent = {
-            "mapping_status": "not_found",
+            "mapping_status": "unresolved",
             "updated_at": (now - timedelta(days=29)).isoformat(),
         }
         due = {**recent, "updated_at": (now - timedelta(days=31)).isoformat()}
@@ -46,7 +63,7 @@ class MappingCacheTest(unittest.TestCase):
         self.assertTrue(db.mapping_is_due(due, now=now))
         self.assertFalse(
             db.mapping_is_due(
-                {"mapping_status": "historical", "updated_at": "2000-01-01T00:00:00Z"},
+                {"mapping_status": "verified", "updated_at": "2000-01-01T00:00:00Z"},
                 now=now,
             )
         )

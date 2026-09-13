@@ -118,6 +118,11 @@ class FakeQuery:
             raise error
         return self
 
+    def delete(self) -> "FakeQuery":
+        # update와 같은 이유로 살아 있는 eq 조건 dict를 넣는다.
+        self._store.deletes.append((self._table_key, self._eq_terms))
+        return self
+
     def update(self, values: dict[str, Any]) -> "FakeQuery":
         self._store.updates.append((self._table_key, dict(values)))
         # `.update(...)`가 `.eq(...)`보다 먼저 불린다 — 살아 있는 dict를 넣어
@@ -182,6 +187,7 @@ class FakeDatabase(Database):
         self.updates: list[tuple[tuple[str, str], dict[str, Any]]] = []
         #: UPDATE가 고른 eq 조건. `updates`와 같은 순서다.
         self.update_filters: list[tuple[tuple[str, str], dict[str, Any]]] = []
+        self.deletes: list[tuple[tuple[str, str], dict[str, Any]]] = []
         self.in_calls: list[tuple[tuple[str, str], str, list[Any]]] = []
         self.executed: list[tuple[str, str]] = []
         self.insert_error: BaseException | None = None

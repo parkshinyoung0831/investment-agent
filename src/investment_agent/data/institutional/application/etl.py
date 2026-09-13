@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import sys
 import time
-from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
@@ -161,8 +160,7 @@ def _resolve_tickers(
     missing = [
         pair for pair in sorted(identifiers)
         if (
-            str((cache.get(pair) or {}).get("mapping_status"))
-            not in {"mapped", "historical"}
+            str((cache.get(pair) or {}).get("mapping_status")) != "verified"
             if force
             else db.mapping_is_due(cache.get(pair))
         )
@@ -182,12 +180,7 @@ def _resolve_tickers(
         except Exception as exc:  # noqa: BLE001 - 포지션 원천 적재는 보존한다.
             log.warning("universe ticker verification failed jobs=%d error=%r", len(missing), exc)
             return len(missing), requests_made, {"provider_failed": len(missing)}
-    results = [
-        replace(result, mapping_status="historical")
-        if result.mapping_status == "mapped" and result.ticker not in universe_tickers
-        else result
-        for result in mapped.values()
-    ]
+    results = list(mapped.values())
     db.cache_mappings(results, universe_tickers=universe_tickers)
     updated_at = datetime.now(timezone.utc).isoformat()
     for result in results:
@@ -208,8 +201,8 @@ def refresh_mappings(*, force: bool = False) -> dict[str, int]:
     """이미 적재된 전체 13F의 미완료 CUSIP/CINS 매핑을 별도로 복구한다.
 
     SEC 원천 적재와 API rate-limit 장애를 분리하기 위한 단계다. ``force``는
-    backfill 직후 not_found/ambiguous를 TTL 대기 없이 한 번 다시 조회한다.
-    mapped/historical 결론은 어떤 경우에도 재조회하지 않는다.
+    backfill 직후 unresolved/conflict를 TTL 대기 없이 한 번 다시 조회한다.
+    verified 결론은 어떤 경우에도 재조회하지 않는다.
     """
     identifiers = db.referenced_identifiers()
     cache = db.get_identifier_cache()

@@ -78,6 +78,18 @@ class DailyBar:
 
 
 @dataclass(frozen=True)
+class PriceTarget:
+    """수집 대상 하나. symbol은 공급자 요청 주소이고 security_id는 저장 identity다.
+
+    수집을 시작할 때 이 쌍을 고정한다. 응답을 저장할 때 ticker를 다시 풀면 도중에 반영된
+    개명·재사용 때문에 다른 종목에 쓸 수 있다.
+    """
+
+    security_id: int
+    symbol: str
+
+
+@dataclass(frozen=True)
 class SplitEvent:
     """주식분할. 비율 1은 분할이 아니다 — 그런 행은 조정을 아무것도 안 하면서
     '분할이 있었다'고 말한다."""
@@ -138,4 +150,4 @@ class DividendEvent:
         }
 
 
-__all__ = ["DailyBar", "DividendEvent", "MarketDataError", "SplitEvent"]
+__all__ = ["DailyBar", "DividendEvent", "MarketDataError", "PriceTarget", "SplitEvent"]

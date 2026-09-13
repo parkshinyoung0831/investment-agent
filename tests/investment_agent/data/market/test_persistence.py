@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import date
+from unittest import mock
 
 from investment_agent.data.market import persistence as db
 from investment_agent.data.market.repository import SCHEMA, T_PRICES
@@ -50,16 +51,11 @@ class PricesSinceTest(unittest.TestCase):
         db.configure(self.fake)
         self.addCleanup(db.configure, None)
 
-    def test_keys_rows_by_ticker_and_date_after_the_cutoff(self) -> None:
+    def test_keys_rows_by_security_id_and_date_after_the_cutoff(self) -> None:
+        """증분 비교는 수집 계획의 security_id로 한다. ticker로 되돌리면 개명 뒤 비교가 어긋난다."""
         result = db.prices_since("2026-09-05")
-        self.assertEqual({("AAPL", "2026-09-09")}, set(result))
-        self.assertEqual(101.0, result[("AAPL", "2026-09-09")]["close"])
-
-    def test_a_security_missing_from_universe_is_silently_skipped(self) -> None:
-        """universe에서 사라진 security_id는 조인이 안 되므로 결과에서 빠진다
-        — 이전 raw 쿼리 구현과 같은 동작이다."""
-        self.fake.put(SCHEMA, T_PRICES, [_price(999, "2026-09-09")])
-        self.assertEqual({}, db.prices_since("2026-09-05"))
+        self.assertEqual({(1, "2026-09-09")}, set(result))
+        self.assertEqual(101.0, result[(1, "2026-09-09")]["close"])
 
 
 class UniverseMissingPricesTest(unittest.TestCase):
@@ -71,6 +67,9 @@ class UniverseMissingPricesTest(unittest.TestCase):
         ])
         db.configure(self.fake)
         self.addCleanup(db.configure, None)
+        patcher = mock.patch.object(db, "REFERENCE_PRICE_TICKERS", ())
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def test_only_tracked_securities_with_zero_price_rows_are_returned(self) -> None:
         self.fake.put(SCHEMA, T_PRICES, [_price(1, "2026-09-02")])
@@ -83,3 +82,28 @@ class UniverseMissingPricesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PriceWriteTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.fake = FakeDatabase()
+        db.configure(self.fake)
+        self.addCleanup(db.configure, None)
+
+    def test_price_rows_without_the_planned_security_id_are_refused(self) -> None:
+        """저장 직전에 ticker로 신원을 다시 풀지 않는다."""
+        with self.assertRaises(ValueError):
+            db.upsert_prices([{"ticker": "AAA", **{k: v for k, v in _price(1, "2026-09-02").items() if k != "security_id"}}])
+
+    def test_missing_reference_securities_stop_the_plan(self) -> None:
+        self.fake.put(SCHEMA_UNIVERSE, T_SECURITIES, [{"security_id": 1, "ticker": "AAPL", "is_tracked": True}])
+        with mock.patch.object(db, "REFERENCE_PRICE_TICKERS", ("SPY",)), self.assertRaisesRegex(RuntimeError, "SPY"):
+            db.price_targets()
+
+    def test_an_ended_listing_is_not_a_reference_target(self) -> None:
+        self.fake.put(SCHEMA_UNIVERSE, T_SECURITIES, [
+            {"security_id": 5, "ticker": "SPY", "is_tracked": False, "is_active_listing": False,
+             "is_identity_verified": False},
+        ])
+        with mock.patch.object(db, "REFERENCE_PRICE_TICKERS", ("SPY",)):
+            self.assertEqual([], db.price_targets())

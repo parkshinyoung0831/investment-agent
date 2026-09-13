@@ -30,7 +30,7 @@ def _snap(
         "target_fiscal_period": target_fiscal_period,
         "target_period_end": target,
         "source": source,
-        "snapshot_kind": "observed",
+        "snapshot_kind": "captured_live",
         "source_horizon": source_horizon,
         "eps_avg": eps_avg,
         "eps_low": 2.03,

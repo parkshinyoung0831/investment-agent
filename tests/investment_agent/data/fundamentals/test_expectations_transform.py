@@ -239,13 +239,13 @@ class FiscalPeriodNormalization(unittest.TestCase):
         consensus, schedules, unmapped = periods.normalize_consensus(
             raw, self._CALENDAR, collected_on=_TODAY,
         )
-        by_horizon = {row["source_horizon"]: row for row in consensus}
+        # 상대 horizon은 저장하지 않는다 — 절대 회계기간 키만 남는다.
+        self.assertTrue(all("source_horizon" not in row for row in consensus))
+        by_period = {row["target_fiscal_period"]: row for row in consensus}
 
         self.assertEqual(unmapped, [])
-        self.assertEqual(by_horizon["q+0"]["target_fiscal_period"], "Q3")
-        self.assertEqual(by_horizon["q+0"]["target_fiscal_year"], 2026)
-        self.assertEqual(by_horizon["fy+0"]["target_fiscal_period"], "FY")
-        self.assertEqual(by_horizon["fy+0"]["target_fiscal_year"], 2026)
+        self.assertEqual(by_period["Q3"]["target_fiscal_year"], 2026)
+        self.assertEqual(by_period["FY"]["target_fiscal_year"], 2026)
         self.assertEqual(len(schedules), 1)
         # 저장하는 사실은 시각 하나다. 발표일은 DB 생성 컬럼이 ET 기준으로 파생한다.
         self.assertNotIn("expected_report_date", schedules[0])

@@ -107,9 +107,9 @@ class OpenFigiIdentifierTest(unittest.TestCase):
         }
         self.assertTrue(db.mapping_is_due(row, now=now))
 
-    def test_historical_mapping_is_not_requeried(self):
+    def test_verified_mapping_is_not_requeried(self):
         self.assertFalse(db.mapping_is_due({
-            "mapping_status": "historical",
+            "mapping_status": "verified",
             "updated_at": "2020-01-01T00:00:00+00:00",
         }))
 

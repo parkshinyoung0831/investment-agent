@@ -28,6 +28,7 @@ SCHEMA_UNIVERSE = "universe"
 T_SECURITIES = "securities"
 T_IDENTIFIERS = "security_identifiers"
 
+_CGS_TYPES = ("CUSIP", "CINS")
 _database: Database | None = None
 
 
@@ -75,14 +76,20 @@ def ingest_filing(record: FilingRecord) -> int:
 
 
 def get_identifier_cache() -> dict[tuple[str, str], dict[str, Any]]:
+    """CUSIP/CINS 연결 캐시. 한 식별자에 행이 여럿이면 verified를 우선한다."""
     db = _db()
     rows = db.select_paged(
         lambda: db.table(SCHEMA_UNIVERSE, T_IDENTIFIERS).select(
             "identifier,identifier_type,security_id,mapping_status,source,updated_at"
-        ),
-        order_by="identifier,identifier_type,valid_from",
+        ).in_("identifier_type", list(_CGS_TYPES)),
+        order_by="mapping_id",
     )
-    return {(str(row["identifier"]), str(row["identifier_type"])): row for row in rows}
+    cache: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in rows:
+        key = (str(row["identifier"]), str(row["identifier_type"]))
+        if key not in cache or row.get("mapping_status") == "verified":
+            cache[key] = row
+    return cache
 
 
 def referenced_identifiers() -> set[tuple[str, str]]:
@@ -99,9 +106,10 @@ def referenced_identifiers() -> set[tuple[str, str]]:
 
 
 def mapping_is_due(row: dict | None, *, now: datetime | None = None) -> bool:
+    """다시 OpenFIGI에 물어볼 때인가. 확인된 연결은 다시 묻지 않고, 미확인·충돌은 30일마다."""
     if row is None:
         return True
-    if str(row.get("mapping_status") or "") in {"mapped", "historical"}:
+    if str(row.get("mapping_status") or "") == "verified":
         return False
     point = now or datetime.now(timezone.utc)
     try:
@@ -124,29 +132,59 @@ def known_universe_tickers() -> set[str]:
 
 
 def cache_mappings(mapping: Iterable[MappingResult], *, universe_tickers: set[str]) -> int:
+    """OpenFIGI 결과를 식별자 연결로 적는다.
+
+    OpenFIGI가 주는 ticker는 **지금** 표기다. 그 ticker를 상장 중이고 신원이 확인된
+    종목이 들고 있을 때만 verified로 잇는다. 상장이 끝났거나 우리 목록에 없는 ticker는
+    같은 표기를 다른 회사가 재사용했을 수 있어 unresolved로 두고 근거만 남긴다.
+    """
     results = list(mapping)
     if not results:
         return 0
     universe = UniverseRepository(_db())
-    ids = universe.security_ids([result.ticker for result in results])
+    securities = universe.securities_by_ticker([result.ticker for result in results if result.ticker])
     rows = []
+    confirmed: dict[str, list[str]] = {}
     for result in results:
         ticker = str(result.ticker or "").upper()
-        security_id = ids.get(ticker)
-        status = result.mapping_status
-        if status == "mapped" and ticker not in universe_tickers:
-            status = "historical"
-        if status in {"mapped", "historical"} and security_id is None:
-            status = "not_found"
+        security = securities.get(ticker)
+        evidence = ";".join(part for part in (
+            f"openfigi:{result.source}",
+            f"ticker={ticker}" if ticker else "",
+            f"figi={result.figi}" if result.figi else "",
+        ) if part)
+        if (result.mapping_status == "mapped" and security is not None and ticker in universe_tickers
+                and security.is_active_listing and security.is_identity_verified):
+            status, security_id = "verified", security.security_id
+            confirmed.setdefault(result.identifier_type, []).append(result.identifier)
+        elif result.mapping_status == "ambiguous":
+            status, security_id = "conflict", None
+        else:
+            status, security_id = "unresolved", None
         rows.append({
-            "identifier": result.identifier,
             "identifier_type": result.identifier_type,
+            "identifier": result.identifier,
             "security_id": security_id,
             "mapping_status": status,
-            "source": result.source,
-            "valid_from": "-infinity",
+            "valid_from": None,
+            "source": "openfigi",
+            "evidence_ref": evidence,
         })
-    return universe.upsert_identifiers(rows)
+    written = universe.upsert_identifiers(rows)
+    for identifier_type, identifiers in confirmed.items():
+        _clear_unconfirmed(identifier_type, identifiers)
+    return written
+
+
+def _clear_unconfirmed(identifier_type: str, identifiers: list[str]) -> None:
+    """확인된 연결이 생긴 식별자의 옛 미확인·충돌 행을 지운다(캐시가 둘로 갈라지지 않게)."""
+    db = _db()
+    for start in range(0, len(identifiers), 200):
+        (db.table(SCHEMA_UNIVERSE, T_IDENTIFIERS).delete()
+         .eq("identifier_type", identifier_type)
+         .in_("identifier", identifiers[start:start + 200])
+         .neq("mapping_status", "verified")
+         .execute())
 
 
 def _filing_row(filing: Filing13F, raw: dict[str, Any]) -> dict[str, Any]:

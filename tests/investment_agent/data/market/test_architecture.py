@@ -57,8 +57,7 @@ class MarketArchitectureTest(unittest.TestCase):
 
         universe의 최종 리뷰에서 정착된 것과 같은 이유로 여기서는
         ``investment_agent.platform.db``를 forbidden에 넣지 않는다 —
-        refresh_market.py는 ``db: Database``를 받아 그대로 repository
-        생성자에 넘기는 합법적 패턴을 쓴다(refresh_universe.py와 동일).
+        수집 절차(price_collection.py)는 download·archive 함수를 인자로 받는다.
         여기서 막는 것은 HTTP/공급자 라이브러리를 **직접** import하는
         경우뿐이다.
         """

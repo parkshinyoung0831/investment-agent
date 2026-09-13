@@ -75,19 +75,22 @@ python -m investment_agent.data.macro.commands.macro_refresh --backfill-from 201
 
 ## 보존 정책
 
-일정과 예상은 발표 전에는 변경 자체가 신호다. 그런데 실제치가 나오면
-`reporting.macro_release_summary`가 쓰는 것은 둘뿐이다 — **확정된 마지막 일정**과
-**실제치 직전의 예상(closing)**.
+일정 변경과 예상 변동은 발표가 끝난 뒤에도 지우지 않는다. 30·60·90일 예상 변화나 당시
+판단을 재현하려면 그 이력이 필요하고, 한 번 지우면 다시 받을 수 없다.
 
-`macro.prune_release_snapshots()`는 실제치가 있는 ref_period만, 그것도 최근 180일 밖의
-것만 그 한 건씩 남기고 정리한다. `release_calendar.run_daily`가 실패 없는 회차에만
-호출한다 — 부분 실패한 회차에서 정리하면 아직 안 받은 예상을 지운다.
+## 비교는 measure 단위로만
+
+원값(CPI 지수 334.131)과 예상(CPI 전월비 %)은 단위가 다르다. 실제치는 `macro.measure_value`
+(SQL)·`releases/db.py`의 `_measure_value`(Python)가 `domain/releases/normalize.py`와 같은
+규칙으로 measure 단위로 바꾼 뒤에만 예상과 뺀다. 서프라이즈는 **최초 발표 값 − 발표 전 마지막
+예상**이고, 개정폭은 현재 값 − 최초 발표 값으로 따로 낸다.
 
 ## 조용히 틀리는 것
 
 - 날짜당 행 하나를 가정하고 읽기. 같은 날짜에 출처·수집시각이 다른 버전이 여럿 있다.
 - 시장 관측과 경제발표를 같은 표로 묶어 생각하기. 개정 규칙이 다르다.
-- 부분 실패한 수집 회차에서 스냅샷 정리를 돌리기.
+- 원값과 measure 값을 한 줄에서 빼기. 지수 수준값을 전월비 %로 읽게 된다.
+- 최신 실제치로 서프라이즈를 계산하기. 개정 뒤에는 시장이 그날 받은 놀라움과 다르다.
 
 스키마의 단일 선언은 `db/postgres/v1/40_macro.sql`이며, bootstrap은 이 파일을 사용한다.
 DB 초기화·재수집·Discord 발송은 별개의 운영 행위이고 이 패키지가 수행하지 않는다.

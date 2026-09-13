@@ -155,16 +155,17 @@ class RLRepositoryTest(unittest.TestCase):
     def test_fundamentals_cutoff_reads_canonical_version_and_filing_tables(self):
         versions = [{
             "cik": "0000320193",
-            "source_accession_no": "0000320193-26-000001",
+            "accession_no": "0000320193-26-000001",
+            "mapping_version": "v1",
             "fiscal_year": 2026,
             "fiscal_period": "Q2",
             "period_end": "2026-06-30",
-            "source_filing_date": "2026-07-30",
             "revenue": 100,
+            "ingested_at": "2026-07-30T21:00:00+00:00",
         }]
         fake = _Supabase(rows={
-            ("universe", "securities"): [{"ticker": "AAPL", "cik": "0000320193"}],
-            ("fundamentals", "financials"): versions,
+            ("universe", "securities"): [{"ticker": "AAPL", "cik": "0000320193", "is_active_listing": True}],
+            ("fundamentals", "financial_versions"): versions,
             ("fundamentals", "filings"): [{
                 "accession_no": "0000320193-26-000001",
                 "filing_date": "2026-07-30",
@@ -180,14 +181,14 @@ class RLRepositoryTest(unittest.TestCase):
 
         self.assertEqual(result, [{
             **versions[0],
-            "accession_no": "0000320193-26-000001",
             "ticker": "AAPL",
             "filed_at": "2026-07-30",
+            "filing_date": "2026-07-30",
             "form_type": "10-Q",
             "available_at": "2026-07-30T20:00:00+00:00",
         }])
         self.assertIn(
-            ("fundamentals", "financials", "eq", ("cik", "0000320193"), {}),
+            ("fundamentals", "financial_versions", "in", ("cik", ["0000320193"]), {}),
             fake.calls,
         )
 

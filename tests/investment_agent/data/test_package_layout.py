@@ -29,9 +29,8 @@ class DataPackageLayoutTest(unittest.TestCase):
             ROOT / "macro/domain/catalog.py",
             ROOT / "macro/domain/quality.py",
             ROOT / "macro/domain/revisions.py",
-            ROOT / "market/application/refresh_market.py",
+            ROOT / "market/application/price_collection.py",
             ROOT / "universe/application/collection.py",
-            ROOT / "universe/application/refresh_universe.py",
         )
         for path in expected:
             with self.subTest(path=path):

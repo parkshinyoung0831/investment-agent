@@ -1,6 +1,7 @@
 """v1 market 저장·조회 계층.
 
-외부 경계는 ticker지만 market 표에는 항상 ``security_id``를 쓴다.
+외부 경계는 ticker지만 market 표에는 항상 ``security_id``를 쓴다. 쓰기 경로는 수집
+계획(`PriceTarget`)이 이미 고정한 security_id만 받는다 — 여기서 ticker를 다시 풀지 않는다.
 """
 from __future__ import annotations
 
@@ -12,12 +13,11 @@ from dateutil.relativedelta import relativedelta
 
 from investment_agent.platform.db.postgres import sb
 from investment_agent.data.market.domain.actions import merge_corporate_actions
-from investment_agent.data.market.domain.models import DailyBar, DividendEvent, SplitEvent
+from investment_agent.data.market.domain.models import DailyBar, PriceTarget
 from investment_agent.data.market.repository import (
     SCHEMA as SCHEMA_MARKET,
-    T_DIVIDENDS,
+    T_ACTIONS,
     T_PRICES,
-    T_SPLITS,
     MarketRepository,
 )
 from investment_agent.data.market import REFERENCE_PRICE_TICKERS
@@ -27,8 +27,7 @@ from investment_agent.platform.db.postgres import Database
 
 SCHEMA_MARKET = SCHEMA_MARKET
 T_PRICES_DAILY = T_PRICES
-T_SPLIT_EVENTS = T_SPLITS
-T_DIVIDEND_EVENTS = T_DIVIDENDS
+T_ACTIONS_DAILY = T_ACTIONS
 
 _database: Database | None = None
 
@@ -58,14 +57,39 @@ def universe_tracked() -> list[str]:
     return sorted(set(universe_company_tickers()) | set(REFERENCE_PRICE_TICKERS))
 
 
+def price_targets() -> list[PriceTarget]:
+    """수집 계획: 게이트가 켜진 종목 + 참조 ETF. 참조 ETF는 상장·신원 확인된 종목만 쓴다."""
+    universe = _universe()
+    targets = {s.security_id: PriceTarget(s.security_id, s.ticker) for s in universe.tracked_securities()}
+    reference = universe.securities_by_ticker(list(REFERENCE_PRICE_TICKERS))
+    missing = sorted(set(REFERENCE_PRICE_TICKERS) - set(reference))
+    if missing:
+        raise RuntimeError(f"reference price securities are missing from universe: {missing}")
+    for security in reference.values():
+        if security.is_active_listing and security.is_identity_verified:
+            targets.setdefault(security.security_id, PriceTarget(security.security_id, security.ticker))
+    return sorted(targets.values(), key=lambda target: target.symbol)
+
+
+def missing_price_targets() -> list[PriceTarget]:
+    """가격이 한 행도 없는 수집 대상."""
+    targets = price_targets()
+    present = MarketRepository(_db()).security_ids_with_prices([t.security_id for t in targets])
+    return [target for target in targets if target.security_id not in present]
+
+
+def targets_for_tickers(tickers: Sequence[str]) -> list[PriceTarget]:
+    """명시한 ticker를 지금 상장·신원 확인된 종목의 계획으로 만든다. 모르는 ticker는 실패다."""
+    found = _universe().securities_by_ticker(list(tickers))
+    usable = {t: s for t, s in found.items() if s.is_active_listing and s.is_identity_verified}
+    unknown = sorted({str(t).upper() for t in tickers} - set(usable))
+    if unknown:
+        raise ValueError(f"tickers are not active verified securities: {unknown}")
+    return sorted((PriceTarget(s.security_id, s.ticker) for s in usable.values()), key=lambda t: t.symbol)
+
+
 def universe_missing_prices() -> list[str]:
-    securities = _universe().tracked_securities()
-    if not securities:
-        return []
-    present = MarketRepository(_db()).security_ids_with_prices(
-        [security.security_id for security in securities]
-    )
-    return [security.ticker for security in securities if security.security_id not in present]
+    return [target.symbol for target in missing_price_targets()]
 
 
 def latest_price_date() -> str | None:
@@ -73,87 +97,38 @@ def latest_price_date() -> str | None:
     return result.isoformat() if result else None
 
 
-def prices_since(since: str) -> dict[tuple[str, str], dict]:
+def prices_since(since: str) -> dict[tuple[int, str], dict]:
+    """(security_id, 거래일) → 저장된 가격. 증분 수집이 바뀐 행만 고를 때 쓴다."""
     rows = MarketRepository(_db()).prices_since(date.fromisoformat(since))
-    security_ids = {int(row["security_id"]) for row in rows}
-    id_to_ticker = _universe().tickers_by_security_id(security_ids)
     return {
-        (id_to_ticker[int(row["security_id"])], str(row["trade_date"])): {
-            "ticker": id_to_ticker[int(row["security_id"])],
-            **{key: row.get(key) for key in ("trade_date", "open", "high", "low", "close", "volume", "is_repaired")},
+        (int(row["security_id"]), str(row["trade_date"])): {
+            key: row.get(key) for key in ("security_id", "trade_date", "open", "high", "low", "close", "volume", "is_repaired")
         }
         for row in rows
-        if int(row["security_id"]) in id_to_ticker
     }
 
 
 def upsert_prices(rows: list[dict]) -> int:
+    """계획의 security_id가 붙은 가격 행을 저장한다. security_id 없는 행은 거절한다."""
     if not rows:
         return 0
-    ids = _ids([str(row["ticker"]) for row in rows])
-    bars = [
-        DailyBar.from_row({**row, "security_id": ids[str(row["ticker"]).upper()]})
-        for row in rows
-        if str(row["ticker"]).upper() in ids
-    ]
-    if len(bars) != len(rows):
-        missing = sorted({str(row["ticker"]).upper() for row in rows} - set(ids))
-        raise RuntimeError(f"market write has unknown securities: {missing[:10]}")
-    return MarketRepository(_db()).upsert_bars(bars)
+    if any(row.get("security_id") is None for row in rows):
+        raise ValueError("price rows must carry the planned security_id")
+    return MarketRepository(_db()).upsert_bars(DailyBar.from_row(row) for row in rows)
 
 
-def _event_rows(rows: list[dict], *, kind: str) -> list[SplitEvent | DividendEvent]:
-    ids = _ids([str(row["ticker"]) for row in rows])
-    result = []
-    for row in rows:
-        ticker = str(row["ticker"]).upper()
-        if ticker not in ids:
-            raise RuntimeError(f"market event has unknown security: {ticker}")
-        payload = {**row, "security_id": ids[ticker]}
-        result.append(SplitEvent.from_row(payload) if kind == "split" else DividendEvent.from_row(payload))
-    return result
+def merge_actions(rows: list[dict]) -> int:
+    return MarketRepository(_db()).merge_actions(rows) if rows else 0
 
 
-def upsert_split_events(rows: list[dict]) -> int:
-    return MarketRepository(_db()).upsert_splits(_event_rows(rows, kind="split")) if rows else 0
-
-
-def upsert_dividend_events(rows: list[dict]) -> int:
-    return MarketRepository(_db()).upsert_dividends(_event_rows(rows, kind="dividend")) if rows else 0
-
-
-def _events_as_tickers(tickers: list[str] | None, *, kind: str) -> list[dict]:
-    db = _db()
-    repo = _universe()
-    ids = _ids(tickers or universe_tracked())
-    if not ids:
-        return []
-    table = T_SPLITS if kind == "split" else T_DIVIDENDS
-    columns = "security_id,action_date,split_ratio" if kind == "split" else "security_id,ex_date,div_amount"
-    rows = db.select_in_chunks(
-        schema=SCHEMA_MARKET,
-        table=table,
-        columns=columns,
-        filter_column="security_id",
-        values=list(ids.values()),
-        order_by="security_id",
-    )
-    by_id = {security.security_id: security.ticker for security in repo.securities_by_ticker(list(ids)).values()}
-    output = []
-    for row in rows:
-        ticker = by_id.get(int(row["security_id"]))
-        if not ticker:
-            continue
-        output.append({"ticker": ticker, **{key: value for key, value in row.items() if key != "security_id"}})
-    return output
-
-
-def select_split_events(tickers: list[str] | None = None) -> list[dict]:
-    return _events_as_tickers(tickers, kind="split")
-
-
-def select_dividend_events(tickers: list[str] | None = None) -> list[dict]:
-    return _events_as_tickers(tickers, kind="dividend")
+def split_keys(security_ids: Sequence[int]) -> set[tuple[int, str]]:
+    """이미 저장된 분할 (security_id, 날짜). 새 분할만 전체 이력 재수집을 부른다."""
+    if not security_ids:
+        return set()
+    return {
+        (event.security_id, event.action_date.isoformat())
+        for event in MarketRepository(_db()).splits(list(security_ids))
+    }
 
 
 def _ticker_id(ticker: str) -> int | None:
@@ -285,10 +260,9 @@ def monthly_close_history(tickers: list[str], *, period: str = "2y") -> pd.DataF
 
 
 __all__ = [
-    "SCHEMA_MARKET", "SCHEMA_UNIVERSE", "T_PRICES_DAILY", "T_SPLIT_EVENTS",
-    "T_DIVIDEND_EVENTS", "configure", "universe_tracked", "universe_company_tickers",
-    "universe_missing_prices", "latest_price_date", "prices_since", "upsert_prices",
-    "upsert_split_events", "upsert_dividend_events", "select_split_events",
-    "select_dividend_events", "price_history_as_of", "close_history_as_of",
+    "SCHEMA_MARKET", "SCHEMA_UNIVERSE", "T_ACTIONS_DAILY", "T_PRICES_DAILY", "configure",
+    "universe_tracked", "universe_company_tickers", "universe_missing_prices", "price_targets",
+    "missing_price_targets", "targets_for_tickers", "latest_price_date", "prices_since",
+    "upsert_prices", "merge_actions", "split_keys", "price_history_as_of", "close_history_as_of",
     "forward_closes_after", "price_path_from", "monthly_close_history",
 ]

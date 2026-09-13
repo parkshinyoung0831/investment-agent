@@ -9,9 +9,6 @@ from datetime import date
 
 from investment_agent.platform.clock import us_market_today
 from investment_agent.platform.logging import get_logger
-from investment_agent.data.fundamentals.application.analyst_coverage import (
-    changed_analyst_snapshots,
-)
 from investment_agent.data.fundamentals.application.earnings_estimates import (
     build_earnings_estimates,
 )
@@ -147,17 +144,13 @@ def persist_expectations(
 ) -> tuple[dict[str, int], list[dict]]:
     """상대 기간을 표준 회계기간에 맞춘 뒤 각 저장소에 적재한다."""
     batch = build_earnings_estimates(buckets, fiscal_calendar_rows, collected_on=today)
-    analyst_snapshots = buckets.get("analyst_snapshots", [])
-    changed_analyst = changed_analyst_snapshots(
-        analyst_snapshots,
-        expectations_repository.latest_analyst_snapshots(
-            [str(snapshot["ticker"]) for snapshot in analyst_snapshots]
-        ) if analyst_snapshots else [],
-    )
+    # 저장소가 직전 상태와 비교해 바뀐 것만 새 버전으로 넣는다. 반환값은 새 버전 수다.
     counts = {
         "consensus": expectations_repository.upsert_consensus(batch.snapshots),
         "schedules": expectations_repository.upsert_schedules(batch.schedules),
-        "analyst_coverage": expectations_repository.upsert_analyst_snapshots(changed_analyst),
+        "analyst_coverage": expectations_repository.upsert_analyst_snapshots(
+            buckets.get("analyst_snapshots", [])
+        ),
     }
     return counts, list(batch.unmapped_rows)
 
@@ -216,17 +209,6 @@ def refresh_expectations(
     )
     failures.extend(unmapped)
     total = sum(counts.values())
-    retention = {}
-    if not failures:
-        try:
-            retention = expectations_repository.prune_earnings_estimates()
-            # 나이 기준 정리 뒤에, 발표가 끝난 기간을 계약이 읽는 한 건씩만 남긴다.
-            retention = {**retention, **expectations_repository.prune_expectation_snapshots()}
-        except Exception as exc:  # noqa: BLE001 - 적재 건수와 실패를 함께 기록한다
-            failures.append({
-                "stage": "consensus_retention",
-                "error": repr(exc),
-            })
     log.info(
         "expectations refreshed tickers=%d rows=%d failures=%d counts=%s",
         len(tickers), total, len(failures), counts,
@@ -236,5 +218,4 @@ def refresh_expectations(
         "rows": total,
         "failures": failures,
         "counts": counts,
-        "retention": retention,
     }

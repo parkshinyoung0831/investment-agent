@@ -136,10 +136,10 @@ def collect_integrity_facts() -> dict:
 
     financial_rows = select_all_paged(
         lambda: sb.schema(SCHEMA_FUNDAMENTALS).table(T_FINANCIALS)
-        .select("cik,source_accession_no,period_end,fiscal_year,fiscal_period,assets,liabilities,common_equity,"
+        .select("cik,accession_no,period_end,fiscal_year,fiscal_period,assets,liabilities,common_equity,"
                 "minority_interest_balance,mezzanine_equity,preferred_stock,"
                 "common_equity_scope,is_liabilities_derived,mapping_version"),
-        order_by="cik,period_end,source_accession_no",
+        order_by="cik,period_end,accession_no",
     )
     checkable = mismatch = 0
     periods_by_cik_year: dict[tuple[str, int], set[str]] = {}

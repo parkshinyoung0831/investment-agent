@@ -31,8 +31,8 @@ def compact_price_rows(
 
     for row in rows:
         trade_date = date.fromisoformat(str(row["trade_date"]))
-        ticker = str(row["ticker"])
-        key = (ticker, trade_date.isoformat())
+        identity = str(row.get("security_id", row.get("ticker")))
+        key = (identity, trade_date.isoformat())
         if trade_date >= daily_cutoff:
             kept[key] = row
     return [kept[key] for key in sorted(kept)]

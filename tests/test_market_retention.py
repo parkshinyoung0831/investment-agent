@@ -12,6 +12,7 @@ from investment_agent.data.market import BACKFILL_YEARS
 from investment_agent.data.market.domain import retention
 from investment_agent.data.market.infrastructure.archive import archive_daily_rows
 from investment_agent.data.market.commands import market_backfill as backfill
+from investment_agent.data.market.domain.models import PriceTarget
 from investment_agent.data.market.domain.retention import compact_price_rows
 
 
@@ -52,13 +53,14 @@ class MarketRetentionTest(unittest.TestCase):
         }]
         order: list[str] = []
         with (
-            patch("investment_agent.data.market.persistence.universe_missing_prices", return_value=["AAA"]),
+            patch("investment_agent.data.market.persistence.missing_price_targets", return_value=[PriceTarget(1000001, "AAA")]),
             patch("investment_agent.data.market.infrastructure.sources.yahoo.download_ohlcv", return_value=raw_rows),
             patch("investment_agent.data.market.infrastructure.archive.archive_daily_rows", side_effect=lambda rows: order.append("archive")),
+            patch("investment_agent.data.market.persistence.merge_actions", side_effect=lambda rows: order.append("actions") or 0),
             patch("investment_agent.data.market.persistence.upsert_prices", side_effect=lambda rows: order.append("prices") or len(rows)),
         ):
             backfill._backfill_prices(30, "missing")
-        self.assertEqual(order, ["archive", "prices"])
+        self.assertEqual(order, ["archive", "actions", "prices"])
 
     def test_archive_failure_stops_before_any_database_write(self):
         raw_rows = [{
@@ -67,7 +69,7 @@ class MarketRetentionTest(unittest.TestCase):
             "volume": 100, "source": "yfinance",
         }]
         with (
-            patch("investment_agent.data.market.persistence.universe_missing_prices", return_value=["AAA"]),
+            patch("investment_agent.data.market.persistence.missing_price_targets", return_value=[PriceTarget(1000001, "AAA")]),
             patch("investment_agent.data.market.infrastructure.sources.yahoo.download_ohlcv", return_value=raw_rows),
             patch("investment_agent.data.market.infrastructure.archive.archive_daily_rows", side_effect=RuntimeError("archive unavailable")),
             patch("investment_agent.data.market.persistence.upsert_prices") as prices,
@@ -78,7 +80,7 @@ class MarketRetentionTest(unittest.TestCase):
 
     def test_archive_merges_daily_history_without_losing_older_rows(self):
         rows = [{
-            "ticker": "AAA", "trade_date": "2010-01-04", "open": 10.0,
+            "security_id": 1000001, "ticker": "AAA", "trade_date": "2010-01-04", "open": 10.0,
             "high": 11.0, "low": 9.0, "close": 10.0, "adj_close": 9.5,
             "volume": 100, "source": "yfinance",
         }]
@@ -87,8 +89,10 @@ class MarketRetentionTest(unittest.TestCase):
             archive_daily_rows(rows, root=directory)
             archive_daily_rows(updated, root=directory)
             import pandas as pd
-            stored = pd.read_parquet(Path(directory) / "yahoo" / "AAA" / "daily.parquet")
+            # 경로는 ticker가 아니라 security_id다 — 재사용된 ticker의 두 회사가 한 파일에 섞이지 않는다.
+            stored = pd.read_parquet(Path(directory) / "yahoo" / "1000001" / "daily.parquet")
         self.assertEqual(stored["trade_date"].astype(str).tolist(), ["2010-01-04", "2010-01-05"])
+        self.assertEqual({"AAA"}, set(stored["ticker"]))
     def test_compaction_does_not_keep_legacy_weekly_rows(self):
         rows = [
             {

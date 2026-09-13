@@ -1,66 +1,50 @@
--- universe — 회사·증권 identity, 식별자 브리지, 지수 membership, 관심 기업.
+-- universe — 발행사·종목 identity, 외부 식별자 연결, 지수 편입 기간, 관심 기업.
 --
--- 이 스키마가 "무엇을 다룰 것인가"의 단일 게이트다. 다른 모든 스키마는 여기의
--- security를 참조하고, 여기에 없는 종목은 수집도 판단도 하지 않는다.
+-- 이 스키마가 "무엇을 다룰 것인가"의 단일 게이트다. 다른 스키마는 여기의 security_id를
+-- 참조하고, 여기에 없는 종목은 수집도 판단도 하지 않는다.
 --
--- ## v1에서 바뀐 것과 그 이유
+-- ## identity는 security_id, ticker는 표기다
 --
--- **ticker를 identity로 쓰지 않는다.** ticker는 바뀐다(개명·듀얼클래스·거래소 이동).
--- 그것을 PK로 쓰면 개명 한 번에 과거 가격과 현재 가격이 다른 회사처럼 갈라지거나,
--- 반대로 재사용된 ticker 때문에 서로 다른 회사가 한 종목으로 합쳐진다. 둘 다 에러 없이
--- 조용히 틀린다. v1은 `security_id`를 identity로 두고 ticker는 **현재 표기**로만 남긴다.
--- 사용자에게 보이는 이름은 계속 ticker다.
+-- ticker는 바뀌고(FB→META) 재사용된다(2021년의 META는 ETF였다). ticker를 키로 쓰면 개명
+-- 한 번에 한 종목의 과거와 현재가 갈라지거나, 서로 다른 상품이 한 종목으로 합쳐진다.
+-- 둘 다 에러 없이 틀린다. 그래서 수집·저장은 security_id로 하고, ticker는 현재(또는 상장
+-- 종료 시 마지막) 표기로만 둔다. 과거 표기와 CUSIP·FIGI는 security_identifiers가 기간과
+-- 함께 갖는다.
 --
--- 과거 표기는 `security_identifiers`가 기간과 함께 보관하므로, "2019년의 FB는 지금의
--- META"를 조회로 답할 수 있다.
+-- security_id는 1,000,000부터 발급한다. 이전 세대 DB의 번호(1~8천대)를 들고 있는 로컬
+-- 판단 원장이 새 번호를 다른 종목으로 오인하지 않게 번호대를 분리한 것이다.
 
 CREATE SCHEMA IF NOT EXISTS universe;
 
 REVOKE ALL ON SCHEMA universe FROM PUBLIC, anon, authenticated;
-GRANT USAGE ON SCHEMA universe TO anon, authenticated, service_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA universe
-  REVOKE ALL ON TABLES FROM PUBLIC, anon, authenticated;
+GRANT USAGE ON SCHEMA universe TO service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA universe REVOKE ALL ON TABLES FROM PUBLIC, anon, authenticated;
 ALTER DEFAULT PRIVILEGES IN SCHEMA universe GRANT ALL ON TABLES TO service_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA universe GRANT SELECT ON TABLES TO anon, authenticated;
-ALTER DEFAULT PRIVILEGES IN SCHEMA universe
-  REVOKE ALL ON FUNCTIONS FROM PUBLIC, anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA universe GRANT USAGE, SELECT ON SEQUENCES TO service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA universe REVOKE ALL ON FUNCTIONS FROM PUBLIC, anon, authenticated;
 ALTER DEFAULT PRIVILEGES IN SCHEMA universe GRANT EXECUTE ON FUNCTIONS TO service_role;
 
 
 -- ── 발행사 ────────────────────────────────────────────────────────────────
--- 회사 사실은 CIK에 한 번만 저장한다. 한국어 표기도 상장 종목별 속성이 아니라
--- 발행사 표기이므로 여기가 owner다.
 CREATE TABLE IF NOT EXISTS universe.entities (
   cik                     text PRIMARY KEY CHECK (cik ~ '^[0-9]{10}$'),
   company_name            text NOT NULL CHECK (btrim(company_name) <> ''),
   company_name_ko         text,
   entity_type             text,
   sic_code                text CHECK (sic_code IS NULL OR sic_code ~ '^[0-9]{4}$'),
-  -- SIC는 GICS 섹터가 아니다. `sector`라고 부르면 다른 분류로 오해된다.
   sic_industry_name       text,
   sic_division_name       text,
   fiscal_year_end         text CHECK (fiscal_year_end IS NULL OR fiscal_year_end ~ '^[0-9]{4}$'),
   state_of_incorporation  text,
   former_names            jsonb NOT NULL DEFAULT '[]'::jsonb
                           CHECK (jsonb_typeof(former_names) = 'array'),
-  -- SEC metadata의 마지막 정상 응답 시각. 재시도 상태가 아니라 metadata의 freshness다.
   sec_metadata_updated_at timestamptz,
-  -- ── 관심 기업 ──
-  -- "무엇을 더 깊이 볼 것인가"는 별도 원장이 아니라 발행사 행의 상태로 둔다.
-  -- 관심은 종목이 아니라 회사에 대한 것이고, 공시·재무도 CIK가 identity다.
-  -- 알림을 보낼지 말지는 notifications가 정한다 — 알림 설정은 여기 두지 않는다.
-  --
-  -- 활성 여부는 "아직 이 회사를 원하는 출처가 남아 있는가"다. 토스 보유가 빠져도
-  -- 수동 등록이 남아 있으면 계속 본다. 정의를 한 곳에만 둔다.
   watchlist_sources       text[] NOT NULL DEFAULT ARRAY[]::text[]
                           CHECK (watchlist_sources <@ ARRAY['manual', 'toss']::text[]),
   is_watchlisted          boolean GENERATED ALWAYS AS (cardinality(watchlist_sources) > 0) STORED,
-  -- 언제부터 이 회사를 보기 시작했는가. 등록 이전 과거 사건까지 소급하지 않는다.
   watch_from              date,
-  -- 마지막으로 관심에서 빠진 시각. 활성 여부의 사본이 아니라 이력이다.
   watchlist_removed_at    timestamptz,
   updated_at              timestamptz NOT NULL DEFAULT now(),
-  -- 보고 있는데 시작일을 모르면 "언제부터의 사건인가"를 답할 수 없다.
   CONSTRAINT entities_watch_from_required_check
     CHECK (cardinality(watchlist_sources) = 0 OR watch_from IS NOT NULL)
 );
@@ -68,89 +52,169 @@ CREATE TABLE IF NOT EXISTS universe.entities (
 CREATE INDEX IF NOT EXISTS entities_watchlisted_idx
   ON universe.entities (cik) WHERE is_watchlisted;
 
+COMMENT ON TABLE universe.entities IS
+  'SEC 보고 주체(등록인) 한 곳 = 한 행. 회사 그룹 전체가 아니라 CIK로 공시를 내는 법적 제출자다. 관심 기업 설정도 회사 단위라 여기 둔다.';
+COMMENT ON COLUMN universe.entities.cik IS 'SEC Central Index Key, 앞자리 0을 채운 10자리. 영구 제출자 계정이라 바뀌지 않는다 — 새 CIK는 승계나 매핑 오류의 신호다.';
+COMMENT ON COLUMN universe.entities.company_name IS 'SEC가 알려 준 현재 법인명.';
+COMMENT ON COLUMN universe.entities.company_name_ko IS '한국어 표기(토스증권 조회 또는 수동 교정). 모르면 NULL.';
+COMMENT ON COLUMN universe.entities.entity_type IS 'SEC submissions의 entityType(operating 등).';
+COMMENT ON COLUMN universe.entities.sic_code IS 'SEC SIC 4자리. GICS 섹터가 아니다.';
+COMMENT ON COLUMN universe.entities.sic_industry_name IS 'SIC 산업명(SEC 표기).';
+COMMENT ON COLUMN universe.entities.sic_division_name IS 'SIC 대분류명. 실적 포럼 태그의 기준.';
+COMMENT ON COLUMN universe.entities.fiscal_year_end IS '회계연도 종료 월일 MMDD(예: 0930).';
+COMMENT ON COLUMN universe.entities.state_of_incorporation IS '설립 주(SEC 표기).';
+COMMENT ON COLUMN universe.entities.former_names IS 'SEC가 알려 준 이전 법인명 배열(이름·기간). 개명 추적의 근거라 지우지 않는다.';
+COMMENT ON COLUMN universe.entities.sec_metadata_updated_at IS 'SEC metadata를 마지막으로 정상 수신한 시각. 재수집 주기 판단용.';
+COMMENT ON COLUMN universe.entities.watchlist_sources IS '이 회사를 관심 기업으로 원하는 출처(manual=수동, toss=토스 보유). 개인 정보라 service_role만 읽는다.';
+COMMENT ON COLUMN universe.entities.is_watchlisted IS '관심 출처가 하나라도 남아 있는가(watchlist_sources에서 계산).';
+COMMENT ON COLUMN universe.entities.watch_from IS '관심을 시작한 날짜. 그 이전 사건은 알림으로 소급하지 않는다.';
+COMMENT ON COLUMN universe.entities.watchlist_removed_at IS '마지막으로 관심에서 빠진 시각. 활성 여부가 아니라 이력이다.';
+COMMENT ON COLUMN universe.entities.updated_at IS '행을 마지막으로 고친 시각.';
 
--- ── 증권 ──────────────────────────────────────────────────────────────────
--- identity는 `security_id`다. `ticker`는 현재 표기이며 UNIQUE로 유지해 조회는
--- 지금처럼 ticker로 한다 — 다만 다른 스키마의 FK는 security_id를 참조한다.
+
+-- ── 종목 ──────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS universe.securities (
-  security_id       integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  ticker            text NOT NULL UNIQUE CHECK (ticker ~ '^[A-Z0-9-]{1,12}$'),
-  cik               text REFERENCES universe.entities(cik),
-  exchange_code     text,
-  security_type     text NOT NULL DEFAULT 'common_stock'
-                    CHECK (security_type IN (
-                      'common_stock', 'preferred_stock', 'depositary_share',
-                      'warrant', 'unit', 'note', 'etn', 'etf', 'right', 'other'
-                    )),
-  security_title    text,
-  is_active_listing boolean NOT NULL DEFAULT true,
-  -- 범용 수집 게이트. 이 값이 참인 종목만 수집·판단 대상이다.
-  is_tracked        boolean NOT NULL DEFAULT false,
-  updated_at        timestamptz NOT NULL DEFAULT now(),
-  -- 추적하거나 상장 중이면 발행사를 알아야 한다. 모르는 채로 수집하면 그 종목의
-  -- 재무를 영영 붙일 수 없다.
+  security_id          integer GENERATED BY DEFAULT AS IDENTITY (START WITH 1000000) PRIMARY KEY,
+  ticker               text NOT NULL CHECK (ticker ~ '^[A-Z0-9-]{1,12}$'),
+  cik                  text REFERENCES universe.entities(cik),
+  exchange_code        text,
+  security_type        text NOT NULL DEFAULT 'common_stock'
+                       CHECK (security_type IN (
+                         'common_stock', 'preferred_stock', 'depositary_share',
+                         'warrant', 'unit', 'note', 'etn', 'etf', 'right', 'other'
+                       )),
+  security_title       text,
+  is_active_listing    boolean NOT NULL DEFAULT true,
+  is_identity_verified boolean NOT NULL DEFAULT true,
+  is_tracked           boolean NOT NULL DEFAULT false,
+  updated_at           timestamptz NOT NULL DEFAULT now(),
+  -- 상장 중이거나 수집 중이면 발행사를 알아야 한다. 모르는 채로 수집하면 재무를 영영
+  -- 붙일 수 없다.
   CONSTRAINT securities_cik_required_for_active_check
-    CHECK ((NOT is_active_listing AND NOT is_tracked) OR cik IS NOT NULL)
+    CHECK ((NOT is_active_listing AND NOT is_tracked) OR cik IS NOT NULL),
+  -- 신원을 확인하지 못한 종목은 수집하지 않는다. 다른 회사의 자료를 섞기 전에 멈춘다.
+  CONSTRAINT securities_tracked_requires_identity_check
+    CHECK (NOT is_tracked OR is_identity_verified)
 );
 
+-- 같은 ticker는 상장 중인 종목 하나만 가질 수 있다. 상장이 끝난 옛 종목과 새 종목이 같은
+-- 표기를 갖는 것은 허용한다(티커 재사용).
+CREATE UNIQUE INDEX IF NOT EXISTS securities_active_ticker_idx
+  ON universe.securities (ticker) WHERE is_active_listing;
+CREATE INDEX IF NOT EXISTS securities_ticker_idx
+  ON universe.securities (ticker);
 CREATE INDEX IF NOT EXISTS securities_cik_idx
   ON universe.securities (cik) WHERE cik IS NOT NULL;
 CREATE INDEX IF NOT EXISTS securities_tracked_idx
   ON universe.securities (ticker) WHERE is_tracked;
--- `entities.is_tracked`는 v1에 없다. securities에서 파생되는 값이라 저장하지 않고,
--- 발행사 단위 게이트가 필요하면 securities를 집계해 답한다.
+
+COMMENT ON TABLE universe.securities IS
+  '이 시스템이 관리하는 개별 종목의 생애 하나 = 한 행. 가격·예상치·판단은 전부 security_id로 이어진다. 같은 회사의 다른 주식 클래스(GOOG/GOOGL)는 다른 행이다.';
+COMMENT ON COLUMN universe.securities.security_id IS '내부 영구 ID. 발급 뒤 재사용·재번호하지 않는다. 1,000,000부터 시작해 이전 세대 번호와 겹치지 않는다.';
+COMMENT ON COLUMN universe.securities.ticker IS '현재 거래 표기(상장 종료면 마지막 표기). identity가 아니다 — 과거 표기는 security_identifiers.';
+COMMENT ON COLUMN universe.securities.cik IS '발행사 CIK. 과거 멤버십에서만 알려진 종목처럼 발행사를 확인하지 못했으면 NULL.';
+COMMENT ON COLUMN universe.securities.exchange_code IS 'SEC 거래소 master의 거래소 표기(Nasdaq/NYSE 등). ISO MIC가 아니다.';
+COMMENT ON COLUMN universe.securities.security_type IS '증권 종류. SEC 증권명과 ETF 목록으로 분류한다.';
+COMMENT ON COLUMN universe.securities.security_title IS 'SEC가 알려 준 증권명(예: Class A Common Stock).';
+COMMENT ON COLUMN universe.securities.is_active_listing IS '지금 미국 거래소에 상장돼 있는가. 한 번 목록에서 빠졌다고 바로 false로 바꾸지 않는다.';
+COMMENT ON COLUMN universe.securities.is_identity_verified IS 'SEC 거래소 master로 발행사·종목 신원을 확인했는가. 과거 지수 변경 기록에서만 이름이 나온 자리표시 종목은 false이며 수집 대상이 될 수 없다.';
+COMMENT ON COLUMN universe.securities.is_tracked IS '수집·판단 게이트. 현재 S&P 500 편입과 참조 ETF가 정한다(멤버십 동기화가 쓰는 캐시).';
+COMMENT ON COLUMN universe.securities.updated_at IS '행을 마지막으로 고친 시각.';
 
 
--- ── 식별자 브리지 ─────────────────────────────────────────────────────────
--- CUSIP/CINS/FIGI와 **과거 ticker**를 한 표에서 다룬다. 13F는 CUSIP으로만 오고,
--- 과거 시점 조회는 그때의 ticker로 들어온다 — 둘 다 여기서 security_id로 옮긴다.
+-- ── 외부 식별자 연결 ─────────────────────────────────────────────────────
+-- 13F는 CUSIP으로, 과거 문서는 그때의 ticker로, 공급자 API는 자기 요청 주소로 종목을
+-- 부른다. 그 모두를 여기서 security_id로 옮긴다.
 --
--- 기간(`valid_from`/`valid_to`)을 갖는 이유: 재사용된 ticker를 시점 없이 매핑하면
--- 서로 다른 회사가 한 종목으로 합쳐진다.
+-- 날짜의 뜻은 유형마다 다르다.
+--   TICKER          그 표기가 그 시장에서 이 종목을 가리킨 기간. 시작일은 우리가 처음
+--                   확인한 날처럼 보수적으로 적고, 모르면 과거 원문 해석에 쓰지 않는다.
+--   CUSIP/CINS/FIGI 발행 증권 자체의 식별이라 재사용되지 않는다. 시작일을 몰라도 귀속은
+--                   유효하다(valid_from NULL).
+--   PROVIDER_SYMBOL 그 요청 주소로 받은 자료를 이 종목에 귀속한다고 검증한 데이터 날짜 범위.
+-- 종료는 배타적이다: valid_from <= d < valid_to. NULL 시작을 무한과거로 바꿔 적지 않는다.
 CREATE TABLE IF NOT EXISTS universe.security_identifiers (
+  mapping_id      bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  identifier_type text NOT NULL CHECK (identifier_type IN (
+                    'TICKER', 'CUSIP', 'CINS', 'FIGI_COMPOSITE', 'FIGI_SHARE_CLASS',
+                    'FIGI_VENUE', 'PROVIDER_SYMBOL')),
+  namespace       text NOT NULL CHECK (namespace ~ '^[a-z0-9_]{2,40}$'),
   identifier      text NOT NULL CHECK (btrim(identifier) <> ''),
-  identifier_type text NOT NULL CHECK (identifier_type IN ('CUSIP', 'CINS', 'FIGI', 'TICKER')),
   security_id     integer REFERENCES universe.securities(security_id) ON DELETE RESTRICT,
-  -- 매핑이 안 된 식별자도 남긴다. 지우면 매 실행이 같은 조회를 반복한다.
-  mapping_status  text NOT NULL CHECK (mapping_status IN (
-                    'mapped', 'not_found', 'ambiguous', 'historical')),
-  source          text NOT NULL CHECK (btrim(source) <> ''),
-  -- 기간의 시작은 항상 있다. PK에 들어가므로 NULL일 수 없고, "언제부터인지 모른다"는
-  -- `-infinity`로 적는다 — 선언과 실제가 어긋나면 읽는 사람이 NULL을 허용된 것으로 읽는다.
-  valid_from      date NOT NULL DEFAULT '-infinity'::date,
+  mapping_status  text NOT NULL CHECK (mapping_status IN ('verified', 'unresolved', 'conflict')),
+  valid_from      date,
   valid_to        date,
+  source          text NOT NULL CHECK (btrim(source) <> ''),
+  evidence_ref    text,
+  observed_at     timestamptz NOT NULL DEFAULT now(),
   updated_at      timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (identifier, identifier_type, valid_from),
   CONSTRAINT security_identifiers_shape_check CHECK (
-    (mapping_status IN ('mapped', 'historical') AND security_id IS NOT NULL)
-    OR
-    (mapping_status IN ('not_found', 'ambiguous') AND security_id IS NULL)
+    (mapping_status = 'verified' AND security_id IS NOT NULL)
+    OR (mapping_status = 'unresolved' AND security_id IS NULL)
+    OR mapping_status = 'conflict'
   ),
   CONSTRAINT security_identifiers_period_check
-    CHECK (valid_to IS NULL OR valid_to >= valid_from),
+    CHECK (valid_from IS NULL OR valid_to IS NULL OR valid_to > valid_from),
   CONSTRAINT security_identifiers_cusip_shape_check CHECK (
     identifier_type NOT IN ('CUSIP', 'CINS') OR identifier ~ '^[A-Z0-9]{9}$'
   ),
   CONSTRAINT security_identifiers_figi_shape_check CHECK (
-    identifier_type <> 'FIGI' OR identifier ~ '^[A-Z0-9]{12}$'
+    identifier_type NOT LIKE 'FIGI%' OR identifier ~ '^[A-Z0-9]{12}$'
   ),
   CONSTRAINT security_identifiers_ticker_shape_check CHECK (
     identifier_type <> 'TICKER' OR identifier ~ '^[A-Z0-9-]{1,12}$'
-  )
+  ),
+  -- 같은 사실을 두 번 적지 않는다. 재실행이 upsert로 같은 행을 갱신하는 키다.
+  CONSTRAINT security_identifiers_natural_key
+    UNIQUE NULLS NOT DISTINCT (identifier_type, namespace, identifier, security_id, valid_from),
+  -- 한 식별자가 같은 날짜에 확인된 종목 둘을 가리키지 못하게 한다.
+  CONSTRAINT security_identifiers_no_verified_overlap
+    EXCLUDE USING gist (
+      identifier_type WITH =, namespace WITH =, identifier WITH =,
+      daterange(valid_from, valid_to, '[)') WITH &&
+    ) WHERE (mapping_status = 'verified')
 );
 
+CREATE INDEX IF NOT EXISTS security_identifiers_lookup_idx
+  ON universe.security_identifiers (identifier_type, identifier);
 CREATE INDEX IF NOT EXISTS security_identifiers_security_idx
   ON universe.security_identifiers (security_id) WHERE security_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS security_identifiers_status_updated_idx
-  ON universe.security_identifiers (mapping_status, updated_at);
+
+COMMENT ON TABLE universe.security_identifiers IS
+  '외부 식별자(과거 ticker·CUSIP·FIGI·공급자 요청 주소)가 어느 종목을 언제 가리켰는가 = 한 행. 미확인·충돌도 지우지 않고 남겨 같은 조회를 반복하지 않는다.';
+COMMENT ON COLUMN universe.security_identifiers.mapping_id IS '행 ID. 정정 전후 근거가 서로를 가리킬 때 쓴다.';
+COMMENT ON COLUMN universe.security_identifiers.identifier_type IS 'TICKER=시장 거래 표기, CUSIP/CINS=발행 증권 코드, FIGI_*=OpenFIGI 층위(composite/share class/venue), PROVIDER_SYMBOL=공급자 요청 주소.';
+COMMENT ON COLUMN universe.security_identifiers.namespace IS '코드 체계 또는 시장·공급자: us_listing(미국 거래 표기), cgs(CUSIP/CINS), openfigi, yahoo 등.';
+COMMENT ON COLUMN universe.security_identifiers.identifier IS '원래 식별 문자열(대문자, 앞자리 0 보존).';
+COMMENT ON COLUMN universe.security_identifiers.security_id IS '귀속 종목. unresolved면 NULL, conflict면 후보 중 하나이거나 NULL.';
+COMMENT ON COLUMN universe.security_identifiers.mapping_status IS 'verified=확인된 연결, unresolved=원천이 못 찾음, conflict=후보가 여럿이거나 기존 연결과 충돌(확인 전에는 쓰지 않는다).';
+COMMENT ON COLUMN universe.security_identifiers.valid_from IS '유효 시작일(포함). 모르면 NULL — ticker는 NULL이면 과거 원문 해석에 쓰지 않는다.';
+COMMENT ON COLUMN universe.security_identifiers.valid_to IS '유효 종료일(배타). 지금도 유효하면 NULL.';
+COMMENT ON COLUMN universe.security_identifiers.source IS '연결을 알려 준 원천(sec_listing, openfigi 등).';
+COMMENT ON COLUMN universe.security_identifiers.evidence_ref IS '판단 근거 원문·배치의 영속 참조(URL·아카이브 경로). 없으면 NULL.';
+COMMENT ON COLUMN universe.security_identifiers.observed_at IS '이 연결을 처음 확인한 시각. 효력일이 아니다.';
+COMMENT ON COLUMN universe.security_identifiers.updated_at IS '행을 마지막으로 고친 시각(재검증 주기 판단용).';
+
+-- 그날 그 식별자가 가리킨 확인된 종목. ticker는 시작일을 아는 연결만 과거 해석에 쓴다.
+CREATE OR REPLACE FUNCTION universe.security_on(
+  p_identifier_type text, p_namespace text, p_identifier text, p_on date
+) RETURNS integer LANGUAGE sql STABLE SECURITY INVOKER SET search_path = '' AS $fn$
+  SELECT i.security_id
+  FROM universe.security_identifiers i
+  WHERE i.identifier_type = p_identifier_type
+    AND i.namespace = p_namespace
+    AND i.identifier = upper(btrim(p_identifier))
+    AND i.mapping_status = 'verified'
+    AND (i.valid_to IS NULL OR p_on < i.valid_to)
+    AND (i.valid_from <= p_on OR (i.valid_from IS NULL AND i.identifier_type <> 'TICKER'))
+  ORDER BY i.valid_from DESC NULLS LAST
+  LIMIT 1;
+$fn$;
+COMMENT ON FUNCTION universe.security_on(text, text, text, date) IS
+  '외부 식별자와 기준일로 그날 확인된 종목 ID를 돌려준다. 13F는 보고 분기말, 가격은 거래일을 기준일로 넣는다. 못 찾으면 NULL.';
 
 
--- ── 지수 membership ───────────────────────────────────────────────────────
--- point-in-time 원장이다. "그날 지수에 무엇이 있었는가"에 답하지 못하면 backtest가
--- 생존 편향에 걸린다 — 지금 살아남은 종목만 과거에 들어가기 때문이다.
---
--- 기간 행으로 보관한다. ticker 배열을 저장하면 PIT membership 조회가 JSON 전체
--- 스캔이 된다. 종료일은 배타적이므로 `valid_from <= d < valid_to`로 읽는다.
+-- ── 지수 편입 기간 ────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS universe.index_memberships (
   index_code  text NOT NULL CHECK (index_code ~ '^[A-Z0-9_]{2,20}$'),
   security_id integer NOT NULL REFERENCES universe.securities(security_id) ON DELETE RESTRICT,
@@ -166,6 +230,15 @@ CREATE INDEX IF NOT EXISTS index_memberships_index_period_idx
   ON universe.index_memberships (index_code, valid_from, valid_to);
 CREATE INDEX IF NOT EXISTS index_memberships_security_period_idx
   ON universe.index_memberships (security_id, valid_from);
+
+COMMENT ON TABLE universe.index_memberships IS
+  '종목이 지수에 편입돼 있던 연속 기간 하나 = 한 행. 그날 지수 구성을 답해 백테스트 생존 편향을 막는다. 같은 종목의 재편입은 새 행이다.';
+COMMENT ON COLUMN universe.index_memberships.index_code IS '지수 코드(SP500).';
+COMMENT ON COLUMN universe.index_memberships.security_id IS '편입 종목. 티커 변경은 편출·편입이 아니므로 같은 ID로 이어진다.';
+COMMENT ON COLUMN universe.index_memberships.valid_from IS '편입 효력일(포함).';
+COMMENT ON COLUMN universe.index_memberships.valid_to IS '편출 효력일(배타). 지금도 편입이면 NULL.';
+COMMENT ON COLUMN universe.index_memberships.source IS '구성 목록 원천.';
+COMMENT ON COLUMN universe.index_memberships.source_hash IS '이 기간을 만든 구성 스냅샷의 SHA-256. 같은 스냅샷 재적용을 알아본다.';
 
 -- 한 스냅샷의 편입·편출은 반드시 한 transaction에서 반영한다.
 CREATE OR REPLACE FUNCTION universe.replace_index_membership(
@@ -204,23 +277,17 @@ BEGIN
   RETURN changed;
 END;
 $fn$;
-REVOKE ALL ON FUNCTION universe.replace_index_membership(text,date,integer[],text,text) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION universe.replace_index_membership(text,date,integer[],text,text) TO service_role;
+COMMENT ON FUNCTION universe.replace_index_membership(text, date, integer[], text, text) IS
+  '지수 구성 스냅샷 하나를 편입 기간 행에 원자적으로 반영한다. 스냅샷은 시간순으로만 적용된다.';
 
 
--- ── RLS ───────────────────────────────────────────────────────────────────
--- 읽기는 열고 쓰기는 service_role만. fail-closed가 기본이다.
-ALTER TABLE universe.entities            ENABLE ROW LEVEL SECURITY;
-ALTER TABLE universe.securities          ENABLE ROW LEVEL SECURITY;
+-- ── 권한 ──────────────────────────────────────────────────────────────────
+GRANT ALL ON ALL TABLES IN SCHEMA universe TO service_role;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA universe TO service_role;
+REVOKE ALL ON ALL FUNCTIONS IN SCHEMA universe FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA universe TO service_role;
+
+ALTER TABLE universe.entities             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE universe.securities           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE universe.security_identifiers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE universe.index_memberships   ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS entities_read             ON universe.entities;
-DROP POLICY IF EXISTS securities_read           ON universe.securities;
-DROP POLICY IF EXISTS security_identifiers_read ON universe.security_identifiers;
-DROP POLICY IF EXISTS index_memberships_read    ON universe.index_memberships;
-
-CREATE POLICY entities_read             ON universe.entities             FOR SELECT TO anon, authenticated USING (true);
-CREATE POLICY securities_read           ON universe.securities           FOR SELECT TO anon, authenticated USING (true);
-CREATE POLICY security_identifiers_read ON universe.security_identifiers FOR SELECT TO anon, authenticated USING (true);
-CREATE POLICY index_memberships_read    ON universe.index_memberships    FOR SELECT TO anon, authenticated USING (true);
+ALTER TABLE universe.index_memberships    ENABLE ROW LEVEL SECURITY;

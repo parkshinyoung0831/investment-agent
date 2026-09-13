@@ -17,7 +17,7 @@ class EarningsConsensusReaderTest(unittest.TestCase):
                 "target_fiscal_year": 2026,
                 "target_fiscal_period": "Q3",
                 "snapshot_date": "2026-08-15",
-                "snapshot_kind": "observed",
+                "snapshot_kind": "captured_live",
             }
         ]
         universe = Mock()
@@ -31,7 +31,7 @@ class EarningsConsensusReaderTest(unittest.TestCase):
         ):
             rows = earnings_report.load_earnings_estimates(["NVDA"])
 
-        self.assertEqual(rows[0]["snapshot_kind"], "observed")
+        self.assertEqual(rows[0]["snapshot_kind"], "captured_live")
         columns = database.select_in_chunks.call_args.kwargs["columns"]
         self.assertIn("snapshot_kind", columns)
 
