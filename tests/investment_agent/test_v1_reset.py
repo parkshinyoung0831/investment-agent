@@ -21,10 +21,9 @@ class V1ResetContractTest(unittest.TestCase):
     def test_reset_scope_excludes_supabase_managed_schemas(self) -> None:
         from scripts.v1_reset import APP_SCHEMAS, POSTGREST_SCHEMAS, V1_SCHEMAS
 
-        # notifications는 더 이상 Supabase 표가 아니다(subscriptions는
-        # notifications/subscriptions.py의 KIND_ENV로 이동).
-        self.assertEqual(len(V1_SCHEMAS), 6)
-        self.assertNotIn("notifications", V1_SCHEMAS)
+        # notifications는 로컬 하네스와 Actions가 함께 쓰는 알림 원장이라 Supabase에 있다.
+        self.assertEqual(len(V1_SCHEMAS), 7)
+        self.assertIn("notifications", V1_SCHEMAS)
         self.assertFalse({"auth", "storage", "realtime", "vault"} & set(APP_SCHEMAS))
         self.assertFalse({"trading", "execution", "operations"} & set(APP_SCHEMAS))
         self.assertTrue(set(V1_SCHEMAS) <= set(POSTGREST_SCHEMAS))

@@ -59,7 +59,7 @@ class ResearchStoreTest(unittest.TestCase):
             row = self.allocation()
             store.upsert_allocation({**row, "discord_sent_at": "2026-09-01T00:00:00Z"})
             store.upsert_allocation(row)
-            # Discord 발송 여부는 runtime outbox가 소유한다. Research 결과는 발송
+            # Discord 발송 여부는 알림 원장이 소유한다. Research 결과는 발송
             # 상태와 무관하게 같은 관계형 allocation으로 재구성된다.
             self.assertEqual("GEM", store.allocations(pending_only=True)[0]["strategy_id"])
 

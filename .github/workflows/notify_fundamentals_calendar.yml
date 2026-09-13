@@ -38,7 +38,7 @@ jobs:
       # 이 값이 없으면 요약 카드만 보내고 세부 예정 알림을 조용히 건너뛴다.
       DISCORD_CHANNEL_EARNINGS: ${{ secrets.DISCORD_CHANNEL_EARNINGS }}
       DISCORD_GUILD_ID: ${{ secrets.DISCORD_GUILD_ID }}
-      FUNDAMENTALS_CALENDAR_FORCE: ${{ inputs.force || 'false' }}
+      NOTIFY_REPLAY: ${{ inputs.force || 'false' }}
       LOG_LEVEL: INFO
       PYTHONUNBUFFERED: "1"
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
@@ -49,9 +49,6 @@ jobs:
         with:
           group: notifications
 
-      - uses: ./.github/actions/runtime-ledger
-        with:
-          scope: fundamentals
 
       - name: Validate Supabase secrets
         run: |

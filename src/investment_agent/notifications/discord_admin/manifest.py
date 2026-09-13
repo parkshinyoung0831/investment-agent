@@ -192,7 +192,7 @@ LAYOUT: list[dict[str, Any]] = [
              "topic": "로컬 하네스·실주문 경계에서 난 오류 · 이 컴퓨터가 켜져 있을 때만 옵니다"},
             {"key": "ops_delivery", "name": "발송-실패",
              "env": "DISCORD_CHANNEL_OPS_DELIVERY",
-             "topic": "outbox가 끝내 못 보낸 알림 · ETL은 성공했는데 카드만 안 나간 경우입니다"},
+             "topic": "끝내 못 보낸 알림 · ETL은 성공했는데 카드만 안 나간 경우입니다"},
             {"key": "mod_updates", "name": "모더레이터-알림", "env": None, "role": "updates",
              "topic": "Discord가 서버 관리자에게 보내는 시스템 공지 (Community 필수 채널)"},
         ],

@@ -17,6 +17,7 @@ class PostgresSchemaLayoutTest(unittest.TestCase):
                 "30_fundamentals.sql",
                 "40_macro.sql",
                 "50_institutional.sql",
+                "60_notifications.sql",
             ),
             postgres_schema_layout.STRUCTURE_SQL_FILES,
         )

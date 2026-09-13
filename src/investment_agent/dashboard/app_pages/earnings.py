@@ -1540,7 +1540,7 @@ def _render_collection_audit(
     source_note(
         SOURCE_DB,
         SOURCE_CALC,
-        detail="fundamentals.filing_processing + notifications.outbox · 운영 오류는 Discord #액션-실패",
+        detail="fundamentals.filing_processing + notifications.notices · 운영 오류는 Discord #액션-실패",
     )
 
     if statuses.get("unsupported"):
@@ -1578,7 +1578,7 @@ def _render_collection_audit(
                 f"parsed지만 발송 기록이 없는 accession_no {len(unsent)}건 · "
                 "관심종목 등록 전 공시이거나 알림이 아직 돌지 않은 건입니다."
             )
-        source_note(SOURCE_DB, SOURCE_CALC, detail="발송 여부는 notifications.outbox의 report:{ticker}:{accession_no} 키와 resolved_at으로 판단")
+        source_note(SOURCE_DB, SOURCE_CALC, detail="발송 여부는 알림 원장 notifications.notices(topic=earnings.report, 종목, accession_no)로 판단")
     else:
         dataframe(
             [
@@ -1593,7 +1593,7 @@ def _render_collection_audit(
             ],
             key=f"earnings_audit_notify:{ticker}",
         )
-        source_note(SOURCE_DB, detail="notifications.outbox(kind=fundamentals_earnings,status=sent) · 이 화면은 발송하지 않는다")
+        source_note(SOURCE_DB, detail="notifications.notices(topic=earnings.report, status=sent) · 이 화면은 발송하지 않는다")
 
 
 def _render_extended(*, active_watchlist: list[str]) -> None:

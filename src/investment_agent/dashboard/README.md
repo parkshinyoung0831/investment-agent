@@ -135,7 +135,7 @@ Toss Blue를 기본 시각 언어로 쓰고, 금융 값의 상승·하락에만 
 | 특수 계정 재무 | `fundamentals.financials` 실제 저장 필드 | 카드에 아예 없는 은행 NII·충당금·예금 등 특화 계정 |
 | 기술 지표 | 로컬 `feature_signals_daily` | 카드는 공시 시점 스냅샷, 여기는 저장된 RSI·MACD 시계열 |
 | 세그먼트 전 축 | `segment_metrics` 전체 | 카드는 종류별 대표 축 1개·상위 6행·기타 합산, 여기는 모든 축·모든 멤버·다기간 추이·세그먼트 자산 |
-| 수집·발송 감사 | terminal `fundamentals.filing_processing` + `notification_outbox` + Discord/GitHub 운영 로그 | 카드에 없음. 성공 provenance·실제 Discord 발송 여부와 실패 원인 확인 경로 |
+| 수집·발송 감사 | terminal `fundamentals.filing_processing` + `notifications.notices` + Discord/GitHub 운영 로그 | 카드에 없음. 성공 provenance·실제 Discord 발송 여부와 실패 원인 확인 경로 |
 
 세그먼트 품질 게이트는 카드와 같다 — `verified`/`partial`이 아닌 값은 숫자로 만들지 않고
 상태 문자열로만 남기며 차트에 올리지 않는다. 비중 분모도 게이트를 통과한 매출만 쓴다.

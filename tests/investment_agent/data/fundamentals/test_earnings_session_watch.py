@@ -180,55 +180,6 @@ class TimedTargetSelection(unittest.TestCase):
         self.assertNotIn("DATEONLY", selected["tickers"])
 
 
-class EarningsFlashOutbox(unittest.TestCase):
-    """속보는 전송 전에 outbox에 스냅샷을 등록한다."""
-
-    def test_claim_is_taken_before_sending(self):
-        """outbox 스냅샷 등록이 디스패치보다 먼저 일어난다."""
-        flash_run = importlib.import_module("investment_agent.notifications.earnings_flash.run")
-
-        order: list[str] = []
-        item = {
-            "flash": {"ticker": "NVDA", "accession_no": "ACC-1",
-                      "fiscal_year": 2026, "fiscal_period": "Q3", "filed_at": "2026-08-26"},
-            "names": {"name_ko": "엔비디아"},
-        }
-        service = mock.MagicMock()
-        service.enqueue.side_effect = lambda **_kwargs: (
-            order.append("enqueue"), mock.Mock(status="enqueued")
-        )[1]
-        service.run_pending.side_effect = lambda: (
-            order.append("dispatch"), []
-        )[1]
-        with (
-            mock.patch.object(flash_run, "load_pending_flash", return_value=[item]),
-            mock.patch.object(flash_run, "build_flash_embed", return_value={}),
-        ):
-            flash_run.run(store=mock.Mock(database=mock.Mock()), service=service, target="1")
-        self.assertEqual(order, ["enqueue", "dispatch"])
-
-    def test_failed_send_releases_the_claim(self):
-        """디스패치 결과가 불명이어도 실행기는 성공으로 세지 않는다."""
-        flash_run = importlib.import_module("investment_agent.notifications.earnings_flash.run")
-
-        item = {
-            "flash": {"ticker": "NVDA", "accession_no": "ACC-1",
-                      "fiscal_year": 2026, "fiscal_period": "Q3", "filed_at": "2026-08-26"},
-            "names": {},
-        }
-        service = mock.MagicMock()
-        service.enqueue.return_value = mock.Mock(status="enqueued")
-        service.run_pending.return_value = [mock.Mock(status="unknown", producer="fundamentals")]
-        with (
-            mock.patch.object(flash_run, "load_pending_flash", return_value=[item]),
-            mock.patch.object(flash_run, "build_flash_embed", return_value={}),
-        ):
-            sent = flash_run.run(store=mock.Mock(database=mock.Mock()), service=service, target="1")
-        self.assertEqual(sent, 0)
-        service.enqueue.assert_called_once()
-        service.run_pending.assert_called_once()
-
-
 class EarningsWatchStatus(unittest.TestCase):
     """재시도 뒤에도 남은 수집·매핑 실패만 최종 상태에 반영한다."""
 

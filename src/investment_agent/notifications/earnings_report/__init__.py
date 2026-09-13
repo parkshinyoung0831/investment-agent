@@ -6,7 +6,7 @@
 데이터:   reporting/notifications/earnings_report.py — financial_versions에서
                          '헤드라인 1행 + 전년 동기 1행' 조회,
                          accession_no으로 세그먼트 상태·주축을 연결하고
-                         notifications.outbox 중복 키를 확인
+                         이미 보냈는지는 알림 원장(notifications.notices)이 가른다
 계산:     reporting/earnings/metrics.py — 마진·FCF·순부채·YoY 파생
 판단:     reporting/earnings/thresholds.py — grade로 경고 등급(🔴🟡🟢) 판정
 표시:     format.py    — 금액·퍼센트·전년비 / card.py — KPI·마진·현금·세그먼트·밸류 ctx 조립
@@ -14,6 +14,6 @@
 알림:     run.py       — run() 하나만 노출. 진입점(__main__)이 --kind fundamentals_earnings로 호출.
 
 dedup 단위는 (ticker, accession_no) — 같은 날 별도 공시와 정정공시를 정확히 구분한다.
-PNG 발송은 notifications.outbox에 고정한 첨부 스냅샷을 통해 처리한다.
+PNG는 원장이 이 실행에 맡긴 공시만 그려서 보낸다(notifications/engine.py).
 """
 from __future__ import annotations

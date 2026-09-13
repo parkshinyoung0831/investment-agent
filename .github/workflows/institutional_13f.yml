@@ -38,7 +38,7 @@ jobs:
       DISCORD_CHANNEL_GURU_FORUM: ${{ secrets.DISCORD_CHANNEL_GURU_FORUM }}
       # 거장별 포럼 채널은 이름으로 찾는다 — 사람마다 시크릿을 늘리지 않는다.
       DISCORD_GUILD_ID: ${{ secrets.DISCORD_GUILD_ID }}
-      GURUS_NOTIFY_FORCE: ${{ inputs.force_notify || 'false' }}
+      NOTIFY_REPLAY: ${{ inputs.force_notify || 'false' }}
       GURUS_SHADOW_PARSER: ${{ vars.GURUS_SHADOW_PARSER }}
       LOG_LEVEL: INFO
       PYTHONUNBUFFERED: "1"
@@ -51,9 +51,6 @@ jobs:
         with:
           group: notifications
           require-env: "SUPABASE_URL SUPABASE_SERVICE_KEY EDGAR_USER_AGENT"
-      - uses: ./.github/actions/runtime-ledger
-        with:
-          scope: institutional
       - name: Validate secret formats
         run: |
           printf '%s' "$EDGAR_USER_AGENT" | grep -qiE '[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}'

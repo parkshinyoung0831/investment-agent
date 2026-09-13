@@ -1,7 +1,8 @@
 """PostgreSQL v1 선언 SQL의 역할별 설치 순서.
 
 번호는 설치 역할을 나타낸다. ``00``은 공통 확장, ``10``~``50``은 금융 사실
-스키마, ``90``은 모든 사실 스키마가 선 뒤에 만드는 read-only view다. 선언은
+스키마, ``60``은 사람에게 알린 사실의 원장(여러 기계가 함께 판단하므로 공유 DB에
+있다), ``90``은 모든 사실 스키마가 선 뒤에 만드는 read-only view다. 선언은
 수집된 행에 의존하지 않으므로 빈 DB에 한 트랜잭션으로 전부 선다.
 """
 from __future__ import annotations
@@ -19,6 +20,7 @@ STRUCTURE_SQL_FILES = (
     "30_fundamentals.sql",
     "40_macro.sql",
     "50_institutional.sql",
+    "60_notifications.sql",
 )
 VIEW_SQL_FILES = ("90_reporting.sql",)
 
@@ -29,6 +31,7 @@ SCHEMA_OF_STRUCTURE_FILE = {
     "30_fundamentals.sql": "fundamentals",
     "40_macro.sql": "macro",
     "50_institutional.sql": "institutional",
+    "60_notifications.sql": "notifications",
 }
 SCHEMA_OF_INSTALLATION_FILE = {
     **SCHEMA_OF_STRUCTURE_FILE,

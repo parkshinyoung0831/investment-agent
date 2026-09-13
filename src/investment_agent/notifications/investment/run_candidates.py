@@ -3,19 +3,26 @@ from __future__ import annotations
 
 import os
 
-from investment_agent.platform.logging import get_logger
 from investment_agent.config import load_config
-from investment_agent.notifications.channels.discord import DiscordChannel
-from investment_agent.notifications.outbox import Outbox
-from investment_agent.notifications.service import NotificationService
+from investment_agent.notifications.engine import (
+    Notice,
+    PublishContext,
+    Rendered,
+    default_context,
+    fact_time,
+    publish,
+)
 from investment_agent.notifications.subscriptions import discord_target
-from investment_agent.platform.clock import utc_now
-from . import embeds
+from investment_agent.notifications.topics import topic
+from investment_agent.platform.logging import get_logger
 from investment_agent.reporting.notifications.investment import db
-from investment_agent.reporting.notifications.connections import configured_database
-from .constants import DEFAULT_TOP_N, PIPELINE
+
+from . import embeds
+from .constants import DEFAULT_TOP_N
 
 log = get_logger(__name__)
+
+TOPIC = topic("ai.candidate")
 
 
 def _top_n() -> int:
@@ -31,44 +38,38 @@ def _top_n() -> int:
     return value
 
 
-def run(*, service: NotificationService | None = None,
-        target: str | None = None) -> int:
-    """가장 최근 실행의 상위 후보를 종목별 카드로 보낸다."""
+def run(*, target: str | None = None, context: PublishContext | None = None) -> int:
+    """가장 최근 실행의 상위 후보를 종목별 카드로 원장에 맡긴다."""
     latest = db.latest_portfolio()
     if latest is None:
         log.info("no decision run to report candidates for")
         return 0
-
     run_id = str(latest["run"]["run_id"])
-    candidates = db.top_candidates(run_id, limit=_top_n())
-    if not candidates:
+    decisions = db.top_candidates(run_id, limit=_top_n())
+    if not decisions:
         log.info("no completed candidate to report run_id=%s", run_id)
         return 0
+    notices = [
+        Notice(
+            subject=str(decision.get("ticker") or decision["case_key"]),
+            occurrence=str(decision["case_key"]),
+            fact_at=fact_time(decision.get("as_of_at") or latest["proposal"]["as_of_at"]),
+            basis={"final_decision": decision.get("final_decision") or {}},
+            data=decision,
+        )
+        for decision in decisions
+    ]
+
+    def render(batch):
+        return Rendered({"embeds": [embeds.candidate_embed(decision=batch[0].data)]})
 
     config = load_config()
-    channel_id = discord_target("investment_candidates", config=config, override=target)
-    if service is None:
-        service = NotificationService(
-            Outbox(configured_database(config)), DiscordChannel(config), clock=utc_now,
-        )
-    sent = 0
-    for decision in candidates:
-        case_key = str(decision["case_key"])
-        key = f"candidate:{case_key}"
-        embed = embeds.candidate_embed(decision=decision)
-        result = service.enqueue(
-            producer=PIPELINE, notification_key=key, kind="candidate",
-            target=channel_id, message={"embeds": [embed]},
-            entity_key=str(decision.get("ticker") or ""), period_end=str(run_id),
-        )
-        if result.status == "error":
-            continue
-        sent += sum(
-            1 for item in service.run_pending()
-            if item.producer == PIPELINE and item.notification_key == key and item.status == "sent"
-        )
-    log.info("sent candidate reports run_id=%s sent=%d", run_id, sent)
-    return sent
+    report = publish(
+        TOPIC, notices, render,
+        context=context or default_context(config),
+        target=discord_target(TOPIC.channel_kind, config=config, override=target),
+    )
+    return report.delivered
 
 
 __all__ = ["run"]

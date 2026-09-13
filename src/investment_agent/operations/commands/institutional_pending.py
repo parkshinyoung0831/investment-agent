@@ -1,9 +1,11 @@
-"""미발송 거장 알림 존재 여부를 GitHub Actions 출력으로 기록한다."""
+"""원장이 아직 보내지 않은 거장 알림이 있는지 GitHub Actions 출력으로 기록한다."""
 from __future__ import annotations
 
 import argparse
 import pathlib
 
+from investment_agent.config import load_config
+from investment_agent.notifications.engine import default_context
 from investment_agent.notifications.institutional.state import pending_state
 
 
@@ -12,7 +14,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--github-output", required=True)
     args = parser.parse_args(argv)
 
-    state = pending_state()
+    state = pending_state(default_context(load_config()).ledger)
     output = pathlib.Path(args.github_output)
     with output.open("a", encoding="utf-8") as stream:
         stream.write(

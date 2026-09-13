@@ -10,7 +10,7 @@ from __future__ import annotations
 import unittest
 
 from investment_agent.config import Config
-from investment_agent.notifications.channels.discord import DiscordChannel
+from investment_agent.notifications.channels.discord import DiscordChannel, ForumThread
 
 
 class _Response:
@@ -21,6 +21,10 @@ class _Response:
 
     def json(self) -> dict:
         return self._payload
+
+
+def _thread(name: str, tags: tuple[str, ...] = ()) -> ForumThread:
+    return ForumThread(name.split("·", 1)[0].strip() or name, name, tags)
 
 
 def _config() -> Config:
@@ -41,9 +45,9 @@ class ForumDeliveryTest(unittest.TestCase):
         """스레드 조회 스텁. 주입하지 않으면 단위 테스트가 실제 Discord로 나간다."""
         return _Response(payload={"threads": []})
 
-    def _send(self, **kwargs) -> str:
+    def _send(self, thread: ForumThread | None = None):
         channel = DiscordChannel(_config(), post=self._post, get=self._get)
-        return channel.send(target="123", message={"content": "hi"}, **kwargs)
+        return channel.deliver(target="123", message={"content": "hi"}, thread=thread)
 
     def test_a_plain_channel_still_posts_a_message(self) -> None:
         self._send()
@@ -51,7 +55,7 @@ class ForumDeliveryTest(unittest.TestCase):
         self.assertNotIn("name", self.calls[0]["json"])
 
     def test_a_forum_destination_creates_a_thread(self) -> None:
-        self._send(thread_name="2026 Q2 · 워런 버핏")
+        self._send(thread=_thread("2026 Q2 · 워런 버핏"))
         call = self.calls[0]
         self.assertTrue(call["url"].endswith("/channels/123/threads"))
         self.assertEqual("2026 Q2 · 워런 버핏", call["json"]["name"])
@@ -61,16 +65,16 @@ class ForumDeliveryTest(unittest.TestCase):
 
     def test_thread_titles_are_cut_to_the_discord_limit(self) -> None:
         """100자를 넘기면 Discord가 400으로 거절한다 — 카드가 통째로 안 나간다."""
-        self._send(thread_name="가" * 250)
+        self._send(thread=_thread("가" * 250))
         self.assertEqual(100, len(self.calls[0]["json"]["name"]))
 
     def test_forum_tags_are_sent_as_ids(self) -> None:
-        self._send(thread_name="스레드", thread_tags=("9001", "9002"))
+        self._send(thread=_thread("스레드", ("9001", "9002")))
         self.assertEqual(["9001", "9002"], self.calls[0]["json"]["applied_tags"])
 
     def test_no_tags_means_the_field_is_absent(self) -> None:
         """빈 배열을 보내면 이미 붙은 태그를 지우는 뜻이 될 수 있다."""
-        self._send(thread_name="스레드")
+        self._send(thread=_thread("스레드"))
         self.assertNotIn("applied_tags", self.calls[0]["json"])
 
     def test_an_empty_thread_name_is_refused_before_the_request(self) -> None:
@@ -78,7 +82,7 @@ class ForumDeliveryTest(unittest.TestCase):
 
         channel = DiscordChannel(_config(), post=self._post, get=self._get)
         with self.assertRaises(DeliveryRejected):
-            channel.send(target="123", message={"content": "hi"}, thread_name="   ")
+            channel.deliver(target="123", message={"content": "hi"}, thread=ForumThread("x", "   "))
         self.assertEqual([], self.calls)
 
 
@@ -107,8 +111,8 @@ class ForumThreadsAreReusedTest(unittest.TestCase):
         channel = self._channel({"active": [
             {"id": "900", "name": "AAPL · Apple · 실적 기록", "parent_id": "123"},
         ]})
-        channel.send(target="123", message={"content": "hi"},
-                     thread_name="AAPL · Apple · 실적 기록")
+        channel.deliver(target="123", message={"content": "hi"},
+                     thread=_thread("AAPL · Apple · 실적 기록"))
         self.assertTrue(self.calls[0]["url"].endswith("/channels/900/messages"))
         self.assertNotIn("name", self.calls[0]["json"])
 
@@ -117,24 +121,24 @@ class ForumThreadsAreReusedTest(unittest.TestCase):
         channel = self._channel({"archived": [
             {"id": "901", "name": "MSFT · Microsoft · 실적 기록"},
         ]})
-        channel.send(target="123", message={"content": "hi"},
-                     thread_name="MSFT · Microsoft · 실적 기록")
+        channel.deliver(target="123", message={"content": "hi"},
+                     thread=_thread("MSFT · Microsoft · 실적 기록"))
         self.assertTrue(self.calls[0]["url"].endswith("/channels/901/messages"))
 
     def test_a_thread_from_another_forum_is_not_reused(self) -> None:
         channel = self._channel({"active": [
             {"id": "902", "name": "AAPL · Apple · 실적 기록", "parent_id": "999"},
         ]})
-        channel.send(target="123", message={"content": "hi"},
-                     thread_name="AAPL · Apple · 실적 기록")
+        channel.deliver(target="123", message={"content": "hi"},
+                     thread=_thread("AAPL · Apple · 실적 기록"))
         self.assertTrue(self.calls[0]["url"].endswith("/channels/123/threads"))
 
     def test_a_new_thread_is_reused_within_the_same_run(self) -> None:
         """같은 실행에서 두 장을 보내면 두 번째는 방금 만든 스레드로 간다."""
         channel = self._channel({})
         for _ in range(2):
-            channel.send(target="123", message={"content": "hi"},
-                         thread_name="NVDA · NVIDIA · 실적 기록")
+            channel.deliver(target="123", message={"content": "hi"},
+                         thread=_thread("NVDA · NVIDIA · 실적 기록"))
         self.assertTrue(self.calls[0]["url"].endswith("/channels/123/threads"))
         self.assertTrue(self.calls[1]["url"].endswith("/channels/555/messages"))
 
@@ -147,41 +151,9 @@ class ForumThreadsAreReusedTest(unittest.TestCase):
             self.calls.append({"url": url, **kwargs})
             return _Response()
 
-        DiscordChannel(_config(), post=post, get=get).send(
-            target="123", message={"content": "hi"}, thread_name="T")
+        DiscordChannel(_config(), post=post, get=get).deliver(
+            target="123", message={"content": "hi"}, thread=_thread("T"))
         self.assertTrue(self.calls[0]["url"].endswith("/channels/123/threads"))
-
-
-class OutboxCarriesForumDestinationTest(unittest.TestCase):
-    """전송은 나중에 일어난다. 목적지를 그때 다시 계산하면 선언이 바뀐 사이
-    같은 알림이 다른 채널로 간다."""
-
-    def test_thread_fields_travel_in_the_stored_payload(self) -> None:
-        from investment_agent.notifications import outbox
-
-        captured: dict = {}
-
-        class _Outbox(outbox.Outbox):
-            def __init__(self) -> None:  # noqa: D107 - 저장 없이 payload만 본다
-                pass
-
-            def enqueue(self, **kwargs):
-                captured.update(kwargs)
-                return True
-
-        from investment_agent.notifications.service import NotificationService
-
-        service = NotificationService(_Outbox(), object(), clock=lambda: __import__(
-            "datetime").datetime(2026, 9, 8, tzinfo=__import__("datetime").timezone.utc))
-        service.enqueue(
-            producer="institutional", notification_key="k", kind="filing",
-            target="123", message={"content": "hi"}, thread_name="2026 Q2 · 워런 버핏",
-        )
-        self.assertEqual("2026 Q2 · 워런 버핏", captured["thread_name"])
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class ThreadIdentityTest(unittest.TestCase):
@@ -207,8 +179,8 @@ class ThreadIdentityTest(unittest.TestCase):
         def get(url, **kwargs):
             return _Response(payload=self.EXISTING)
 
-        DiscordChannel(_config(), post=post, get=get).send(
-            target="123", message={"content": "hi"}, thread_name=thread_name,
+        DiscordChannel(_config(), post=post, get=get).deliver(
+            target="123", message={"content": "hi"}, thread=_thread(thread_name),
         )
 
     def test_a_renamed_company_keeps_its_thread(self) -> None:
@@ -255,9 +227,9 @@ class DuplicateThreadResolutionTest(unittest.TestCase):
         def get(url, **kwargs):
             return _Response(payload=self._threads(order))
 
-        DiscordChannel(_config(), post=post, get=get).send(
+        DiscordChannel(_config(), post=post, get=get).deliver(
             target="123", message={"content": "hi"},
-            thread_name="AAPL · 애플 · 실적 기록",
+            thread=_thread("AAPL · 애플 · 실적 기록"),
         )
         return calls[0]["url"]
 
@@ -271,3 +243,7 @@ class DuplicateThreadResolutionTest(unittest.TestCase):
         bare_old = {"id": "100", "name": "AAPL · A · 실적 기록", "parent_id": "123"}
         bare_new = {"id": "200", "name": "AAPL · B · 실적 기록", "parent_id": "123"}
         self.assertTrue(self._resolve([bare_new, bare_old]).endswith("/channels/200/messages"))
+
+
+if __name__ == "__main__":
+    unittest.main()

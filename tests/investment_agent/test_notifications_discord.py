@@ -24,7 +24,7 @@ class DiscordTest(unittest.TestCase):
         self.channel = DiscordChannel(self.config, post=self.post)
 
     def send(self):
-        return self.channel.send(target="123", message={"content": "내용"})
+        return self.channel.deliver(target="123", message={"content": "내용"}).message_id
 
     def test_one_post_has_fixed_host_timeout_and_no_mentions(self):
         self.assertEqual("456", self.send())
@@ -78,10 +78,10 @@ class DiscordTest(unittest.TestCase):
     def test_missing_config_and_invalid_target_never_post(self):
         channel = DiscordChannel(Config(env={}, dotenv_path=None, dotenv_loaded=False), post=self.post)
         with self.assertRaises(DeliveryRejected):
-            channel.send(target="123", message={"content": "hello"})
+            channel.deliver(target="123", message={"content": "hello"})
         for target in ("", "https://other.example", "123/../456", "１２３"):
             with self.assertRaises(DeliveryRejected):
-                self.channel.send(target=target, message={"content": "hello"})
+                self.channel.deliver(target=target, message={"content": "hello"})
         self.post.assert_not_called()
 
     def test_message_size_and_field_validation(self):

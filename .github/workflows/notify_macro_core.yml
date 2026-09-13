@@ -43,16 +43,13 @@ jobs:
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
       DISCORD_CHANNEL_MACRO_DAILY: ${{ secrets.DISCORD_CHANNEL_MACRO_DAILY }}
-      MACRO_NOTIFY_FORCE: ${{ inputs.force || 'false' }}
+      NOTIFY_REPLAY: ${{ inputs.force || 'false' }}
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/python-job
         with:
           group: notifications
           require-env: "SUPABASE_URL SUPABASE_SERVICE_KEY DISCORD_BOT_TOKEN"
-      - uses: ./.github/actions/runtime-ledger
-        with:
-          scope: macro
       - name: Validate notification subscription
         run: python -m investment_agent.operations.commands.validate_subscriptions --kind macro_core
       - uses: ./.github/actions/card-render

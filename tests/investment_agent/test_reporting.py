@@ -348,23 +348,6 @@ class LocalRuntimeViewTest(unittest.TestCase):
         self.assertEqual(False, result.rows[0]["risk_approved"])
         self.assertEqual(["limit"], result.rows[0]["violations"])
 
-    def test_notification_failures_joins_outbox_and_delivery_state(self) -> None:
-        with runtime_connection() as connection:
-            connection.execute(
-                "INSERT INTO notification_outbox(producer,notification_key,kind,payload_json,status,attempt_count,claimed_at) "
-                "VALUES(?,?,?,?,?,?,?)",
-                ("macro", "key-1", "report", "{}", "failed", 1, "2026-09-01T00:00:00+00:00"),
-            )
-            connection.execute(
-                "INSERT INTO notification_deliveries(producer,notification_key,status,failure_reason,attempted_at) "
-                "VALUES(?,?,?,?,?)",
-                ("macro", "key-1", "failed", "rate limited", "2026-09-01T00:00:00+00:00"),
-            )
-        result = ReportingQueries(None).read("notification_failures", equals={"producer": "macro"})
-        self.assertEqual("ok", result.status)
-        self.assertEqual("discord", result.rows[0]["channel"])
-        self.assertEqual("rate limited", result.rows[0]["failure_reason"])
-
     def test_job_health_reports_seconds_since_success(self) -> None:
         now = datetime.now(timezone.utc)
         with runtime_connection() as connection:

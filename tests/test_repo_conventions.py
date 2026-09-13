@@ -364,9 +364,11 @@ class NotifyPackageShapeTest(unittest.TestCase):
                     if not module.startswith("investment_agent.notifications."):
                         continue
                     target = module.split(".")[2]
+                    # 원장(`ledger`·`db`)은 엔진만 쓴다. producer가 원장을 직접 부르면
+                    # 중복 판단이 다시 패키지마다 갈라진다.
                     if target not in {
-                        owner, "channels", "renderers", "outbox", "service", "subscriptions",
-                        "playwright", "quickchart", "text",
+                        owner, "channels", "renderers", "subscriptions",
+                        "playwright", "quickchart", "text", "problems", "engine", "topics",
                     }:
                         offenders.append(f"{_posix(path)} -> {module}")
         self.assertEqual([], offenders, "알림 패키지끼리 import 금지")

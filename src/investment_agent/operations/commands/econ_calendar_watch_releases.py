@@ -46,12 +46,18 @@ def main(argv: list[str] | None = None) -> int:
     notification_failed = False
     # 이미 actual이 들어와 due가 없어도 이전 발송 실패를 다시 시도한다.
     if args.notify:
+        from investment_agent.notifications.problems import report_problems, take_problems
+
+        take_problems()
         try:
             from investment_agent.notifications.econ_calendar.run import run
 
             notified = run()
         except Exception as exc:
             log.exception("ECON watcher notification failed: %s", type(exc).__name__)
+            notification_failed = True
+        # 발송 경로가 삼킨 등록·전송 실패도 재실행 가능한 실패로 올린다.
+        if report_problems("econ_calendar_watch_releases"):
             notification_failed = True
 
     log.info(

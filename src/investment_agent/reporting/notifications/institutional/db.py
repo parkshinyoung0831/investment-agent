@@ -1,9 +1,8 @@
-"""institutional 원천과 notifications outbox를 읽고 쓰는 13F 알림 저장소."""
+"""13F 알림이 읽는 institutional·universe 원천. 보낼지 말지는 알림 원장이 판단한다."""
 from __future__ import annotations
 
 from investment_agent.platform.db.postgres import sb, select_all_paged
 from investment_agent.data.universe.persistence import select_security_profiles
-from investment_agent.notifications.outbox import Outbox
 from investment_agent.data.institutional.domain import managers as manager_config
 
 SCHEMA_INSTITUTIONAL = "institutional"
@@ -12,7 +11,6 @@ T_FILINGS = "filings"
 T_POSITIONS = "positions"
 T_SECURITIES = "securities"
 T_IDENTIFIERS = "security_identifiers"
-PRODUCER = "institutional"
 
 _ORDER_BY = {
     (SCHEMA_INSTITUTIONAL, T_FILINGS): "filing_date,accession_no",
@@ -77,8 +75,3 @@ def load_analysis_source() -> dict[str, list[dict]]:
         "cusip_map": _identifier_map(),
         "tickers": select_security_profiles(),
     }
-
-
-def sent_keys() -> set[str]:
-    """이미 outbox에 선점·완료된 institutional 알림 키를 반환한다."""
-    return Outbox().sent_keys(PRODUCER)

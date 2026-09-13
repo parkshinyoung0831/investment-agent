@@ -52,6 +52,8 @@ SCHEMA_INSTITUTIONAL = "institutional"
 SCHEMA_MARKET = "market"
 SCHEMA_UNIVERSE = "universe"
 SCHEMA_REPORTING = "reporting"
+SCHEMA_NOTIFICATIONS = "notifications"
+T_NOTICES = "notices"
 T_FINANCIALS = "financials"
 T_FILINGS = "filings"
 T_FILING_PROCESSING = "filing_processing"
@@ -1726,16 +1728,17 @@ def load_earnings_extended(ticker: str, *, section: str = "all") -> DataResult:
             payload["filing_ledger"] = _canonical_processing_rows(
                 gateway, [symbol], content_type=FILING_CONTENT_COMPANY
             )
-        # 발송 상태는 외부 canonical DB가 아니라 로컬 runtime 원장이 소유한다.
+        # 발송 이력은 로컬과 Actions가 함께 쓰는 알림 원장(Supabase notifications)이 소유한다.
         if "notify_log" in requested:
             try:
-                payload["notify_log"] = [
-                    row for row in read_runtime_rows("notification_outbox")
-                    if row.get("producer") == "fundamentals"
-                    and row.get("kind") == "fundamentals_earnings"
-                    and row.get("entity_key") == symbol
-                    and row.get("status") == "sent"
-                ][:240]
+                payload["notify_log"] = gateway.select_rows(
+                    schema=SCHEMA_NOTIFICATIONS,
+                    table=T_NOTICES,
+                    columns="occurrence,updated_at,fact_at",
+                    equal={"topic": "earnings.report", "subject": symbol, "status": "sent"},
+                    order=(("updated_at", True),),
+                    limit=240,
+                )
             except Exception:
                 failures.append("notify_log")
 
@@ -1745,10 +1748,8 @@ def load_earnings_extended(ticker: str, *, section: str = "all") -> DataResult:
             if row.get("accession_no")
         }
         notify_rows: list[dict[str, Any]] = []
-        prefix = f"report:{symbol}:"
         for row in payload["notify_log"]:
-            key = str(row.get("notification_key") or "")
-            accession_no = key[len(prefix):] if key.startswith(prefix) else ""
+            accession_no = str(row.get("occurrence") or "")
             filing = filing_by_accession.get(accession_no, {})
             notify_rows.append({
                 "ticker": symbol,
@@ -1756,8 +1757,8 @@ def load_earnings_extended(ticker: str, *, section: str = "all") -> DataResult:
                 "fiscal_year": filing.get("fiscal_year"),
                 "fiscal_period": filing.get("fiscal_period"),
                 "filed_at": filing.get("filing_date"),
-                "sent_at": row.get("resolved_at"),
-                "period_end": row.get("period_end"),
+                "sent_at": row.get("updated_at"),
+                "period_end": filing.get("report_date"),
             })
         payload["notify_log"] = notify_rows
 

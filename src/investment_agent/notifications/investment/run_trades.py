@@ -1,22 +1,29 @@
-"""실제 주문·체결 기록을 `#매매-기록`으로 보낸다."""
+"""실제 주문·체결 기록을 `#매매-기록`으로 보낸다. 체결이 진행되면 같은 카드를 고친다."""
 from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta, timezone
 
-from investment_agent.platform.logging import get_logger
 from investment_agent.config import load_config
-from investment_agent.notifications.channels.discord import DiscordChannel
-from investment_agent.notifications.outbox import Outbox
-from investment_agent.notifications.service import NotificationService
+from investment_agent.notifications.engine import (
+    Notice,
+    PublishContext,
+    Rendered,
+    default_context,
+    fact_time,
+    publish,
+)
 from investment_agent.notifications.subscriptions import discord_target
-from investment_agent.platform.clock import utc_now
-from . import embeds
+from investment_agent.notifications.topics import topic
+from investment_agent.platform.logging import get_logger
 from investment_agent.reporting.notifications.investment import db
-from investment_agent.reporting.notifications.connections import configured_database
-from .constants import DEFAULT_TRADE_LOOKBACK_HOURS, PIPELINE
+
+from . import embeds
+from .constants import DEFAULT_TRADE_LOOKBACK_HOURS
 
 log = get_logger(__name__)
+
+TOPIC = topic("ai.trade")
 
 
 def _lookback_hours() -> int:
@@ -32,44 +39,48 @@ def _lookback_hours() -> int:
     return value
 
 
-def run(*, service: NotificationService | None = None,
-        target: str | None = None) -> int:
-    """되돌아본 구간에서 아직 보고하지 않은 주문을 카드로 보낸다."""
+def notices(trades: list[dict]) -> list[Notice]:
+    """주문 하나 = 카드 하나. 내용은 주문 상태와 체결 누계다 — 바뀌면 그 카드를 고친다."""
+    out = []
+    for trade in trades:
+        order = trade["order"]
+        fills = trade.get("fills") or ()
+        out.append(Notice(
+            subject=str(order.get("ticker") or order["client_order_id"]),
+            occurrence=str(order["client_order_id"]),
+            fact_at=fact_time(order.get("submitted_at") or order.get("updated_at")),
+            basis={
+                "status": order.get("status"),
+                "filled_quantity": sum(float(fill.get("quantity") or 0.0) for fill in fills),
+                "fills": len(fills),
+            },
+            data=trade,
+        ))
+    return out
+
+
+def render(batch) -> Rendered:
+    trade = batch[0].data
+    return Rendered({"embeds": [embeds.trade_embed(
+        order=trade["order"], fills=trade.get("fills") or (),
+        execution_mode=str(trade.get("execution_mode") or "unknown"),
+    )]})
+
+
+def run(*, target: str | None = None, context: PublishContext | None = None) -> int:
+    """되돌아본 구간의 주문을 원장에 맡긴다."""
     since = datetime.now(timezone.utc) - timedelta(hours=_lookback_hours())
     trades = db.recent_orders(since_at=since.isoformat())
     if not trades:
         log.info("no order to report since %s", since.isoformat())
         return 0
-
     config = load_config()
-    channel_id = discord_target("investment_trades", config=config, override=target)
-    if service is None:
-        service = NotificationService(
-            Outbox(configured_database(config)), DiscordChannel(config), clock=utc_now,
-        )
-    sent = 0
-    for trade in trades:
-        order = trade["order"]
-        order_id = str(order["client_order_id"])
-        key = f"trade:{order_id}"
-        embed = embeds.trade_embed(
-            order=order,
-            fills=trade.get("fills") or (),
-            execution_mode=str(trade.get("execution_mode") or "unknown"),
-        )
-        result = service.enqueue(
-            producer=PIPELINE, notification_key=key, kind="trade",
-            target=channel_id, message={"embeds": [embed]},
-            entity_key=str(order.get("ticker") or ""), period_end=str(order.get("updated_at") or ""),
-        )
-        if result.status == "error":
-            continue
-        sent += sum(
-            1 for item in service.run_pending()
-            if item.producer == PIPELINE and item.notification_key == key and item.status == "sent"
-        )
-    log.info("sent trade reports sent=%d", sent)
-    return sent
+    report = publish(
+        TOPIC, notices(trades), render,
+        context=context or default_context(config),
+        target=discord_target(TOPIC.channel_kind, config=config, override=target),
+    )
+    return report.delivered
 
 
 __all__ = ["run"]

@@ -8,7 +8,7 @@ from investment_agent.platform.db.sqlite import runtime_connection
 
 LOCAL_VIEWS = frozenset({"execution_control_state", "execution_intents", "execution_approvals",
     "execution_orders", "execution_fills", "current_model_stage", "security_decisions",
-    "portfolio_decisions", "notification_failures", "job_health"})
+    "portfolio_decisions", "job_health"})
 SCHEMA_UNIVERSE = "universe"
 T_SECURITIES = "securities"
 T_CONTROL = "execution_control"
@@ -16,8 +16,6 @@ T_INTENTS = "intents"
 T_APPROVALS = "approvals"
 T_ORDERS = "orders"
 T_FILLS = "fills"
-T_OUTBOX = "notification_outbox"
-T_DELIVERIES = "notification_deliveries"
 T_MODELS = "model_versions"
 T_PROMOTIONS = "model_promotions"
 T_SECURITY_DECISIONS = "security_decisions"
@@ -33,7 +31,7 @@ _PLAIN_DATASETS = frozenset({
     "risk_decisions", "model_promotions",
 })
 _PAYLOAD_DATASETS = frozenset({
-    "intents", "approvals", "orders", "fills", "notification_outbox",
+    "intents", "approvals", "orders", "fills",
 })
 
 
@@ -112,9 +110,6 @@ def read_local_rows(view: str, *, canonical_db=None) -> list[dict]:
                 payload = json.loads(row.pop("payload_json"))
                 output.append({**payload, **row})
             return output
-        if view == "notification_failures":
-            rows = _rows(connection, f"SELECT o.producer,o.notification_key,o.kind,o.entity_key,o.status,o.attempt_count,d.failure_reason,d.attempted_at FROM {T_OUTBOX} o JOIN {T_DELIVERIES} d USING(producer,notification_key) WHERE o.status IN ('pending','failed','abandoned') AND d.status='failed'")
-            return [{**row, "channel": "discord"} for row in rows]
         if view == "current_model_stage":
             models = _table_rows(connection, T_MODELS)
             promotions = _table_rows(connection, T_PROMOTIONS)

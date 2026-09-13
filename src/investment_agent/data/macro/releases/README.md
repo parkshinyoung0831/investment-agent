@@ -142,9 +142,9 @@ ALFRED 최초 발표 복원과 취소 외의 과거 일정 정정은 별도 감�
 
 대시보드는 기간 조회·지표별 조회·자연키 상세 조회를 분리한다. 그래프는 최신값, 발표 비교는 최초값이다.
 ICS는 일정 연기에도 UID를 유지하고 취소 상태를 내보낸다.
-Discord 성공 기록은 **`notification_outbox`·`notification_deliveries`**에 보관한다. macro 표에 발송 플래그를 두지 않는다.
-보내기 실패는 적재를 되돌리지 않으며 다음 notifier 실행이 재시도한다. 여러 배치 중 성공한 배치만 기록한다.
-Discord 전송과 DB 기록은 하나의 트랜잭션이 아니므로 ‘전송 성공 후 기록 직전 장애’의 중복 가능성은 남는다.
+Discord 발송 기록은 알림 원장 **`notifications.notices`·`notifications.deliveries`**(topic `econ.release`)에 보관한다. macro 표에 발송 플래그를 두지 않는다.
+보내기 실패는 적재를 되돌리지 않으며 다음 notifier 실행이 재시도한다. 발표 하나가 알림 하나이고, 여러 발표를 한 메시지에 묶어도 원장은 발표별로 기록한다.
+Discord 전송과 DB 기록은 하나의 트랜잭션이 아니다. 응답이 끊긴 발송은 nonce로 한 번만 다시 확인하고, 그래도 모르면 `unknown`으로 남겨 자동 재발송하지 않는다.
 
 ## 현재 데이터 공급 범위
 
@@ -161,8 +161,7 @@ ISM 2개는 라이선스가 확인된 자동 수집 경로가 없어 미지원�
 빈 DB 선언 순서는 공통 extension과 domain schema를 모두 세운 뒤
 `db/postgres/v1/90_reporting.sql` view를 마지막에 적용하는 방식이다.
 `scripts/postgres_schema_layout.py`와 `scripts/db_bootstrap.py`가 이 순서를 단일 기준으로
-사용한다. 알림 outbox는 `data/local/runtime/runtime.sqlite3`가 소유하므로 PostgreSQL
-notifications SQL은 적용하지 않는다. 운영 DB 변경은 이 작업에서 실행하지 않는다.
+사용한다. 알림 원장은 같은 순서 안의 `db/postgres/v1/60_notifications.sql`이 선언한다.
 
 ```bash
 python -m unittest discover -s tests -t .

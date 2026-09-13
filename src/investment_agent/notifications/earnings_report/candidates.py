@@ -1,7 +1,7 @@
 """어떤 공시를 카드로 보낼지 고르고, 카드가 필요한 자료를 한 덩어리로 묶는다.
 
-필터는 세 겹이다: 관심종목 적용일(watch_from) 이후 · 운영 lookback(기본 7일) 이내 ·
-notifications.outbox에 없는 (ticker, accession_no).
+필터는 두 겹이다: 관심종목 적용일(watch_from) 이후 · 운영 lookback(기본 7일) 이내.
+이미 보냈는지는 여기서 거르지 않는다 — 알림 원장이 (ticker, accession_no)로 가른다.
 
 reporting/notifications/earnings_report.py의 조회 결과만 받아 쓰고 Supabase를 직접 건드리지 않는다.
 """
@@ -10,6 +10,8 @@ from __future__ import annotations
 import os
 from datetime import date, timedelta
 
+from investment_agent.notifications.engine import Notice, fact_time, unsettled
+from investment_agent.notifications.topics import topic
 from investment_agent.platform.logging import get_logger
 from investment_agent.reporting.notifications import earnings_report as db
 
@@ -52,11 +54,10 @@ def row_accession_no(row: dict) -> str:
 
 def group_by_filing(
     rows: list[dict],
-    processed: set[tuple[str, str]],
     members: list[dict],
     global_cutoff: str,
 ) -> dict[tuple[str, str], list[dict]]:
-    """관심종목 등록일과 운영 lookback을 만족하는 미발송 accession_no을 묶는다."""
+    """관심종목 등록일과 운영 lookback을 만족하는 accession_no을 묶는다."""
     member_cutoffs = {
         str(member["ticker"]): max(global_cutoff, str(member.get("watch_from") or global_cutoff))
         for member in members
@@ -68,8 +69,6 @@ def group_by_filing(
         accession_no = row_accession_no(row)
         cutoff = member_cutoffs.get(ticker)
         if not cutoff or not filed or filed < cutoff:
-            continue
-        if (ticker, accession_no) in processed:
             continue
         filings.setdefault((ticker, accession_no), []).append(row)
     return filings
@@ -125,24 +124,39 @@ def is_report_ready(
     return str(filed_at)[:10] <= deadline.isoformat()
 
 
-def pending_state(tickers: set[str] | None = None) -> dict[str, int | bool]:
-    """렌더 의존성 설치 전에 사용할 가벼운 알림 대기 상태를 반환한다."""
+TOPIC = topic("earnings.report")
+
+
+def filing_notice(row: dict, data: object = None) -> Notice:
+    """정밀 카드의 정체성은 (종목, accession_no)다."""
+    return Notice(
+        subject=str(row["ticker"]),
+        occurrence=row_accession_no(row),
+        fact_at=fact_time(row["filed_at"]),
+        basis={"fiscal_year": row.get("fiscal_year"), "fiscal_period": row.get("fiscal_period")},
+        data=data,
+    )
+
+
+def pending_state(ledger, tickers: set[str] | None = None) -> dict[str, int | bool]:
+    """렌더 의존성 설치 전에 쓰는 가벼운 대기 상태. 원장이 아직 보내지 않은 공시만 센다."""
     members = _selected_members(tickers)
     tickers = [str(member["ticker"]) for member in members]
     if not tickers:
         return {"watchlist_count": 0, "pending_filings": 0, "should_notify": False}
 
     rows = db.load_pending_keys(tickers)
-    filings = group_by_filing(rows, db.processed_keys(), members, _cutoff())
+    filings = group_by_filing(rows, members, _cutoff())
+    pending = unsettled(TOPIC, [filing_notice(pick_headline(group)) for group in filings.values()], ledger=ledger)
     return {
         "watchlist_count": len(members),
-        "pending_filings": len(filings),
-        "should_notify": bool(filings),
+        "pending_filings": len(pending),
+        "should_notify": bool(pending),
     }
 
 
-def load_pending(tickers: set[str] | None = None) -> list[dict]:
-    """관심종목의 미발송 신규 공시 목록.
+def load_ready_filings(tickers: set[str] | None = None) -> list[dict]:
+    """관심종목의 최근 공시 중 카드로 보낼 준비가 된 것.
 
     각 항목: {
       "row":            헤드라인 financial_versions 행(_has_anomaly·accession_no 부착),
@@ -164,8 +178,8 @@ def load_pending(tickers: set[str] | None = None) -> list[dict]:
     if not rows:
         return []
 
-    # 공시(ticker, accession_no) 단위로 묶고, 등록일 이후 미발송·최근 건만 남긴다.
-    filings = group_by_filing(rows, db.processed_keys(), members, _cutoff())
+    # 공시(ticker, accession_no) 단위로 묶고, 등록일 이후·최근 건만 남긴다.
+    filings = group_by_filing(rows, members, _cutoff())
     if not filings:
         return []
 

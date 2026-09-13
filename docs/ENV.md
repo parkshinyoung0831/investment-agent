@@ -28,12 +28,11 @@ Actions secrets/variables(CI)에 주입하며, 이 파일에는 이름·용도·
 | `DISCORD_CHANNEL_AI_REPORTS` / `_AI_TRADES` | 자동매매. 판단·후보 리포트와 실제 체결 기록. `_AI_APPROVALS`와 같은 비공개 카테고리 |
 | `AI_INVESTOR_REPORT_TOP_N` | 하루에 보낼 종목 심층 카드 수(기본 5, 1~25) |
 | `AI_INVESTOR_TRADE_LOOKBACK_HOURS` | 체결 보고가 되돌아볼 시간(기본 26, 1~168) |
-| `AI_INVESTOR_NOTIFY_FORCE` | 자동매매 보고서를 선점 기록 무시하고 다시 보낼 때(수동 재발송) |
 | `DISCORD_CHANNEL_LAB_CARDS` / `_LAB_OPS` / `_LAB_FORUM` | 실험용. 카드 형식을 다듬을 때 운영 채널 대신 여기로 (포럼은 포럼끼리 바꿔 끼운다) |
 | `DISCORD_ADMIN_TOKEN` | Discord 채널·역할을 만들고 고치는 adapter. **로컬 전용 — CI에 주입 금지** |
 | `DISCORD_GUILD_ID` | 봇이 채널을 **이름으로** 찾을 때 쓰는 길드 ID. 자격증명이 아니라 식별자라 CI에도 넣는다 — 거장 포럼처럼 채널이 늘어날 수 있는 곳은 채널 ID를 시크릿으로 받지 않는다 |
 | `FUNDAMENTALS_KILL`, `GURUS_KILL`, `ECON_CALENDAR_KILL` | 킬 스위치 (레포 변수) |
-| `GURUS_POLL_WINDOW_DAYS`, `GURUS_NOTIFY_FORCE` | gurus 수집 창·수동 재발송 |
+| `GURUS_POLL_WINDOW_DAYS` | gurus 수집 창 |
 | `SUPABASE_ANON_KEY` | 공개 읽기 클라이언트용. 현재 실행 경로에서는 쓰지 않음 |
 | `AI_INVESTOR_LOCAL_DATA_ROOT` | 로컬 저장소 공통 루트. 기본 `data/local`; store별 명시 경로가 우선 |
 | `AI_INVESTOR_LOCAL_ARTIFACT_ROOT` | 모델·evidence·broker·report artifact 루트. 기본 `data/local/artifacts` |
@@ -46,8 +45,7 @@ Actions secrets/variables(CI)에 주입하며, 이 파일에는 이름·용도·
 | `FUNDAMENTALS_SEGMENT_WAIT_DAYS` | 정밀 카드가 세그먼트를 기다리는 기한(기본 3일). 넘기면 재무 카드만 보낸다 — 세그먼트는 SEC 분기 데이터셋에서 와 한 분기 늦다 |
 | `FUNDAMENTALS_EXPECTATIONS_WORKERS` | Yahoo 예상치 동시 수집 수(기본 4, 1~16). Actions는 명시적으로 4 사용 |
 | `FUNDAMENTALS_FAST_LEAD_DAYS`, `FUNDAMENTALS_FAST_LAG_DAYS`, `FUNDAMENTALS_FAST_STALE_DAYS` | fast path 시즌 창(기본 5·10·7일). `.env.example`의 빈 값은 코드 기본값을 사용 |
-| `FUNDAMENTALS_CALENDAR_FORCE` | 발표 예정 카드를 같은 주에 다시 보낼 때(수동 재발송) |
-| `MACRO_NOTIFY_FORCE` | 매크로 코어 카드를 같은 날 다시 보낼 때(수동 재발송) |
+| `NOTIFY_REPLAY` | `true`면 이미 보낸 알림도 다시 그린다 — 메시지가 남아 있으면 고치고, 없으면 새로 보낸다. 수동 재발송 전용이라 `.env`에 두지 않는다(`notify --force`가 켠다) |
 | `ECON_CALENDAR_ICS_BUCKET` | 캘린더 구독 파일을 올릴 Supabase Storage **공개** 버킷(기본 `econ-calendar`). 버킷은 사람이 만든다 — 코드가 공개 버킷을 만들지 않는다 |
 | `OPS_HEARTBEAT_PING_URL` | 외부 dead-man's switch(healthchecks.io 등). 일일 점검 발송 뒤 핑. 비어 있으면 아무 일도 하지 않는다 |
 | `LOG_LEVEL` | 로그 레벨 (기본 INFO) |

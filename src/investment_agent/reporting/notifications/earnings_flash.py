@@ -1,4 +1,4 @@
-"""v1 fundamentals/universe/notifications reader for earnings flash."""
+"""v1 fundamentals/universe reader for earnings flash. 보낼지 말지는 알림 원장이 판단한다."""
 from __future__ import annotations
 
 from typing import Any
@@ -6,7 +6,6 @@ from typing import Any
 from investment_agent.config import load_config
 from investment_agent.data.universe.repository import UniverseRepository
 from investment_agent.platform.db.postgres import Database
-from investment_agent.notifications.outbox import Outbox
 
 SCHEMA_REPORTING = "reporting"
 SCHEMA_UNIVERSE = "universe"
@@ -15,7 +14,7 @@ T_ENTITIES = "entities"
 
 
 class EarningsFlashStore:
-    """속보 후보에 필요한 v1 읽기와 outbox 중복 상태만 소유한다."""
+    """속보 후보에 필요한 v1 읽기만 소유한다."""
 
     def __init__(self, db: Database) -> None:
         self._db = db
@@ -39,17 +38,6 @@ class EarningsFlashStore:
             for member in self._universe.watchlist_members("fundamentals")
             if member.is_active
         ]
-
-    def processed_flash_keys(self) -> set[tuple[str, str]]:
-        """이미 outbox에 등록된 (ticker, accession_no) 쌍."""
-        result: set[tuple[str, str]] = set()
-        for key in Outbox().sent_keys("fundamentals", kind="fundamentals_flash"):
-            if not key.startswith("flash:"):
-                continue
-            _, ticker, accession_no = key.split(":", 2) if key.count(":") >= 2 else ("", "", "")
-            if ticker and accession_no:
-                result.add((ticker, accession_no))
-        return result
 
     def load_names(self, tickers: list[str]) -> dict[str, dict[str, Any]]:
         securities = self._universe.securities_by_ticker(tickers)
@@ -92,9 +80,6 @@ class EarningsFlashStore:
             configure=lambda query: query.gte("filing_date", since),
             order_by="ticker,filing_date,accession_no",
         )
-
-    def sent_keys(self) -> set[str]:
-        return Outbox().sent_keys("fundamentals", kind="fundamentals_flash")
 
 
 __all__ = ["EarningsFlashStore", "SCHEMA_REPORTING", "V_EARNINGS_SURPRISE"]

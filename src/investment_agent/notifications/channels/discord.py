@@ -1,13 +1,15 @@
 """Discord 메시지 전송 어댑터. HTTP는 이 파일에만 있고 설정·전송 함수를 주입한다.
 
-한 번의 호출은 한 번의 HTTP 시도다. 429 재시도는 outbox가 예약하며 타임아웃/5xx는
-전달 여부 불명으로 남긴다. 응답 없는 POST를 여기서 반복하지 않는다.
+한 번의 호출은 한 번의 HTTP 시도다. 429 재시도는 원장이 예약하며 타임아웃/5xx는
+전달 여부 불명으로 남긴다. 응답 없는 POST를 여기서 반복하지 않는다 — 다만 `deliver`에
+nonce를 주면 Discord가 몇 분 안의 같은 nonce를 새 메시지로 만들지 않으므로, 호출자가
+그 창 안에서 한 번 더 시도할 수 있다.
 """
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import dataclass
 import math
-from collections.abc import Sequence
 from typing import Any, Callable
 
 from investment_agent.config import Config
@@ -18,6 +20,8 @@ from investment_agent.platform.logging import get_logger
 log = get_logger(__name__)
 
 _API_BASE = "https://discord.com/api/v10"
+# Discord nonce 상한.
+NONCE_MAX_LENGTH = 25
 
 
 class DeliveryRejected(RuntimeError):
@@ -31,6 +35,24 @@ class DeliveryRejected(RuntimeError):
 
 class DeliveryUnknown(RuntimeError):
     """전달 여부 불명. 자동 재전송하면 같은 알림이 두 번 나갈 수 있다."""
+
+
+@dataclass(frozen=True)
+class ForumThread:
+    """포럼에서 알림이 쌓일 스레드. key가 정체성이고 name은 새로 만들 때만 쓴다."""
+
+    key: str
+    name: str
+    tags: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class Delivery:
+    """보낸 메시지가 사는 곳. 수정하려면 location_id와 message_id가 둘 다 필요하다."""
+
+    location_id: str
+    message_id: str
+    thread_id: str | None = None
 
 
 def validate_message(message: dict[str, Any]) -> dict[str, Any]:
@@ -206,16 +228,155 @@ def _snowflake_order(thread_id: str) -> str:
     return thread_id.zfill(24)
 
 
+def _file_name(path: str) -> str:
+    name = str(path).replace("\\", "/").split("/")[-1]
+    if not name:
+        raise DeliveryRejected("ValueError")
+    return name
+
+
 class DiscordChannel:
     """목적지 ID와 고정 API 경로만 사용한다. webhook URL을 받거나 기록하지 않는다."""
 
     def __init__(self, config: Config, *, post: Callable[..., Any] | None = None,
-                 get: Callable[..., Any] | None = None) -> None:
+                 get: Callable[..., Any] | None = None,
+                 patch: Callable[..., Any] | None = None) -> None:
         self._config = config
         self._post = post
         self._get = get
+        self._patch = patch
         #: 채널 ID -> {스레드 제목(소문자): 스레드 ID}. 프로세스 안에서만 산다.
         self._threads: dict[str, dict[str, str]] = {}
+
+    # ── 원장 기반 전송 ─────────────────────────────────────────────────────
+    def deliver(
+        self, *, target: str, message: dict[str, Any], attachment_path: str | None = None,
+        thread: ForumThread | None = None, known_thread_id: str | None = None,
+        nonce: str | None = None,
+    ) -> Delivery:
+        """새 메시지를 보낸다. 포럼이면 스레드에 이어 붙이거나 스레드를 새로 만든다.
+
+        `known_thread_id`는 원장이 기억하는 스레드다. 그것이 없으면(원장 도입 전에 만든
+        스레드) Discord 목록에서 제목 첫 마디로 한 번 찾는다. 기억하던 스레드가 지워졌으면
+        새 스레드를 만들고, 호출자는 돌려받은 thread_id로 원장을 고친다.
+        """
+        payload = self._checked(target=target, message=message)
+        if thread is not None and not str(thread.name).strip():
+            raise DeliveryRejected("ValueError")
+        if thread is None:
+            response = self._send_message(target, payload, attachment_path, nonce)
+            return Delivery(target, self._message_id(response))
+        destination = known_thread_id
+        if destination is None:
+            found, is_new = self._forum_destination(target, thread.name)
+            destination = None if is_new else found
+        if destination is not None:
+            try:
+                response = self._send_message(destination, payload, attachment_path, nonce)
+                return Delivery(destination, self._message_id(response), destination)
+            except DeliveryRejected as exc:
+                # 지워진 스레드. 같은 대상의 기록이 끊기지 않게 새 스레드를 연다.
+                if str(exc) != "discord_http_404" or known_thread_id is None:
+                    raise
+                log.warning("discord thread vanished; opening a new one", extra={"channel": target})
+        body: dict[str, Any] = {"name": str(thread.name)[:100], "message": payload}
+        if thread.tags:
+            body["applied_tags"] = list(thread.tags)
+        response = self._request("post", f"{_API_BASE}/channels/{target}/threads", body, attachment_path)
+        thread_id = self._message_id(response)
+        self._remember_thread(target, thread.name, thread_id)
+        # 포럼의 첫 글은 스레드와 같은 id를 갖는다.
+        return Delivery(thread_id, thread_id, thread_id)
+
+    def edit(
+        self, *, location_id: str, message_id: str, message: dict[str, Any],
+        attachment_path: str | None = None,
+    ) -> Delivery:
+        """이미 보낸 메시지의 내용을 바꾼다. 첨부가 있으면 옛 첨부를 새 것으로 갈아 끼운다."""
+        payload = self._checked(target=location_id, message=message)
+        if not isinstance(message_id, str) or not message_id.isascii() or not message_id.isdigit():
+            raise DeliveryRejected("ValueError")
+        if attachment_path is not None:
+            payload["attachments"] = [{"id": 0, "filename": _file_name(attachment_path)}]
+        response = self._request(
+            "patch", f"{_API_BASE}/channels/{location_id}/messages/{message_id}", payload, attachment_path,
+        )
+        self._message_id(response)
+        return Delivery(location_id, message_id)
+
+    def _checked(self, *, target: str, message: dict[str, Any]) -> dict[str, Any]:
+        try:
+            payload = validate_message(message)
+            if not isinstance(target, str) or not target.isascii() or not target.isdigit():
+                raise ValueError("invalid discord channel id")
+            self._config.require("DISCORD_BOT_TOKEN")
+        except (ValueError, RuntimeError) as exc:
+            raise DeliveryRejected(type(exc).__name__) from None
+        return payload
+
+    def _send_message(self, channel_id: str, payload: dict[str, Any], attachment_path: str | None,
+                      nonce: str | None) -> Any:
+        body = dict(payload)
+        if nonce is not None:
+            if not nonce or len(nonce) > NONCE_MAX_LENGTH:
+                raise DeliveryRejected("invalid_nonce")
+            body["nonce"], body["enforce_nonce"] = nonce, True
+        return self._request("post", f"{_API_BASE}/channels/{channel_id}/messages", body, attachment_path)
+
+    def _request(self, method: str, url: str, body: dict[str, Any], attachment_path: str | None) -> Any:
+        token, = self._config.require("DISCORD_BOT_TOKEN")
+        sender = self._post if method == "post" else self._patch
+        if sender is None:
+            import requests
+
+            sender = requests.post if method == "post" else requests.patch
+        headers = {"Authorization": f"Bot {token}"}
+        try:
+            if attachment_path is None:
+                return self._checked_status(sender(
+                    url, headers={**headers, "Content-Type": "application/json"},
+                    json=body, timeout=30, allow_redirects=False,
+                ))
+            name = _file_name(attachment_path)
+            with open(attachment_path, "rb") as stream:
+                response = sender(
+                    url, headers=headers, data={"payload_json": canonical_json(body)},
+                    files={"files[0]": (name, stream, "image/png")}, timeout=30, allow_redirects=False,
+                )
+        except (FileNotFoundError, IsADirectoryError):
+            raise DeliveryRejected("discord_attachment_does_not_exist") from None
+        except (DeliveryRejected, DeliveryUnknown):
+            raise
+        except Exception:
+            raise DeliveryUnknown("discord_transport_outcome_unknown") from None
+        return self._checked_status(response)
+
+    @staticmethod
+    def _checked_status(response: Any) -> Any:
+        status = response.status_code
+        if status == 429:
+            try:
+                retry_after = float(response.json().get("retry_after", response.headers.get("Retry-After", 60)))
+                if not math.isfinite(retry_after) or retry_after < 0:
+                    raise ValueError("invalid retry interval")
+            except (ValueError, TypeError, AttributeError):
+                raise DeliveryUnknown("discord_rate_limit_interval_unknown") from None
+            raise DeliveryRejected("discord_rate_limited", is_retryable=True, retry_after=retry_after)
+        if 400 <= status < 500:
+            raise DeliveryRejected(f"discord_http_{status}")
+        if not 200 <= status < 300:
+            raise DeliveryUnknown(f"discord_http_{status}_outcome_unknown")
+        return response
+
+    @staticmethod
+    def _message_id(response: Any) -> str:
+        try:
+            message_id = str(response.json()["id"])
+            if not message_id.isascii() or not message_id.isdigit():
+                raise ValueError("invalid message id")
+            return message_id
+        except (ValueError, TypeError, KeyError):
+            raise DeliveryUnknown("discord_response_outcome_unknown") from None
 
     def _forum_destination(
         self, target: str, thread_name: str,
@@ -246,141 +407,7 @@ class DiscordChannel:
         self._threads.setdefault(str(target), {})[_thread_match_key(thread_name)] = str(thread_id)
 
 
-    def send(
-        self, *, target: str, message: dict[str, Any],
-        thread_name: str | None = None, thread_tags: Sequence[str] = (),
-    ) -> str:
-        """`thread_name`이 있으면 포럼 스레드로, 없으면 일반 메시지로 보낸다.
-
-        포럼 채널은 `/channels/{id}/messages`를 400으로 거절한다 — 첫 글이 곧
-        스레드라 `/threads`로 만들어야 한다. 목적지가 포럼인지는 부르는 쪽이
-        안다(선언이 그렇게 되어 있다). 여기서 채널 종류를 다시 물으면 카드 한 장마다
-        왕복이 하나 더 붙는다.
-        """
-        try:
-            payload = validate_message(message)
-            if not isinstance(target, str) or not target.isascii() or not target.isdigit():
-                raise ValueError("invalid discord channel id")
-            if thread_name is not None and not str(thread_name).strip():
-                raise ValueError("empty forum thread name")
-            token, = self._config.require("DISCORD_BOT_TOKEN")
-        except (ValueError, RuntimeError) as exc:
-            raise DeliveryRejected(type(exc).__name__) from None
-        post = self._post
-        if post is None:
-            import requests
-            post = requests.post
-        destination, is_new_thread = (target, False)
-        if thread_name is not None:
-            destination, is_new_thread = self._forum_destination(target, thread_name)
-        if thread_name is None or not is_new_thread:
-            # 이미 있는 스레드는 일반 채널처럼 메시지를 이어 붙인다.
-            url = f"{_API_BASE}/channels/{destination}/messages"
-            body: dict[str, Any] = payload
-        else:
-            url = f"{_API_BASE}/channels/{destination}/threads"
-            # Discord 스레드 제목 상한은 100자다. 넘기면 400으로 거절당한다.
-            body = {"name": str(thread_name)[:100], "message": payload}
-            if thread_tags:
-                body["applied_tags"] = list(thread_tags)
-        try:
-            response = post(
-                url,
-                headers={"Authorization": f"Bot {token}", "Content-Type": "application/json"},
-                json=body, timeout=30, allow_redirects=False,
-            )
-        except Exception:
-            raise DeliveryUnknown("discord_transport_outcome_unknown") from None
-        status = response.status_code
-        if status == 429:
-            retry_after = response.headers.get("Retry-After", 60)
-            try:
-                retry_after = float(response.json().get("retry_after", retry_after))
-                if not math.isfinite(retry_after) or retry_after < 0:
-                    raise ValueError("invalid retry interval")
-            except (ValueError, TypeError, AttributeError):
-                # 대기 시간을 읽지 못하면 짧은 재시도 간격을 추측하지 않는다.
-                raise DeliveryUnknown("discord_rate_limit_interval_unknown") from None
-            raise DeliveryRejected("discord_rate_limited", is_retryable=True, retry_after=retry_after)
-        if 400 <= status < 500:
-            raise DeliveryRejected(f"discord_http_{status}")
-        if not 200 <= status < 300:
-            raise DeliveryUnknown(f"discord_http_{status}_outcome_unknown")
-        try:
-            message_id = str(response.json()["id"])
-            if not message_id.isascii() or not message_id.isdigit():
-                raise ValueError("invalid message id")
-            if is_new_thread and thread_name is not None:
-                # 새 스레드의 응답 id가 곧 스레드 id다.
-                self._remember_thread(target, thread_name, message_id)
-            return message_id
-        except (ValueError, TypeError, KeyError):
-            raise DeliveryUnknown("discord_response_outcome_unknown") from None
-
-    def send_file(
-        self, *, target: str, path: str, content: str = "",
-        embeds: list[dict[str, Any]] | None = None,
-        thread_name: str | None = None, thread_tags: Sequence[str] = (),
-    ) -> str:
-        """한 개의 카드 파일을 보낸다. 파일 업로드는 이 채널 경계에서만 수행한다."""
-        try:
-            token, = self._config.require("DISCORD_BOT_TOKEN")
-            if not isinstance(target, str) or not target.isascii() or not target.isdigit():
-                raise ValueError("invalid discord channel id")
-            if not isinstance(path, str) or not path:
-                raise ValueError("invalid file path")
-            file_name = path.replace("\\", "/").split("/")[-1]
-            if not file_name:
-                raise ValueError("invalid file name")
-            if thread_name is not None and not str(thread_name).strip():
-                raise ValueError("empty forum thread name")
-        except (ValueError, RuntimeError) as exc:
-            raise DeliveryRejected(type(exc).__name__) from None
-        if self._post is not None:
-            raise DeliveryRejected("file_sender_does_not_support_injected_post")
-        import requests
-        try:
-            with open(path, "rb") as stream:
-                starter = {
-                    "content": content,
-                    "embeds": embeds or [],
-                    "allowed_mentions": {"parse": []},
-                }
-                destination, is_new_thread = (target, False)
-                if thread_name is not None:
-                    destination, is_new_thread = self._forum_destination(target, thread_name)
-                if thread_name is None or not is_new_thread:
-                    url = f"{_API_BASE}/channels/{destination}/messages"
-                    form: dict[str, Any] = starter
-                else:
-                    url = f"{_API_BASE}/channels/{destination}/threads"
-                    form = {"name": str(thread_name)[:100], "message": starter}
-                    if thread_tags:
-                        form["applied_tags"] = list(thread_tags)
-                response = requests.post(
-                    url,
-                    headers={"Authorization": f"Bot {token}"},
-                    data={"payload_json": canonical_json(form)},
-                    files={"file": (file_name, stream, "image/png")},
-                    timeout=30,
-                    allow_redirects=False,
-                )
-        except (FileNotFoundError, OSError):
-            raise DeliveryRejected("discord_attachment_does_not_exist") from None
-        except Exception:
-            raise DeliveryUnknown("discord_transport_outcome_unknown") from None
-        if response.status_code == 429:
-            raise DeliveryRejected("discord_rate_limited", is_retryable=True)
-        if 400 <= response.status_code < 500:
-            raise DeliveryRejected(f"discord_http_{response.status_code}")
-        if not 200 <= response.status_code < 300:
-            raise DeliveryUnknown(f"discord_http_{response.status_code}_outcome_unknown")
-        try:
-            message_id = str(response.json()["id"])
-            if not message_id.isascii() or not message_id.isdigit():
-                raise ValueError("invalid message id")
-            if is_new_thread and thread_name is not None:
-                self._remember_thread(target, thread_name, message_id)
-            return message_id
-        except (ValueError, TypeError, KeyError):
-            raise DeliveryUnknown("discord_response_outcome_unknown") from None
+__all__ = [
+    "NONCE_MAX_LENGTH", "Delivery", "DeliveryRejected", "DeliveryUnknown", "DiscordChannel",
+    "ForumThread", "fetch_forum_threads", "fetch_guild_channels", "validate_message",
+]

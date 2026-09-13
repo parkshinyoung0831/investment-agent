@@ -96,9 +96,7 @@ def run() -> int:
     from investment_agent.platform.db.postgres import Database
     macro_notify_store = MacroNotificationStore(Database(sb))
     check("notify.macro.load_core", (macro_notify_store, "load_core"))
-    check("notify.macro.core_already_claimed",
-          lambda: macro_notify_store.already_claimed(notification_key=f"core:{today.isoformat()}"))
-    check("notify.macro.load_watch_pending", (macro_notify_store, "load_watch_pending"))
+    check("notify.macro.load_watch", (macro_notify_store, "load_watch"))
 
     from investment_agent.data.macro.releases import db as econ_db
     check("econ_calendar.enabled_series", (econ_db, "enabled_series"))
@@ -113,9 +111,14 @@ def run() -> int:
     from investment_agent.notifications.earnings_calendar import candidates as ec_candidates
     from investment_agent.notifications.earnings_report import candidates as er_candidates
     from investment_agent.notifications.institutional import state as gurus_state
-    check("notify.earnings_report.pending_state", (er_candidates, "pending_state"))
-    check("notify.earnings_calendar.pending_state", (ec_candidates, "pending_state"))
-    check("notify.gurus.pending_state", (gurus_state, "pending_state"))
+    from investment_agent.notifications.db import PostgresNotificationLedger
+    ledger = PostgresNotificationLedger(Database(sb))
+    # 원장 표를 실제로 읽는지(노출 스키마·컬럼 이름). 쓰기 경로는 verify_notification_ledger.py가 본다.
+    check("notify.ledger.last_known", lambda: ledger.last_known("macro.daily", "market"))
+    check("notify.ledger.states", lambda: ledger.states("macro.daily", [("market", today.isoformat())]))
+    check("notify.earnings_report.pending_state", lambda: er_candidates.pending_state(ledger))
+    check("notify.earnings_calendar.pending_state", lambda: ec_candidates.pending_state(ledger))
+    check("notify.gurus.pending_state", lambda: gurus_state.pending_state(ledger))
 
     from investment_agent.operations.monitoring import counters
     check("ops.counters.collect", (counters, "collect"))

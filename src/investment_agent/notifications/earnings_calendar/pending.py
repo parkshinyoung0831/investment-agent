@@ -4,7 +4,9 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from investment_agent.config import load_config
 from investment_agent.notifications.earnings_calendar.candidates import pending_state
+from investment_agent.notifications.engine import default_context
 from investment_agent.platform.logging import configure_logging, get_logger
 
 log = get_logger(__name__)
@@ -15,7 +17,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="investment_agent.notifications.earnings_calendar.pending")
     parser.add_argument("--github-output", required=True)
     args = parser.parse_args(argv)
-    state = pending_state()
+    state = pending_state(default_context(load_config()).ledger)
     log.info(
         "calendar preflight: week=%s upcoming=%s schedule_updates=%s should_notify=%s",
         state["iso_week"], state["upcoming_releases"], state["schedule_updates"],

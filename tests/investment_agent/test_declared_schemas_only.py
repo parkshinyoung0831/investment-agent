@@ -110,7 +110,7 @@ class CodeOnlyCallsDeclaredSchemasTest(unittest.TestCase):
         """대상을 못 찾으면 위 테스트는 공허하게 통과한다."""
         declared = _declared_schemas()
         self.assertEqual(
-            {"universe", "market", "fundamentals", "macro", "institutional", "reporting"},
+            {"universe", "market", "fundamentals", "macro", "institutional", "notifications", "reporting"},
             declared,
         )
         called = set(_called_schemas())

@@ -1,24 +1,32 @@
-"""Strategy notification orchestration through the v1 notification outbox."""
+"""월간 전략 알림 — 적용월마다 종합 요약 한 장과 전략별 배분 카드 한 장씩을 원장에 맡긴다."""
 from __future__ import annotations
 
-import time
+from collections import defaultdict
 
 from investment_agent.config import load_config
-from investment_agent.notifications.channels.discord import DiscordChannel
-from investment_agent.notifications.outbox import Outbox
 from investment_agent.notifications.channels import routing
-from investment_agent.notifications.service import NotificationService
+from investment_agent.notifications.channels.discord import ForumThread
+from investment_agent.notifications.engine import (
+    Notice,
+    PublishContext,
+    Rendered,
+    default_context,
+    fact_time,
+    publish,
+)
 from investment_agent.notifications.subscriptions import discord_target
-from investment_agent.platform.clock import utc_now
+from investment_agent.notifications.topics import topic
 from investment_agent.platform.logging import get_logger
-from investment_agent.reporting.notifications.connections import configured_database
 
-from .db import load_pending, load_prev_alloc, mark_sent
+from .db import load_prev_alloc, load_recent_allocations
 from .embeds import build_card, build_summary
 from .models import AllocationRow, StrategyNotification
 
 log = get_logger(__name__)
-_BATCH_GAP_S = 1.5
+
+ALLOCATION_TOPIC = topic("strategy.allocation")
+MONTH_TOPIC = topic("strategy.month")
+ALL_STRATEGIES = "all"
 
 
 def _strategy_tags(target: str, strategy_id: str) -> tuple[str, ...]:
@@ -36,96 +44,80 @@ def _strategy_tags(target: str, strategy_id: str) -> tuple[str, ...]:
     return tuple(directory.tag_ids_by_channel_id(target, (name,)))
 
 
-def _build_cards(rows: list[dict]) -> tuple[list[StrategyNotification], dict[str, dict]]:
-    """개별 카드와 종합 카드에 사용할 전략별 배분을 계산한다."""
-    cards: list[StrategyNotification] = []
-    allocations: dict[str, dict] = {}
-    for raw in rows:
-        row = AllocationRow.from_mapping(raw)
-        prev = load_prev_alloc(row.strategy_id, row.apply_date)
-        cards.append(build_card(row, prev))
-        allocations[row.strategy_id] = row.alloc
-    return cards, allocations
+def _card(raw: dict) -> tuple[StrategyNotification, dict]:
+    row = AllocationRow.from_mapping(raw)
+    return build_card(row, load_prev_alloc(row.strategy_id, row.apply_date)), row.alloc
 
 
-def _service() -> tuple[NotificationService, object]:
+def allocation_notices(rows: list[dict]) -> list[Notice]:
+    """전략 배분의 정체성은 (전략, 적용월)이다."""
+    return [
+        Notice(
+            subject=str(row["strategy_id"]),
+            occurrence=str(row["apply_date"])[:10],
+            fact_at=fact_time(str(row["apply_date"])[:10]),
+            basis={"weights": {str(k): float(v) for k, v in (row.get("weights") or {}).items()}},
+            data=row,
+        )
+        for row in rows
+    ]
+
+
+def month_notices(rows: list[dict]) -> list[Notice]:
+    """적용월마다 종합 요약 한 장."""
+    by_month: dict[str, list[dict]] = defaultdict(list)
+    for row in rows:
+        by_month[str(row["apply_date"])[:10]].append(row)
+    return [
+        Notice(
+            subject=ALL_STRATEGIES,
+            occurrence=month,
+            fact_at=fact_time(month),
+            basis={"strategies": sorted(str(row["strategy_id"]) for row in month_rows)},
+            data=month_rows,
+        )
+        for month, month_rows in sorted(by_month.items())
+    ]
+
+
+def run(*, summary_target: str | None = None, target: str | None = None,
+        context: PublishContext | None = None) -> int:
     config = load_config()
-    database = configured_database(config)
-    return NotificationService(Outbox(database), DiscordChannel(config), clock=utc_now), config
+    rows = load_recent_allocations()
+    if not rows:
+        log.info("no recent strategy allocations")
+        return 0
+    context = context or default_context(config)
+    summary_id = discord_target(MONTH_TOPIC.channel_kind, config=config, override=summary_target)
+    forum_id = discord_target(ALLOCATION_TOPIC.channel_kind, config=config, override=target)
 
+    def render_month(batch):
+        notice, = batch
+        cards, allocations = [], {}
+        for raw in notice.data:
+            card, alloc = _card(raw)
+            cards.append(card)
+            allocations[str(raw["strategy_id"])] = alloc
+        summary = build_summary(cards, allocations)
+        if not summary:
+            raise ValueError("strategy summary has nothing to show")
+        return Rendered({"embeds": [summary]})
 
-def _enqueue_batch(
-    rows: list[dict], cards: list[StrategyNotification], allocations: dict[str, dict],
-    *, service: NotificationService, summary_target: str, target: str,
-) -> int:
-    """한 배치의 outbox 행을 등록하고 성공한 allocation만 완료 표시한다."""
-    apply_date = str(rows[0]["apply_date"])
-    keys: set[str] = set()
-    summary = build_summary(cards, allocations)
-    if summary:
-        key = f"summary:{apply_date}"
-        result = service.enqueue(
-            producer="strategy", notification_key=key, kind="strategy_summary",
-            target=summary_target, message={"embeds": [summary]}, period_end=apply_date,
+    def render_allocation(batch):
+        notice, = batch
+        card, _alloc = _card(notice.data)
+        # 아카이브는 포럼이다 — 전략마다 스레드 하나에 월간 배분이 쌓인다.
+        return Rendered(
+            {"embeds": [card.embed]},
+            thread=ForumThread(notice.subject, routing.strategy_thread_title(notice.subject),
+                               _strategy_tags(forum_id, notice.subject)),
         )
-        if result.status != "error":
-            keys.add(key)
 
-    for card in cards:
-        strategy_id, card_date = card.allocation_id.split(":", 1)
-        key = f"allocation:{strategy_id}:{card_date}"
-        result = service.enqueue(
-            producer="strategy", notification_key=key, kind="strategy",
-            target=target, message={"embeds": [card.embed]},
-            entity_key=strategy_id, period_end=card_date,
-            # 아카이브는 포럼이다 — 전략마다 스레드 하나에 월간 배분이 쌓인다.
-            thread_name=routing.strategy_thread_title(strategy_id),
-            thread_tags=_strategy_tags(target, strategy_id),
-        )
-        if result.status != "error":
-            keys.add(key)
-
-    sent_keys = {
-        result.notification_key
-        for result in service.run_pending()
-        if result.producer == "strategy" and result.status == "sent"
-    }
-    for card in cards:
-        strategy_id, card_date = card.allocation_id.split(":", 1)
-        if f"allocation:{strategy_id}:{card_date}" in sent_keys:
-            mark_sent(card.allocation_id, strategy_id=strategy_id, apply_date=card_date)
-    return sum(key in sent_keys for key in keys)
+    delivered = publish(MONTH_TOPIC, month_notices(rows), render_month, context=context, target=summary_id).delivered
+    delivered += publish(
+        ALLOCATION_TOPIC, allocation_notices(rows), render_allocation, context=context, target=forum_id,
+    ).delivered
+    return delivered
 
 
-def run(*, service: NotificationService | None = None,
-        summary_target: str | None = None,
-        target: str | None = None) -> int:
-    """대기 중인 전략 배분을 outbox에 등록하고 전송한다."""
-    if service is None:
-        service, config = _service()
-    else:
-        config = load_config()
-    summary_id = discord_target("strategy_summary", config=config, override=summary_target)
-    forum_id = discord_target("strategy", config=config, override=target)
-    total_batches = 0
-    total_sent = 0
-    # 전송 실패·중복은 로컬 완료 시각을 바꾸지 않는다. 한 snapshot만 순회해야
-    # 같은 배치를 무한 재조회하지 않고 outbox의 재시도·불명 상태를 보존한다.
-    pending = sorted(load_pending(), key=lambda row: str(row["apply_date"]))
-    batches: dict[str, list[dict]] = {}
-    for row in pending:
-        batches.setdefault(str(row["apply_date"]), []).append(row)
-    for rows in batches.values():
-        if total_batches:
-            time.sleep(_BATCH_GAP_S)
-        total_batches += 1
-        cards, allocations = _build_cards(rows)
-        sent = _enqueue_batch(
-            rows, cards, allocations, service=service,
-            summary_target=summary_id, target=forum_id,
-        )
-        total_sent += sent
-        log.info("strategy notification batch finished apply_date=%s sent=%d", rows[0]["apply_date"], sent)
-    if not total_batches:
-        log.info("no pending strategy allocations")
-    return total_sent
+__all__ = ["ALLOCATION_TOPIC", "MONTH_TOPIC", "allocation_notices", "month_notices", "run"]

@@ -443,7 +443,7 @@ class ResearchStore:
         return {**payload, "signals": _decode_json(payload["signals"]), "run_id": run_id, "weights": dict(row["weights"])}
 
     def mark_allocations_sent(self, apply_date: date, *, sent_at: str) -> int:
-        """알림 상태는 runtime SQLite outbox가 소유한다."""
+        """알림 상태는 Postgres 알림 원장(`notifications.notices`)이 소유한다."""
         del sent_at
         with self._connect() as connection:
             return int(connection.execute(

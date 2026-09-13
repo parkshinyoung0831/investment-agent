@@ -364,24 +364,25 @@ flowchart LR
   합니다 — 한쪽만 들으면 그 요일 카드가 조용히 빕니다. 게이트는 `!= 'cancelled'`이고
   (ECOS 키 하나로 15종이 실패해도 미국 지표는 멀쩡합니다) 각자 안전망 cron을 갖습니다.
   워치도 안전망은 하루 한 번(`50 0 * * 1-6`)입니다 — `macro.market_observations`를 채우는
-  것은 macro ETL뿐이고 같은 관측치는 outbox 중복방지에 걸리므로, 장중에 더 자주 돌려도
+  것은 macro ETL뿐이고 같은 관측치는 원장 중복방지에 걸리므로, 장중에 더 자주 돌려도
   새 경보를 만들 수 없습니다. 장중 감시가 필요하면 알림이 아니라 ETL을 더 돌립니다.
-  중복은 `notification_outbox`가 막습니다 — macro·macro releases·gurus가 `producer/kind`
-  컬럼으로 구분해 같은 원장을 공유합니다. 워치는 `(series_id, obs_date)` 기반 키로 load
-  단계에서, 코어는 한 장짜리 묶음이라 `core.run()`이 발송 직전에 직접 확인합니다.
-  경제지표 발표 중복은 같은 표에 `notification_key=f"first_actual:{event_key}"`로
-  성공 발송 뒤에만 막습니다.
+  중복은 Postgres `notifications` 원장이 topic별로 막습니다(`notifications/topics.py`) — 코어는
+  하루 한 장(표시값이 직전과 같으면 생략), 워치는 지표별 경보 단계가 바뀔 때만, 경제지표
+  발표는 발표 하나당 한 번입니다.
 - **실적 수집은 하이브리드입니다.** 노트북(로컬 하네스)이 켜져 있으면
   `earnings_watch` job이 발표 예정 시각의 신뢰도에 맞춰 1분 주기로 관심종목 8-K와
   10-Q/K를 훑어 뜨는 즉시 잡습니다. 8-K는 속보를 보내고, 10-Q/K는 회사 전체·세그먼트를
   적재한 뒤 정밀 카드를 보냅니다. 꺼져 있을 때를 대비해 `fundamentals_earnings_watch`가 장전 마감 후
   (13:00 UTC = 22:00 KST)와 장후 마감 후(22:00 UTC = 07:00 KST) 두 번 안전망으로
   돕니다. 둘 다 같은 진입점(`watch_earnings`)을 쓰므로 수집 경로가 갈리지 않습니다.
-- **중복 발송은 발송 *전* 선점으로 막습니다.** notification producer가
-  `notification_outbox`에 `(producer, notification_key)`를 먼저 기록하고, 실제로
-  선점한 쪽만 보냅니다. 발송 뒤에 기록하면 두 러너가 모두 "미발송"을 읽고 둘 다
-  보낸 뒤 기록하게 되어 UNIQUE 제약이 이미 나간 메시지를 되돌리지 못합니다.
-  발송 실패는 outbox 상태와 `notification_deliveries`에 남아 다음 재시도 판단의 근거가 됩니다.
+- **중복 발송은 발송 *전* 선점으로 막습니다.** `notifications/engine.py`의 `publish()`가
+  원장의 `reserve` 함수로 `(topic, subject, occurrence)`를 먼저 예약하고, 예약한 쪽만
+  카드를 그려 보냅니다. 발송 뒤에 기록하면 두 러너가 모두 "미발송"을 읽고 둘 다 보냅니다.
+  Discord 요청에는 nonce를 붙여 응답이 끊겨도 같은 메시지가 두 번 생기지 않게 합니다.
+  결과는 `notifications.notices`(현재 상태)와 `notifications.deliveries`(시도 이력)에 남고,
+  응답을 못 받은 발송(`unknown`)은 자동으로 다시 보내지 않습니다 — 확인 뒤
+  `python -m investment_agent.operations.commands.notify_ledger replay <topic> <subject> <occurrence>`.
+  남은 문제가 있으면 진입점이 exit 1로 끝나 워크플로 실패 알림이 갑니다.
 - fast path는 `investment_agent.data.fundamentals.commands.check_earnings_season`으로 시즌을 먼저 판정합니다.
   근거는 `fundamentals.earnings_schedule_versions`(yfinance 발표 예정일)이고,
   `refresh_expectations`가 채웁니다. 판단 근거가 없으면(스냅샷 없음·오래됨·비어 있음)
@@ -583,7 +584,7 @@ kill-switch 상태 확인과 local secret/cache의 Git 제외가 확인되면 �
 - 로컬 하네스·대시보드에서 지속 사용하려면 같은 `INVESTMENT_AGENT_RESEARCH_ROOT`를 사용해
   로컬 `research.features.daily`와 `research.strategies.etl`을 실행한다. 재수집/실행의 네트워크 비용과
   운영 시점은 별도로 정한다. 대시보드는 snapshot 부재를 표시하고 새 DB를 만들지 않는다.
-- 알림 재시도는 outbox 상태가 결정한다. local sent_at이 없더라도 이미 발송·불명인 메시지를
+- 알림 재시도는 알림 원장 상태가 결정한다. 이미 발송·불명인 메시지를
   자동 재전송하지 않는다. 전략 배치를 같은 프로세스에서 무한 재조회하지 않는다.
 
 산출물은 [공식 upload-artifact](https://github.com/actions/upload-artifact)와

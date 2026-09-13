@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import os
 import shutil
 from collections.abc import Sequence
@@ -17,13 +18,11 @@ from investment_agent.notifications.earnings_report import candidates, render
 from investment_agent.reporting.notifications import earnings_report as db
 from investment_agent.notifications.earnings_report import card, embeds
 from investment_agent.reporting.services.earnings import valuation_history as history
-from investment_agent.notifications.channels.discord import DiscordChannel
-from investment_agent.notifications.outbox import Outbox
-from investment_agent.notifications.service import NotificationService
+from investment_agent.notifications.channels.discord import ForumThread
+from investment_agent.notifications.engine import PublishContext, Rendered, default_context, publish
 from investment_agent.notifications.subscriptions import discord_target
 from investment_agent.notifications.channels import routing
 from investment_agent.notifications.channels.directory import guild_directory
-from investment_agent.platform.clock import utc_now
 from investment_agent.platform.logging import configure_logging
 
 log = get_logger(__name__)
@@ -111,85 +110,59 @@ def _extras_by_ticker(tickers: list[str]) -> dict[str, dict]:
     return out
 
 
-async def run(
+def run(
     *,
     tickers: set[str] | None = None,
-    service: NotificationService | None = None,
     target: str | None = None,
+    context: PublishContext | None = None,
 ) -> int:
-    """미발송 정밀 카드를 보낸다.
+    """준비된 최근 공시의 정밀 카드를 원장에 맡긴다. PNG는 원장이 이 실행에 맡긴 공시만 그린다.
 
     실시간 감시 경로는 방금 감지한 종목만 넘겨, 무관한 대기 공시의 렌더가
     발표 직후 카드 전송을 지연시키지 않게 한다.
     """
-    items = candidates.load_pending(tickers)
+    items = candidates.load_ready_filings(tickers)
     if not items:
-        log.info("fundamentals: 발송할 신규 공시 없음 — 종료")
+        log.info("fundamentals: 카드로 보낼 준비가 된 최근 공시 없음")
         return 0
-
-    log.info("fundamentals: 신규 공시 %d건 발송 시작", len(items))
-    extras = _extras_by_ticker(sorted({item["row"]["ticker"] for item in items}))
     config = load_config()
-    forum = discord_target("fundamentals_earnings", config=config, override=target)
-    if service is None:
-        service = NotificationService(
-            Outbox(db.database_for_config(config)),
-            DiscordChannel(config),
-            clock=utc_now,
+    forum = discord_target(candidates.TOPIC.channel_kind, config=config, override=target)
+    extras: dict[str, dict] = {}
+
+    def render_card(batch):
+        notice, = batch
+        item = notice.data
+        ticker = notice.subject
+        if ticker not in extras:
+            extras.update(_extras_by_ticker([ticker]))
+        ctx, caption = card.build(item, extras.get(ticker))
+        png = _persist_png(
+            asyncio.run(render.shoot_png(render.render("earnings.html.j2", ctx))), ticker, notice.occurrence,
         )
-    enqueued = 0
-    for item in items:
-        row = item["row"]
-        ticker = str(row["ticker"])
-        accession_no = candidates.row_accession_no(row)
+        return Rendered(
+            {"content": caption, "embeds": embeds.build_segments(item)},
+            attachment_path=png,
+            thread=ForumThread(ticker, routing.thread_title(ctx), _forum_tags(forum, item, config)),
+        )
 
-        try:
-            ctx, caption = card.build(item, extras.get(ticker))
-            fundamental_png = _persist_png(
-                await render.shoot_png(render.render("earnings.html.j2", ctx)),
-                ticker,
-                accession_no,
-            )
-
-            segments = embeds.build_segments(item)
-            # 목적지는 포럼이다. 스레드 제목을 넘기지 않으면 Discord가 400으로
-            # 거절하고, 그 실패는 outbox 실패 행으로만 남아 ETL은 초록으로 보인다.
-            result = service.enqueue(
-                producer="fundamentals",
-                notification_key=f"report:{ticker}:{accession_no}",
-                kind="fundamentals_earnings",
-                target=target,
-                message={"content": caption, "embeds": segments},
-                entity_key=ticker,
-                period_end=row.get("period_end"),
-                attachment_path=fundamental_png,
-                thread_name=routing.thread_title(ctx),
-                thread_tags=_forum_tags(target, item, config),
-            )
-            if result.status == "enqueued":
-                enqueued += 1
-            elif result.status == "error":
-                log.error("fundamentals outbox 등록 실패 %s", ticker)
-        except Exception:  # noqa: BLE001 - 한 종목 실패가 나머지를 막지 않는다
-            log.error("fundamentals 카드 생성 실패 %s", ticker, exc_info=True)
-            continue
-
-        log.info("fundamentals enqueued %s — 세그먼트 카드 %d개", ticker, len(segments))
-
-    results = service.run_pending()
-    sent = sum(1 for result in results if result.producer == "fundamentals" and result.status == "sent")
-    log.info("fundamentals: outbox 등록=%d 전송 완료=%d", enqueued, sent)
-    return 0
+    report = publish(
+        candidates.TOPIC,
+        [candidates.filing_notice(item["row"], item) for item in items],
+        render_card,
+        context=context or default_context(config),
+        target=forum,
+    )
+    return report.delivered
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     argparse.ArgumentParser(
         prog="investment_agent.notifications.earnings_report.run",
-        description="신규 공시 정밀 알림을 outbox에 등록하고 디스패치한다.",
+        description="최근 공시의 정밀 카드를 원장에 맡겨 한 번만 알린다.",
     ).parse_args(argv)
     configure_logging()
-    import asyncio
-    return asyncio.run(run())
+    run()
+    return 0
 
 
 if __name__ == "__main__":

@@ -7,14 +7,13 @@ from investment_agent.config import load_config
 from investment_agent.data.fundamentals.repository import FundamentalsRepository
 from investment_agent.data.universe.repository import UniverseRepository
 from investment_agent.platform.db.postgres import Database
-from investment_agent.reporting.readers.runtime import read_runtime_rows
 
 SCHEMA_UNIVERSE = "universe"
 T_ENTITIES = "entities"
 
 
 class EarningsCalendarStore:
-    """카드에 필요한 행과 주간 outbox 중복 상태만 읽는다."""
+    """카드에 필요한 행만 읽는다. 보낼지 말지는 알림 원장이 판단한다."""
 
     def __init__(self, db: Database) -> None:
         self._db = db
@@ -79,28 +78,6 @@ class EarningsCalendarStore:
                 "sic_industry": by_cik.get(str(security.cik), {}).get("sic_industry_name"),
             }
             for ticker, security in securities.items()
-        }
-
-    def sent_weeks(self) -> set[str]:
-        rows = read_runtime_rows("notification_outbox")
-        return {
-            str(row["notification_key"]).removeprefix("calendar:")
-            for row in rows
-            if row.get("producer") == "fundamentals"
-            and row.get("kind") == "fundamentals_calendar"
-            if row.get("status") in {"pending", "sent", "abandoned"}
-            and str(row.get("notification_key", "")).startswith("calendar:")
-        }
-
-    def sent_schedule_keys(self) -> set[str]:
-        """이미 등록된 종목별 일정 outbox 키를 읽는다."""
-        rows = read_runtime_rows("notification_outbox")
-        return {
-            str(row["notification_key"])
-            for row in rows
-            if row.get("producer") == "fundamentals"
-            and row.get("kind") == "fundamentals_schedule"
-            and row.get("status") in {"pending", "sent", "abandoned"}
         }
 
 

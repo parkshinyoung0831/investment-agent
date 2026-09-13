@@ -27,6 +27,8 @@ from investment_agent.reporting.services.macro.constants import (
 from investment_agent.reporting.services.macro.format import base_card, code_map, short_of
 
 ACCENT = int(palette.PRIMARY.lstrip("#"), 16)
+#: watch.CLEAR와 같은 값. 경보가 끝난 지표의 상태 이름.
+CLEARED_TIER = "clear"
 
 # 등급 아이콘. WATCH_TIER_LABEL(이미 있는 워치 섹션 헤더 아이콘)을 그대로 재사용한다 —
 # 색맹 배려까지 담긴 값이라 여기서 또 만들 이유가 없다.
@@ -69,11 +71,16 @@ def build_watch(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """
     tiers: dict[str, list[dict[str, Any]]] = {t: [] for t in TIER_ORDER}
     kr: list[dict[str, Any]] = []
+    cleared: list[dict[str, Any]] = []
     for r in rows:
         card = {
             **base_card(r), "tier": r["tier"], "reason": r.get("reason") or "",
             "category": r.get("category") or "",
         }
+        # 평시로 돌아온 지표는 등급 표가 아니라 따로 모은다 — 경보가 끝났다는 소식이다.
+        if card["tier"] == CLEARED_TIER:
+            cleared.append(card)
+            continue
         (kr if card["kr"] else tiers[card["tier"]]).append(card)
 
     def _cat_rank(card: dict[str, Any]) -> int:
@@ -107,11 +114,20 @@ def build_watch(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "value": _capped_table(table_rows, right=(1,)),
         })
 
+    if cleared:
+        table_rows = [(c["name"], c["value"], c["reason"] or "—") for c in cleared]
+        fields.append({
+            "name": f"✅ 평시 복귀 `{len(cleared)}`",
+            "value": _capped_table(table_rows, right=(1,)),
+        })
+
     headline = " · ".join(
         f"{icon} {counts.get(short_of(t), 0)}" for t, (icon, _label) in WATCH_TIER_LABEL.items()
     )
     if kr:
         headline += f" · 🇰🇷 {len(kr)}"
+    if cleared:
+        headline += f" · ✅ {len(cleared)}"
 
     return {
         "title": "신호 워치",

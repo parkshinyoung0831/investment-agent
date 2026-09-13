@@ -192,7 +192,7 @@ class SegmentHighlightsTest(unittest.TestCase):
             candidates.is_report_ready({"status": "processing", "axes": []}, filed_at=""))
 
     def test_pending_report_is_deferred_until_segment_sync_finishes(self):
-        """후속 알림 잡도 processing/failed 공시를 선점하지 않는다."""
+        """후속 알림 잡도 processing/failed 공시를 원장에 맡기지 않는다."""
         row = {
             "ticker": "TEST", "fiscal_year": 2026, "fiscal_period": "Q2",
             "period_end": "2026-06-30", "filed_at": date.today().isoformat(),
@@ -201,7 +201,6 @@ class SegmentHighlightsTest(unittest.TestCase):
         common = {
             "watchlist_members": Mock(return_value=[{"ticker": "TEST", "watch_from": "2000-01-01"}]),
             "load_headline_rows": Mock(return_value=[row]),
-            "processed_keys": Mock(return_value=set()),
             "anomaly_keys": Mock(return_value=set()),
             "load_health": Mock(return_value={}),
             "load_valuation": Mock(return_value={}),
@@ -216,7 +215,7 @@ class SegmentHighlightsTest(unittest.TestCase):
                     target: {"status": status, "axes": []} for target in targets
                 },
             ):
-                self.assertEqual(candidates.load_pending(), [])
+                self.assertEqual(candidates.load_ready_filings(), [])
 
 
 class EarningsCardTest(unittest.TestCase):

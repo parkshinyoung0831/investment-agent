@@ -1,4 +1,4 @@
-"""미발송 펀더멘탈 알림 상태를 GitHub Actions 출력으로 기록한다.
+"""원장이 아직 보내지 않은 펀더멘탈 알림 상태를 GitHub Actions 출력으로 기록한다.
 
 속보(8-K embed)와 정밀 카드(10-Q PNG)는 필요한 의존성이 다르다. 속보는 requests만
 있으면 되고 카드는 Playwright·CJK 폰트까지 필요하다. 두 상태를 따로 내보내야
@@ -13,11 +13,12 @@ from __future__ import annotations
 import argparse
 import pathlib
 
-from investment_agent.notifications.earnings_report import candidates
 from investment_agent.config import load_config
-from investment_agent.notifications.earnings_flash.candidates import pending_count
+from investment_agent.notifications.earnings_flash import run as flash
+from investment_agent.notifications.earnings_flash.candidates import load_flash_candidates
+from investment_agent.notifications.earnings_report import candidates
+from investment_agent.notifications.engine import default_context, unsettled
 from investment_agent.reporting.notifications.earnings_flash import EarningsFlashStore
-from investment_agent.platform.db.postgres import Database
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -25,8 +26,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--github-output", required=True)
     args = parser.parse_args(argv)
 
-    state = candidates.pending_state()
-    pending_flash = pending_count(EarningsFlashStore(Database.from_config(load_config())))
+    config = load_config()
+    ledger = default_context(config).ledger
+    state = candidates.pending_state(ledger)
+    flash_notices = flash.notices(load_flash_candidates(EarningsFlashStore.configured(config)))
+    pending_flash = len(unsettled(flash.TOPIC, flash_notices, ledger=ledger))
     output = pathlib.Path(args.github_output)
     with output.open("a", encoding="utf-8") as stream:
         stream.write(

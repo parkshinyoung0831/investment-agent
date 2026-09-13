@@ -64,9 +64,9 @@
 src/investment_agent/reporting/notifications/<read-model>.py
 → src/investment_agent/notifications/<알림종류>/candidates.py
 → card.py·embeds.py·render.py
-→ notification_outbox 원장 등록·선점
+→ src/investment_agent/notifications/engine.py (Postgres notifications 원장 예약)
 → src/investment_agent/notifications/channels/discord.py
-→ delivery 결과 기록
+→ 발송 결과 기록(notices·deliveries)
 ```
 
 `src/investment_agent/data/universe/watchlists`는 관심종목, `src/investment_agent/notifications/discord_admin`은 채널·역할 구성 도구다. 실제 알림

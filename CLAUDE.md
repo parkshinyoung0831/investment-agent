@@ -16,7 +16,7 @@ S&P 500 종목을 대상으로 한 **투자 분석용 데이터 파이프라인 
 
 - 런타임: **Python 3.11**(GitHub Actions 기준), 로컬은 3.12도 사용.
 - 저장소: **Supabase Postgres**. 데이터·연구 owner는 `src/investment_agent/` 아래에 두고,
-  관심종목은 `universe`, 전송 설정·outbox는 `notifications`가 소유합니다.
+  관심종목은 `universe`, 알림 중복 방지 원장은 `notifications`가 소유합니다.
 - 스케줄링: 수집·정규 알림은 **GitHub Actions cron** (`.github/workflows/`). 토스 고정 IP가 필요한
   AI 판단·Discord 승인·실행은 `investment_agent.operations.commands`를 통해 호출하고,
   operations 하네스 라이브러리(`investment_agent.operations.harness`)는 Windows/Mac mini의 로컬 서비스에서 별도 운영합니다.
@@ -39,7 +39,7 @@ src/investment_agent/
   intelligence/           뉴스·소셜 (같은 4계층, 저장소는 로컬 DuckDB·Parquet)
   research/               features · datasets · models · backtest · RL
   trading/                decision · evidence · portfolio · risk · performance
-  notifications/          outbox · producers · Discord · discord_admin
+  notifications/          engine(원장·발송) · producers · Discord · discord_admin
   operations/              harness(로컬 오케스트레이터) · monitoring(예정된 것이 실제로
                            돌았는지) · commands(CLI). 실행 단계는 harness의 mode가 정한다 —
                            `shadow/paper/live`라는 파일로 나누지 않는다(규칙 14의 3축).
@@ -53,7 +53,7 @@ src/investment_agent/
                            그 이름을 자동 멀티페이지로 훑기 때문이다.
 
 db/postgres/v1/                     현재 Supabase schema의 유일한 선언 순서
-db/sqlite/runtime/v1/               로컬 실행·승인·알림 원장 선언
+db/sqlite/runtime/v1/               로컬 실행·승인 원장 선언
 db/duckdb/{research,intelligence}/v1/  로컬 연구·텍스트 저장소 선언
 ```
 
@@ -67,7 +67,7 @@ db/duckdb/{research,intelligence}/v1/  로컬 연구·텍스트 저장소 선언
 | 자주 나오는 제안 | 왜 안 하는가 | 지키는 것 |
 |---|---|---|
 | `config/*.toml` 층을 새로 만들기 | 참조 데이터는 코드 catalog가 소유한다. hard risk limit(`trading/risk/gate.py`)이 편집 가능한 파일로 나가면 코드 리뷰 없이 라이브 게이트를 느슨하게 할 수 있다. 같은 것을 두 곳이 주장하는 문제는 새 디렉터리가 아니라 **이미 고른 자리로 통일**해서 푼다 | `docs/ENV.md`(토글·비밀값) + 코드 catalog(참조 데이터) + `pyproject.toml`(의존성) |
-| 워크플로 37→6개로 합치기 | 37개는 중복이 아니라 **서로 다른 스케줄 37개**다(장 마감 뒤·상류 뒤·혼잡 회피). 공통 설치 단계는 이미 `.github/actions/`로 빠져 31개가 그것을 쓴다. 합치면 cron이 `if:` 자기 게이트로 바뀐다 | 워크플로당 명시적 cron |
+| 워크플로 36→6개로 합치기 | 36개는 중복이 아니라 **서로 다른 스케줄 36개**다(장 마감 뒤·상류 뒤·혼잡 회피). 공통 설치 단계는 이미 `.github/actions/`로 빠져 34개가 그것을 쓴다. 합치면 cron이 `if:` 자기 게이트로 바뀐다 | 워크플로당 명시적 cron |
 | `notifications`를 `service.py`+`discord/`로 합치기 | 카드 패키지가 `render.py`/`templates/`를 공유하면 조용히 서로를 끌고 간다 — 규칙 15와 DESIGN-system.md가 그래서 분리를 강제한다. 공통 원시값은 이미 `notifications/quickchart.py`·`renderers/`·`channels/`에 있다 | 규칙 15, 알림별 패키지 |
 | research DuckDB를 4표로 줄이기 | 여덟 표는 세 묶음이다 — Parquet 뿌리 catalog 2, 연구 lineage 4, 전략 배분 2. 넷만 남기면 feature store 신선도와 월간 전략 계약이 사라진다 | `db/duckdb/research/v1/10_datasets.sql` 머리주석 |
 
@@ -138,8 +138,7 @@ flowchart LR
 - **자동매매 보고서 3종**: `investment_portfolio`(하루 1장 종합 판단),
   `investment_candidates`(신뢰도 상위 N종목 심층), `investment_trades`(실제 주문·체결).
   파이프라인이 아니라 `trading`·`execution` 원장이 원천이고, 로컬 하네스가
-  판단·체결 직후에 보내며 `notify_investment` Actions가 하루 한 번 안전망으로 돈다.
-  중복은 `notification_outbox`의 producer·notification_key 선점이 막는다.
+  판단·체결 직후에 보낸다. 원천이 로컬 원장이라 Actions 워크플로는 없다.
   카드에는 원장에 실제로 있는 값만 적는다 — 판단에 반영되지 않는 요소를 반영된 것처럼
   쓰지 않는다.
 - **실적 알림 2단계 파이프라인**:
@@ -148,6 +147,11 @@ flowchart LR
 - 구성: reporting read model(조회) → 도메인 계산(`reporting/earnings/*.py`, `reporting/macro/*.py`) →
   알림 패키지의 `card.py`/`render.py`(Jinja2 + Playwright)와 `templates/*.html.j2`,
   목록·근거 중심 알림은 `embeds.py` → `notifications/channels/discord.py`(전송).
+- **중복 방지는 `notifications/engine.py`의 `publish()` 하나**가 한다. 알림 하나의 정체성은
+  `(topic, subject, occurrence)`이고 내용 hash가 revision이다. 같은 revision은 다시 보내지 않고,
+  내용이 바뀌면 topic 선언(`topics.py`)에 따라 원 메시지를 고치거나 무시한다. topic에
+  baseline이 없으면 보내지 않는다(fail-closed) — 새 topic은 `notify_ledger baseline`부터.
+  수동 재발송은 `notify --force`(= `NOTIFY_REPLAY`)이고, producer가 원장을 직접 부르지 않는다.
 - **PNG 카드를 만드는 알림 패키지는 자기 `render.py`와 `templates/`를 소유**합니다(공유 금지).
   목록·근거 중심 알림은 Discord embed를 쓰며, 필요할 때만 QuickChart URL로 그림을 붙입니다.
 
@@ -341,8 +345,9 @@ hex를 인라인 하드코딩하지 말고 패키지별 `palette.py`/`thresholds
   Playwright·CJK 폰트까지. 게이트를 하나로 묶으면 카드가 없는 날 속보가 `import requests`에서 죽습니다.
 - **시즌·조건 게이트는 fail-open입니다.** 판단 근거가 없으면(스냅샷 없음·오래됨) 실행하는 쪽으로
   둡니다 — 예정일은 자주 바뀌므로 게이트가 조용히 닫히는 쪽이 더 나쁩니다.
-- **중복 발송은 보내기 *전* 선점으로 막습니다**(`src/investment_agent/notifications/outbox.py`). 보낸 뒤 기록하면
-  이미 나간 메시지를 되돌릴 수 없습니다.
+- **중복 발송은 보내기 *전* 선점으로 막습니다**(Postgres 알림 원장의 `reserve` 함수). 보낸 뒤 기록하면
+  이미 나간 메시지를 되돌릴 수 없습니다. 러너에 원장 사본(SQLite cache)을 복원하지 않습니다 —
+  cache scope마다 원장이 갈라져 같은 카드가 두 번 나갑니다.
 - 예정 사용량은 `python scripts/actions_budget.py`로 계산합니다. 할당(2,000분/월)을 넘기면 잡이
   조용히 안 도므로 cron을 늘리기 전에 먼저 봅니다.
 

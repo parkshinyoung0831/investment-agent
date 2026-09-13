@@ -1,93 +1,86 @@
-"""8-K 실적 속보 outbox 등록·전송 진입점."""
+"""8-K 실적 속보 — 공시 하나를 그 종목의 실적 스레드에 한 번 알린다."""
 from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
 
 from investment_agent.config import load_config
-from investment_agent.notifications.earnings_flash.candidates import load_pending_flash
-from investment_agent.reporting.notifications.earnings_flash import EarningsFlashStore
-from investment_agent.notifications.channels.discord import DiscordChannel
-from investment_agent.notifications.earnings_flash.embeds import build_flash_embed
-from investment_agent.notifications.outbox import Outbox
-from investment_agent.notifications.service import NotificationService
-from investment_agent.notifications.subscriptions import discord_target
 from investment_agent.notifications.channels import routing
-from investment_agent.platform.clock import utc_now
+from investment_agent.notifications.channels.discord import ForumThread
+from investment_agent.notifications.earnings_flash.candidates import load_flash_candidates
+from investment_agent.notifications.earnings_flash.embeds import build_flash_embed
+from investment_agent.notifications.engine import (
+    Notice,
+    PublishContext,
+    Rendered,
+    default_context,
+    fact_time,
+    publish,
+)
+from investment_agent.notifications.subscriptions import discord_target
+from investment_agent.notifications.topics import topic
 from investment_agent.platform.logging import configure_logging, get_logger
+from investment_agent.reporting.notifications.earnings_flash import EarningsFlashStore
 
 log = get_logger(__name__)
 
+TOPIC = topic("earnings.flash")
 
-def run(
-    target_channel_id: str | None = None,
-    *,
-    tickers: set[str] | None = None,
-    store: EarningsFlashStore | None = None,
-    service: NotificationService | None = None,
-    target: str | None = None,
-) -> int:
-    """미발송 8-K 속보를 v1 outbox에 등록하고 디스패치한다."""
-    config = load_config()
-    if store is None:
-        store = EarningsFlashStore.configured(config)
 
-    pending = load_pending_flash(store, tickers)
-    if not pending:
-        log.info("flash: 발송할 신규 8-K 실적 속보 없음")
-        return 0
-
-    channel_id = discord_target(
-        "fundamentals_flash", config=config, override=target_channel_id or target,
-    )
-    if service is None:
-        service = NotificationService(Outbox(store.database), DiscordChannel(config), clock=utc_now)
-
-    enqueued = 0
-    for item in pending:
+def notices(items: Sequence[dict]) -> list[Notice]:
+    """정체성은 (종목, accession_no)다. 같은 8-K는 몇 번을 읽어도 한 번만 알린다."""
+    out = []
+    for item in items:
         flash = item["flash"]
-        ticker = str(flash["ticker"])
-        accession_no = str(flash["accession_no"])
-        key = f"flash:{ticker}:{accession_no}"
-        result = service.enqueue(
-            producer="fundamentals",
-            notification_key=key,
-            kind="fundamentals_flash",
-            target=channel_id,
-            message={
-                "content": f"⚡ **{ticker}** 실적 발표 속보가 접수되었습니다.",
-                "embeds": [build_flash_embed(item)],
+        out.append(Notice(
+            subject=str(flash["ticker"]),
+            occurrence=str(flash["accession_no"]),
+            fact_at=fact_time(flash.get("available_at") or flash["filed_at"]),
+            basis={
+                "revenue_actual": flash.get("revenue_actual"),
+                "eps_actual": flash.get("eps_actual"),
             },
-            entity_key=ticker,
-            period_end=flash.get("period_end"),
-            # 목적지는 실적 포럼이다. 속보와 정밀 분석이 **같은 종목 스레드**에
-            # 쌓여야 "그 종목에 무슨 일이 있었나"를 한 줄기로 읽는다. 제목을
-            # 빼면 Discord가 400으로 거절하고 그 실패는 outbox에만 남는다.
-            thread_name=routing.ticker_thread_title(
-                ticker, str(flash.get("company_name") or ticker)),
-        )
-        if result.status == "enqueued":
-            enqueued += 1
-        elif result.status == "error":
-            log.warning("flash: outbox 등록 실패 ticker=%s accession_no=%s", ticker, accession_no)
+            data=item,
+        ))
+    return out
 
-    results = service.run_pending()
-    sent = sum(
-        1 for result in results
-        if result.producer == "fundamentals"
-        and result.status == "sent"
+
+def render(batch: list[Notice]) -> Rendered:
+    notice, = batch
+    names = notice.data.get("names") or {}
+    name = str(names.get("name_ko") or names.get("name") or notice.subject)
+    return Rendered(
+        {"content": f"⚡ **{notice.subject}** 실적 발표 속보가 접수되었습니다.",
+         "embeds": [build_flash_embed(notice.data)]},
+        # 속보와 정밀 분석이 같은 종목 스레드에 쌓여야 "그 종목에 무슨 일이 있었나"를 한 줄기로 읽는다.
+        thread=ForumThread(notice.subject, routing.ticker_thread_title(notice.subject, name)),
     )
-    log.info("flash: outbox 등록=%d 전송 완료=%d", enqueued, sent)
-    return sent
+
+
+def run(*, tickers: set[str] | None = None, store: EarningsFlashStore | None = None,
+        target: str | None = None, context: PublishContext | None = None) -> int:
+    config = load_config()
+    store = store or EarningsFlashStore.configured(config)
+    candidates = notices(load_flash_candidates(store, tickers))
+    if not candidates:
+        log.info("flash: 최근 8-K 실적 속보 없음")
+        return 0
+    report = publish(
+        TOPIC, candidates, render,
+        context=context or default_context(config),
+        target=discord_target(TOPIC.channel_kind, config=config, override=target),
+    )
+    return report.delivered
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     argparse.ArgumentParser(
         prog="investment_agent.notifications.earnings_flash.run",
-        description="8-K 실적 속보를 outbox에 등록하고 디스패치한다.",
+        description="8-K 실적 속보를 원장에 맡겨 한 번만 알린다.",
     ).parse_args(argv)
     configure_logging()
-    return run()
+    run()
+    return 0
 
 
 if __name__ == "__main__":

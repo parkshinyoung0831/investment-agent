@@ -81,9 +81,6 @@ VIEWS: Mapping[str, ViewSpec] = MappingProxyType({
     "portfolio_decisions": ViewSpec(
         "decision_id,run_id,as_of_at,stage,status,source_type,confidence,risk_approved,"
         "approved_weights,violations,created_at", "decision_id", "as_of_at", "run_id"),
-    "notification_failures": ViewSpec(
-        "producer,notification_key,kind,entity_key,status,attempt_count,channel,failure_reason,attempted_at",
-        "producer,notification_key,attempted_at,channel,failure_reason", "attempted_at", "producer"),
     "earnings_schedule": ViewSpec(
         "ticker,target_fiscal_year,target_fiscal_period,target_period_end,expected_report_at,"
         "expected_report_date,expected_session,is_estimated,snapshot_date,previous_report_at",

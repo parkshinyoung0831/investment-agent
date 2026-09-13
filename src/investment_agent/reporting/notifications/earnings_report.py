@@ -3,7 +3,7 @@
 이 파일에는 쿼리만 둔다 — 발송 후보 선정은 candidates.py, EV 계산은 capital.py가 맡는다.
 
 읽기: 관심종목의 canonical financials·filings·가격/주식수 이력.
-읽기: local runtime outbox에서 (ticker, accession_no) 발송 선점 상태만 확인 —
+발송 여부는 여기서 읽지 않는다 — 알림 원장(`notifications.ledger`)이 소유한다.
 fundamentals 원장은 안 건드림.
 
 관심종목은 universe.entities의 관심 컬럼을 단일 기준으로 사용한다.
@@ -156,18 +156,6 @@ def _financial_rows(tickers: list[str]) -> list[dict]:
             "form_type": filing.get("form_type"),
             "available_at": filing.get("available_at"),
         })
-    return out
-
-
-def processed_keys() -> set[tuple[str, str]]:
-    """outbox에 등록된 (ticker, accession_no) 쌍 — 같은 공시 중복 차단용."""
-    from investment_agent.notifications.outbox import Outbox
-
-    out: set[tuple[str, str]] = set()
-    for key in Outbox().sent_keys("fundamentals", kind="fundamentals_earnings"):
-        if key.startswith("report:") and key.count(":") >= 2:
-            _, ticker, accession_no = key.split(":", 2)
-            out.add((ticker, accession_no))
     return out
 
 

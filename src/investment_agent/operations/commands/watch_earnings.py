@@ -7,8 +7,8 @@ BMO·AMC가 끝난 뒤 고정 시각에 한 번씩 호출한다. 둘 다 같은 
 중복은 두 겹으로 막는다.
 1. 수집: `earnings_results`의 자연키(ticker, fiscal_year, fiscal_period, accession_no)가
    같은 8-K를 두 번 저장하지 않는다.
-2. 발송: notification producer가 `notifications.outbox`에
-   `(producer, notification_key)`를 먼저 선점한다. 먼저 기록한 쪽만 보낸다.
+2. 발송: 알림 원장(Supabase `notifications`)이 (topic, 종목, accession_no)로 예약을
+   먼저 잡은 실행만 보낸다. 로컬과 Actions가 같은 원장을 본다.
 """
 from __future__ import annotations
 
@@ -154,15 +154,21 @@ def _sync_detected_reports(
     failures = [*company_failures, *segment_failures]
     report_ready = not failures
     if report_notify and report_ready:
-        try:
-            import asyncio
+        from investment_agent.notifications.problems import report_problems, take_problems
 
+        take_problems()
+        try:
             from investment_agent.notifications.earnings_report.run import run as send_report
 
-            asyncio.run(send_report(tickers=target_set))
+            send_report(tickers=target_set)
         except Exception as exc:
             log.exception("earnings watch: 정밀 카드 즉시 발송 실패")
             failures.append({"stage": "report_notify", "error": repr(exc)})
+            report_ready = False
+        # 적재는 이미 끝났다. 카드가 등록·전송되지 못한 사실만 실패 목록에 더한다.
+        problems = report_problems("watch_earnings:report")
+        if problems:
+            failures.append({"stage": "report_notify", "error": f"{problems} notification problem(s)"})
             report_ready = False
     return {
         "company": company,
@@ -243,13 +249,20 @@ def main(argv: list[str] | None = None) -> int:
             if args.notify:
                 # 패키지 __init__이 같은 이름의 run 함수를 재수출해 서브모듈을 가린다.
                 from investment_agent.notifications.earnings_flash.run import run as send_flash
+                from investment_agent.notifications.problems import report_problems, take_problems
 
+                take_problems()
                 try:
                     sent = send_flash(tickers=set(tickers))
                 except Exception as exc:
                     log.exception("earnings watch: 속보 발송 실패")
                     attempt_failures.append(
                         {"stage": "flash_notify", "error": repr(exc)}
+                    )
+                problems = report_problems("watch_earnings:flash")
+                if problems:
+                    attempt_failures.append(
+                        {"stage": "flash_notify", "error": f"{problems} notification problem(s)"}
                     )
 
             report_metrics = _sync_detected_reports(

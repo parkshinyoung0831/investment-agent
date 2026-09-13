@@ -56,16 +56,23 @@ flowchart TD
 * **이 프로젝트에서는**: `render.py`가 Jinja2 템플릿을 빌드하고 Playwright로 캡처하여 Discord 첨부 파일로 전송합니다.
 
 ### 이중 발송 방지 원장 (Deduplication)
-* **한 줄 설명**: 이미 Discord로 전송된 알림인지 DB에 영구 기록하여, 스케줄러 재시도나 중복 실행 시 동일 카드가 반복 발송되지 않도록 차단하는 메커니즘.
-* **이 프로젝트에서는**: `(producer, notification_key)`를 `notification_outbox`의 자연키로 사용하고,
-  실제 시도 결과는 `notification_deliveries`에 기록합니다. 실패·전달 여부 불명 상태도 삭제하지 않습니다.
+* **한 줄 설명**: 알림 하나를 정체성과 내용 revision으로 기록해, 같은 정보는 한 번만 보내고 바뀐 정보만 다시 반영하는 원장.
+* **이 프로젝트에서는**: Postgres `notifications` 스키마 하나가 Actions 러너와 로컬 하네스를 함께 막습니다.
+  - 정체성 `(topic, subject, occurrence)` — 예: `earnings.report / AAPL / 0000320193-26-000071`.
+  - revision — 카드에 실리는 사실(basis)의 hash. 같으면 다시 보내지 않고, 다르면 topic 선언
+    (`topics.py`의 `on_revision`)에 따라 원 메시지를 고치거나(edit) 무시(ignore)합니다.
+  - baseline — topic이 알림을 시작한 시각. 그 전의 사실은 보내지 않고 `suppressed`로 적습니다.
+    baseline이 없는 topic은 아무것도 보내지 않습니다(fail-closed).
+  - 흐름은 `engine.publish()` 하나: 예약(`reserve`) → 예약한 것만 렌더 → 발송 시작(`begin_send`)
+    → Discord(nonce) → 결과(`finish`). 응답이 끊긴 발송은 `unknown`으로 남기고 자동 재발송하지 않습니다.
+  - producer는 `Notice`만 만들고 원장을 직접 부르지 않습니다(테스트 강제).
 
 ### 수신 대상 구독
 알림 종류와 채널의 매핑은 `subscriptions.py`의 `KIND_ENV`가 소유합니다 — kind 하나에
 `DISCORD_CHANNEL_*` 환경변수 하나이고, DB 표가 아닙니다. 종목별 구독이나 채널 비활성화가
 실제로 필요해지면 그때 저장소를 설계합니다.
 
-producer는 `discord_target(kind)`로 채널 하나를 받아 Outbox 목적지로 고정합니다. 채널이
+producer는 `discord_target(kind)`로 채널 하나를 받아 발송 목적지로 고정합니다. 채널이
 구성되지 않으면 조용히 건너뛰지 않고 실패합니다. **kind 하나에 채널은 하나**이므로 호출부가
 개수를 다시 세지 않습니다.
 
@@ -112,8 +119,7 @@ src/investment_agent/notifications/
 ├── institutional/       # 13F 기관 지분 알림
 ├── strategy/            # 퀀트 자산배분 리밸런싱 모듈
 └── investment/          # 자동매매 판단·체결 보고 모듈 (파이프라인이 아니라 execution 원장이 원천)
-    ├── run_*.py         # outbox 등록·전송 진입점
-    ├── embeds.py        # embed 조립 (순수 함수)
+    ├── run_*.py         # Notice 조립·publish 진입점
     ├── embeds.py        # embed 조립 (순수 함수)
     └── run_portfolio.py / run_candidates.py / run_trades.py
 ```
@@ -122,11 +128,9 @@ src/investment_agent/notifications/
 ```text
 operations/commands/notify.py::main(--kind fundamentals_earnings) ──> KINDS 매핑으로 디스패치
   └── investment_agent.notifications.earnings_report.run:run()
-        ├── candidates.py::load_pending()                ──> 미발송 신규 공시 조회
-        ├── notification_outbox::Outbox.enqueue()       ──> notification_outbox에 스냅샷 선점
-        ├── card.py::build()                              ──> 렌더 컨텍스트 계산
-        ├── render.py::render() + render.py::shoot_png()  ──> Jinja2 HTML 빌드 + Playwright PNG 캡처
-        └── notifications.service::NotificationService  ──> Discord 전송 후 deliveries 기록
+        ├── candidates.py::filing_notice()                ──> 공시 하나를 Notice(정체성·basis)로
+        └── engine.py::publish(TOPIC, notices, render)    ──> 원장 예약 → 예약분만 렌더 → 발송 → 결과 기록
+              └── render(notice) = card.py::build() + render.py::shoot_png()
 ```
 
 ---
@@ -170,4 +174,4 @@ python -m investment_agent.operations.commands.notify --kind investment_trades
 | 카드 시각 디자인 수정 | PNG 카드를 만드는 각 패키지가 소유한 `templates/*.html.j2` (예: `earnings_report/templates/earnings.html.j2`) | [DESIGN-system.md](../../../DESIGN-system.md) 색상 토큰 준수, 패키지 간 공유 금지 |
 | Playwright 뷰포트 크기 조정 | 각 PNG 카드 패키지의 `render.py` (`shoot_png`의 `viewport_width`, 기본 1080) | 모바일 가독성 유지 |
 | Discord 채널 라우팅 변경 | `subscriptions.py`의 `KIND_ENV`와 그 env 값 | `discord_admin` manifest는 채널 **구조**를, `KIND_ENV`는 **목적지**를 소유한다 |
-| 중복 방지 키 룰 수정 | 각 producer의 `run.py`와 `notifications/outbox.py` (`enqueue`·`claim`·`record`) | `(producer, notification_key)` 원자적 기록과 전달 이력 보장 |
+| 중복 방지 규칙 수정 | topic 선언은 `notifications/topics.py`, 정체성·basis는 각 producer의 Notice 조립 | basis에 표시와 무관한 값(수집 시각 등)을 넣으면 매 실행이 새 revision이 된다. SQL 규칙은 `db/postgres/v1/60_notifications.sql`, 테스트용 동작 사본은 `ledger.py`의 `MemoryLedger` — 둘을 함께 고치고 `scripts/verify_notification_ledger.py`로 대조한다 |

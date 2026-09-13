@@ -19,17 +19,11 @@ _WORKFLOWS = Path(__file__).resolve().parents[1] / ".github" / "workflows"
 _PROJECT_ROOT = _WORKFLOWS.parents[1]
 # 관심종목 공시를 실제로 Discord로 보내는 워크플로. 서로 겹치면 중복 발송이 난다.
 _EARNINGS_SENDERS = ("notify_fundamentals",)
-_RUNTIME_LEDGER_SCOPES = {
-    "notify_macro_core": "macro",
-    "notify_macro_watch": "macro",
-    "notify_fundamentals": "fundamentals",
-    "notify_fundamentals_calendar": "fundamentals",
-    "notify_econ_calendar_release": "macro-releases",
-    "econ_calendar_watch": "macro-releases",
-    "institutional_13f": "institutional",
-    "notify_strategy": "strategy",
-    "notify_bootstrap": "bootstrap",
-    "notify_investment": "investment",
+# 수동 재발송 입력이 있는 발송 워크플로. 재발송은 원장 replay 하나로만 통한다.
+_REPLAY_INPUTS = {
+    "notify_macro_core": "inputs.force",
+    "notify_fundamentals_calendar": "inputs.force",
+    "institutional_13f": "inputs.force_notify",
 }
 
 
@@ -475,32 +469,28 @@ class SharedSetupTest(unittest.TestCase):
         )
 
 
-class RuntimeLedgerWorkflowTest(unittest.TestCase):
-    ACTION = _WORKFLOWS.parents[0] / "actions" / "runtime-ledger" / "action.yml"
-
-    def test_runtime_ledger_action_restores_then_initializes_sqlite(self):
-        text = self.ACTION.read_text(encoding="utf-8")
-
-        self.assertIn("uses: actions/cache@v5", text)
-        self.assertIn("data/local/runtime", text)
-        self.assertIn("${{ inputs.scope }}", text)
-        self.assertIn("${{ github.run_id }}-${{ github.run_attempt }}", text)
-        self.assertIn(
-            "python -m investment_agent.operations.commands.runtime_init",
-            text,
-        )
-
-    def test_every_hosted_runtime_reader_prepares_the_expected_ledger(self):
-        for name, scope in _RUNTIME_LEDGER_SCOPES.items():
+class NotificationWorkflowTest(unittest.TestCase):
+    def test_hosted_runners_do_not_restore_a_local_notification_ledger(self):
+        # 중복 방지 원장은 Postgres 하나다. 러너마다 SQLite 사본을 복원하면 cache scope마다
+        # 원장이 갈라져 같은 카드가 두 번 나간다.
+        self.assertFalse((_WORKFLOWS.parents[0] / "actions" / "runtime-ledger").exists())
+        for name in sorted(_workflow_names()):
             with self.subTest(workflow=name):
                 text = _text(name)
-                setup_at = text.index("uses: ./.github/actions/python-job")
-                ledger_at = text.index("uses: ./.github/actions/runtime-ledger")
-                self.assertGreater(ledger_at, setup_at)
+                self.assertNotIn("runtime-ledger", text)
+                self.assertNotIn("runtime_init", text)
+                self.assertNotIn("data/local/runtime", text)
+
+    def test_manual_resend_goes_through_ledger_replay(self):
+        for name, expression in _REPLAY_INPUTS.items():
+            with self.subTest(workflow=name):
                 self.assertRegex(
-                    text[ledger_at:],
-                    rf"with:\s*\n\s*scope:\s*{re.escape(scope)}(?:\s|$)",
+                    _text(name),
+                    rf"NOTIFY_REPLAY:\s*\$\{{\{{\s*{re.escape(expression)}",
                 )
+        for name in sorted(_workflow_names()):
+            with self.subTest(workflow=name):
+                self.assertNotRegex(_text(name), r"[A-Z_]+_NOTIFY_FORCE|FUNDAMENTALS_CALENDAR_FORCE")
 
     def test_shared_producers_share_concurrency_groups(self):
         for names in (
@@ -524,9 +514,12 @@ class RuntimeLedgerWorkflowTest(unittest.TestCase):
             _text("notify_fundamentals"),
         )
 
-    def test_investment_notifier_is_manual_only_because_its_source_is_local(self):
-        self.assertEqual([], _crons("notify_investment"))
-        self.assertIn("workflow_dispatch:", _text("notify_investment"))
+    def test_investment_reports_have_no_hosted_workflow(self):
+        # 원천이 로컬 runtime 원장이라 러너는 볼 수 없다. 발송은 로컬 하네스가 한다.
+        self.assertNotIn("notify_investment", _workflow_names())
+        for name in sorted(_workflow_names()):
+            with self.subTest(workflow=name):
+                self.assertNotIn("--kind investment_", _text(name))
 
 
 class KillSwitchTest(unittest.TestCase):

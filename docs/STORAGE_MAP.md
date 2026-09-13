@@ -10,8 +10,8 @@
 
 | 저장소 | 무엇이 사는가 | 왜 거기인가 | 선언 |
 |---|---|---|---|
-| **Supabase Postgres** | 공개 데이터에서 온 금융 사실 | 여러 기계·GitHub Actions가 함께 읽는다 | `db/postgres/v1/*.sql` |
-| **로컬 SQLite** | 실행·승인·알림 원장 | 실제 주문과 중복 방지는 **실행한 그 컴퓨터**의 사실이다 | `db/sqlite/runtime/v1/*.sql` |
+| **Supabase Postgres** | 공개 데이터에서 온 금융 사실 + 알림 원장 | 여러 기계·GitHub Actions가 함께 읽고 쓴다 | `db/postgres/v1/*.sql` |
+| **로컬 SQLite** | 실행·승인 원장 | 실제 주문은 **실행한 그 컴퓨터**의 사실이다 | `db/sqlite/runtime/v1/*.sql` |
 | **로컬 DuckDB (research)** | 연구 lineage와 전략 배분 | 언제든 다시 만들 수 있다. 남길 것은 "무엇으로 만들었나" | `db/duckdb/research/v1/*.sql` |
 | **로컬 DuckDB (intelligence)** | 뉴스·소셜 색인과 언급 | 원문은 Parquet, 여기는 작은 metadata만 | `db/duckdb/intelligence/v1/*.sql` |
 
@@ -32,6 +32,7 @@ Supabase                        ← GitHub Actions가 읽고 쓰는 유일한 �
 | `fundamentals` | `filings` · `filing_processing` · `financials` · `share_class_snapshots` · `segment_metrics` · `earnings_results` · `earnings_estimates` · `earnings_schedule_versions` · `analyst_consensus_snapshots` |
 | `macro` | `series` · `measures` · `market_observations` · `economic_observations` · `release_events` · `release_schedule_versions` · `forecast_snapshots` |
 | `institutional` | `filings` · `positions` |
+| `notifications` | `topics` · `notices` · `deliveries` · `threads` |
 
 `reporting` 스키마에는 표가 없고 **뷰만** 있다(15개). 파생값을 저장하지 않고 읽는 시점에
 만들기 때문이다 — 규칙이 바뀔 때 과거 행이 조용히 옛 규칙을 말하는 것을 막는다.
@@ -46,10 +47,11 @@ Supabase                        ← GitHub Actions가 읽고 쓰는 유일한 �
 | `10_account.sql` | `account_snapshots` |
 | `20_decisions.sql` | `policies` · `model_versions` · `model_promotions` · `decision_runs` · `security_decisions` · `decision_evidence` · `signal_runs` · `signals` · `portfolio_proposals` · `risk_decisions` · `portfolio_decisions` · `decision_evaluations` · `attribution_reports` |
 | `30_execution.sql` | `execution_control` · `runtime_records` · `intents` · `approvals` · `order_manifests` · `order_attempts` · `order_events` · `orders` · `fills` · `reconciliation_runs` |
-| `40_notifications.sql` | `notification_delivery_state` · `notification_outbox` · `notification_deliveries` |
 
-알림 중복 방지가 여기 있는 이유: 보내기 **전에** 선점해야 하는데, 그 판단은 발송을 실행하는
-기계의 사실이다. Supabase 왕복이 실패하면 중복 발송을 막을 수 없다.
+알림 중복 방지는 여기가 아니라 Postgres `notifications`에 있다. 같은 알림을 GitHub Actions
+러너와 로컬 하네스가 함께 보내므로, 기계마다 원장을 두면 원장끼리 서로를 모른 채 같은 카드를
+두 번 보낸다. 선점은 서버 시각으로 도는 SQL 함수 한 번이라 러너가 달라도 하나만 통과한다.
+Postgres에 닿지 못하면 보내지 않는다 — 중복보다 누락이 복구하기 쉽다(`notify_ledger replay`).
 
 ## 로컬 DuckDB
 

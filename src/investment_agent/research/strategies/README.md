@@ -117,5 +117,5 @@ python -m investment_agent.operations.commands.notify --kind strategy
 
 로컬 점검은 `ResearchStore().allocations()`를 사용한다. `strategy_runs`는 계산 한 번의
 시점·mode·signal metadata를, `strategy_allocations`는 `(run_id, asset_symbol)`별 weight를
-보관한다. Discord 발송 상태는 이 표에 저장하지 않고 runtime SQLite outbox가 소유한다.
+보관한다. Discord 발송 상태는 이 표에 저장하지 않고 Postgres 알림 원장(`notifications.notices`)이 소유한다.
 이 영역에는 Production Supabase schema나 migration 파일을 만들지 않는다.

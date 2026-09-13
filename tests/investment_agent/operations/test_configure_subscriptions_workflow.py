@@ -43,11 +43,6 @@ class StrategyWorkflowOrderingTest(unittest.TestCase):
                 "DISCORD_CHANNEL_EARNINGS_CALENDAR", "DISCORD_CHANNEL_EARNINGS",
                 "DISCORD_GUILD_ID",
             ),
-            "notify_investment.yml": (
-                "--kind investment_portfolio", "--kind investment_candidates",
-                "--kind investment_trades",
-                "DISCORD_CHANNEL_AI_REPORTS", "DISCORD_CHANNEL_AI_TRADES",
-            ),
             "notify_strategy.yml": (
                 "--kind strategy_summary", "--kind strategy",
                 "DISCORD_CHANNEL_STRATEGY_MONTHLY", "DISCORD_CHANNEL_STRATEGY_FORUM",

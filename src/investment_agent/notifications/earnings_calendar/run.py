@@ -7,20 +7,18 @@ from collections.abc import Sequence
 from datetime import date
 
 from investment_agent.config import load_config
+from investment_agent.notifications.channels import routing
+from investment_agent.notifications.channels.discord import ForumThread
+from investment_agent.notifications.earnings_calendar import card
 from investment_agent.notifications.earnings_calendar.candidates import (
-    collect, force_resend, schedule_notification_key,
+    SCHEDULE_TOPIC, WEEK_TOPIC, collect, schedule_notices, week_notice,
 )
 from investment_agent.notifications.earnings_calendar.render import render, shoot_png
+from investment_agent.notifications.engine import PublishContext, Rendered, default_context, publish
 from investment_agent.notifications.playwright import persist_png
-from investment_agent.reporting.notifications.earnings_calendar import EarningsCalendarStore
-from investment_agent.notifications.channels.discord import DiscordChannel
-from investment_agent.notifications.earnings_calendar import card
-from investment_agent.notifications.outbox import Outbox
-from investment_agent.notifications.service import NotificationService
 from investment_agent.notifications.subscriptions import discord_target
-from investment_agent.notifications.channels import routing
-from investment_agent.platform.clock import utc_now
 from investment_agent.platform.logging import configure_logging, get_logger
+from investment_agent.reporting.notifications.earnings_calendar import EarningsCalendarStore
 
 log = get_logger(__name__)
 
@@ -56,44 +54,6 @@ def _schedule_embed(row: dict) -> dict:
     }
 
 
-async def _post_schedules(rows: list[dict], *, config, service, today: date) -> int:
-    """종목별 다음 발표 예정을 그 종목의 실적 스레드에 남긴다.
-
-    주간 캘린더 카드는 "이번 주에 무엇이 있나"를 한 장으로 본다. 반면 한 종목을
-    파는 사람은 그 종목 스레드만 연다 — 거기에 예정이 없으면 속보가 아무 예고
-    없이 떨어진다. 같은 사실을 두 곳에 쓰는 것이 아니라, 읽는 방향이 둘이다.
-    """
-    try:
-        target = discord_target("fundamentals_schedule", config=config)
-    except Exception:  # noqa: BLE001 - 예정 안내 실패가 주간 카드를 막지 않는다
-        log.warning("calendar: 실적 포럼 목적지를 찾지 못해 종목별 예정 안내를 건너뛴다")
-        return 0
-    posted = 0
-    for row in rows:
-        ticker = str(row.get("ticker") or "")
-        expected = row.get("expected")
-        if not ticker or expected is None:
-            continue
-        # 예정일이 바뀌면 다시 알린다 — 키에 날짜를 넣어 그것을 새 알림으로 만든다.
-        key = schedule_notification_key(row)
-        if key is None:
-            continue
-        result = service.enqueue(
-            producer="fundamentals",
-            notification_key=key,
-            kind="fundamentals_schedule",
-            target=target,
-            message={"embeds": [_schedule_embed(row)]},
-            entity_key=ticker,
-            period_end=row.get("target_period_end") or today,
-            thread_name=routing.ticker_thread_title(ticker, str(row.get("name") or ticker)),
-            thread_tags=_schedule_tags(target, config),
-        )
-        if result.status == "enqueued":
-            posted += 1
-    return posted
-
-
 def _schedule_tags(target: str, config) -> tuple[str, ...]:
     """예정 안내는 '발표예정' 태그 하나만 단다 — 결과와 갈라 읽기 위해서다."""
     try:
@@ -104,66 +64,71 @@ def _schedule_tags(target: str, config) -> tuple[str, ...]:
         return ()
 
 
-async def run(*, store: EarningsCalendarStore | None = None,
-              service: NotificationService | None = None,
-              target: str | None = None) -> int:
+def run(*, store: EarningsCalendarStore | None = None, target: str | None = None,
+        context: PublishContext | None = None, today: date | None = None) -> int:
+    """주간 캘린더 카드와 종목별 다음 발표 예정을 원장에 맡긴다.
+
+    주간 카드는 "이번 주에 무엇이 있나"를 한 장으로 본다. 반면 한 종목을 파는 사람은 그
+    종목 스레드만 연다 — 거기에 예정이 없으면 속보가 아무 예고 없이 떨어진다. 같은 사실을
+    두 곳에 쓰는 것이 아니라, 읽는 방향이 둘이다.
+    """
     config = load_config()
-    if store is None:
-        store = EarningsCalendarStore.configured(config)
-    today = date.today()
+    store = store or EarningsCalendarStore.configured(config)
+    today = today or date.today()
     rows, snapshot_date, week = collect(store, today)
     if not rows:
         log.info("calendar: %s 주에 발표 예정 종목 없음 - 종료", week)
         return 0
-    if service is None:
-        service = NotificationService(Outbox(store.database), DiscordChannel(config), clock=utc_now)
+    context = context or default_context(config)
 
-    # 요약 카드는 주 1회지만, 종목별 일정은 예정일이 바뀌면 같은 주에도 갱신돼야
-    # 한다. 요약의 중복 방지가 스레드 안내까지 막으면 안 된다.
-    if not force_resend() and week in store.sent_weeks():
-        scheduled = await _post_schedules(rows, config=config, service=service, today=today)
-        if scheduled:
-            service.run_pending()
-        log.info("calendar: %s 주 요약은 이미 등록됨 - 종목별 예정 %d건 확인", week, scheduled)
-        return 0
+    def render_week(batch):
+        notice, = batch
+        data = notice.data
+        ctx, caption = card.build(data["rows"], data["today"], data["snapshot_date"])
+        png = persist_png(
+            asyncio.run(shoot_png(render("calendar.html.j2", ctx))), kind="earnings_calendar", name=data["week"],
+        )
+        return Rendered({"content": caption}, attachment_path=png)
 
-    target_id = discord_target("fundamentals_calendar", config=config, override=target)
-    ctx, caption = card.build(rows, today, snapshot_date)
-    png_path = persist_png(
-        await shoot_png(render("calendar.html.j2", ctx)),
-        kind="earnings_calendar", name=week,
-    )
-    key = f"calendar:{week}:force" if force_resend() else f"calendar:{week}"
-    result = service.enqueue(
-        producer="fundamentals",
-        notification_key=key,
-        kind="fundamentals_calendar",
-        target=target_id,
-        message={"content": caption},
-        period_end=today,
-        attachment_path=png_path,
-    )
-    # 종목별 예정 안내는 주간 카드와 무관하게 등록한다 — 주간 카드가 이미 나간
-    # 주에도 예정일이 바뀌면 그 종목 스레드에는 알려야 한다.
-    scheduled = await _post_schedules(rows, config=config, service=service, today=today)
-    if result.status == "enqueued" or scheduled:
-        service.run_pending()
-        log.info("calendar enqueued %s - 종목 %d개 · 종목별 예정 %d건",
-                 week, len(rows), scheduled)
-    return 0 if result.status in {"enqueued", "duplicate"} else 1
+    delivered = publish(
+        WEEK_TOPIC, [week_notice(rows, today, week, snapshot_date)], render_week,
+        context=context, target=discord_target(WEEK_TOPIC.channel_kind, config=config, override=target),
+    ).delivered
+
+    try:
+        forum = discord_target(SCHEDULE_TOPIC.channel_kind, config=config)
+    except Exception:  # noqa: BLE001 - 예정 안내 실패가 주간 카드를 막지 않는다
+        log.warning("calendar: 실적 포럼 목적지를 찾지 못해 종목별 예정 안내를 건너뛴다")
+        return delivered
+    tags = _schedule_tags(forum, config)
+
+    def render_schedule(batch):
+        notice, = batch
+        row = notice.data
+        ticker = str(row["ticker"])
+        return Rendered(
+            {"embeds": [_schedule_embed(row)]},
+            thread=ForumThread(ticker, routing.ticker_thread_title(ticker, str(row.get("name") or ticker)), tags),
+        )
+
+    delivered += publish(
+        SCHEDULE_TOPIC, schedule_notices(rows, today), render_schedule, context=context, target=forum,
+    ).delivered
+    return delivered
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     argparse.ArgumentParser(
         prog="investment_agent.notifications.earnings_calendar.run",
-        description="관심종목 주간 실적 캘린더 알림을 outbox에 등록한다.",
+        description="주간 실적 캘린더와 종목별 발표 예정을 원장에 맡겨 한 번만 알린다.",
     ).parse_args(argv)
     configure_logging()
     try:
-        return asyncio.run(run())
+        run()
     except Exception:
         log.exception("earnings calendar notification failed")
         return 1
+    return 0
 
 
 if __name__ == "__main__":

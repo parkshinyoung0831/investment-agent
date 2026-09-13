@@ -1,71 +1,37 @@
-"""경제 발표 알림의 reporting reader와 outbox 경계."""
+"""경제 발표 알림의 reporting reader 경계. 보낼지 말지는 원장(엔진)이 판단한다."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
-from investment_agent.notifications.outbox import Outbox
 from investment_agent.reporting.readers.financial import ReportingQueries
 
-PRODUCER = "macro_releases"
-KIND = "macro_release"
-_LOOKBACK_DAYS = 7
-_outbox: Outbox | None = None
-_reporting: ReportingQueries | None = None
+LOOKBACK_DAYS = 7
 
 
-def configure(outbox: Outbox, database: object | None = None) -> None:
-    global _outbox, _reporting
-    _outbox = outbox
-    if database is not None:
-        _reporting = ReportingQueries(database)  # type: ignore[arg-type]
-
-
-def _get_outbox() -> Outbox:
-    if _outbox is None:
-        raise RuntimeError("econ calendar notification store is not configured")
-    return _outbox
-
-
-def _get_reporting() -> ReportingQueries:
-    if _reporting is None:
-        raise RuntimeError("econ calendar reporting reader is not configured")
-    return _reporting
-
-
-def notification_key(key: str) -> str:
-    from investment_agent.reporting.services.economic_releases import parse_event_key
-
-    if parse_event_key(key) is None:
-        raise ValueError("invalid economic release event key")
-    return f"first_actual:{key}"
-
-
-def load_pending(event_keys: list[str] | None = None) -> list[dict]:
+def load_released(database: Any, event_keys: list[str] | None = None, *,
+                  now: datetime | None = None) -> list[dict]:
+    """최근 first actual이 확인된 발표. 같은 발표를 여러 번 읽어도 원장이 한 번만 보낸다."""
     wanted = set(event_keys) if event_keys is not None else None
     if wanted == set():
         return []
-    now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(days=_LOOKBACK_DAYS)
-    result = _get_reporting().read(
-        "macro_release_summary",
-        start=cutoff,
-        end=now + timedelta(days=_LOOKBACK_DAYS),
+    moment = now or datetime.now(timezone.utc)
+    cutoff = moment - timedelta(days=LOOKBACK_DAYS)
+    result = ReportingQueries(database).read(
+        "macro_release_summary", start=cutoff, end=moment + timedelta(days=LOOKBACK_DAYS),
     )
     if result.status not in {"ok", "empty"}:
         raise RuntimeError("macro release reporting reader unavailable")
-    rows = result.rows
-    rows = [
-        row for row in rows
+    return [
+        row for row in result.rows
         if row.get("status") == "released"
         and row.get("first_actual_value") is not None
         and row.get("first_actual_at")
-        and datetime.fromisoformat(str(row["first_actual_at"]).replace("Z", "+00:00")) >= cutoff
+        and parse_time(row["first_actual_at"]) >= cutoff
         and (wanted is None or row.get("event_key") in wanted)
     ]
-    pending = _get_outbox().filter_pending(
-        PRODUCER,
-        [notification_key(str(row["event_key"])) for row in rows],
-        kind=KIND,
-    )
-    pending_set = set(pending)
-    return [row for row in rows if notification_key(str(row["event_key"])) in pending_set]
+
+
+def parse_time(value: object) -> datetime:
+    moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)

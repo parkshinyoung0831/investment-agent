@@ -48,7 +48,6 @@ class RuntimeStorageTest(unittest.TestCase):
                 "10_account.sql",
                 "20_decisions.sql",
                 "30_execution.sql",
-                "40_notifications.sql",
             ],
             [path.name for path in sorted(RUNTIME_DDL_ROOT.glob("*.sql"))],
         )

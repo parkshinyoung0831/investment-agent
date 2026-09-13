@@ -99,6 +99,6 @@ WATCHED: list[dict[str, Any]] = [
     },
     {
         "env": "DISCORD_CHANNEL_OPS_DELIVERY", "label": "발송-실패",
-        "cadence": "outbox가 끝내 못 보낼 때", "quiet_hours": None,
+        "cadence": "알림이 끝내 못 나갈 때", "quiet_hours": None,
     },
 ]

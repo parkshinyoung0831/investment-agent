@@ -22,11 +22,11 @@ def _cutoff() -> str:
     return (date.today() - timedelta(days=_lookback_days())).isoformat()
 
 
-def load_pending_flash(
+def load_flash_candidates(
     store: EarningsFlashStore,
     tickers: set[str] | None = None,
 ) -> list[dict]:
-    """관심종목의 미발송 8-K 실적 속보 목록."""
+    """관심종목의 최근 8-K 실적 속보. 등록일 이전 공시는 뺀다 — 이미 보냈는지는 원장이 가른다."""
     members = store.watchlist_members()
     if tickers is not None:
         members = [member for member in members if str(member.get("ticker") or "") in tickers]
@@ -35,8 +35,6 @@ def load_pending_flash(
         log.info("flash: 활성 관심종목 없음 — 조회 생략")
         return []
 
-    forced = os.environ.get("NOTIFY_FLASH_FORCE", "").lower() in ("true", "1")
-    processed = set() if forced else store.processed_flash_keys()
     global_cutoff = _cutoff()
     member_cutoffs = {
         str(member["ticker"]): max(global_cutoff, str(member.get("watch_from") or global_cutoff))
@@ -47,20 +45,12 @@ def load_pending_flash(
     out: list[dict] = []
     for row in store.load_flash_rows(selected_tickers, global_cutoff):
         ticker = str(row.get("ticker") or "")
-        accession_no = str(row.get("accession_no") or "")
         filed = str(row.get("filed_at") or row.get("filing_date") or "")
         cutoff = member_cutoffs.get(ticker)
         if not cutoff or not filed or filed < cutoff:
-            continue
-        if (ticker, accession_no) in processed:
             continue
         out.append({"flash": {**row, "filed_at": filed}, "names": names.get(ticker, {})})
     return out
 
 
-def pending_count(store: EarningsFlashStore) -> int:
-    """렌더 의존성 설치 전 preflight용 대기 건수."""
-    return len(load_pending_flash(store))
-
-
-__all__ = ["load_pending_flash", "pending_count"]
+__all__ = ["load_flash_candidates"]

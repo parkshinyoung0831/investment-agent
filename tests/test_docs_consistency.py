@@ -122,7 +122,7 @@ class DeclaredRelationTest(unittest.TestCase):
         """선언을 못 읽으면 모든 이름이 '없는 표'가 되거나 그 반대가 된다."""
         declared = _declared_relations()
         self.assertIn("universe.entities", declared)
-        self.assertIn("notification_outbox", declared)
+        self.assertIn("notifications.notices", declared)
         self.assertIn("reporting.security_decisions", declared)
         self.assertGreaterEqual(len(declared), 60)
 

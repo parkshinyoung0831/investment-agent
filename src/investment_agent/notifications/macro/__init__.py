@@ -1,6 +1,6 @@
 """macro: 매크로 시장 지표 알림 묶음 (core·watch).
 
-데이터 조회와 outbox 선점은 이 패키지의 `core.py`·`watch.py`가 담당한다.
+데이터 조회와 알림 조립은 이 패키지의 `core.py`·`watch.py`가, 중복 판단은 `notifications.engine`이 담당한다.
 공용 계약: investment_agent.reporting.services.macro — 계산·판정·표현 SSOT
 표시:     render.py    — HTML 렌더
 알림:     core.py(매일) · watch.py(평일 매시) — 각각 run() 하나만 노출

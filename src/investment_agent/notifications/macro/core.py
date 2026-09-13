@@ -11,19 +11,23 @@
 """
 from __future__ import annotations
 import argparse
-import os
 import asyncio
 from collections.abc import Sequence
-from datetime import date
+from datetime import date, datetime, time, timezone
 from typing import Any
 
 from investment_agent.config import load_config
 from investment_agent.reporting.notifications.macro import MacroNotificationStore
-from investment_agent.notifications.channels.discord import DiscordChannel
-from investment_agent.notifications.outbox import Outbox
-from investment_agent.notifications.service import NotificationService
+from investment_agent.notifications.engine import (
+    Notice,
+    PublishContext,
+    Rendered,
+    default_context,
+    publish,
+)
+from investment_agent.notifications.problems import report_problems, take_problems
 from investment_agent.notifications.subscriptions import discord_target
-from investment_agent.platform.clock import utc_now
+from investment_agent.notifications.topics import topic
 from investment_agent.reporting.services.macro.constants import CORE_LAYOUT, STALE_COLOR, TONE_ALIAS
 from investment_agent.reporting.services.macro.format import (
     base_card, color_for, fng_color, fng_label, short_of, tier_badge,
@@ -38,9 +42,8 @@ from investment_agent.platform.logging import configure_logging
 log = get_logger(__name__)
 
 
-def force_enabled() -> bool:
-    """같은 날 코어 카드를 다시 보내야 할 때(수동 재발송) 쓰는 탈출구."""
-    return os.environ.get("MACRO_NOTIFY_FORCE", "").lower() in ("1", "on", "true")
+TOPIC = topic("macro.daily")
+SUBJECT = "market"
 
 
 def _pct(curr, prev):
@@ -149,53 +152,52 @@ async def shoot(rows: list[dict[str, Any]]) -> str:
     return await shoot_png(render("core.html.j2", _build_ctx(rows)))
 
 
-async def run(*, store: MacroNotificationStore | None = None, channel: Any | None = None,
-              service: NotificationService | None = None,
-              target: str | None = None) -> None:
-    # 코어는 하루 한 장짜리 묶음이라 load 단계에서 걸러낼 축이 없다 — 발송 기록을
-    # 직접 보고 막는다. ETL 워크플로 뒤에 붙는 경로와 안전망 cron이 같은 날 겹친다.
-    send_date = date.today().isoformat()
+def notice_for(rows: list[dict[str, Any]], today: date) -> Notice:
+    """하루 한 장. 내용은 카드에 찍히는 지표·관측일·값이다 — 같으면 새 날이라도 보내지 않는다."""
+    return Notice(
+        subject=SUBJECT,
+        occurrence=today.isoformat(),
+        fact_at=datetime.combine(today, time.min, tzinfo=timezone.utc),
+        basis={"series": sorted([str(r["series_id"]), str(r["obs_date"]), r.get("curr")] for r in rows)},
+        data=rows,
+    )
+
+
+def render_card(batch: list[Notice]) -> Rendered:
+    notice, = batch
+    png_path = persist_png(asyncio.run(shoot(notice.data)), kind="macro_core", name=notice.occurrence)
+    return Rendered({"content": "📊 매크로 코어 (Stack 1)"}, attachment_path=png_path)
+
+
+def run(*, store: MacroNotificationStore | None = None, target: str | None = None,
+        context: PublishContext | None = None, today: date | None = None) -> int:
     config = load_config()
-    if store is None:
-        store = MacroNotificationStore.configured(config)
-    if channel is None:
-        channel = DiscordChannel(config)
-    if not force_enabled() and store.already_claimed(notification_key=f"core:{send_date}"):
-        log.info("core: already sent today (%s) — skip", send_date)
-        return
+    store = store or MacroNotificationStore.configured(config)
     rows = store.load_core()
     if not rows:
         log.info("core: no rows from macro v1 observation reader (CORE_SERIES) — silent skip (stale)")
-        return
-    target_id = discord_target("macro_core", config=config, override=target)
-    png_path = persist_png(await shoot(rows), kind="macro_core", name=send_date)
-    if service is None:
-        service = NotificationService(Outbox(store.database), channel, clock=utc_now)
-    result = service.enqueue(
-        producer="macro",
-        notification_key=f"core:{send_date}",
-        kind="macro_core",
-        target=target_id,
-        message={"content": "📊 매크로 코어 (Stack 1)"},
-        period_end=send_date,
-        attachment_path=png_path,
+        return 0
+    report = publish(
+        TOPIC, [notice_for(rows, today or date.today())], render_card,
+        context=context or default_context(config),
+        target=discord_target(TOPIC.channel_kind, config=config, override=target),
     )
-    if result.status == "enqueued":
-        service.run_pending()
+    return report.delivered
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     argparse.ArgumentParser(
         prog="investment_agent.notifications.macro.core",
-        description="매크로 코어 PNG 알림을 outbox에 등록하고 디스패치한다.",
+        description="매크로 코어 PNG 알림을 원장에 예약하고 발송한다.",
     ).parse_args(argv)
     configure_logging()
+    take_problems()
     try:
-        asyncio.run(run())
+        run()
     except Exception:
         log.exception("macro core notification failed")
         return 1
-    return 0
+    return 1 if report_problems("macro_core") else 0
 
 
 if __name__ == "__main__":
