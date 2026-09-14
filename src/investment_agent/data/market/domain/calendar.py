@@ -54,6 +54,23 @@ def completed_bar_cutoff(now: datetime | None = None) -> date:
     return cutoff
 
 
+def bar_available_at(trade_date: date | str, ingested_at: datetime | str | None = None) -> datetime:
+    """그 일봉을 판단에 쓸 수 있게 되는 시각.
+
+    거래 세션이 끝나고 확정 시각(뉴욕 18:00)이 지나야 종가다. 적재 시각을 알면 둘 중 늦은
+    쪽이다. 적재 시각이 없는 봉은 세션 규칙만 따른다 — 과거 봉을 뒤늦게 backfill했다고
+    그 시절 가격을 "몰랐던 것"으로 만들면 역사적 사실이 사라진다.
+    """
+    day = trade_date if isinstance(trade_date, date) else date.fromisoformat(str(trade_date)[:10])
+    finalized = datetime.combine(day, DAILY_BAR_FINALIZED_AT, tzinfo=MARKET_TIMEZONE)
+    if ingested_at is None or ingested_at == "":
+        return finalized
+    ingested = ingested_at if isinstance(ingested_at, datetime) else datetime.fromisoformat(
+        str(ingested_at).replace("Z", "+00:00")
+    )
+    return max(finalized, ensure_aware(ingested))
+
+
 def session_of(moment: datetime) -> str:
     """그 시각이 장전(bmo)·장중(dmh)·장후(amc) 중 어디인가.
 
@@ -85,6 +102,7 @@ __all__ = [
     "MARKET_TIMEZONE",
     "REGULAR_CLOSE",
     "REGULAR_OPEN",
+    "bar_available_at",
     "completed_bar_cutoff",
     "market_today",
     "overlap_window",

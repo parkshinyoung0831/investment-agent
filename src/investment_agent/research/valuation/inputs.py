@@ -5,10 +5,12 @@
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any, Mapping, Sequence
 
+from investment_agent.data.fundamentals.domain.filing import filing_available_at as _filing_available_at
+from investment_agent.data.market.domain.calendar import bar_available_at
 from investment_agent.trading.contracts import parse_datetime
 from investment_agent.research.valuation.engine import PITScalar, PITValuationInputs
 
@@ -30,16 +32,8 @@ def _decimal(value: Any) -> Decimal | None:
 
 
 def filing_available_at(filed_at: Any) -> datetime:
-    """일자 정밀도 공시를 **다음 날 0시 UTC**로 보수적으로 환산한다.
-
-    `filings.filing_date`는 date라 그날 몇 시에 공개됐는지 알 수 없다. 그날
-    0시로 잡으면 실제보다 이르게 "알 수 있었다"고 주장하게 되므로, 하루를 넘겨
-    확정된 것으로 본다. 같은 날 공시는 다음 실행에서 잡힌다.
-    """
-    parsed = date.fromisoformat(str(filed_at)[:10])
-    return datetime(
-        parsed.year, parsed.month, parsed.day, tzinfo=timezone.utc,
-    ) + timedelta(days=1)
+    """일자 정밀도 공시의 가용 시각. 규칙은 fundamentals owner가 소유한다."""
+    return _filing_available_at(str(filed_at))
 
 
 def _quarter_key(row: Mapping[str, Any]) -> tuple[int, str]:
@@ -159,13 +153,20 @@ def ttm_scalars(
 
 
 def price_scalar(rows: Sequence[Mapping[str, Any]], *, as_of_at: datetime) -> PITScalar:
-    """가장 최근 종가를 실제 적재 시각과 함께 만든다."""
-    for row in rows:
+    """cutoff에 확정돼 있던 가장 최근 종가.
+
+    가격 저장소의 봉에는 적재 시각이 없다. 그것을 필수로 요구하면 모든 종목의 가격이
+    결측이 되고 시가총액·PER이 전부 조용히 빈다. 가용 시각은 market owner의 세션 규칙
+    (`bar_available_at`)이 정하고, 적재 시각이 있으면 그보다 이르게 보지 않는다.
+    이 종가는 **현재 분할 기준**으로 정규화된 값이다 — 주식 수를 같은 기준으로 맞추는 일은
+    `shares_scalar`가 한다.
+    """
+    ordered = sorted(rows, key=lambda item: str(item.get("trade_date") or ""), reverse=True)
+    for row in ordered:
         close = _decimal(row.get("close"))
-        ingested = row.get("ingested_at")
-        if close is None or close <= 0 or not ingested:
+        if close is None or close <= 0 or not row.get("trade_date"):
             continue
-        available_at = parse_datetime(str(ingested))
+        available_at = bar_available_at(str(row["trade_date"]), row.get("ingested_at"))
         if available_at > as_of_at:
             continue
         return PITScalar(
@@ -180,13 +181,37 @@ def price_scalar(rows: Sequence[Mapping[str, Any]], *, as_of_at: datetime) -> PI
     return _missing("no_price_available_at_cutoff")
 
 
-def shares_scalar(rows: Sequence[Mapping[str, Any]], *, as_of_at: datetime) -> PITScalar:
-    """공개가 끝난 발행주식수 snapshot을 고른다.
+def split_factor_after(split_rows: Sequence[Mapping[str, Any]], observed_on: date) -> Decimal:
+    """`observed_on` **뒤에** 일어난 분할 비율의 곱.
+
+    저장 종가는 수집 시점의 분할 기준으로 과거까지 정규화돼 있다. 그 시절 공시의 주식 수를
+    그대로 곱하면 이후 분할만큼 시가총액이 작아진다(10:1 분할이면 1/10). 주식 수에 이 곱을
+    곱해 가격과 같은 기준으로 맞춘다. 미래 분할을 쓰지만 새 정보가 아니다 — 가격에 이미
+    들어가 있는 조정을 주식 수에도 똑같이 적용할 뿐이다.
+    """
+    factor = Decimal(1)
+    for row in split_rows:
+        ratio = _decimal(row.get("split_ratio"))
+        action = row.get("action_date")
+        if ratio is None or ratio <= 0 or not action:
+            continue
+        if date.fromisoformat(str(action)[:10]) > observed_on:
+            factor *= ratio
+    return factor
+
+
+def shares_scalar(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    as_of_at: datetime,
+    split_rows: Sequence[Mapping[str, Any]] = (),
+) -> PITScalar:
+    """공개가 끝난 발행주식수 snapshot을 고르고 가격과 같은 분할 기준으로 맞춘다.
 
     `accepted_at`이 있으면 그 시각을 쓰고, 없으면 공시일 date-only 정책을 따른다.
     coverage가 475/503이라 결측이 정상적으로 발생한다 — 0으로 채우지 않는다.
     """
-    best: tuple[datetime, Decimal, str] | None = None
+    best: tuple[datetime, Decimal, str, date] | None = None
     for row in rows:
         shares = _decimal(row.get("shares_outstanding"))
         if shares is None or shares <= 0:
@@ -201,15 +226,19 @@ def shares_scalar(rows: Sequence[Mapping[str, Any]], *, as_of_at: datetime) -> P
         if best is None or available_at > best[0]:
             accession = str(row.get("accession_no") or "").strip()
             key = str(row.get("share_class_key") or "")
+            observed_on = date.fromisoformat(
+                str(row.get("as_of_date") or row.get("filed_at"))[:10]
+            )
             best = (
                 available_at, shares,
                 f"fundamentals.share_class_snapshots:{accession}:{key}",
+                observed_on,
             )
     if best is None:
         return _missing("no_shares_outstanding_available_at_cutoff")
-    available_at, shares, evidence_id = best
+    available_at, shares, evidence_id, observed_on = best
     return PITScalar(
-        value=shares,
+        value=shares * split_factor_after(split_rows, observed_on),
         observed_at=available_at.isoformat(),
         available_at=available_at.isoformat(),
         evidence_ids=(evidence_id,),
@@ -224,6 +253,7 @@ def build_valuation_inputs(
     price_rows: Sequence[Mapping[str, Any]],
     fundamental_rows: Sequence[Mapping[str, Any]],
     share_rows: Sequence[Mapping[str, Any]],
+    split_rows: Sequence[Mapping[str, Any]] = (),
     source_kind: str = "live_shadow",
 ) -> PITValuationInputs:
     """네 원천을 하나의 PIT 입력 계약으로 묶는다."""
@@ -234,7 +264,7 @@ def build_valuation_inputs(
         source_kind=source_kind,
         source_version=source_version,
         price=price_scalar(price_rows, as_of_at=as_of_at),
-        shares_outstanding=shares_scalar(share_rows, as_of_at=as_of_at),
+        shares_outstanding=shares_scalar(share_rows, as_of_at=as_of_at, split_rows=split_rows),
         earnings_ttm=ttm["earnings_ttm"],
         book_value=ttm["book_value"],
         revenue_ttm=ttm["revenue_ttm"],
@@ -249,5 +279,6 @@ __all__ = [
     "price_scalar",
     "select_ttm_quarters",
     "shares_scalar",
+    "split_factor_after",
     "ttm_scalars",
 ]

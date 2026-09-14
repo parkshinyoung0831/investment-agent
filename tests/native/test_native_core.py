@@ -17,7 +17,6 @@ from investment_agent.research.features.event_intelligence import (
     normalize_contents,
     summarize_event_features,
 )
-from investment_agent.trading.decision.pipeline import run_intelligence
 from investment_agent.trading.decision.fast_ranker import FastRankFeatures, rank_fast_candidates
 from investment_agent.trading.decision.regime import build_market_regime
 from investment_agent.research.evaluation.challenger import ChallengerPolicy, compare_challenger
@@ -134,37 +133,6 @@ class NativeCoreTests(unittest.TestCase):
         self.assertEqual(len(ranks), 2)
         self.assertEqual(ranks[0].score_purpose, "deep_analysis_priority")
         self.assertGreaterEqual(ranks[0].score, ranks[1].score)
-
-    def test_desks_debate_and_fusion_share_structured_contract(self) -> None:
-        high_event = Event(
-            event_id="event-high",
-            ticker="AAPL",
-            event_type="litigation",
-            occurred_at="2026-08-27T08:00:00+00:00",
-            available_at="2026-08-27T08:10:00+00:00",
-            first_seen_at="2026-08-27T08:05:00+00:00",
-            importance=0.90,
-            direction=-1.0,
-            confidence=0.90,
-            novelty=0.80,
-            controversy=0.50,
-            source_count=1,
-            source_diversity=1.0,
-            sentiment=-1.0,
-            evidence_ids=("event-evidence",),
-        )
-        result = run_intelligence(
-            bundle=_bundle(),
-            events=(high_event,),
-            regime_inputs={"event_risk": 0.90},
-        )
-        self.assertEqual({signal.domain for signal in result.desk_signals}, {
-            "market", "fundamental", "macro", "event",
-        })
-        self.assertIsNotNone(result.debate_signal)
-        self.assertEqual(result.signal.ticker, "AAPL")
-        self.assertIn("event-evidence", result.signal.evidence_ids)
-        self.assertGreater(result.fusion.direction_dispersion, 0.0)
 
     def test_market_state_is_ram_only_latest_and_freshness_checked(self) -> None:
         state = MarketState()

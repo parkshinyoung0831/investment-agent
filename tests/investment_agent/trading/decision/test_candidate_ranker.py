@@ -16,7 +16,7 @@ from investment_agent.trading.supabase_repository import (
     _guru_candidate_signals,
     _segment_candidate_signals,
 )
-from investment_agent.trading.decision import portfolio_shadow, shadow_daily
+from investment_agent.trading.decision import portfolio_shadow
 
 _AS_OF = datetime(2026, 8, 21, 21, 0, tzinfo=timezone.utc)
 
@@ -216,15 +216,6 @@ class CandidateLiveCutoffTest(unittest.TestCase):
                 _AS_OF + timedelta(minutes=6), now_at=_AS_OF
             )
 
-    def test_legacy_shadow_explicit_ticker_cannot_bypass_live_cutoff(self):
-        with mock.patch.object(shadow_daily, "SupabaseRepository") as repository:
-            with self.assertRaisesRegex(ValueError, "live-only"):
-                shadow_daily.main([
-                    "--ticker", "AAPL", "--as-of", "2020-01-01T00:00:00+00:00",
-                    "--dry-run",
-                ])
-        repository.assert_not_called()
-
     def test_tradingagents_explicit_ticker_cannot_bypass_live_cutoff(self):
         with mock.patch.object(portfolio_shadow, "SupabaseRepository") as repository:
             with self.assertRaisesRegex(ValueError, "live-only"):
@@ -349,6 +340,17 @@ class CandidateCoverageRepositoryTest(unittest.TestCase):
         ])
         self.assertEqual({"AAPL", "MSFT"}, set(coverage))
         self.assertEqual(datetime(2026, 8, 20, 21, tzinfo=timezone.utc), coverage["AAPL"])
+
+    def test_the_reader_receives_a_security_identity_resolver(self):
+        """판단 원장은 security_id를 저장한다. 조회기 없이 부르면 실제 reader는 매번 실패한다."""
+        def reader(view, *, canonical_db=None):
+            if canonical_db is None:
+                raise RuntimeError("canonical security identity reader is unavailable")
+            return []
+
+        with mock.patch("investment_agent.reporting.readers.runtime.read_local_rows", side_effect=reader):
+            self.assertEqual({}, SupabaseRepository()._candidate_last_analyzed(["AAPL"], as_of_at=_AS_OF))
+            self.assertEqual({}, SupabaseRepository()._last_attempted(["AAPL"], as_of_at=_AS_OF))
 
     def test_a_failed_case_does_not_count_as_coverage(self):
         """실패한 판단을 coverage로 세면 그 종목이 다시 분석되지 않는다."""

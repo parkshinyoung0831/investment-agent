@@ -12,6 +12,7 @@ from investment_agent.execution.brokers.toss.client import from_toss_symbol
 from investment_agent.execution.brokers.toss.orders import TossOrderApi, TossOrderSnapshot
 from investment_agent.execution.contracts import ExecutionSafetyError
 from investment_agent.execution.orders.ledger import OrderAttemptEvent
+from investment_agent.execution.orders.tca import build_tca_report
 
 
 class ReconciliationRepository(Protocol):
@@ -20,6 +21,7 @@ class ReconciliationRepository(Protocol):
     def append_order_attempt_event(self, attempt_id: str, **kwargs): ...
     def update_order_execution(self, client_order_id: str, **kwargs) -> None: ...
     def save_broker_order_snapshot(self, row: dict) -> bool: ...
+    def save_tca_report(self, report: object) -> None: ...
     def intent_orders(self, intent_id: str) -> list[dict]: ...
     def update_intent_status(
         self,
@@ -210,6 +212,38 @@ class TossReconciliationWorker:
             changed = True
         return changed or remote_status != local_status
 
+    def _record_tca(self, row: dict, remote: TossOrderSnapshot, *, now: datetime) -> None:
+        """완전히 체결된 주문의 비용을 승인 기준가 대비로 한 번 기록한다.
+
+        이 기록이 없으면 체결 비용은 브로커 스냅샷 안에만 흩어져 있고, optimizer의 비용 가정이
+        실제와 얼마나 다른지 누구도 보지 않는다. 호가 스냅샷이 없으므로 arrival은 승인 기준가다.
+        기록 실패는 대사 자체를 멈추지 않는다 — 주문 상태가 비용 보고서보다 중요하다.
+        """
+        reference = row.get("reference_price")
+        if reference in (None, "") or remote.average_filled_price is None or remote.filled_quantity <= 0:
+            self.alert("tca_inputs_missing", {"client_order_id": str(row["client_order_id"])})
+            return
+        fees = float(remote.commission or 0) + float(remote.tax or 0)
+        report = build_tca_report(
+            ticker=str(row["ticker"]),
+            side=str(row["side"]),
+            decision_price=float(reference),
+            arrival_price=float(reference),
+            fill_price=float(remote.average_filled_price),
+            quantity=float(remote.filled_quantity),
+            fees=fees,
+            intent_id=str(row.get("intent_id") or "") or None,
+            client_order_id=str(row["client_order_id"]),
+            broker_order_id=remote.order_id,
+            source_kind="live",
+            created_at=now.isoformat(),
+            metadata={"arrival_source": "approval_reference_price"},
+        )
+        try:
+            self.repository.save_tca_report(report)
+        except ExecutionSafetyError as exc:
+            self.alert("tca_report_not_saved", {"client_order_id": str(row["client_order_id"]), "reason": str(exc)})
+
     def run_once(self, *, now: datetime | None = None) -> ReconciliationSummary:
         current = parse_datetime(now or datetime.now(timezone.utc))
         local = self.repository.reconcilable_orders(account_seq=self.account_seq)
@@ -280,6 +314,8 @@ class TossReconciliationWorker:
                 raw_broker_status=remote.status,
                 raw_broker_response=remote.raw,
             )
+            if remote_status == "filled" and local_status != "filled":
+                self._record_tca(row, remote, now=current)
             updated += int(changed)
             if changed:
                 changed_intents.add(intent_id)

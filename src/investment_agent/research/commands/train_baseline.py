@@ -51,6 +51,22 @@ def _default_splits(
     )
 
 
+def artifact_document(result, dataset: ResearchDataset) -> dict:
+    """채택·추론이 읽는 artifact JSON 한 벌. 학습 명령과 자동 challenger가 같은 모양을 쓴다."""
+    return {
+        "artifact": result.artifact.to_record(),
+        "model_state": getattr(result.model, "state", lambda: {})(),
+        "out_of_sample_alpha": result.oos_alpha.to_dict() if result.oos_alpha is not None else None,
+        "dataset_manifest": dataset.manifest.to_dict(),
+        "feature_names": list(dataset.feature_names),
+        "splits": {
+            "train": list(result.train_indexes),
+            "validation": list(result.validation_indexes),
+            "test": list(result.test_indexes),
+        },
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     log.info(
@@ -94,19 +110,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    model_state = getattr(result.model, "state", lambda: {})()
-    artifact_payload = {
-        "artifact": result.artifact.to_record(),
-        "model_state": model_state,
-        "out_of_sample_alpha": result.oos_alpha.to_dict() if result.oos_alpha is not None else None,
-        "dataset_manifest": dataset.manifest.to_dict(),
-        "feature_names": list(dataset.feature_names),
-        "splits": {
-            "train": list(result.train_indexes),
-            "validation": list(result.validation_indexes),
-            "test": list(result.test_indexes),
-        },
-    }
+    artifact_payload = artifact_document(result, dataset)
     output_path = out_dir / f"{result.artifact.artifact_id}.json"
     output_path.write_text(
         json.dumps(artifact_payload, ensure_ascii=False, sort_keys=True, indent=2, default=str),

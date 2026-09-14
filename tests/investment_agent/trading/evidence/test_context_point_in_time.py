@@ -31,7 +31,7 @@ class _Repository:
             "ticker": ticker,
             "fiscal_year": 2025,
             "fiscal_period": "Q4",
-            "filed_at": "2025-01-02",
+            "filed_at": "2025-01-01",
             "period_end": "2024-12-31",
             "revenue": 100,
         }]
@@ -129,7 +129,20 @@ class ContextPointInTimeTest(unittest.TestCase):
         fundamentals = next(item for item in bundle.evidence if item.domain == "fundamentals")
 
         self.assertEqual(fundamentals.source, "SEC EDGAR/FSDS via fundamentals.financials")
-        self.assertEqual(fundamentals.available_at, "2025-01-02T00:00:00+00:00")
+        # 제출일(1/1, 뉴욕)의 다음 날 0시(뉴욕) = 1/2 05:00 UTC.
+        self.assertEqual(fundamentals.available_at, "2025-01-02T05:00:00+00:00")
+
+    def test_historical_replay_rejects_a_filing_from_the_same_new_york_day(self):
+        """1/2 제출 공시를 1/2 저녁(1/3 00:00 UTC)에 이미 안 것으로 만들지 않는다."""
+        from investment_agent.trading.contracts import ContractError
+
+        repository = _Repository()
+        rows = [{**repository.fundamentals_pit("AAPL", None)[0], "filed_at": "2025-01-02"}]
+        with patch.object(repository, "fundamentals_pit", return_value=rows):
+            with self.assertRaisesRegex(ContractError, "future evidence"):
+                ContextBuilder(repository).build(
+                    "AAPL", datetime(2025, 1, 3, tzinfo=timezone.utc), source_kind="historical_replay",
+                )
 
 
 if __name__ == "__main__":

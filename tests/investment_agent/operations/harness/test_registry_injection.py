@@ -27,7 +27,8 @@ _STAGE_ADAPTERS = (
     "analysis", "select_signal", "portfolio", "execution_intent", "approval_request",
     "approval_worker", "risk_snapshot", "reconcile", "watch", "build_valuations",
     "build_features", "build_labels", "build_training_samples", "build_events",
-    "evaluate_decisions", "notify_investment", "notify_trades",
+    "evaluate_decisions", "notify_investment", "notify_trades", "run_virtual_books",
+    "run_ml_challengers", "reanalyze_events",
 )
 
 #: 수집 단계는 stage handler와 서명이 다르다 — context가 아니라 database_path 하나를 받는다.
@@ -75,3 +76,13 @@ class RegistryInjectionTest(unittest.TestCase):
     def test_the_tick_actually_exercises_the_registry(self):
         """아무것도 안 불리는 tick이면 위 검사는 공허하게 통과한다."""
         self.assertIn("analysis", self._tick_with_fakes())
+
+    def test_virtual_books_run_in_analysis_only_mode(self):
+        """가상계좌는 승인 흐름 밖에서 돈다 — 분석 전용 모드에서도 불려야 한다."""
+        self.assertIn("run_virtual_books", self._tick_with_fakes())
+
+    def test_ml_challengers_run_outside_the_approval_workflow(self):
+        self.assertIn("run_ml_challengers", self._tick_with_fakes())
+
+    def test_event_reanalysis_runs_outside_the_approval_workflow(self):
+        self.assertIn("reanalyze_events", self._tick_with_fakes())

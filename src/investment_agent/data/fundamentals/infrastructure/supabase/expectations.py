@@ -10,6 +10,7 @@ from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 
+from investment_agent.data.fundamentals.domain.filing import filing_available_at
 from investment_agent.data.fundamentals.domain.services.state_versions import plan_versions
 
 from investment_agent.platform.logging import get_logger
@@ -276,7 +277,8 @@ def _project_fundamental_rows(
     """회계기간마다 cutoff 시점에 알 수 있던 가장 늦은 공시 버전 하나를 고른다.
 
     `include_available_at`이면 우리 수집기가 공시를 손에 넣은 시각과 버전 저장 시각까지
-    cutoff 이전이어야 한다(운영 재현). 아니면 SEC 제출일만 본다(원천 기준 연구).
+    cutoff 이전이어야 한다(운영 재현). 아니면 SEC 제출일의 공개 규칙(`filing_available_at`)만
+    본다(원천 기준 연구).
     정정 공시가 cutoff 뒤에 나왔으면 정정 전 값이 그대로 나온다.
     """
     cutoff = _utc_iso(as_of_at)
@@ -288,6 +290,10 @@ def _project_fundamental_rows(
             raise ValueError("financial version row has no filing provenance")
         filed_at = str(filing.get("filing_date") or "")
         if not filed_at or filed_at > cutoff_date:
+            continue
+        if not include_available_at and filing_available_at(filed_at) > as_of_at:
+            # 원천 기준 재현에는 수집 시각이 없으므로 제출일의 공개 규칙만이 경계다.
+            # 날짜만 비교하면 그날 장 마감 뒤 나온 공시를 그날 아침에 쓴다.
             continue
         if include_available_at:
             if not filing.get("available_at") or _utc_iso(parse_datetime(filing["available_at"])) > cutoff:

@@ -16,11 +16,11 @@ AS_OF = datetime(2026, 9, 14, 14, 0, tzinfo=timezone.utc)
 FEATURE_DAY = AS_OF - timedelta(hours=20)
 
 
-def _artifact(*, mean_ic: float, t_stat: float, coefficient: float = 0.01) -> dict:
+def _artifact(*, mean_ic: float, t_stat: float, coefficient: float = 0.01, horizon: int = 20) -> dict:
     return {
         "artifact": {
             "artifact_id": "model_test", "model_kind": "ridge", "feature_version": "pit-test",
-            "horizon_days": 5, "out_of_sample": {"rank_correlation": 0.9, "direction_accuracy": 0.6},
+            "horizon_days": horizon, "out_of_sample": {"rank_correlation": 0.9, "direction_accuracy": 0.6},
         },
         "model_state": {"coefficients": [coefficient], "intercept": 0.0},
         "feature_names": ["evidence_domain_count"],
@@ -93,6 +93,25 @@ class MlServingTest(unittest.TestCase):
         self.assertEqual(by_ticker["MSFT"].signal, "exit")
         self.assertEqual(set(outcome.contributions["AAPL"]), {"numeric", "tradingagents"})
 
+    def test_ml_share_is_the_oos_confidence_not_a_fixed_constant(self):
+        """IC 0.03(신뢰도 0.3)이면 ML 몫 30%, TradingAgents 몫 70%다."""
+        self.write(_artifact(mean_ic=0.03, t_stat=3.0))
+        fused, outcome = compute_ml_fusion(
+            self.repository, [_proposal("AAPL", "open", 0.02)], as_of_at=AS_OF, model_path=self.path, enabled=True,
+        )
+        # ML 예측 = 0.01 × 8 = 0.08
+        self.assertAlmostEqual(fused[0].expected_excess_return, 0.7 * 0.02 + 0.3 * 0.08)
+        self.assertAlmostEqual(outcome.contributions["AAPL"]["numeric"], 0.3)
+
+    def test_model_trained_on_another_horizon_is_not_scaled_into_the_signal(self):
+        self.write(_artifact(mean_ic=0.05, t_stat=3.0, horizon=5))
+        proposals = [_proposal("AAPL", "open", 0.01)]
+        fused, outcome = compute_ml_fusion(
+            self.repository, proposals, as_of_at=AS_OF, model_path=self.path, enabled=True,
+        )
+        self.assertEqual(fused, proposals)
+        self.assertIn("horizon", outcome.reason)
+
     def test_ml_cannot_lift_a_negative_opinion_above_zero(self):
         self.write(_artifact(mean_ic=0.08, t_stat=4.0))
         fused, _ = compute_ml_fusion(
@@ -130,6 +149,22 @@ class MlServingTest(unittest.TestCase):
         self.assertAlmostEqual(load_model(legacy).confidence, 0.8)
 
 
+class SignalHorizonContractTest(unittest.TestCase):
+    def test_llm_schema_states_the_signal_horizon(self):
+        from investment_agent.trading.decision.constants import SIGNAL_HORIZON_DAYS
+        from investment_agent.trading.decision.llm.agents.tradingagents_adapter import SECURITY_PROPOSAL_SCHEMA
+
+        for field in ("expected_excess_return", "probability_up"):
+            self.assertIn(f"{SIGNAL_HORIZON_DAYS} trading days", SECURITY_PROPOSAL_SCHEMA[field])
+
+    def test_training_refuses_a_horizon_that_contradicts_the_labels(self):
+        from investment_agent.research.training.baseline import label_horizon_days
+
+        self.assertEqual(label_horizon_days("forward_return_20d"), 20)
+        with self.assertRaises(ValueError):
+            label_horizon_days("excess_return")
+
+
 class TrainingRecordsAlphaTest(unittest.TestCase):
     def test_training_result_carries_oos_cross_sectional_alpha(self):
         from investment_agent.research.datasets import build_research_dataset
@@ -151,11 +186,11 @@ class TrainingRecordsAlphaTest(unittest.TestCase):
                     "ticker": ticker, "as_of_at": as_of,
                     "forward_end_at": (start + timedelta(days=day + 7)).isoformat(),
                     "label_available_at": (start + timedelta(days=day + 7)).isoformat(),
-                    "feature_version": "pit-test", "label_definition": "forward_return_5d",
+                    "feature_version": "pit-test", "label_definition": "forward_return_20d",
                     "label": 0.02 * signal + float(rng.normal(0, 0.01)), "benchmark_label": 0.0,
                 })
         dataset = build_research_dataset(
-            features, labels, feature_version="pit-test", label_definition="forward_return_5d",
+            features, labels, feature_version="pit-test", label_definition="forward_return_20d",
             label_cutoff_at=(start + timedelta(days=60)).isoformat(), feature_names=["x"],
         )
         rows = len(dataset.rows)
@@ -166,6 +201,8 @@ class TrainingRecordsAlphaTest(unittest.TestCase):
         )
         self.assertIsNotNone(result.oos_alpha)
         self.assertGreater(result.oos_alpha.mean_ic, 0.3)
+        # 모델에 적힌 기간은 label 정의가 정한다 — 다른 기간과 섞이지 않게.
+        self.assertEqual(result.artifact.horizon_days, 20)
 
 
 if __name__ == "__main__":

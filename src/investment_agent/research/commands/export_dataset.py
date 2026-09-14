@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
+from investment_agent.trading.decision.constants import SIGNAL_HORIZON_DAYS
 from investment_agent.operations.runtime import run_log_payload
 from investment_agent.platform.logging import get_logger
 from investment_agent.trading.contracts import ContractError, parse_datetime
@@ -26,6 +27,7 @@ from investment_agent.research.features.layer import (
 )
 from investment_agent.research.rl.contracts import FeatureSnapshot
 from investment_agent.research.datasets import build_research_dataset
+from investment_agent.research.datasets.universe import members_over_window
 
 log = get_logger(__name__)
 
@@ -43,7 +45,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="이 시각까지 확정된 label만 사용한다. 기본 --end와 동일",
     )
     parser.add_argument(
-        "--horizon", type=int, default=5, choices=HORIZONS,
+        "--horizon", type=int, default=SIGNAL_HORIZON_DAYS, choices=HORIZONS,
         help="label_definition에 기록할 horizon. 원장에 저장된 구간과 일치해야 한다",
     )
     parser.add_argument("--feature-version", default=FEATURE_VERSION)
@@ -69,7 +71,7 @@ def export_dataset(
     start_as_of: str,
     end_as_of: str,
     label_cutoff_at: str,
-    horizon_days: int = 5,
+    horizon_days: int = SIGNAL_HORIZON_DAYS,
     feature_version: str = FEATURE_VERSION,
     output: Path | None = None,
     repository: SupabaseRepository | None = None,
@@ -78,7 +80,9 @@ def export_dataset(
     started = time.monotonic()
     started_at = datetime.now(timezone.utc).isoformat()
     selected = repository or SupabaseRepository()
-    symbols = tuple(selected.current_tracked_tickers())
+    symbols = members_over_window(
+        selected, start=parse_datetime(start_as_of).date(), end=parse_datetime(end_as_of).date(),
+    )
     if not symbols:
         raise RuntimeError("no tracked ticker is available for dataset export")
 

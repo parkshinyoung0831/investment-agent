@@ -2,12 +2,9 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
-from investment_agent.trading.decision.shadow_daily import make_case_key
-from investment_agent.trading.decision.policy import ShadowPolicy
 from investment_agent.data.market import REFERENCE_PRICE_TICKERS
 from investment_agent.data.market import persistence as market_db
 
@@ -26,11 +23,6 @@ class GuardrailTest(unittest.TestCase):
         self.assertIn("create table if not exists model_versions", lowered)
         self.assertIn("create table if not exists model_promotions", lowered)
         self.assertIn("create table if not exists decision_runs", lowered)
-
-    def test_case_key_is_human_readable_and_deterministic(self):
-        when = datetime(2026, 8, 21, 1, 2, 3, tzinfo=timezone.utc)
-        key = make_case_key("AAPL", when, 20, ShadowPolicy())
-        self.assertEqual(key, "AAPL__2026-08-20__20d__evidence-first-v1")
 
     def test_reference_tickers_are_price_only(self):
         """벤치마크는 시세만 들고 있는 대상이다 — 판단 유니버스에 섞이지 않는다.

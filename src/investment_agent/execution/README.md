@@ -181,7 +181,6 @@ python -m investment_agent.operations.commands.reconcile_toss
 
 ```powershell
 python -m unittest tests.investment_agent.execution.test_intents
-python -m unittest tests.investment_agent.execution.test_circuit_breaker
 python -m unittest tests.investment_agent.execution.test_snapshots
 python -m unittest discover -s tests -t .
 ```

@@ -4,6 +4,7 @@ import unittest
 from datetime import date, timedelta
 from unittest.mock import patch
 
+from investment_agent.trading.decision.constants import SIGNAL_HORIZON_DAYS
 from investment_agent.trading.portfolio.construct import construct_portfolio
 from investment_agent.trading.portfolio.contracts import SecurityProposal
 from investment_agent.trading.portfolio.signal_book import SignalBatch, SignalBook, SignalRecord
@@ -195,10 +196,67 @@ class ConstructPortfolioEntryTest(unittest.TestCase):
         covariance = proposal["metadata"]["optimizer"]["covariance"]
         self.assertEqual(covariance["method"], "sample_covariance")
         self.assertEqual(covariance["symbols"], ["AAPL"])
+        # 위험은 기대수익과 같은 기간으로 잰다.
+        self.assertEqual(covariance["horizon_days"], SIGNAL_HORIZON_DAYS)
         optimizer = proposal["metadata"]["optimizer"]
         self.assertEqual(set(optimizer["trading_costs"]), {"AAPL"})
         self.assertGreater(optimizer["trading_costs"]["AAPL"]["adv_usd"], 0.0)
         self.assertGreaterEqual(optimizer["transaction_cost"], 0.0)
+
+
+class HorizonContractTest(unittest.TestCase):
+    def test_covariance_on_another_horizon_is_rejected(self):
+        from investment_agent.trading.contracts import ContractError
+        from investment_agent.trading.portfolio.proposals import from_optimized_security_proposals
+
+        proposal = _signal_book().records[0].proposal
+        with self.assertRaisesRegex(ContractError, "horizon"):
+            from_optimized_security_proposals(
+                [proposal], run_id="run", source_version="v", current_weights={"CASH": 1.0},
+                case_keys=("case-aapl",), covariance=[[0.01]], covariance_symbols=("AAPL",),
+                covariance_metadata={"horizon_days": 5},
+            )
+
+
+class RegimeFailClosedTest(unittest.TestCase):
+    """regime 계산만 실패시키고 나머지 시장 입력은 정상으로 둔다 — 다른 fail-closed가 대신 막지 않게."""
+
+    def setUp(self):
+        costs = patch("investment_agent.trading.portfolio.construct._filled_order_costs", return_value=[])
+        costs.start()
+        self.addCleanup(costs.stop)
+        from investment_agent.trading.contracts import ContractError
+
+        regime = patch(
+            "investment_agent.trading.portfolio.construct.regime_from_benchmark_prices",
+            side_effect=ContractError("insufficient benchmark history for a market regime"),
+        )
+        regime.start()
+        self.addCleanup(regime.stop)
+
+    def _run(self, repository, stage):
+        with (
+            patch("investment_agent.trading.portfolio.construct.resolve_account_seq", return_value=7),
+            patch("investment_agent.trading.portfolio.construct.capture_toss_account_snapshot", return_value=_snapshot()),
+        ):
+            return construct_portfolio(
+                batch_id="batch-stable", account_seq=7, as_of_at="2026-08-22T12:03:00+00:00",
+                stage=stage, repository=repository,
+            )
+
+    def test_trading_stage_stops_when_the_market_regime_is_unknown(self):
+        """regime을 모르는 날 평상시 한도로 주문하면 위험 예산이 가장 필요할 때 꺼진다."""
+        from investment_agent.trading.contracts import ContractError
+
+        with self.assertRaisesRegex(ContractError, "market regime"):
+            self._run(_PricedRepository(), "paper")
+
+    def test_shadow_keeps_observing_without_a_regime(self):
+        repository = _PricedRepository()
+        outcome = self._run(repository, "shadow")
+        self.assertTrue(outcome.persisted)
+        proposal = next(row for kind, row in repository.writes if kind == "proposal")
+        self.assertIsNone(proposal["metadata"]["market_regime"])
 
 
 if __name__ == "__main__":

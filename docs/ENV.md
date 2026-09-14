@@ -49,7 +49,7 @@ Actions secrets/variables(CI)에 주입하며, 이 파일에는 이름·용도·
 | `ECON_CALENDAR_ICS_BUCKET` | 캘린더 구독 파일을 올릴 Supabase Storage **공개** 버킷(기본 `econ-calendar`). 버킷은 사람이 만든다 — 코드가 공개 버킷을 만들지 않는다 |
 | `OPS_HEARTBEAT_PING_URL` | 외부 dead-man's switch(healthchecks.io 등). 일일 점검 발송 뒤 핑. 비어 있으면 아무 일도 하지 않는다 |
 | `LOG_LEVEL` | 로그 레벨 (기본 INFO) |
-| `AI_INVESTOR_MODE` | LLM 연구 entry 모드. `shadow_daily`/`portfolio_shadow`는 `shadow`만 허용 |
+| `AI_INVESTOR_MODE` | LLM 연구 entry 모드. `portfolio_shadow`는 `shadow`만 허용 |
 | `AI_INVESTOR_BASE_URL`, `AI_INVESTOR_MODEL` | OpenAI 호환 로컬/원격 LLM 주소와 모델 이름 |
 | `AI_INVESTOR_AZURE_API_KEY`, `AZURE_AI_BASE_URL` | 선택적인 Azure OpenAI 호환 provider credential과 endpoint |
 | `AI_INVESTOR_AZURE_DAILY_REQUESTS` | Azure provider에 적용할 프로젝트별 일일 지출·호출 가드 |
@@ -71,7 +71,6 @@ Actions secrets/variables(CI)에 주입하며, 이 파일에는 이름·용도·
 | `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` / `REDDIT_USER_AGENT` | Reddit 수집 자격증명. 없으면 소셜 수집을 건너뛴다 |
 | `AI_INVESTOR_ARTIFACT_DIR` | TradingAgents cache/report와 선택적 raw 저장 루트 |
 | `AI_INVESTOR_ML_FUSION_ENABLED` | 채택된 ML 모델(`adopt_ml_model`로 올린 `active_ml_model.json`)의 예측을 TradingAgents 의견과 **실제로 합칠지**. 미설정은 켜짐 — 채택 파일을 두는 것이 사람의 결정이고, OOS IC가 유의하지 않으면 스스로 합치지 않는다. `false`면 비교만 로그로 남긴다 |
-| `AI_INVESTOR_RL_BLEND_ENABLED` | 승격된 RL 정책의 목표비중을 **판단에 실제로 반영**할지. 기본 `false`. 꺼져 있으면 제안은 종전과 같고 "켰다면 얼마나 달라졌을지"만 로그로 남는다. 사람이 명시적으로 켠다 |
 | `LIVE_ENABLED` | broker-independent live opt-in. DB durable control/permit와 AND 결합, 기본 `false` |
 | `TOSS_CLIENT_ID`, `TOSS_CLIENT_SECRET`, `TOSS_ACCOUNT_SEQ` | 허용 IP가 등록된 execution 전용 장비. 분석·학습 환경에는 주입 금지 |
 | `TOSS_LIVE_ENABLED` | Toss 주문 생성 전역 opt-in. 기본 `false`; 모델 승격이나 서비스 설치가 자동으로 바꾸지 않음 |

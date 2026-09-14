@@ -13,7 +13,7 @@ def _payload(**alpha) -> dict:
     values.update(alpha)
     return {
         "artifact": {
-            "artifact_id": "model_x", "model_kind": "ridge", "feature_version": "v", "horizon_days": 5,
+            "artifact_id": "model_x", "model_kind": "ridge", "feature_version": "v", "horizon_days": 20,
             "out_of_sample": {"rank_correlation": 0.1, "direction_accuracy": 0.55},
         },
         "model_state": {"coefficients": [0.1], "intercept": 0.0},
@@ -25,6 +25,13 @@ def _payload(**alpha) -> dict:
 class AdoptMlModelTest(unittest.TestCase):
     def test_significant_positive_ic_is_adoptable(self):
         self.assertTrue(check_adoptable(_payload()).is_adoptable)
+
+    def test_model_on_another_horizon_is_not_adoptable(self):
+        payload = _payload()
+        payload["artifact"]["horizon_days"] = 5
+        check = check_adoptable(payload)
+        self.assertFalse(check.is_adoptable)
+        self.assertTrue(any("horizon" in reason for reason in check.reasons))
 
     def test_each_evidence_gap_blocks_adoption(self):
         for overrides, fragment in (

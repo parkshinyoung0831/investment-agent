@@ -31,10 +31,14 @@ src/investment_agent/research/features/
 src/investment_agent/trading/decision/
   ├─ regime.py              # 공통 MarketRegime
   ├─ candidate_ranker.py    # LLM 없는 deep-analysis priority
-  ├─ desks/                 # market/fundamental/macro/event 공통 AnalystSignal
-  ├─ debate.py              # 충돌·저신뢰·고위험 event일 때만 구조화 debate
-  ├─ fusion.py              # numeric + desks → ExpectedReturnSignal
-  └─ pipeline.py            # 위 흐름의 종목 단위 호출 경계
+  ├─ event_impact.py        # 글로벌 사건 → 테마 → 대표 ETF → 민감한 보유 종목 재분석
+  ├─ portfolio_shadow.py    # TradingAgents 판단 → ML 융합 → SignalBatch (주 분석 경로)
+  └─ fusion.py              # 수치 예측 계약(보고용 policy snapshot이 참조)
+
+src/investment_agent/trading/shadow/
+  ├─ simulator.py           # 가상 체결·비용·부분체결
+  ├─ engine.py              # 정산 → 평가 → 판단 (실계좌와 같은 evaluate_portfolio)
+  └─ store.py               # runtime SQLite virtual_* 원장
 
 src/investment_agent/research/
   ├─ features/               # PIT feature 공개 경계
@@ -72,9 +76,10 @@ src/investment_agent/execution/orders/tca.py          # execution-level transact
 - 승격된 `active_policy.json`은 어떤 표본으로 학습했는지(`training.data_hash`,
   `membership_hash`, 구간 수, 종목)를 함께 남긴다. 없으면 그 점수를 재현할 수 없다.
 
-**아직 연결되지 않은 것**: 승격된 정책은 현재 매매 판단에 반영되지 않는다.
-`portfolio_shadow`가 `SignalBlender`에 `rl_target_weights`를 넘기지 않아 혼합이 항등이고,
-`champion.zip`을 읽는 코드도 없다. 이 연결은 별도 작업이다.
+**RL은 신호를 고치지 않는다**: 승격된 정책의 목표비중은 `research/rl/serving.compute_rl_target_weights`가
+challenger 후보로만 계산해 기록한다. 비중을 기대수익으로 되돌려 TradingAgents·ML 신호에 섞지
+않는다 — 비중은 이미 위험·비용을 풀고 난 결과라 다시 섞으면 같은 위험을 두 번 센다. 성과 비교는
+같은 기간·같은 비용 가정의 Shadow 포트폴리오로 한다.
 
 ## 저장 경계
 
@@ -131,7 +136,8 @@ risk limit 변경 권한을 갖지 않는다 — 위 박스를 벗어나는 순�
 - research artifact store: `candidate_ranks` · `training_samples`
 - runtime SQLite `decision_runs` · `signal_runs` · `signals`
 - runtime SQLite `portfolio_proposals` · `risk_decisions` · `portfolio_decisions`
-- runtime SQLite `tca_reports` · `quote_snapshots`
+- runtime SQLite `runtime_records`(`tca_summary` — 완전 체결 시 대사가 기록 · `quote_snapshot`)
+- runtime SQLite `virtual_*` — Shadow·Paper 가상계좌(`docs/STORAGE_MAP.md`)
 
 runtime SQLite는 local filesystem 경계와 `runtime_connection()`의 읽기 전용 연결을 사용한다.
 원격 PostgreSQL에는 금융 canonical 사실과 reporting view만 둔다.
@@ -140,12 +146,13 @@ runtime SQLite는 local filesystem 경계와 `runtime_connection()`의 읽기 �
 
 | Phase | 범위 | 상태 |
 |---|---|---|
-| 1 | contracts, Event Intelligence, MarketRegime, Fast Ranker, four desks, conditional debate, signal fusion | 구현됨 |
+| 1 | contracts, Event Intelligence, MarketRegime, CandidateRanker·우선 레인·글로벌 사건 영향, TradingAgents 판단과 ML 융합 | 구현됨 |
 | 2 | feature/label/dataset manifest, baseline model façade, 실제 Ridge 등 baseline 학습 CLI, purged walk-forward와 challenger 비교 경계 | 구현됨 |
 | 3 | Selection/Allocation/Timing 분리, PPO allocation/timing 명세 (PPO는 broker API를 호출하지 않는다) | 구현됨 |
 | 4 | RAM MarketState, quote snapshot, Reality Model 및 Native Backtest 변환 경계 | 구현됨 |
 | 5 | TCA, PnL/Attribution, TrainingSample 누적 경계 | 구현됨 |
-| 6 | Shadow → Paper 운영 검증, 실제 fill calibration, 충분한 walk-forward/OOS 증거 축적, 사람의 promotion 승인, Live 전환 | 별도 운영 작업 (미착수) |
+| 6 | 가상계좌(Shadow·Paper)·TCA 기록·ML challenger 자동 비교 | 구현됨 |
+| 7 | 가상계좌 성과 축적, 실제 fill calibration, 충분한 walk-forward/OOS 증거, 사람의 promotion 승인, Live 전환 | 운영 작업 |
 
 Phase 6은 서로 다른 두 게이트를 통과해야 한다 — 모델 artifact의 단계 승격
 (`src/investment_agent/trading/portfolio/promotion.py`의 `ManualPromotionGate`)과 실제 live 주문

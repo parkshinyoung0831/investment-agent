@@ -10,6 +10,7 @@ from typing import Any, Mapping, Sequence
 
 from investment_agent.platform.serialization import canonical_json, canonicalize_url, parse_datetime
 from investment_agent.trading.decision.contracts import Event, EventFeatureSnapshot
+from investment_agent.trading.decision.event_impact import tag_themes
 
 _TOKEN_RE = re.compile(r"[a-z0-9][a-z0-9_-]{2,}")
 _POSITIVE_WORDS = frozenset({
@@ -292,6 +293,8 @@ def extract_events(
             sentiment=sentiment,
             evidence_ids=tuple(sorted(item.item_id for item in cluster)),
             metadata={
+                # 글로벌 사건(ticker 없음)을 보유 종목에 연결하는 테마 이름. 원문은 남기지 않는다.
+                "themes": list(tag_themes(text)),
                 "providers": sorted(providers),
                 "content_types": sorted({item.content_type for item in cluster}),
                 "social_is_supplementary": any(item.content_type == "social" for item in cluster),

@@ -28,6 +28,9 @@ from investment_agent.operations.harness.pipeline import (
     intelligence_job,
     scheduled_analysis_job,
     toss_reconciliation_job,
+    virtual_books_job,
+    ml_challengers_job,
+    event_reanalysis_job,
 )
 from investment_agent.operations.harness.reporting import DiscordOpsAlert, HarnessReporter
 from investment_agent.operations.harness.runtime import HarnessScheduler, JobRegistry
@@ -107,6 +110,12 @@ def build_registry(
         ))
     if hasattr(selected, "update_performance") and hasattr(selected, "notify_reports"):
         registry.register(investment_reporting_job(update_performance=selected.update_performance, notify_reports=selected.notify_reports))
+    if hasattr(selected, "reanalyze_events"):
+        registry.register(event_reanalysis_job(reanalyze=selected.reanalyze_events))
+    if hasattr(selected, "run_ml_challengers"):
+        registry.register(ml_challengers_job(train_challengers=selected.run_ml_challengers))
+    if hasattr(selected, "run_virtual_books"):
+        registry.register(virtual_books_job(run_books=selected.run_virtual_books))
     if hasattr(selected,'watch_entries'):
         registry.register(entry_watch_job(watch=selected.watch_entries))
     # 뉴스·소셜 수집과 90일 보존 정리. 주문이 아니라 데이터 수집이라 거래 kill

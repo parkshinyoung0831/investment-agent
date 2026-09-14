@@ -35,12 +35,11 @@ from investment_agent.trading.portfolio.proposals import from_optimized_security
 from investment_agent.trading.risk.gate import DeterministicRiskGate, PortfolioRiskPolicy
 from investment_agent.trading.portfolio.signal_book import SignalBatch, SignalRecord
 from investment_agent.research.rl.serving import (
+    RlPolicyOutcome,
+    compute_rl_target_weights,
     default_active_policy_path,
-    blend_proposals,
-    compute_rl_blend,
 )
 from investment_agent.research.ml_serving import compute_ml_fusion, default_active_model_path
-from investment_agent.trading.decision.signal_blender import SignalBlender
 from investment_agent.trading.decision.universe import select_tracked_tickers
 from investment_agent.platform.logging import get_logger
 
@@ -50,28 +49,14 @@ AGENT_POLICY_KEY = "tradingagents-supabase"
 AGENT_POLICY_VERSION = 1
 
 
-def _effective_proposals(repository, proposals, *, as_of: datetime, model_artifact_id: str):
-    """원본 case를 유지하고 실제 신호에 사용한 정책 조합을 별도 승격 대상으로 만든다."""
-    outcome = compute_rl_blend(repository, as_of_at=as_of, policy_path=default_active_policy_path(),
-                               proposals=proposals, current_weights={CASH_SYMBOL: 1.0})
-    effective, outcome = blend_proposals(proposals, blender=SignalBlender(base_rl_weight=0.25, max_rl_weight=0.50),
-                                        dsr_probability=outcome.dsr_probability, outcome=outcome)
-    log.info("RL signal comparison: %s", outcome.log_payload())
-    if not outcome.applied:
-        return effective, model_artifact_id
-    if not outcome.policy_artifact_id:
-        raise RuntimeError("applied RL policy requires immutable artifact identity")
-    identity = {"llm_artifact_id": model_artifact_id, "rl_artifact_id": outcome.policy_artifact_id,
-                "base_rl_weight": .25, "max_rl_weight": .50, "blender_version": 1}
-    artifact_id = stable_id("artifact", identity)
-    repository.save_model_artifact({
-        "artifact_id": artifact_id, "algorithm": "rule", "feature_version": "llm-ppo-blend-v1",
-        "train_start": None, "train_end": None, "seed": None,
-        "artifact_uri": str(default_active_policy_path()),
-        "sha256": hashlib.sha256(canonical_json(identity).encode()).hexdigest(),
-        "params": identity, "code_commit": os.environ.get("GITHUB_SHA"),
-    })
-    return effective, artifact_id
+def _rl_challenger(repository, proposals, *, as_of: datetime) -> RlPolicyOutcome:
+    """승격된 RL 정책의 목표비중을 challenger 후보로만 계산한다. 신호는 바꾸지 않는다."""
+    outcome = compute_rl_target_weights(
+        repository, as_of_at=as_of, policy_path=default_active_policy_path(),
+        proposals=proposals, current_weights={CASH_SYMBOL: 1.0},
+    )
+    log.info("RL challenger weights: %s", outcome.log_payload())
+    return outcome
 
 
 def _ml_fused_proposals(repository, proposals, *, as_of: datetime, model_artifact_id: str):
@@ -89,11 +74,11 @@ def _ml_fused_proposals(repository, proposals, *, as_of: datetime, model_artifac
     identity = {
         "upstream_artifact_id": model_artifact_id,
         "ml_artifact_id": outcome.model_artifact_id,
-        "fusion_version": "ml-tradingagents-fusion-v1",
+        "fusion_version": "ml-tradingagents-fusion-v2",
     }
     artifact_id = stable_id("artifact", identity)
     repository.save_model_artifact({
-        "artifact_id": artifact_id, "algorithm": "rule", "feature_version": "ml-tradingagents-fusion-v1",
+        "artifact_id": artifact_id, "algorithm": "rule", "feature_version": "ml-tradingagents-fusion-v2",
         "train_start": None, "train_end": None, "seed": None,
         "artifact_uri": str(default_active_model_path()),
         "sha256": hashlib.sha256(canonical_json(identity).encode()).hexdigest(),
@@ -400,9 +385,7 @@ def main(argv: list[str] | None = None) -> int:
                 log.warning('analysis paused: model pool budget unavailable; remaining symbols stay pending')
                 break
 
-    proposals, model_artifact_id = _effective_proposals(
-        repository, proposals, as_of=as_of, model_artifact_id=model_artifact_id,
-    )
+    _rl_challenger(repository, proposals, as_of=as_of)
     proposals, model_artifact_id = _ml_fused_proposals(
         repository, proposals, as_of=as_of, model_artifact_id=model_artifact_id,
     )

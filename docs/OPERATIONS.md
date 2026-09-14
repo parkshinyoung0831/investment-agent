@@ -175,6 +175,16 @@ python scripts/verify_data.py
 python scripts/verify_integration.py
 ```
 
+재구축으로 `universe.securities`의 security_id가 다시 매겨졌다면 로컬 판단 원장
+(`security_decisions`·`signals`)이 옛 ID를 가리켜 후보 선정이 "unknown securities"로 멈춘다.
+`case_key`의 ticker로 새 ID를 풀어 옮긴다. 풀리지 않는 행이 하나라도 있으면 아무것도 바꾸지 않고,
+적용 전에 원장 사본을 옆에 남긴다.
+
+```powershell
+python -m investment_agent.operations.commands.remap_runtime_securities           # 확인만
+python -m investment_agent.operations.commands.remap_runtime_securities --apply   # 백업 후 적용
+```
+
 ## 로컬 저장 파일 이관
 
 Intelligence·Research DuckDB와 Runtime SQLite의 canonical 위치는 각각

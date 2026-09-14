@@ -421,7 +421,6 @@ class PresentationLayerDirectionTest(unittest.TestCase):
     PENDING_DEPENDENCIES = frozenset(
         {
             ("src/investment_agent/dashboard/app_pages/earnings.py", "investment_agent.notifications.earnings_report"),
-            ("src/investment_agent/dashboard/app_pages/ml_rl_lab.py", "investment_agent.trading.decision.signal_blender"),
             ("src/investment_agent/dashboard/calculations/strategy.py", "investment_agent.research.strategies.strategies"),
             ("src/investment_agent/dashboard/calculations/tech.py", "investment_agent.research.features.compute"),
         }

@@ -14,7 +14,7 @@ from investment_agent.research.rl.contracts import FeatureSnapshot, ForwardRetur
 
 # feature 계약 세대. `rl_feature_snapshots`의 identity 구성요소이며, 컬럼 계약이
 # 바뀌면 snapshot과 label이 다른 세대로 분리된다.
-FEATURE_VERSION = "v3"
+FEATURE_VERSION = "v4"
 HORIZONS = (1, 5, 20)
 
 # 20거래일 수익률은 오늘 종가와 20거래일 전 종가가 둘 다 필요하다. ContextBuilder가
@@ -86,6 +86,8 @@ def _number(value: Any) -> float | None:
 
 
 def _close_returns(rows: Iterable[Mapping[str, Any]]) -> dict[str, float | None]:
+    # 저장된 종가는 수집 시점에 이미 현재 분할 기준으로 정규화돼 있다(새 분할이 생기면 market이
+    # 전체 이력을 다시 받는다). 여기서 분할을 한 번 더 되돌리면 가짜 급등락이 생긴다.
     ordered = sorted(rows, key=lambda row: str(row.get("trade_date") or ""), reverse=True)
     closes = [_number(row.get("close")) for row in ordered]
     result: dict[str, float | None] = {}
@@ -122,22 +124,19 @@ def _fundamental(payload: Mapping[str, Any]) -> dict[str, float | None]:
     filings = payload.get("filings")
     rows = filings if isinstance(filings, list) else []
     latest = rows[0] if rows and isinstance(rows[0], Mapping) else {}
-    previous = rows[1] if len(rows) > 1 and isinstance(rows[1], Mapping) else {}
-
-    def growth(field: str) -> float | None:
-        current = _number(latest.get(field))
-        prior = _number(previous.get(field))
-        if current is None or prior in (None, 0.0):
-            return None
-        return current / abs(prior) - 1.0
+    raw_stats = payload.get("statistics")
+    stats = raw_stats if isinstance(raw_stats, Mapping) else {}
 
     revenue = _number(latest.get("revenue"))
     operating = _number(latest.get("operating_income_loss"))
     assets = _number(latest.get("assets"))
     debt = _number(latest.get("total_debt_including_current"))
+    # 성장은 같은 회계기간의 전년 대비다. 바로 앞 공시와 비교하면 Q4 계절성과 FY·분기
+    # 혼합이 성장률로 들어간다. 프롬프트용 `filings`는 최근 몇 행뿐이라 전년 행이 없으므로
+    # 전체 이력으로 계산한 statistics를 쓴다.
     return {
-        "fundamental_revenue_growth": growth("revenue"),
-        "fundamental_net_income_growth": growth("net_income"),
+        "fundamental_revenue_growth": _number(stats.get("revenue_growth_yoy")),
+        "fundamental_net_income_growth": _number(stats.get("net_income_growth_yoy")),
         "fundamental_operating_margin": (
             operating / revenue if operating is not None and revenue not in (None, 0.0) else None
         ),

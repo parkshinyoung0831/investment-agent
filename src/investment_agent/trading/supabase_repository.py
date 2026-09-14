@@ -12,13 +12,14 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from investment_agent.trading.decision.candidate_ranker import (
+    PriorityCandidate,
     assemble_candidate_features,
     merge_priority_lane,
     priority_candidates,
     rank_candidate_features,
     validate_live_candidate_as_of,
 )
-from investment_agent.trading.contracts import parse_datetime
+from investment_agent.trading.contracts import ContractError, parse_datetime
 from investment_agent.platform.serialization import canonical_json
 from investment_agent.trading.portfolio.contracts import SecurityProposal
 from investment_agent.research.promotion.gate import (
@@ -34,6 +35,8 @@ from investment_agent.research.rl.contracts import (
     normalize_symbols,
 )
 from investment_agent.trading.decision.universe import normalize_ticker
+from investment_agent.trading.decision.event_impact import THEME_BY_NAME, global_event_priorities
+from investment_agent.trading.portfolio.market_risk import estimate_betas
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.db.postgres import sb
 from investment_agent.trading.decision.contracts import Event, EventFeatureSnapshot
@@ -365,7 +368,9 @@ class SupabaseRepository:
 
         members = {normalize_ticker(ticker) for ticker in tickers}
         latest: dict[str, datetime] = {}
-        for row in read_local_rows("security_decisions"):
+        # 판단 원장은 ticker가 아니라 security_id를 저장한다. 신원 조회기를 넘기지 않으면 reader가
+        # 판단이 하나라도 있는 순간부터 매번 실패해 후보 선정 전체가 멈춘다.
+        for row in read_local_rows("security_decisions", canonical_db=Database(sb)):
             if str(row.get("status") or "") not in {"completed", "abstained"}:
                 continue
             symbol = normalize_ticker(str(row.get("ticker") or ""))
@@ -484,15 +489,7 @@ class SupabaseRepository:
         tickers = self.current_tracked_tickers()
         if not tickers:
             return []
-        last_analyzed = self._candidate_last_analyzed(tickers, as_of_at=as_of_at)
-        # 실패 종목도 순환 위치를 전진시켜 한 종목의 장애가 전체 500개를 막지 않는다.
-        from investment_agent.reporting.readers.runtime import read_local_rows
-        for row in read_local_rows('security_decisions'):
-            ticker=normalize_ticker(row.get('ticker'))
-            if ticker in tickers and row.get('status')=='failed' and row.get('as_of_at'):
-                attempted=parse_datetime(row['as_of_at'])
-                if attempted <= as_of_at and (ticker not in last_analyzed or attempted > last_analyzed[ticker]):
-                    last_analyzed[ticker]=attempted
+        last_analyzed = self._last_attempted(tickers, as_of_at=as_of_at)
         fundamental_rows = self._candidate_fundamental_rows(tickers, as_of_at)
         features = assemble_candidate_features(
             tickers,
@@ -529,6 +526,88 @@ class SupabaseRepository:
         )
         return selected
 
+    def _last_attempted(self, tickers: list[str], *, as_of_at: datetime) -> dict[str, datetime]:
+        """마지막 분석 시각. 실패한 시도도 포함한다 — 한 종목의 장애가 순환·재분석을 막지 않게."""
+        last_analyzed = self._candidate_last_analyzed(tickers, as_of_at=as_of_at)
+        from investment_agent.reporting.readers.runtime import read_local_rows
+        for row in read_local_rows('security_decisions', canonical_db=Database(sb)):
+            ticker=normalize_ticker(row.get('ticker'))
+            if ticker in tickers and row.get('status')=='failed' and row.get('as_of_at'):
+                attempted=parse_datetime(row['as_of_at'])
+                if attempted <= as_of_at and (ticker not in last_analyzed or attempted > last_analyzed[ticker]):
+                    last_analyzed[ticker]=attempted
+        return last_analyzed
+
+    def event_reanalysis_priorities(
+        self,
+        *,
+        as_of_at: datetime,
+        global_event_hours: int = 48,
+    ) -> tuple[PriorityCandidate, ...]:
+        """정기 순환을 기다리지 않고 지금 다시 볼 종목.
+
+        보유 종목의 새 공시·고영향 사건(`priority_candidates`)과, 검증을 통과한 글로벌 사건에 민감한
+        보유 종목(`global_event_priorities`)을 합친다. 공시 조회는 보유 종목으로 좁힌다 — 이 경로는
+        몇 분마다 돌기 때문에 500종목 재무를 매번 읽을 이유가 없다.
+        """
+        as_of_at = validate_live_candidate_as_of(as_of_at)
+        tickers = self.current_tracked_tickers()
+        if not tickers:
+            return ()
+        held = [ticker for ticker in self._candidate_held_tickers() if ticker in set(tickers)]
+        last_analyzed = self._last_attempted(tickers, as_of_at=as_of_at)
+        latest_filed: dict[str, str] = {}
+        for row in (self._candidate_fundamental_rows(held, as_of_at) if held else []):
+            ticker = normalize_ticker(row.get("ticker"))
+            filed = str(row.get("filed_at") or "")
+            if ticker and filed > latest_filed.get(ticker, ""):
+                latest_filed[ticker] = filed
+        local = priority_candidates(
+            tickers=tickers, held_tickers=held, last_analyzed_at=last_analyzed,
+            latest_filed_at=latest_filed, event_features=self._candidate_event_features(as_of_at),
+            as_of_at=as_of_at,
+        )
+        global_events = self._recent_global_events(as_of_at, hours=global_event_hours) if held else []
+        themes = {theme for event in global_events for theme in (event.get("metadata") or {}).get("themes") or ()}
+        proxies = sorted({THEME_BY_NAME[name].proxy for name in themes if name in THEME_BY_NAME})
+        sensitivities: dict[str, dict[str, float]] = {}
+        proxy_rows: dict[str, list[dict]] = {}
+        if proxies:
+            rows = {symbol: self.market_prices(symbol, as_of_at, limit=260) for symbol in (*held, *proxies)}
+            for proxy in proxies:
+                proxy_rows[proxy] = rows[proxy]
+                try:
+                    sensitivities[proxy] = estimate_betas(rows, symbols=held, benchmark_symbol=proxy)
+                except ContractError as exc:
+                    log.warning("global event sensitivity unavailable proxy=%s: %s", proxy, exc)
+        global_priority = global_event_priorities(
+            global_events, held_tickers=held, last_analyzed_at=last_analyzed,
+            sensitivities=sensitivities, proxy_rows=proxy_rows, as_of_at=as_of_at,
+        )
+        merged: dict[str, PriorityCandidate] = {}
+        for candidate in (*local, *global_priority):
+            current = merged.get(candidate.ticker)
+            if current is None or (candidate.tier, -candidate.importance) < (current.tier, -current.importance):
+                merged[candidate.ticker] = candidate
+        return tuple(sorted(merged.values(), key=lambda item: (item.tier, -item.importance, item.ticker)))
+
+    def _recent_global_events(self, as_of_at: datetime, *, hours: int) -> list[dict[str, Any]]:
+        try:
+            rows = ResearchStore(read_only=True).records(
+                "events",
+                start_as_of=None,
+                end_as_of=None,
+            )
+        except Exception as exc:  # noqa: BLE001 - 사건 저장소 부재가 재분석 판단을 멈추게 두지 않는다
+            log.warning("global events unavailable: %s", type(exc).__name__)
+            return []
+        floor = as_of_at - timedelta(hours=hours)
+        return [
+            row for row in rows
+            if not row.get("ticker") and row.get("available_at")
+            and floor <= parse_datetime(str(row["available_at"])) <= as_of_at
+        ]
+
     def _candidate_held_tickers(self) -> list[str]:
         """최근 live 계좌 snapshot의 보유종목. 원장이 없으면(분석 전용 환경) 빈 목록이다."""
         from investment_agent.execution.db import latest_live_position_tickers
@@ -563,6 +642,9 @@ class SupabaseRepository:
     def market_prices(self, ticker: str, as_of_at: datetime, limit: int = 260) -> list[dict]:
         """market 스키마의 owner에게 위임한다 — 조회 규칙을 두 곳에 두지 않는다."""
         return market_db.price_history_as_of(ticker, as_of_at, limit=limit)
+    def split_history(self, ticker: str) -> list[dict]:
+        """market 스키마의 owner에게 위임한다."""
+        return market_db.split_history(ticker)
     def technical_snapshot(self, ticker: str, as_of_at: datetime) -> list[dict]:
         """Research DuckDB feature store의 owner에게 위임한다."""
         return features_db.latest_signal_as_of(ticker, as_of_at)

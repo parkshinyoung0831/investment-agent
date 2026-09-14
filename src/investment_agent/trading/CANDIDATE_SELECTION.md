@@ -81,7 +81,7 @@ coverage cohort라면 MSFT가 먼저 선택됩니다. 두 종목의 마지막 �
 python -m investment_agent.trading.decision.portfolio_shadow --ticker AAPL --dry-run
 
 # 모델 설정 뒤 현재 universe에서 최대 5개 Shadow 분석
-python -m investment_agent.trading.decision.shadow_daily --limit 5
+python -m investment_agent.trading.decision.portfolio_shadow --limit 5
 ```
 
 오래된 `--as-of`를 주면 현재형 segment/13F child data를 과거처럼 재구성할 수 없기 때문에 24시간

@@ -260,7 +260,6 @@ src/investment_agent/trading/
   rl/                          feature/label, walk-forward, SB3 실험
   research/backtest/           Native engine와 LumiBot validation
   portfolio/                   signal book, optimizer, risk, promotion
-    ensemble.py                LLM·ML·RL 제안을 한 RiskGate로 모으는 경계
   research/commands/           수동/하네스 CLI
     build_features.py          tracked universe -> FeatureSnapshot 적재
     build_labels.py            구간 종료 뒤 ForwardReturnLabel 적재
@@ -293,7 +292,11 @@ python -m investment_agent.research.commands.export_dataset --output artifacts/d
 python -m investment_agent.trading.decision.portfolio_shadow --ticker AAPL --dry-run
 
 # 현재 tracked universe에서 coverage-first Shadow 분석
-python -m investment_agent.trading.decision.shadow_daily --limit 5
+python -m investment_agent.trading.decision.portfolio_shadow --limit 5
+
+# 가상계좌 정산·평가·판단과 성과 요약
+python -m investment_agent.operations.commands.virtual_books
+python -m investment_agent.operations.commands.virtual_books --summary
 
 # 성숙한 case 평가
 python -m investment_agent.research.commands.evaluate --limit 200

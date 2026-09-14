@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
+from investment_agent.trading.decision.constants import SIGNAL_HORIZON_DAYS
 from investment_agent.platform.logging import get_logger
 from investment_agent.research.ml_inference import MIN_IC_T_STAT, load_model
 from investment_agent.research.ml_serving import default_active_model_path
@@ -53,6 +54,8 @@ def check_adoptable(payload: Mapping[str, Any]) -> AdoptionCheck:
         reasons.append("top-minus-bottom quantile spread must be positive")
     if model.confidence <= 0.0:
         reasons.append("model confidence resolves to zero")
+    if model.horizon_days != SIGNAL_HORIZON_DAYS:
+        reasons.append(f"model horizon must be {SIGNAL_HORIZON_DAYS}d to be fused (got {model.horizon_days}d)")
     return AdoptionCheck(not reasons, tuple(reasons))
 
 

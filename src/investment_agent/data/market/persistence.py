@@ -131,6 +131,17 @@ def split_keys(security_ids: Sequence[int]) -> set[tuple[int, str]]:
     }
 
 
+def split_history(ticker: str) -> list[dict]:
+    """종목의 전체 분할 이력. 저장 종가가 따르는 분할 기준을 되짚을 때 쓴다."""
+    security_id = _ticker_id(ticker)
+    if security_id is None:
+        return []
+    return [
+        {"ticker": ticker.upper(), "action_date": event.action_date.isoformat(), "split_ratio": event.split_ratio}
+        for event in MarketRepository(_db()).splits([security_id])
+    ]
+
+
 def _ticker_id(ticker: str) -> int | None:
     return _ids([ticker]).get(str(ticker).upper())
 
@@ -267,6 +278,6 @@ __all__ = [
     "SCHEMA_MARKET", "SCHEMA_UNIVERSE", "T_ACTIONS_DAILY", "T_PRICES_DAILY", "configure",
     "universe_tracked", "universe_company_tickers", "universe_missing_prices", "price_targets",
     "missing_price_targets", "targets_for_tickers", "latest_price_date", "prices_since",
-    "upsert_prices", "merge_actions", "split_keys", "price_history_as_of", "close_history_as_of",
+    "upsert_prices", "merge_actions", "split_keys", "split_history", "price_history_as_of", "close_history_as_of",
     "forward_closes_after", "price_path_from", "monthly_close_history",
 ]

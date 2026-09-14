@@ -3,8 +3,8 @@
 feature와 label을 물리적으로 분리한 계약을 지키는 유일한 생산 경로다. 미래 가격을
 일부러 읽으므로 PIT 조회가 아니며, 구간이 아직 안 끝난 snapshot은 건드리지 않는다.
 Research local dataset `rl_training_labels`의 identity가 (feature_version, as_of_at,
-ticker)라서 한 snapshot당 horizon 하나만 저장된다 — 기본값은 현재 신호 계약과 같은
-5거래일이다.
+ticker)라서 한 snapshot당 horizon 하나만 저장된다 — 기본값은 비중을 정하는 기대수익
+기간(`SIGNAL_HORIZON_DAYS`)이다.
 """
 from __future__ import annotations
 
@@ -13,12 +13,14 @@ import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Mapping
 
+from investment_agent.trading.decision.constants import SIGNAL_HORIZON_DAYS
 from investment_agent.operations.runtime import run_log_payload
 from investment_agent.platform.logging import get_logger
 from investment_agent.trading.contracts import parse_datetime
 from investment_agent.trading.supabase_repository import SupabaseRepository
 from investment_agent.research.features.layer import FEATURE_VERSION, HORIZONS, FeatureLayer
 from investment_agent.research.rl.contracts import RLSafetyError
+from investment_agent.research.datasets.universe import members_over_window
 
 log = get_logger(__name__)
 
@@ -33,8 +35,8 @@ _SESSION_CLOSE_UTC_HOUR = 21
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="investment_agent.research.commands.build_labels")
     parser.add_argument(
-        "--horizon", type=int, default=5, choices=HORIZONS,
-        help="label 구간의 거래일 수. 현재 신호 계약과 같은 5가 기본",
+        "--horizon", type=int, default=SIGNAL_HORIZON_DAYS, choices=HORIZONS,
+        help="label 구간의 거래일 수. 비중을 정하는 기대수익 기간(SIGNAL_HORIZON_DAYS)이 기본",
     )
     parser.add_argument(
         "--lookback-days", type=int, default=90,
@@ -58,6 +60,11 @@ def _session_close(trade_date: str) -> datetime:
     )
 
 
+def _label_symbols(selected: SupabaseRepository, *, start: date, end: date) -> tuple[str, ...]:
+    """label을 찾을 종목. 현재 추적 종목에 그 창 동안의 S&P 500 멤버를 더한다."""
+    return members_over_window(selected, start=start, end=end)
+
+
 def _closes_by_date(rows: list[Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
     return {str(row["trade_date"]): dict(row) for row in rows if row.get("close") is not None}
 
@@ -77,7 +84,11 @@ def build_labels(
     selected = repository or SupabaseRepository()
     window_start = (as_of_at - timedelta(days=lookback_days)).isoformat()
     window_end = as_of_at.isoformat()
-    symbols = tuple(selected.current_tracked_tickers())
+    symbols = _label_symbols(
+        selected,
+        start=(as_of_at - timedelta(days=lookback_days)).date(),
+        end=as_of_at.date(),
+    )
     if not symbols:
         raise RuntimeError("no tracked ticker is available for label building")
 
@@ -102,7 +113,9 @@ def build_labels(
     benchmark_rows = _closes_by_date(selected.forward_prices_for_labels(
         benchmark,
         after_date=(as_of_at - timedelta(days=lookback_days + 30)).date().isoformat(),
-        limit=400,
+        # 달력일 수가 거래일 수보다 크므로 창 전체를 덮는다. 고정 상한이면 긴 과거 창에서
+        # 앞부분만 읽혀 뒤쪽 snapshot이 벤치마크 없음으로 조용히 건너뛰어진다.
+        limit=lookback_days + 60,
     ))
 
     rows: list[dict] = []

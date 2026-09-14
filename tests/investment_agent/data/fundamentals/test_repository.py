@@ -63,7 +63,7 @@ class VersionSelectionTest(unittest.TestCase):
     def test_operational_replay_waits_until_we_actually_had_the_filing(self) -> None:
         """SEC 제출일(6/1)이 지났어도 우리가 받은 것은 6/3이다 — 운영 재현은 원본을 쓴다."""
         versions = [VERSIONS[0], {**VERSIONS[1], "ingested_at": None}]
-        when = datetime(2026, 6, 2, tzinfo=timezone.utc)
+        when = datetime(2026, 6, 2, 12, tzinfo=timezone.utc)
 
         def pick(include: bool) -> list[str]:
             return [row["accession_no"] for row in _project_fundamental_rows(
@@ -71,6 +71,17 @@ class VersionSelectionTest(unittest.TestCase):
 
         self.assertEqual([ORIGINAL], pick(True))
         self.assertEqual([RESTATED], pick(False))
+
+    def test_source_replay_waits_for_the_end_of_the_filing_day_in_new_york(self) -> None:
+        """6/1 제출 공시는 6/2 00:00 UTC(뉴욕 6/1 저녁)에는 아직 쓰지 않는다 — 장 마감 뒤 공시일 수 있다."""
+        versions = [VERSIONS[0], {**VERSIONS[1], "ingested_at": None}]
+
+        def pick(when: datetime) -> list[str]:
+            return [row["accession_no"] for row in _project_fundamental_rows(
+                "AAPL", versions, PROVENANCE, when, include_available_at=False, limit=12)]
+
+        self.assertEqual([ORIGINAL], pick(datetime(2026, 6, 2, 3, 59, tzinfo=timezone.utc)))
+        self.assertEqual([RESTATED], pick(datetime(2026, 6, 2, 4, 0, tzinfo=timezone.utc)))
 
     def test_operational_replay_also_waits_until_the_version_was_stored(self) -> None:
         """공시는 받았어도 재처리한 버전 행이 cutoff 뒤에 생겼으면 그때는 몰랐던 값이다."""

@@ -1,9 +1,9 @@
-"""거래일마다 PIT 밸류에이션 관측값을 계산해 원장에 적재한다.
+"""PIT 밸류에이션 관측값을 계산해 원장에 적재한다.
 
-Phase 0 감사 결론에 따라 **live_shadow만** 만든다. 과거 시점은 만들지 않는다 —
-`market.prices_daily.ingested_at`이 이번 재적재 시각이라 과거의 실제 가용시각이
-아니고, wide 재무표는 정정 전 행을 보존하지 않아 TTM 구성 분기의 vintage를
-증명할 수 없기 때문이다. 근거는 docs/EVIDENCE_DOSSIER_PHASE_0_1.md에 있다.
+`live_shadow`는 매일의 실행 시각 기준이다. `historical_replay`는 과거 시점을 재현한다 —
+가격은 거래 세션 규칙으로, 재무는 공시 버전(`financial_versions`)과 SEC 제출일 규칙으로,
+발행주식수는 접수 시각으로 자르므로 그 시점에 알 수 있던 값만 들어간다. 과거 시점의
+종목은 그때의 S&P 500 멤버다(지금 남아 있는 종목만 쓰면 생존 편향이 생긴다).
 """
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from investment_agent.operations.runtime import run_log_payload
 from investment_agent.platform.logging import get_logger
 from investment_agent.trading.contracts import ContractError, parse_datetime
 from investment_agent.trading.supabase_repository import SupabaseRepository
+from investment_agent.research.datasets.universe import research_universe
 from investment_agent.research.valuation.engine import PITValuationObservation, build_pit_valuation
 from investment_agent.research.valuation.inputs import build_valuation_inputs
 
@@ -32,6 +33,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--ticker", action="append", help="지정 종목만 실행. 여러 번 사용 가능")
     parser.add_argument("--limit", type=int, help="처리할 최대 종목 수. 기본은 전체 tracked")
     parser.add_argument("--as-of", help="타임존을 포함한 ISO-8601 기준 시각. 기본은 현재 UTC")
+    parser.add_argument(
+        "--source-kind", default="live_shadow", choices=("live_shadow", "historical_replay"),
+        help="historical_replay는 --as-of 시점의 S&P 500 멤버와 원천 공개 규칙으로 재현한다",
+    )
     parser.add_argument("--dry-run", action="store_true", help="계산만 하고 저장하지 않는다")
     return parser.parse_args(argv)
 
@@ -69,10 +74,13 @@ def build_valuations(
     *,
     as_of_at: datetime,
     tickers: list[str],
+    source_kind: str = "live_shadow",
     dry_run: bool = False,
     repository: SupabaseRepository | None = None,
 ) -> dict[str, object]:
     """종목별 가격·발행주식수·TTM 재무를 하나의 PIT 관측값으로 만든다."""
+    if source_kind not in ("live_shadow", "historical_replay"):
+        raise ValueError(f"unsupported source_kind: {source_kind}")
     started = time.monotonic()
     started_at = datetime.now(timezone.utc).isoformat()
     selected = repository or SupabaseRepository()
@@ -90,7 +98,8 @@ def build_valuations(
                 price_rows=selected.market_prices(ticker, as_of_at, limit=5),
                 fundamental_rows=selected.fundamentals_pit(ticker, as_of_at, limit=12),
                 share_rows=selected.share_class_snapshots_pit(ticker, as_of_at),
-                source_kind="live_shadow",
+                split_rows=selected.split_history(ticker) if hasattr(selected, "split_history") else (),
+                source_kind=source_kind,
             ))
         except (ContractError, ValueError) as exc:
             # 한 종목의 원천 문제가 그날 전체 적재를 막지 않는다.
@@ -119,7 +128,7 @@ def build_valuations(
         started_at=started_at,
         detail={
             "source_version": SOURCE_VERSION,
-            "source_kind": "live_shadow",
+            "source_kind": source_kind,
             "as_of_at": as_of_at.isoformat(),
             "built": len(rows),
             "with_market_cap": complete,
@@ -143,7 +152,9 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("--limit must be positive")
     as_of_at = parse_datetime(args.as_of) if args.as_of else datetime.now(timezone.utc)
     repository = SupabaseRepository()
-    tickers = [value.upper() for value in (args.ticker or [])] or repository.current_tracked_tickers()
+    tickers = [value.upper() for value in (args.ticker or [])] or research_universe(
+        repository, as_of_at=as_of_at, source_kind=args.source_kind,
+    )
     if args.limit is not None:
         tickers = tickers[:args.limit]
     if not tickers:
@@ -152,6 +163,7 @@ def main(argv: list[str] | None = None) -> int:
     payload = build_valuations(
         as_of_at=as_of_at,
         tickers=tickers,
+        source_kind=args.source_kind,
         dry_run=args.dry_run,
         repository=repository,
     )

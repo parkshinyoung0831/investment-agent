@@ -1,6 +1,7 @@
 """ResearchDataset을 기존 Naive/Ridge/GBM/XGB 학습 계약에 연결한다."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
@@ -38,6 +39,14 @@ def _period_for_indexes(dataset: ResearchDataset, indexes: tuple[int, ...]) -> t
     return start.isoformat(), end.isoformat()
 
 
+def label_horizon_days(label_definition: str) -> int:
+    """`forward_return_20d`(또는 `forward_20d`) 같은 label 정의에서 거래일 수를 읽는다."""
+    match = re.fullmatch(r"forward(?:_return)?_(\d+)d", str(label_definition).strip())
+    if match is None:
+        raise ValueError(f"label definition does not state a horizon: {label_definition!r}")
+    return int(match.group(1))
+
+
 def train_baseline_dataset(
     dataset: ResearchDataset,
     *,
@@ -45,12 +54,20 @@ def train_baseline_dataset(
     train_split: tuple[int, int],
     validation_split: tuple[int, int],
     test_split: tuple[int, int],
-    horizon_days: int = 5,
+    horizon_days: int | None = None,
     parameters: dict[str, Any] | None = None,
     random_seed: int = 7,
     code_version: str = "investment-agent-research-v1",
 ) -> BaselineTrainingResult:
-    """호출자가 정한 시간 split을 섞지 않고 기존 baseline trainer를 실행한다."""
+    """호출자가 정한 시간 split을 섞지 않고 기존 baseline trainer를 실행한다.
+
+    horizon은 dataset의 label 정의(`forward_return_20d`)가 정한다. 호출자가 따로 넘긴 값과
+    다르면 실패한다 — 20일 label로 학습한 모델에 5일이라고 적으면 serving이 엉뚱한 기간과 합친다.
+    """
+    label_horizon = label_horizon_days(dataset.manifest.label_definition)
+    if horizon_days is not None and horizon_days != label_horizon:
+        raise ValueError(f"horizon_days {horizon_days} does not match label definition {label_horizon}d")
+    horizon_days = label_horizon
     train = _indexes(dataset, train_split)
     validation = _indexes(dataset, validation_split)
     test = _indexes(dataset, test_split)

@@ -338,6 +338,30 @@ def entry_watch_job(*, watch: StageHandler) -> JobDefinition:
         stages=(StageDefinition('watch',watch,approval_workflow_only=False,max_attempts=1),))
 
 
+def virtual_books_job(*, run_books: StageHandler, interval_seconds: float = 30 * 60) -> JobDefinition:
+    """Shadow·Paper 가상계좌 정산·평가·판단. 주문을 내지 않으므로 거래 kill switch·모드와 무관하다.
+
+    승인 흐름 밖에서 돌아야 시스템 자신의 판단 성과가 사람의 승인·거절과 섞이지 않는다.
+    """
+    return JobDefinition(job_id="virtual_books", interval_seconds=interval_seconds, stale_after_seconds=6 * 60 * 60,
+        stages=(StageDefinition("run_books", run_books, approval_workflow_only=False, max_attempts=2,
+                                retry_delay_seconds=5 * 60),))
+
+
+def event_reanalysis_job(*, reanalyze: StageHandler, interval_seconds: float = 10 * 60) -> JobDefinition:
+    """보유 종목의 새 공시·사건을 정기 분석 주기보다 먼저 다시 본다. 주문은 내지 않는다."""
+    return JobDefinition(job_id="event_reanalysis", interval_seconds=interval_seconds, stale_after_seconds=2 * 60 * 60,
+        stages=(StageDefinition("reanalyze", reanalyze, approval_workflow_only=False, max_attempts=1),))
+
+
+def ml_challengers_job(*, train_challengers: StageHandler, interval_seconds: float = 7 * 24 * 60 * 60) -> JobDefinition:
+    """ML 후보를 주 1회 다시 학습·비교해 기록한다. 채택은 하지 않으므로 거래 kill switch와 무관하다."""
+    return JobDefinition(job_id="ml_challengers", interval_seconds=interval_seconds,
+        stale_after_seconds=interval_seconds + 24 * 60 * 60,
+        stages=(StageDefinition("train_challengers", train_challengers, approval_workflow_only=False,
+                                max_attempts=2, retry_delay_seconds=30 * 60),))
+
+
 def decision_experience_job(*, build_decision_experiences: StageHandler) -> JobDefinition:
     """feature 수집 장애와 무관하게 이미 저장된 판단의 경험을 완성한다."""
     return JobDefinition(job_id="decision_experience", interval_seconds=86400, stale_after_seconds=108000,

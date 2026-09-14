@@ -73,6 +73,11 @@ def fundamental_statistics(rows_desc: Iterable[Mapping[str, Any]]) -> dict[str, 
         prior_revenue = _finite(prior.get("revenue"))
         if prior_revenue not in (None, 0):
             output["revenue_growth_yoy"] = revenue / prior_revenue - 1
+    if prior is not None and net_income is not None:
+        prior_income = _finite(prior.get("net_income"))
+        if prior_income not in (None, 0):
+            # 적자에서 흑자로 바뀌면 부호가 뒤집히므로 전년 값의 절대값으로 나눈다.
+            output["net_income_growth_yoy"] = (net_income - prior_income) / abs(prior_income)
     return output
 
 

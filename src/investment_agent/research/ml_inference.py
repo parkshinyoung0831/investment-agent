@@ -1,8 +1,8 @@
 """저장된 ML artifact를 오늘의 feature에 적용해 수치 예측을 만든다.
 
 `fit_baseline`이 학습만 하고 끝나면 모델은 파일로만 남는다. 이 모듈이 그 artifact를
-다시 세워 live feature에 적용하고, **측정된 OOS 성능을 confidence로 환산**해
-`fusion.fuse_signals`가 LLM 의견과 합칠 수 있는 형태로 넘긴다.
+다시 세우고, **측정된 OOS 성능을 confidence로 환산**한다. 판단 경로에서 LLM 의견과 섞는
+일은 `ml_serving`이 한다. naive·ridge는 계수로, LightGBM·XGBoost는 저장한 booster 원문으로 복원한다.
 
 confidence를 상수로 두지 않는 것이 핵심이다. 순위 상관이 0에 가까운 모델은 낮은
 가중치로 합쳐져야 하고, 그 판단 근거는 사람이 정한 숫자가 아니라 OOS 실측이어야 한다.
@@ -15,16 +15,10 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
-from investment_agent.trading.contracts import ContractError, parse_datetime
-from investment_agent.trading.decision.fusion import NumericPrediction
+from investment_agent.trading.contracts import ContractError
 
-# fusion._desk_returns와 같은 환산비다. 5거래일 학습 모델 하나로 세 horizon을 채울 때
-# 서로 다른 비율을 쓰면 desk 의견과 수치 예측이 다른 시간축에서 합쳐진다.
-HORIZON_SCALE = {1: 0.25, 5: 1.0, 20: 2.5}
-
-# 상태만으로 결정적으로 복원되는 모델. 부스팅 계열은 artifact에 재현 가능한 상태가
-# 남지 않아(중요도 목록만 저장) live 경로에서 쓰지 않는다.
-RELOADABLE_KINDS = ("naive", "ridge")
+# artifact 상태만으로 같은 예측을 다시 만들 수 있는 모델. 부스팅은 booster 원문을 저장한다.
+RELOADABLE_KINDS = ("naive", "ridge", "lightgbm", "xgboost")
 # 평균 IC가 우연이 아니라고 볼 최소 t-통계량.
 MIN_IC_T_STAT = 2.0
 
@@ -45,6 +39,8 @@ class LoadedModel:
     direction_accuracy: float
     # 학습 때 기록한 OOS 날짜별 단면 IC 요약(`evaluation.alpha`). 없으면 None.
     oos_alpha: Mapping[str, Any] | None = None
+    # 부스팅 계열의 복원된 booster. 선형·상수 모델은 None.
+    booster: Any = None
 
     def predict(self, matrix: np.ndarray) -> np.ndarray:
         values = np.asarray(matrix, dtype=np.float64)
@@ -54,6 +50,12 @@ class LoadedModel:
             raise ContractError("inference matrix must be finite; impute before predicting")
         if self.model_kind == "naive":
             return np.full(len(values), self.mean, dtype=np.float64)
+        if self.model_kind == "lightgbm":
+            return np.asarray(self.booster.predict(values), dtype=np.float64)
+        if self.model_kind == "xgboost":
+            import xgboost
+
+            return np.asarray(self.booster.predict(xgboost.DMatrix(values)), dtype=np.float64)
         assert self.coefficients is not None
         return values @ self.coefficients + self.intercept
 
@@ -98,14 +100,17 @@ def load_model(payload: Mapping[str, Any]) -> LoadedModel:
             f"{kind or 'unknown'} artifact does not store a reloadable model; "
             f"live inference supports {RELOADABLE_KINDS}"
         )
-    horizon = int(artifact.get("horizon_days") or 5)
-    if horizon not in HORIZON_SCALE:
-        raise ContractError(f"unsupported artifact horizon: {horizon}")
+    horizon = int(artifact.get("horizon_days") or 0)
+    if horizon <= 0:
+        raise ContractError("artifact does not state its horizon")
     feature_names = tuple(str(name) for name in names)
     coefficients = None
     intercept = 0.0
     mean = 0.0
-    if kind == "ridge":
+    booster = None
+    if kind in ("lightgbm", "xgboost"):
+        booster = _load_booster(kind, state)
+    elif kind == "ridge":
         raw = state.get("coefficients")
         if not isinstance(raw, Sequence) or len(raw) != len(feature_names):
             raise ContractError("ridge coefficients do not match feature_names")
@@ -126,67 +131,32 @@ def load_model(payload: Mapping[str, Any]) -> LoadedModel:
         rank_correlation=float(oos.get("rank_correlation") or 0.0),
         direction_accuracy=float(oos.get("direction_accuracy") or 0.5),
         oos_alpha=(dict(payload["out_of_sample_alpha"]) if isinstance(payload.get("out_of_sample_alpha"), Mapping) else None),
+        booster=booster,
     )
 
 
-def predict_numeric(
-    model: LoadedModel,
-    *,
-    as_of_at: str,
-    tickers: Sequence[str],
-    feature_rows: Sequence[Mapping[str, float]],
-    feature_version: str,
-    evidence_by_ticker: Mapping[str, Sequence[str]] | None = None,
-) -> tuple[NumericPrediction, ...]:
-    """오늘의 feature 행렬로 종목별 NumericPrediction을 만든다.
+def _load_booster(kind: str, state: Mapping[str, Any]) -> Any:
+    """저장한 booster 원문을 되살린다. 원문이 없는 옛 artifact는 중요도만 있어 복원할 수 없다."""
+    text = state.get("booster")
+    if not isinstance(text, str) or not text:
+        raise ContractError(f"{kind} artifact has no stored booster; retrain with the current trainer")
+    try:
+        if kind == "lightgbm":
+            import lightgbm
 
-    feature version과 컬럼 순서가 학습 때와 다르면 예측하지 않고 실패한다 —
-    training-serving skew는 조용히 틀린 답을 주기 때문이다.
-    """
-    if feature_version != model.feature_version:
-        raise ContractError(
-            f"feature version mismatch: model={model.feature_version} input={feature_version}"
-        )
-    if len(tickers) != len(feature_rows):
-        raise ContractError("tickers and feature_rows must have equal length")
-    if not tickers:
-        return ()
-    as_of = parse_datetime(as_of_at).isoformat()
-    matrix = np.asarray(
-        [[float(row[name]) for name in model.feature_names] for row in feature_rows],
-        dtype=np.float64,
-    )
-    predictions = model.predict(matrix)
-    scale = HORIZON_SCALE[model.horizon_days]
-    evidence = evidence_by_ticker or {}
-    results: list[NumericPrediction] = []
-    for ticker, value in zip(tickers, predictions):
-        raw = float(value)
-        if not math.isfinite(raw):
-            raise ContractError(f"model produced a non-finite prediction for {ticker}")
-        # 학습 horizon 값을 기준으로 나머지 두 horizon을 같은 환산비로 채운다.
-        base = raw / scale
-        results.append(NumericPrediction(
-            ticker=str(ticker).upper(),
-            as_of_at=as_of,
-            expected_1d_return=base * HORIZON_SCALE[1],
-            expected_5d_return=base * HORIZON_SCALE[5],
-            expected_20d_return=base * HORIZON_SCALE[20],
-            probability_up=model.probability_up(raw),
-            confidence=model.confidence,
-            uncertainty=1.0 - model.confidence,
-            model_id=model.artifact_id,
-            version=f"{model.model_kind}-h{model.horizon_days}",
-            evidence_ids=tuple(evidence.get(str(ticker).upper(), ())),
-        ))
-    return tuple(results)
+            return lightgbm.Booster(model_str=text)
+        import xgboost
+
+        booster = xgboost.Booster()
+        booster.load_model(bytearray(text.encode("utf-8")))
+        return booster
+    except ImportError as exc:
+        raise ContractError(f"{kind} is not installed for inference: uv sync --group ml") from exc
 
 
 __all__ = [
-    "HORIZON_SCALE",
     "MIN_IC_T_STAT",
     "RELOADABLE_KINDS",
     "LoadedModel",
     "load_model",
-    "predict_numeric",
 ]

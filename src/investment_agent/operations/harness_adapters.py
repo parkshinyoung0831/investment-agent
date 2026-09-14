@@ -35,6 +35,12 @@ _ID_PATTERNS = {
 }
 _MODULES = frozenset({
     "investment_agent.operations.commands.watch_entries",
+    # 가상계좌. 실계좌 원장과 표가 다르고 주문을 내지 않는다.
+    "investment_agent.operations.commands.virtual_books",
+    # 사건 기반 즉시 재분석. 결과는 보통의 signal batch이고 주문은 내지 않는다.
+    "investment_agent.operations.commands.event_reanalysis",
+    # ML 후보 재학습·비교. 채택 파일은 쓰지 않는다.
+    "investment_agent.research.commands.ml_challengers",
     "investment_agent.research.commands.build_decision_experiences",
     "investment_agent.operations.commands.update_performance",
     "investment_agent.trading.decision.portfolio_shadow",
@@ -639,6 +645,33 @@ class ProductionInvestmentAdapters:
             return wait
         self.command_runner.run(PythonModuleCommand('investment_agent.operations.commands.watch_entries',(),600),stop_event=context.stop_event)
         return StageOutcome.succeeded({'checked_at':self.now().isoformat()})
+
+    def run_virtual_books(self, context: StageContext) -> StageOutcome:
+        """승인 여부와 무관하게 가상계좌를 정산·평가하고 새 신호로 다시 판단한다."""
+        self.command_runner.run(PythonModuleCommand(
+            "investment_agent.operations.commands.virtual_books",
+            ("--as-of", context.now.isoformat()),
+            self.timeouts.get("virtual_books", 30 * 60),
+        ), stop_event=context.stop_event)
+        return StageOutcome.succeeded({"virtual_books_run_at": self.now().isoformat()})
+
+    def reanalyze_events(self, context: StageContext) -> StageOutcome:
+        """새 공시·고영향 사건·검증된 글로벌 사건이 있는 보유 종목만 곧바로 다시 분석한다."""
+        self.command_runner.run(PythonModuleCommand(
+            "investment_agent.operations.commands.event_reanalysis",
+            ("--as-of", context.now.isoformat()),
+            self.timeouts.get("analysis", 2 * 60 * 60),
+        ), stop_event=context.stop_event)
+        return StageOutcome.succeeded({"event_reanalysis_at": self.now().isoformat()})
+
+    def run_ml_challengers(self, context: StageContext) -> StageOutcome:
+        """쌓인 feature·label로 ML 후보를 다시 학습하고 champion과 비교해 기록한다(채택은 사람)."""
+        self.command_runner.run(PythonModuleCommand(
+            "investment_agent.research.commands.ml_challengers",
+            ("--as-of", context.now.isoformat()),
+            self.timeouts.get("ml_challengers", 3 * 60 * 60),
+        ), stop_event=context.stop_event)
+        return StageOutcome.succeeded({"ml_challengers_run_at": self.now().isoformat()})
 
     def update_performance(self, context: StageContext) -> StageOutcome:
         """계좌와 판단 성과를 각각 원장 사실로 집계한다."""

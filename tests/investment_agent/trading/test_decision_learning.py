@@ -42,14 +42,14 @@ class ExperienceTest(unittest.TestCase):
         proposal=dict(signal="avoid",confidence=.8,probability_up=.2,expected_excess_return=-.03)
         case=dict(case_key="c",ticker="ABC",as_of_at="2026-01-01T22:00:00+00:00",final_decision=proposal)
         original=deepcopy(case)
-        row=build_experience(Prices(),case,as_of_at=datetime(2026,1,8,tzinfo=timezone.utc))
+        row=build_experience(Prices(),case,as_of_at=datetime(2026,1,8,tzinfo=timezone.utc),horizon_days=5)
         self.assertEqual(case,original)
         self.assertEqual(row["net_reward"],0)
         self.assertEqual(row["features"]["decision_action_avoid"],1)
         self.assertAlmostEqual(row["asset_return"],.05)
-        self.assertIsNone(build_experience(Prices(),case,as_of_at=datetime(2026,1,7,tzinfo=timezone.utc)))
+        self.assertIsNone(build_experience(Prices(),case,as_of_at=datetime(2026,1,7,tzinfo=timezone.utc),horizon_days=5))
         case["final_decision"]["signal"]="open"
-        self.assertAlmostEqual(build_experience(Prices(),case,as_of_at=datetime(2026,1,8,tzinfo=timezone.utc))["net_reward"],.048)
+        self.assertAlmostEqual(build_experience(Prices(),case,as_of_at=datetime(2026,1,8,tzinfo=timezone.utc),horizon_days=5)["net_reward"],.048)
 
     def test_store_preserves_first_observation_and_reader_cuts_future_labels(self):
         from tempfile import TemporaryDirectory
@@ -77,5 +77,5 @@ class ExperienceTest(unittest.TestCase):
             def price_path(self,ticker,start_date,limit=80):
                 return [dict(trade_date=str(date(2026,1,2)+timedelta(days=i)),close=100 if i==0 else 50,split_ratio=2 if i==1 else None,div_amount=0) for i in range(6)]
         case=dict(case_key="c",ticker="ABC",as_of_at="2026-01-01T00:00:00+00:00",final_decision=dict(signal="hold",confidence=.8,probability_up=.5,expected_excess_return=0))
-        row=build_experience(Prices(),case,as_of_at=datetime(2026,1,8,tzinfo=timezone.utc))
+        row=build_experience(Prices(),case,as_of_at=datetime(2026,1,8,tzinfo=timezone.utc),horizon_days=5)
         self.assertAlmostEqual(row["asset_return"],0)

@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any, Mapping, Sequence
 
+from investment_agent.trading.decision.constants import SIGNAL_HORIZON_DAYS
 from investment_agent.trading.contracts import ContractError
 from investment_agent.trading.portfolio.contracts import (
     CASH_SYMBOL,
@@ -180,7 +181,7 @@ def from_optimized_security_proposals(
             proposal,
             source="tradingagents",
             version=source_version,
-            horizon_days=5,
+            horizon_days=SIGNAL_HORIZON_DAYS,
         )
         for proposal in sorted(proposals, key=lambda item: item.ticker)
     )
@@ -193,6 +194,12 @@ def from_optimized_security_proposals(
             raise ContractError("covariance symbol order must match optimizer signals")
     elif covariance_symbols is not None or covariance_metadata is not None:
         raise ContractError("covariance values are required with covariance metadata")
+    if covariance_metadata is not None and covariance_metadata.get("horizon_days") not in (None, SIGNAL_HORIZON_DAYS):
+        # 5일 위험과 20일 기대수익을 한 목적함수에 넣으면 위험 회피가 조용히 4배 약해진다.
+        raise ContractError(
+            f"covariance horizon {covariance_metadata.get('horizon_days')}d does not match "
+            f"the signal horizon {SIGNAL_HORIZON_DAYS}d"
+        )
     fixed_weights = (
         {
             symbol: weight

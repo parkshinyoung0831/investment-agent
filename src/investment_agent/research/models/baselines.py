@@ -111,6 +111,40 @@ class _RidgeModel:
         return {"coefficients": self.coefficients.tolist(), "intercept": self.intercept}
 
 
+class _LightGBMModel:
+    """학습한 booster를 텍스트로 남긴다 — 중요도 목록만 남기면 같은 예측을 다시 만들 수 없다."""
+
+    def __init__(self, estimator: Any):
+        self.estimator = estimator
+
+    def predict(self, features: np.ndarray) -> np.ndarray:
+        return np.asarray(self.estimator.predict(np.asarray(features, dtype=float)), dtype=float)
+
+    def state(self) -> dict[str, Any]:
+        booster = self.estimator.booster_
+        return {
+            "booster_format": "lightgbm_model_string",
+            "booster": booster.model_to_string(),
+            "feature_importances": self.estimator.feature_importances_.tolist(),
+        }
+
+
+class _XGBoostModel:
+    def __init__(self, estimator: Any):
+        self.estimator = estimator
+
+    def predict(self, features: np.ndarray) -> np.ndarray:
+        return np.asarray(self.estimator.predict(np.asarray(features, dtype=float)), dtype=float)
+
+    def state(self) -> dict[str, Any]:
+        raw = self.estimator.get_booster().save_raw(raw_format="json")
+        return {
+            "booster_format": "xgboost_json",
+            "booster": bytes(raw).decode("utf-8"),
+            "feature_importances": self.estimator.feature_importances_.tolist(),
+        }
+
+
 def _period(value: Sequence[str], name: str) -> tuple[str, str]:
     if len(value) != 2:
         raise ValueError(f"{name} requires start and end")
@@ -183,8 +217,8 @@ def fit_baseline(
     kind = str(model_kind).lower().strip()
     if kind not in _MODELS:
         raise ValueError(f"unsupported baseline: {kind}")
-    if horizon_days not in {1, 5, 20}:
-        raise ValueError("horizon_days must be 1, 5, or 20")
+    if horizon_days not in {1, 5, 20, 63}:
+        raise ValueError("horizon_days must be 1, 5, 20, or 63")
     if isinstance(random_seed, bool) or not 0 <= int(random_seed) < 2**32:
         raise ValueError("random_seed must be a uint32")
     random.seed(random_seed)
@@ -221,18 +255,18 @@ def fit_baseline(
             from lightgbm import LGBMRegressor
         except ImportError as exc:  # pragma: no cover - 선택 의존성
             raise RuntimeError("LightGBM이 필요하다: uv sync --group ml") from exc
-        model = LGBMRegressor(random_state=random_seed, verbosity=-1, **params).fit(train_x, train_y)
+        # 단일 스레드·deterministic으로 학습해야 같은 dataset이 같은 booster 문자열(= 같은 artifact
+        # hash)을 낸다. 병렬 학습은 부동소수 합산 순서가 달라 재현이 깨진다.
+        params = {"n_jobs": 1, "deterministic": True, "force_row_wise": True, **params}
+        model = _LightGBMModel(LGBMRegressor(random_state=random_seed, verbosity=-1, **params).fit(train_x, train_y))
     else:
         try:
             from xgboost import XGBRegressor
         except ImportError as exc:  # pragma: no cover - 선택 의존성
             raise RuntimeError("XGBoost가 필요하다: uv sync --group ml") from exc
-        model = XGBRegressor(random_state=random_seed, n_jobs=1, **params).fit(train_x, train_y)
+        model = _XGBoostModel(XGBRegressor(random_state=random_seed, n_jobs=1, **params).fit(train_x, train_y))
 
-    state = model.state() if hasattr(model, "state") else {
-        "model_parameters": model.get_params(),
-        "feature_importances": getattr(model, "feature_importances_", np.array([])).tolist(),
-    }
+    state = model.state()
     dataset_hash = _dataset_hash(train_x, train_y, val_x, val_y, oos_x, oos_y)
     identity = {
         "model_kind": kind,

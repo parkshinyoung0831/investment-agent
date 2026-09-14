@@ -43,9 +43,10 @@ def _four_quarters(**overrides):
 class FilingAvailabilityTest(unittest.TestCase):
     def test_date_only_filing_is_treated_as_next_day(self):
         """일자만 아는 공시를 그날 0시로 잡으면 실제보다 이르게 안다고 주장하게 된다."""
+        # 뉴욕 기준 다음 날 0시. UTC 0시면 뉴욕 전날 저녁이라 장 마감 뒤 공시를 미리 알게 된다.
         self.assertEqual(
             filing_available_at("2026-07-25"),
-            datetime(2026, 7, 26, tzinfo=timezone.utc),
+            datetime(2026, 7, 26, 4, tzinfo=timezone.utc),
         )
 
     def test_same_day_filing_is_not_usable_yet(self):
@@ -66,7 +67,7 @@ class TTMReconstructionTest(unittest.TestCase):
 
     def test_available_at_is_the_latest_quarter_filing(self):
         values = ttm_scalars(_four_quarters(), as_of_at=_AS_OF)
-        self.assertEqual(values["revenue_ttm"].available_at, "2026-07-26T00:00:00+00:00")
+        self.assertEqual(values["revenue_ttm"].available_at, "2026-07-26T04:00:00+00:00")
 
     def test_every_quarter_contributes_an_evidence_id(self):
         values = ttm_scalars(_four_quarters(), as_of_at=_AS_OF)

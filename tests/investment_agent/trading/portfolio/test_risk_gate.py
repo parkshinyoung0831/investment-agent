@@ -20,6 +20,37 @@ def proposal(weights: dict[str, float], as_of_at: str = "2026-08-21T11:00:00+00:
     )
 
 
+class TailRiskLimitTest(unittest.TestCase):
+    DECIDED = datetime(2026, 8, 21, 12, tzinfo=timezone.utc)
+
+    def _evaluate(self, *, cvar, stage="shadow", policy=None):
+        item = PortfolioProposal.create(
+            run_id="run-1", source_type="llm", source_version="ta-v1", stage=stage,
+            as_of_at="2026-08-21T11:00:00+00:00", weights={"AAPL": 0.05, "CASH": 0.95},
+            confidence=0.8, reasoning=("test",),
+        )
+        return DeterministicRiskGate(policy or PortfolioRiskPolicy()).evaluate(
+            item, current_weights={"CASH": 1.0}, tradable_symbols={"AAPL"}, decided_at=self.DECIDED,
+            portfolio_volatility=0.1, portfolio_beta=1.0, max_pairwise_correlation=0.5,
+            historical_cvar_95_5d=cvar,
+        )
+
+    def test_default_limit_is_the_normal_tail_at_the_volatility_limit(self):
+        # 0.30 × √(5/252) × 2.0627 ≈ 0.0872
+        self.assertAlmostEqual(PortfolioRiskPolicy().cvar_95_5d_limit, 0.0872, places=4)
+
+    def test_tail_loss_beyond_the_limit_is_rejected(self):
+        self.assertTrue(self._evaluate(cvar=0.05).is_approved)
+        rejected = self._evaluate(cvar=0.12)
+        self.assertFalse(rejected.is_approved)
+        self.assertTrue(any("CVaR" in violation for violation in rejected.violations))
+
+    def test_trading_stage_requires_the_tail_metric(self):
+        rejected = self._evaluate(cvar=None, stage="live")
+        self.assertFalse(rejected.is_approved)
+        self.assertTrue(any("historical_cvar_95_5d" in violation for violation in rejected.violations))
+
+
 class RiskGateTest(unittest.TestCase):
     def test_nonfinite_policy_cannot_disable_age_or_beta_limits(self):
         for field in ("max_proposal_age_hours", "max_abs_beta"):

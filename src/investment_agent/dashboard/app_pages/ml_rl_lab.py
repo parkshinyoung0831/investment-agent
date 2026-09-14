@@ -1,7 +1,7 @@
 """AI·강화학습(ML/RL) 자율진화 관제 랩 대시보드 페이지.
 
 하네스 7대 전자동 잡의 실제 실행 상태, PPO 강화학습 챔피언 정책 파일(active_policy.json),
-Lopez de Prado의 DSR 과적합 검정 게이지, 실제 SignalBlender 앙상블,
+Lopez de Prado의 DSR 과적합 검정 게이지, RL challenger의 역할 설명,
 그리고 실제 시장·매크로 DB 데이터를 조회하는 근거 묶음(Evidence Bundle)을 제공한다.
 가짜 목업이나 하드코딩된 더미 수치는 일체 사용하지 않는다.
 """
@@ -19,7 +19,6 @@ from investment_agent.dashboard.ops import read_harness_state
 from investment_agent.reporting.readers.dashboard import load_guru_data, load_macro_window, load_price_history
 from investment_agent.dashboard.components.theme import dashboard_palette
 from investment_agent.dashboard.components.ui import result_payload
-from investment_agent.trading.decision.signal_blender import SignalBlender
 
 ROOT = Path(__file__).resolve().parents[3]
 ACTIVE_POLICY_PATH = ROOT / "artifacts" / "trading" / "rl_policies" / "active_policy.json"
@@ -71,73 +70,6 @@ def render_dsr_gauge(probability: float) -> go.Figure:
         plot_bgcolor="rgba(0,0,0,0)",
     )
     return fig
-
-
-# 아래 차트는 **규칙을 보여주는 예시**다. 원장에서 읽은 값이 아니라 고정 입력이며,
-# 화면이 사실이 아닌 것을 사실처럼 말하지 않도록 이름과 캡션에 그대로 적는다.
-# 실제 판단에 쓰인 융합 결과는 portfolio proposal 원장에 남으므로, 그것을 읽는
-# Reporting 계약이 준비되면 이 예시를 실제 값으로 교체한다.
-_BLEND_EXAMPLE_RETURNS = {"AAPL": 0.05, "MSFT": 0.04, "NVDA": 0.08, "AMZN": 0.06, "GOOGL": 0.03}
-_BLEND_EXAMPLE_CONFIDENCES = {"AAPL": 0.60, "MSFT": 0.55, "NVDA": 0.70, "AMZN": 0.50, "GOOGL": 0.45}
-
-
-def render_blending_rule_chart(policy: dict[str, Any] | None) -> go.Figure:
-    """예시 입력에 SignalBlender 규칙을 적용해 융합 방식을 보여주는 차트.
-
-    DSR 확률만 실제 승격 정책에서 읽는다 — 그 값이 LLM/RL 가중치를 정하므로,
-    규칙이 지금 어느 쪽에 무게를 두는지는 실제 상태를 반영한다.
-    """
-    colors = dashboard_palette()
-    tickers = list(_BLEND_EXAMPLE_RETURNS)
-
-    blender = SignalBlender(base_rl_weight=0.40, max_rl_weight=0.50, min_rl_weight=0.10)
-    score = policy.get("score", {}) if policy else {}
-    dsr_probability = score.get("dsr_probability", 0.95)
-
-    # 실제 판단 경로(portfolio_shadow)와 같은 인자로 부른다 — 거기서 쓰지 않는
-    # rl_target_weights를 넣으면 화면이 다른 규칙을 보여주게 된다.
-    blended_map = blender.blend(
-        llm_expected_returns=_BLEND_EXAMPLE_RETURNS,
-        llm_confidences=_BLEND_EXAMPLE_CONFIDENCES,
-        rl_dsr_probability=dsr_probability,
-    )
-
-    llm_vals = [_BLEND_EXAMPLE_RETURNS[t] * 100 for t in tickers]
-    blended_vals = [blended_map[t].expected_return * 100 for t in tickers]
-
-    fig = go.Figure()
-    fig.add_trace(go.Bar(name="예시 LLM 기대수익률 (%)", x=tickers, y=llm_vals, marker_color=colors.muted))
-    fig.add_trace(go.Bar(name="융합 결과 기대수익률 (%)", x=tickers, y=blended_vals, marker_color=colors.up))
-
-    fig.update_layout(
-        barmode="group",
-        height=280,
-        margin={"l": 20, "r": 20, "t": 20, "b": 20},
-        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "right", "x": 1},
-        xaxis={"title": "종목"},
-        yaxis={"title": "신호 강도 (%)", "showgrid": True, "gridcolor": colors.border},
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-    )
-    return fig
-
-
-def blending_weights(policy: dict[str, Any] | None) -> tuple[float, float] | None:
-    """승격된 정책의 DSR 확률이 만드는 (LLM 가중치, RL 가중치). 정책이 없으면 None.
-
-    실제 판단 경로가 RL 목표비중을 넘기지 않으므로 RL 쪽 신호는 LLM 신호로 대체된다
-    — 그래서 융합 결과 자체는 입력과 같아지고, DSR이 실제로 움직이는 것은 이 가중치뿐이다.
-
-    정책이 없을 때 기본값으로 숫자를 만들어 내지 않는다. 승격된 것이 없는데 "RL 가중치 46%"가
-    떠 있으면 강화학습이 배분에 관여하고 있다고 읽힌다 — 지금은 사실이 아니다.
-    """
-    score = policy.get("score", {}) if policy else {}
-    dsr_probability = score.get("dsr_probability")
-    if dsr_probability is None:
-        return None
-    blender = SignalBlender(base_rl_weight=0.40, max_rl_weight=0.50, min_rl_weight=0.10)
-    rl_weight = blender.calculate_rl_weight(dsr_probability)
-    return round(1.0 - rl_weight, 4), rl_weight
 
 
 def show() -> None:
@@ -217,30 +149,14 @@ def show() -> None:
 
     st.divider()
 
-    # 3. SignalBlender 융합 규칙 (예시 입력)
-    st.subheader("3. SignalBlender 동적 신호 융합 규칙")
-    st.caption(
-        "융합 알고리즘은 실제 SignalBlender이고, RL 가중치를 정하는 DSR 확률도 승격된 정책에서 읽습니다. "
-        "다만 종목별 입력값은 규칙을 보여주기 위한 **예시**이며 실제 판단 기록이 아닙니다."
-    )
-    weights = blending_weights(real_policy)
-    w1, w2 = st.columns(2)
-    w1.metric("LLM 신호 가중치", f"{weights[0]:.0%}" if weights else "—", border=True)
-    w2.metric("RL 정책 가중치", f"{weights[1]:.0%}" if weights else "—", border=True)
-    if weights is None:
-        st.warning(
-            "승격된 PPO 정책이 없어 가중치를 계산할 값이 없습니다. 아래 그림은 "
-            "**규칙이 어떻게 생겼는지**만 보여주는 예시이며, 지금 배분에 적용되는 값이 아닙니다.",
-            icon=":material/warning:",
-        )
+    # 3. RL의 역할
+    st.subheader("3. RL 정책의 역할 — challenger 포트폴리오")
     st.info(
-        "현재 판단 경로는 RL 목표비중을 융합에 넘기지 않습니다. 그러면 RL 쪽 신호가 LLM 신호로 "
-        "대체되어 **융합 결과는 입력과 같아집니다** — 아래 막대 두 개가 같은 이유입니다. "
-        "DSR 확률이 실제로 움직이는 것은 위 가중치뿐입니다. 실제 판단에 쓰인 값은 포트폴리오 "
-        "제안 원장에 남으며, 그것을 읽는 Reporting 계약이 준비되면 이 예시는 실제 값으로 바뀝니다.",
+        "승격된 RL 정책은 TradingAgents·ML 기대수익을 바꾸지 않습니다. 목표비중을 별도 포트폴리오 "
+        "후보로 계산해 기록하고, 같은 기간·같은 비용 가정의 champion과 성과로 비교합니다. "
+        "비중을 기대수익으로 되돌려 섞으면 이미 반영된 위험·비용을 두 번 세기 때문입니다.",
         icon=":material/science:",
     )
-    st.plotly_chart(render_blending_rule_chart(real_policy), width="stretch")
 
     st.divider()
 

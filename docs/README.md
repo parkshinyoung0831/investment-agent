@@ -110,8 +110,8 @@ universe.py + candidate_ranker.py       분석할 종목 선택
 현재 하네스가 호출하는 주 분석 파일은 `trading/decision/portfolio_shadow.py`다. 이 경로는 투자안을 DB에
 저장하지만 주문은 보내지 않는다.
 
-`trading/decision/shadow_daily.py`와 `role_runner.py`는 로컬 multi-role Shadow와 계약 검증을
-담당하는 보조 경로다. `feature_layer.py`, `ml`, `rl`, `backtest`, `qlib_adapter.py`는
+`trading/shadow/`는 같은 판단을 가상계좌로 이어 운영해 성과를 증명하는 경로다(주문 없음).
+`feature_layer.py`, `ml`, `rl`, `backtest`, `qlib_adapter.py`는
 연구·검증 계층이며 파일이 있다는 이유만으로 실전 채택된 것은 아니다.
 
 상세한 AI, ML/RL, optimizer, RiskGate와 backtest는 [투자 시스템 문서](INVESTMENT_SYSTEM.md)에 있다.

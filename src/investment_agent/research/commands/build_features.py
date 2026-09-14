@@ -16,6 +16,7 @@ from investment_agent.trading.evidence.context import ContextBuilder
 from investment_agent.trading.contracts import parse_datetime
 from investment_agent.trading.supabase_repository import SupabaseRepository
 from investment_agent.research.features.layer import FEATURE_VERSION, FeatureLayer
+from investment_agent.research.datasets.universe import research_universe
 
 log = get_logger(__name__)
 
@@ -144,7 +145,9 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("--limit must be positive")
     as_of_at = parse_datetime(args.as_of) if args.as_of else datetime.now(timezone.utc)
     repository = SupabaseRepository()
-    tickers = [value.upper() for value in (args.ticker or [])] or repository.current_tracked_tickers()
+    tickers = [value.upper() for value in (args.ticker or [])] or research_universe(
+        repository, as_of_at=as_of_at, source_kind=args.source_kind,
+    )
     if args.limit is not None:
         tickers = tickers[:args.limit]
     if not tickers:
