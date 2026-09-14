@@ -1,18 +1,12 @@
-"""자율 강화학습 재학습 및 챔피언-챌린저 승격 CLI 진입점.
+"""원본 판단 경험으로 PPO 후보를 학습하고 동일 holdout에서 검증한다.
 
-하네스 스케줄러(continuous_learning_job) 또는 수동 호출로 실행된다. 학습 표본은
-`rl_feature_snapshots`·`rl_training_labels`와 역사 membership 원장에서만 온다 —
-원장이 비면 대체 표본을 만들지 않고 멈춘다. 합성 표본으로 학습한 정책은 성적표만
-그럴듯하고 시장에 대해 아무것도 모른다. 다만 "아직 안 익었다"(forward 구간이 안 닫혀
-label이 없다)와 "데이터가 틀렸다"는 다르다 — 전자는 skip(0), 후자만 실패로 올린다.
-
-채점은 학습에 쓰지 않은 뒤쪽 구간(holdout)에서만 한다. 학습 구간에서 채점하면
-어떤 정책도 통과하므로 승격 게이트가 아무것도 거르지 못한다.
+성숙 label이 없으면 skipped, dry-run 입력 검증은 ready, 실제 후보 학습은 trained다.
+연구 게이트 통과는 채택 자격이며 활성 정책은 --adopt-candidate로만 변경한다.
 """
 from __future__ import annotations
 
 import argparse
-import json
+from dataclasses import asdict, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -22,21 +16,19 @@ from investment_agent.platform.serialization import canonical_json, parse_dateti
 from investment_agent.research.rl.contracts import RLDataNotReadyError
 from investment_agent.research.rl.continuous_learner import (
     ContinuousLearner,
-    PolicyEvaluationScore,
     PromotionDecision,
 )
 from investment_agent.research.rl.environment import FeatureDataset, make_gym_environment
 from investment_agent.research.rl.features import FeatureSpec, HistoricalTrainingSet, load_training_set
-from investment_agent.research.rl.pipeline import split_dataset
+from investment_agent.research.rl.pipeline import split_dataset, nonoverlapping_dataset
+from investment_agent.research.rl.bundle import load_policy_bundle, save_policy_bundle
 from investment_agent.research.features.layer import FEATURE_COLUMNS, FEATURE_VERSION
-from investment_agent.platform.storage_paths import repository_root
+from investment_agent.research.rl.serving import default_active_policy_path
 
 log = get_logger(__name__)
 
-_ROOT = repository_root()
-_POLICY_DIR = _ROOT / "artifacts" / "trading" / "rl_policies"
+_POLICY_DIR = default_active_policy_path().parent
 _ACTIVE_POLICY_NAME = "active_policy.json"
-_MODEL_ZIP_NAME = "champion.zip"
 
 # 원장 label은 미래 구간이 끝나야 확정된다. 그 지연만큼 feature 창을 앞당겨야
 # "label이 아직 없는 최신 구간"이 통째로 버려지지 않는다.
@@ -61,27 +53,6 @@ def _train_with_stable_baselines(dataset: FeatureDataset, *, timesteps: int) -> 
     return trainer.train("ppo", total_timesteps=timesteps, seed=42)
 
 
-def _load_champion_score(path: Path) -> PolicyEvaluationScore | None:
-    if not path.exists():
-        return None
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        score = payload.get("score", {})
-        return PolicyEvaluationScore(
-            sharpe_ratio=float(score.get("sharpe_ratio", 0.0)),
-            total_reward=float(score.get("total_reward", 0.0)),
-            excess_return=float(score.get("excess_return", 0.0)),
-            max_drawdown=float(score.get("max_drawdown", 0.0)),
-            turnover=float(score.get("turnover", 0.0)),
-            dsr_probability=float(score.get("dsr_probability", 0.0)),
-            is_statistically_significant=bool(score.get("is_statistically_significant", False)),
-            periods_evaluated=int(score.get("periods_evaluated", 0)),
-        )
-    except (OSError, ValueError, TypeError) as exc:
-        log.warning("failed to load prior active policy: %s", exc)
-        return None
-
-
 def _training_set(
     repository: Any,
     *,
@@ -91,6 +62,10 @@ def _training_set(
     label_lag_days: int,
     max_symbols: int,
 ) -> HistoricalTrainingSet:
+    if hasattr(repository, "decision_experience_rows"):
+        from investment_agent.research.rl.decision_dataset import decision_training_set
+        return decision_training_set(repository.decision_experience_rows(as_of_at=as_of),
+                                     as_of_at=as_of, max_symbols=max_symbols)
     end = as_of - timedelta(days=label_lag_days)
     start = end - timedelta(days=lookback_days)
     tracked = [str(value).upper() for value in repository.current_tracked_tickers()]
@@ -116,6 +91,7 @@ def run_continuous_retrain(
     label_lag_days: int = DEFAULT_LABEL_LAG_DAYS,
     max_symbols: int = DEFAULT_MAX_SYMBOLS,
     holdout_fraction: float = DEFAULT_HOLDOUT_FRACTION,
+    min_evaluation_periods: int = 20,
     min_sharpe_improvement: float = 0.02,
     min_dsr_probability: float = 0.90,
     dry_run: bool = False,
@@ -128,7 +104,6 @@ def run_continuous_retrain(
     as_of = parse_datetime(as_of_at or datetime.now(timezone.utc))
     directory = policy_dir or _POLICY_DIR
     active_path = directory / _ACTIVE_POLICY_NAME
-    model_path = directory / _MODEL_ZIP_NAME
     selected_spec = spec or default_spec()
     trainer = train_policy or _train_with_stable_baselines
     log.info(
@@ -141,7 +116,7 @@ def run_continuous_retrain(
 
         repository = SupabaseRepository()
 
-    champion_score = _load_champion_score(active_path)
+    champion_score = None
     training_set = _training_set(
         repository,
         as_of=as_of,
@@ -150,9 +125,10 @@ def run_continuous_retrain(
         label_lag_days=label_lag_days,
         max_symbols=max_symbols,
     )
-    train_dataset, holdout_dataset = split_dataset(
-        training_set.dataset, holdout_fraction=holdout_fraction
-    )
+    dataset = nonoverlapping_dataset(training_set.dataset, training_set.forward_end_values)
+    if len(dataset.as_of_values) < 2:
+        raise RLDataNotReadyError("need at least two nonoverlapping decision periods")
+    train_dataset, holdout_dataset = split_dataset(dataset, holdout_fraction=holdout_fraction)
     log.info(
         "training window: symbols=%d train_periods=%d holdout_periods=%d data_hash=%s",
         len(training_set.dataset.symbols),
@@ -161,6 +137,15 @@ def run_continuous_retrain(
         training_set.data_hash[:12],
     )
 
+    if min_evaluation_periods < 3:
+        raise ValueError("minimum evaluation periods must be at least 3")
+    if len(holdout_dataset.as_of_values) < min_evaluation_periods:
+        raise RLDataNotReadyError(f"need {min_evaluation_periods} nonoverlapping holdout periods")
+    if dry_run:
+        return PromotionDecision(False, None, None, 0.0, "학습 입력 준비 완료", status="ready")
+    champion = load_policy_bundle(active_path) if active_path.exists() else None
+    if champion is not None and (champion.symbols, champion.feature_names, champion.feature_version) != (holdout_dataset.symbols, holdout_dataset.feature_names, holdout_dataset.feature_version):
+        raise ValueError("champion axes differ; explicit new research lineage required")
     model = trainer(train_dataset, timesteps=timesteps)
     learner = ContinuousLearner(
         min_sharpe_improvement=min_sharpe_improvement,
@@ -176,41 +161,48 @@ def run_continuous_retrain(
         challenger_score.dsr_probability,
     )
 
+    if champion is not None:
+        champion_score = learner.evaluate_model(champion, holdout_dataset)
     decision = learner.judge_promotion(challenger_score, champion_score)
     log.info("promotion decision: is_promoted=%s reason=%s", decision.is_promoted, decision.reason)
 
-    if decision.is_promoted and not dry_run:
-        directory.mkdir(parents=True, exist_ok=True)
-        model.save(str(model_path))
-        payload = {
-            "policy_version": f"ppo-live-{as_of.date().isoformat()}",
-            "promoted_at": as_of.isoformat(),
-            "model_binary": _MODEL_ZIP_NAME,
-            "score": {
-                "sharpe_ratio": challenger_score.sharpe_ratio,
-                "total_reward": challenger_score.total_reward,
-                "excess_return": challenger_score.excess_return,
-                "max_drawdown": challenger_score.max_drawdown,
-                "turnover": challenger_score.turnover,
-                "dsr_probability": challenger_score.dsr_probability,
-                "is_statistically_significant": challenger_score.is_statistically_significant,
-                "periods_evaluated": challenger_score.periods_evaluated,
-            },
-            # 어떤 표본으로 학습했는지 없으면 이 점수를 재현할 수 없다.
-            "training": {
-                "symbols": list(training_set.dataset.symbols),
-                "feature_version": training_set.dataset.feature_version,
-                "train_periods": len(train_dataset.as_of_values),
-                "holdout_periods": len(holdout_dataset.as_of_values),
-                "data_hash": training_set.data_hash,
-                "membership_hash": training_set.membership_hash,
-            },
-            "reason": decision.reason,
-        }
-        active_path.write_text(canonical_json(payload) + "\n", encoding="utf-8")
-        log.info("active policy metadata updated at %s", active_path)
+    candidate_path = save_policy_bundle(model, directory, dataset=train_dataset,
+        score=asdict(challenger_score), training={
+            "symbols": list(train_dataset.symbols),
+            "feature_version": train_dataset.feature_version,
+            "train_periods": len(train_dataset.as_of_values),
+            "holdout_periods": len(holdout_dataset.as_of_values),
+            "holdout_start": holdout_dataset.as_of_values[0],
+            "holdout_end": holdout_dataset.as_of_values[-1],
+            "data_hash": training_set.data_hash,
+            "membership_hash": training_set.membership_hash,
+            "as_of_at": as_of.isoformat(),
+            "eligible_for_adoption": decision.is_promoted,
+            "learning_objective": "counterfactual_market_policy",
+        })
+    return replace(decision, candidate_path=str(candidate_path))
 
-    return decision
+
+def adopt_candidate(candidate_path: Path, *, policy_dir: Path | None = None) -> Path:
+    """검증된 후보를 명시적 CLI 요청으로만 채택한다. 실행 플래그는 건드리지 않는다."""
+    model = load_policy_bundle(candidate_path)
+    if model.metadata["training"].get("eligible_for_adoption") is not True:
+        raise ValueError("candidate did not pass the research gate")
+    directory = policy_dir or _POLICY_DIR
+    directory.mkdir(parents=True, exist_ok=True)
+    import shutil
+    binary_name = model.metadata["model_binary"]
+    source = candidate_path.parent / binary_name
+    target = directory / binary_name
+    if source.resolve() != target.resolve():
+        if target.exists() and target.read_bytes() != source.read_bytes():
+            raise ValueError("immutable model collision")
+        shutil.copyfile(source, target)
+    active = directory / _ACTIVE_POLICY_NAME
+    temporary = directory / "active_policy.pending.json"
+    temporary.write_text(canonical_json(model.metadata) + "\n", encoding="utf-8")
+    temporary.replace(active)
+    return active
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -229,6 +221,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=float,
         default=0.90,
     )
+    parser.add_argument("--adopt-candidate", type=Path, help="검증된 후보를 명시적으로 채택한다")
+    parser.add_argument("--result-path", type=Path, help="하네스에 실제 학습 상태를 전달할 파일")
     parser.add_argument("--dry-run", action="store_true", help="승격 결과를 파일에 쓰지 않는다")
     return parser.parse_args(argv)
 
@@ -241,6 +235,11 @@ def main(argv: list[str] | None = None) -> int:
     오류가 그 안에 묻힌다. 누수·모양 불일치 같은 실제 안전 위반만 위로 올린다.
     """
     args = _parse_args(argv)
+    if args.adopt_candidate is not None:
+        if args.dry_run:
+            raise ValueError("adoption and dry-run cannot be combined")
+        adopt_candidate(args.adopt_candidate)
+        return 0
     try:
         decision = run_continuous_retrain(
             as_of_at=args.as_of,
@@ -255,10 +254,15 @@ def main(argv: list[str] | None = None) -> int:
         )
     except RLDataNotReadyError as exc:
         log.info("continuous_retrain skipped: %s", exc)
+        if args.result_path:
+            args.result_path.write_text(canonical_json({'status':'pending', 'reason':str(exc)}), encoding='utf-8')
         return 0
+    if args.result_path:
+        args.result_path.write_text(canonical_json({'status':decision.status, 'reason':decision.reason,
+            'candidate_path':decision.candidate_path, 'eligible_for_adoption':decision.is_promoted}), encoding='utf-8')
     log.info(
-        "continuous_retrain done: is_promoted=%s reason=%s",
-        decision.is_promoted, decision.reason,
+        "continuous_retrain done: status=%s is_promoted=%s reason=%s",
+        decision.status, decision.is_promoted, decision.reason,
     )
     return 0
 

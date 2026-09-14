@@ -7,6 +7,7 @@ import math
 from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
+from typing import Sequence
 
 from investment_agent.execution.orders.intents import ExecutionIntent
 from investment_agent.platform.db.postgres import sb, select_all_paged
@@ -139,6 +140,53 @@ def _attempt_event(row: dict) -> OrderAttemptEvent:
 class ExecutionRepository:
     """실행 컴퓨터의 SQLite 원장만 사용하는 주문·승인 저장소."""
 
+    def has_active_execution_for_proposals(self, proposal_ids: Sequence[str], *, as_of_at: datetime | None = None) -> bool:
+        """살아 있는 승인 대기와 제출 증거가 있는 실행만 재실행을 막는다."""
+        identities = set(proposal_ids)
+        if not identities:
+            return False
+        current = parse_datetime(as_of_at or datetime.now(timezone.utc))
+        with runtime_connection(read_only=True) as connection:
+            rows = connection.execute(
+                "SELECT i.proposal_id,i.status,i.expires_at,a.status,"
+                "EXISTS(SELECT 1 FROM order_attempts o WHERE o.intent_id=i.intent_id AND o.state IN ('reserved','submitted','unknown')),"
+                "EXISTS(SELECT 1 FROM orders o WHERE o.intent_id=i.intent_id) "
+                "FROM intents i LEFT JOIN approvals a ON a.intent_id=i.intent_id WHERE i.execution_mode='live'"
+            ).fetchall()
+        for proposal, status, expiry, approval, attempted, ordered in rows:
+            if proposal not in identities:
+                continue
+            if attempted or ordered or status in ('executing', 'completed') or approval == 'consumed':
+                return True
+            if status in ('approved', 'claimed') and approval not in ('rejected', 'expired') and parse_datetime(expiry) > current:
+                return True
+        return False
+
+    def performance_sources(self) -> dict:
+        """성과 owner에게 실제 원장 사실을 전달하며 누락된 비용·통화를 추정하지 않는다."""
+        with runtime_connection(read_only=True) as connection:
+            result = {name: [self._decode(row[0]) for row in connection.execute(f"SELECT payload_json FROM {name}")]
+                      for name in ('fills', 'orders', 'intents')}
+            snapshots = {}
+            for kind in ('account_snapshot', 'performance_snapshot'):
+                for key, payload in connection.execute("SELECT record_key,payload_json FROM runtime_records WHERE record_type=?", (kind,)):
+                    snapshots[key] = {**self._decode(payload), 'snapshot_id': key}
+            cursor = connection.execute("SELECT * FROM account_snapshots")
+            columns = [column[0] for column in cursor.description]
+            for values in cursor:
+                row = dict(zip(columns, values))
+                snapshots.setdefault(row['snapshot_id'], row)
+            result['account_snapshots'] = sorted(snapshots.values(), key=lambda row: row['captured_at'])
+            result['position_snapshots'] = [self._decode(row[0]) for row in connection.execute("SELECT payload_json FROM runtime_records WHERE record_type='position_snapshot'")]
+            result['broker_order_snapshots'] = [self._decode(row[0]) for row in connection.execute("SELECT payload_json FROM runtime_records WHERE record_type='broker_order_snapshot'")]
+        orders_by_broker = {row['broker_order_id']: row for row in result['orders'] if row.get('broker_order_id')}
+        for fill in result['fills']:
+            order = orders_by_broker.get(fill.get('broker_order_id'), {})
+            for key in ('client_order_id', 'ticker', 'side', 'currency'):
+                if fill.get(key) is None and order.get(key) is not None:
+                    fill[key] = order[key]
+        return result
+
     @staticmethod
     def _encode(row: dict) -> str:
         return json.dumps(row, ensure_ascii=False, sort_keys=True, default=str)
@@ -172,6 +220,31 @@ class ExecutionRepository:
         with runtime_connection(read_only=True) as connection:
             return self._decision_row(connection, T_PORTFOLIO_PROPOSALS, "proposal_id", proposal_id)
 
+    def assert_entry_timing(self, proposal_id: str, *, prices: dict, now: datetime) -> None:
+        """승인 대기 중 벗어난 진입 가격·재판단 만료를 브로커 제출 전에 차단한다."""
+        with runtime_connection(read_only=True) as connection:
+            proposal=self._decision_row(connection,T_PORTFOLIO_PROPOSALS,'proposal_id',proposal_id)
+            batch_id=(proposal or {}).get('metadata',{}).get('active_batch_id')
+            guard=self._record(connection,'entry_guard',str(batch_id)) if batch_id else None
+            candidate = connection.execute('SELECT status FROM entry_candidates WHERE signal_id=?',(guard['source_signal_id'],)).fetchone() if guard and guard.get('source_signal_id') else None
+        if guard is None:
+            return
+        if guard.get('source_signal_id') and (candidate is None or candidate[0] != 'ready'):
+            raise ExecutionSafetyError('entry decision was superseded or cancelled')
+        review=guard['review']
+        if review['decision']!='enter' or not parse_datetime(review['reviewed_at']) <= now < parse_datetime(review['expires_at']):
+            raise ExecutionSafetyError('entry review expired before order submission')
+        price=prices.get(guard['ticker'])
+        plan=guard['plan']
+        if price is None or not math.isfinite(float(price)) or not plan['lower_price'] <= float(price) <= plan['upper_price']:
+            raise ExecutionSafetyError('price left approved entry range')
+
+    def entry_guard_for_proposal(self, proposal_id: str) -> dict | None:
+        with runtime_connection(read_only=True) as connection:
+            proposal=self._decision_row(connection,T_PORTFOLIO_PROPOSALS,'proposal_id',proposal_id)
+            batch_id=(proposal or {}).get('metadata',{}).get('active_batch_id')
+            return self._record(connection,'entry_guard',str(batch_id)) if batch_id else None
+
     def risk_decision(self, risk_decision_id: str) -> dict | None:
         with runtime_connection(read_only=True) as connection:
             return self._decision_row(connection, T_RISK_DECISIONS, "risk_decision_id", risk_decision_id)
@@ -195,6 +268,33 @@ class ExecutionRepository:
             raise ExecutionSafetyError("durable execution control state is missing")
         return DurableControlState.from_row(self._decode(row[0]))
 
+    def initialize_control_state(self) -> DurableControlState:
+        """최초 설치에만 모든 실행 권한을 닫고 기존 운영자 설정은 보존한다."""
+        now = datetime.now(timezone.utc).isoformat()
+        payload = dict(scope='global', kill_switch_on=True, durable_lockdown_on=True,
+                       live_enabled=False, live_autonomy_enabled=False, version=1,
+                       reason='초기 설치: 운영자 설정 대기', updated_at=now)
+        with runtime_connection() as connection:
+            connection.execute('INSERT OR IGNORE INTO execution_control VALUES(?,?,?)',
+                               ('global', self._encode(payload), now))
+        return self.load_control_state()
+
+    def set_manual_control_state(self, *, expected_version: int, is_enabled: bool, reason: str) -> DurableControlState:
+        """명시적인 운영자 CLI만 호출하며 환경변수의 별도 게이트는 유지한다."""
+        if not reason.strip():
+            raise ExecutionSafetyError('operator reason is required')
+        now = datetime.now(timezone.utc).isoformat()
+        with runtime_connection() as connection:
+            old = connection.execute('SELECT control_value FROM execution_control WHERE control_key=?', ('global',)).fetchone()
+            if old is None or self._decode(old[0])['version'] != expected_version:
+                raise ExecutionSafetyError('execution control version changed or missing')
+            payload = dict(scope='global', kill_switch_on=not is_enabled, durable_lockdown_on=not is_enabled,
+                           live_enabled=is_enabled, live_autonomy_enabled=False, version=expected_version+1,
+                           reason=reason.strip(), updated_at=now)
+            connection.execute('UPDATE execution_control SET control_value=?,updated_at=? WHERE control_key=?',
+                               (self._encode(payload), now, 'global'))
+        return DurableControlState.from_row(payload)
+
     def current_tracked_tickers(self) -> set[str]:
         return {str(row["ticker"]).upper() for row in select_all_paged(
             lambda: sb.schema(SCHEMA_UNIVERSE).table(T_SECURITIES)
@@ -211,6 +311,24 @@ class ExecutionRepository:
                 if any(saved[key] != value for key, value in payload.items() if key != "status"):
                     raise ExecutionSafetyError("intent identity conflicts with stored intent")
                 return
+            if payload['execution_mode'] == 'live':
+                proposal = self._decision_row(connection, T_PORTFOLIO_PROPOSALS, 'proposal_id', payload['proposal_id'])
+                batch_id = (proposal or {}).get('metadata', {}).get('active_batch_id')
+                if batch_id:
+                    claim = self._record(connection, 'signal_batch_execution', str(batch_id))
+                    if claim:
+                        if self._record(connection, 'entry_guard', str(batch_id)) is not None:
+                            raise ExecutionSafetyError('signal batch entry review was already used')
+                        previous = connection.execute(
+                            "SELECT i.status,i.expires_at,a.status,"
+                            "EXISTS(SELECT 1 FROM order_attempts o WHERE o.intent_id=i.intent_id AND o.state != 'failed'),"
+                            "EXISTS(SELECT 1 FROM orders o WHERE o.intent_id=i.intent_id) "
+                            "FROM intents i LEFT JOIN approvals a ON a.intent_id=i.intent_id WHERE i.intent_id=?",
+                            (claim['intent_id'],)).fetchone()
+                        if previous and (previous[3] or previous[4] or previous[0] in ('executing','completed') or previous[2] == 'consumed'
+                            or (previous[0] in ('approved','claimed') and previous[2] not in ('rejected','expired') and parse_datetime(previous[1]) > parse_datetime(now))):
+                            raise ExecutionSafetyError('signal batch already has an active execution')
+                    self._save_record(connection, 'signal_batch_execution', str(batch_id), {'intent_id': payload['intent_id']})
             connection.execute(
                 "INSERT INTO intents(intent_id,proposal_id,risk_decision_id,execution_mode,status,not_before,expires_at,payload_json,created_at,updated_at) "
                 "VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(intent_id) DO NOTHING",
@@ -466,12 +584,22 @@ class ExecutionRepository:
                 payload["submitted_at"] = submitted_at.astimezone(timezone.utc).isoformat()
             connection.execute("UPDATE orders SET broker_order_id=?,status=?,submitted_at=?,updated_at=?,payload_json=? WHERE client_order_id=?", (broker_order_id, status, payload.get("submitted_at"), datetime.now(timezone.utc).isoformat(), self._encode(payload), client_order_id))
 
-    def save_broker_order_snapshot(self, row: dict) -> None:
+    def save_broker_order_snapshot(self, row: dict) -> bool:
         payload = dict(row)
         raw = payload.pop("raw_broker_response", None) or payload.pop("raw_response", None)
         if raw:
             payload.update(self._raw_artifact(dict(raw)))
-        self._save_auxiliary("broker_order_snapshot", str(payload.get("snapshot_hash") or ""), payload)
+        key = str(payload.get("snapshot_hash") or "")
+        if not key:
+            raise ExecutionSafetyError("broker snapshot identity is required")
+        with runtime_connection() as connection:
+            old = self._record(connection, "broker_order_snapshot", key)
+            if old is not None:
+                if {k: v for k, v in old.items() if k != "observed_at"} != {k: v for k, v in payload.items() if k != "observed_at"}:
+                    raise ExecutionSafetyError("broker snapshot conflicts with immutable identity")
+                return False
+            self._save_record(connection, "broker_order_snapshot", key, payload)
+        return True
 
     def _save_auxiliary(self, record_type: str, record_key: str, payload: dict) -> None:
         if not record_key:
@@ -526,8 +654,9 @@ class ExecutionRepository:
         self._save_auxiliary(record_type, record_key, payload)
 
     def reconcilable_orders(self, *, account_seq: int) -> list[dict]:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
         with runtime_connection(read_only=True) as connection:
-            rows = connection.execute("SELECT payload_json FROM orders WHERE account_seq=? AND status IN ('submitted','partially_filled','outcome_unknown','reconciling') ORDER BY updated_at,client_order_id", (account_seq,)).fetchall()
+            rows = connection.execute("SELECT payload_json FROM orders WHERE account_seq=? AND (status IN ('submitted','partially_filled','outcome_unknown','reconciling') OR (status IN ('filled','cancelled','rejected','replaced') AND broker_order_id IS NOT NULL AND submitted_at >= ?)) ORDER BY updated_at,client_order_id", (account_seq, cutoff)).fetchall()
         return [self._decode(row[0]) for row in rows]
 
     def intent_orders(self, intent_id: str) -> list[dict]:
@@ -627,6 +756,10 @@ class ExecutionRepository:
         if execution_mode not in ("paper", "live") or not broker_account_hash:
             raise ExecutionSafetyError("account snapshot requires execution_mode and broker_account_hash")
         with runtime_connection() as connection:
+            existing = self._record(connection, "performance_snapshot", key)
+            if existing is not None and existing != payload:
+                raise ExecutionSafetyError("performance snapshot identity conflicts with stored snapshot")
+            self._save_record(connection, "performance_snapshot", key, payload)
             self._save_record(connection, "account_snapshot", key, payload)
             connection.execute(
                 "INSERT INTO account_snapshots(snapshot_id,broker_account_hash,execution_mode,"
@@ -654,7 +787,6 @@ class ExecutionRepository:
         payloads = [self._with_security_identity(dict(row)) for row in rows]
         with runtime_connection() as connection:
             for payload in payloads:
-                payload.pop("ticker")
                 self._save_record(connection, "position_snapshot", hashlib.sha256(self._encode(payload).encode()).hexdigest(), payload)
 
 

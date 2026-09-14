@@ -76,6 +76,26 @@ def _slice_dataset(dataset: FeatureDataset, bounds: tuple[int, int]) -> FeatureD
     )
 
 
+def nonoverlapping_dataset(dataset: FeatureDataset, forward_ends: tuple[str, ...]) -> FeatureDataset:
+    """중첩 label의 같은 시장 수익을 NAV에 중복 합성하지 않는다."""
+    from investment_agent.platform.serialization import parse_datetime
+    if len(forward_ends) != len(dataset.as_of_values):
+        raise ValueError("label endpoints must match periods")
+    indices = []
+    previous_end = None
+    for index, (start, end) in enumerate(zip(dataset.as_of_values, forward_ends)):
+        start, end = parse_datetime(start), parse_datetime(end)
+        if end <= start: raise ValueError("label interval must be positive")
+        if previous_end is None or start >= previous_end:
+            indices.append(index)
+            previous_end = end
+    return FeatureDataset(symbols=dataset.symbols, feature_names=dataset.feature_names,
+        as_of_values=tuple(dataset.as_of_values[i] for i in indices),
+        features=dataset.features[indices], forward_returns=dataset.forward_returns[indices],
+        benchmark_forward_returns=dataset.benchmark_forward_returns[indices],
+        availability=dataset.availability[indices], feature_version=dataset.feature_version)
+
+
 def split_dataset(
     dataset: FeatureDataset,
     *,

@@ -318,6 +318,75 @@ python -m investment_agent.operations.commands.create_execution_intent --risk-de
 
 ## 테스트
 
+### 판단 학습과 성과 보고
+
+종목 판단 원문은 매수 여부와 관계없이 보존합니다. `build_decision_experiences`는 당시의
+신호·확률·확신도·기대수익과 이후 확정된 가격·배당·분할을 연결합니다. 원본을 사람이
+수정하거나 실제로 매수해야 학습되는 구조가 아닙니다. 관측 전 미래 라벨은 제외하며,
+같은 판단의 최초 경험은 다시 덮어쓰지 않습니다. 가정한 거래비용을 반영한 가상 성과는
+실제 계좌 수익률과 구분합니다.
+
+```powershell
+python -m investment_agent.research.commands.build_decision_experiences --as-of <TIMEZONE_ISO_TIMESTAMP>
+python -m investment_agent.research.commands.continuous_retrain --dry-run
+python -m investment_agent.operations.commands.update_performance
+```
+
+하네스는 판단 경험을 매일 만들고 성과 집계·누락 알림 재시도를 5분마다 수행합니다.
+분석 일부 실패나 승인 대기와 무관하게 보고 주기가 실행됩니다. 새로운 알림 주제
+`ai.performance`는 알림 원장의 baseline 설정 후 `investment_performance`로 발송합니다.
+설정 명령은 `python -m investment_agent.operations.commands.notify_ledger baseline --topic ai.performance`입니다.
+`DISCORD_CHANNEL_AI_REPORTS`를 사용하고, 반복된 동일 보고서는 중복 발송하지 않습니다.
+승인 카드의 ✅ 버튼은 서명된 주문안에 대한 일회 승인입니다. 일반 메시지 이모지 반응으로
+주문하지 않으며, 지정 승인자·만료·주문 hash·위험 검증을 모두 통과해야 합니다.
+
+실계좌 성과는 저장된 체결과 계좌 평가를 사용합니다. 개별 체결이 없으면 브로커의
+누적 체결량·평균가를 차분하여 관측 시각 기준으로 계산하고, 주문 수수료·세금은 수량
+비례 배분합니다. 최근 7일 내 종결 주문도 비용 정정을 확인합니다. 초기 원가, 입출금
+내역 또는 수수료가 확인되지 않으면 해당 손익·시간가중 수익률은 미확인으로 남습니다.
+`performance_events`는 출처가 있는 초기 보유·입출금·배당·분할·자료 완전성 증거만
+수용합니다. 계좌 입출금이 없었다고 자동으로 가정하지 않습니다.
+
+PPO 학습은 겹치지 않는 기간으로 나눈 동일 holdout에서 기존 정책과 후보를 비교합니다.
+기본적으로 독립 평가 기간 20개 이상이 필요하며 부족하면 대기합니다. `--dry-run`은
+자료 준비 상태만 확인합니다. 실제 학습은 해시·종목 순서·특징 버전을 포함한 후보를
+저장하고 활성 정책을 자동으로 교체하지 않습니다. 검증된 후보의 명시적 채택은
+`continuous_retrain --adopt-candidate <CANDIDATE_JSON>`으로 수행합니다. 융합을 켜면
+저장된 실행 신호에도 같은 결과가 반영되며, LLM+RL 조합은 별도 artifact로 등록되어
+기존 LLM의 live 승격을 물려받지 않습니다.
+
+최초 실행 제어 원장은 `execution_controls --initialize`로 비활성 상태로 만듭니다.
+이후 `execution_controls`로 버전을 확인하고, 운영자가 `--manual on --expected-version
+<VERSION> --reason <REASON> --confirm I_CONFIRM_MANUAL_APPROVAL_EXECUTION`을 명시해야
+DB의 수동 승인 실행을 허용합니다. 환경변수의 live·kill 게이트와 정비 보류·lockdown,
+모델 승격, Discord listener는 별도 조건이며 이 명령이 자동 변경하지 않습니다.
+
+### 순환 분석과 진입 시점 재판단
+
+하네스의 기본 분석 주기는 30분이며 한 번에 5종목씩 오래된 판단부터 갱신합니다.
+실패한 시도도 순환 순서에 반영하며, LLM 예산이 부족하면 남은 종목은 다음 회차에
+이어갑니다. 분석은 장외에도 수행하고 긴 분석 작업과 진입 감시·성과 보고는 별도로
+진행합니다. 모든 종목을 같은 시각에 분석하거나 매일 500종목을 완료한다고 보장하지 않습니다.
+
+`watch_entries`는 유효한 원본 판단에서 가격 범위·무효화 가격·만료 시각을 만들고
+장중 실행 가능 시간에 1분마다 조건을 확인합니다. 기본 LLM 호출 상한은 회차당 2회입니다.
+진입 범위에 도달하면 현재 근거와 최신 뉴스를 다시 읽어 enter/wait/cancel을 기록합니다.
+재판단 뒤 시세를 재조회하고, 최대 5분간 유효한 enter만 단일 종목 파생 배치로 연결합니다.
+원본 종목 판단은 보존하며 최종 비중·위험 한도·주문 권한은 결정론적 실행 경계가 담당합니다.
+축소·청산은 매수 가격 계획을 기다리지 않고 현재 시점의 재판단으로 진행합니다.
+
+승인 카드에는 진입 범위와 재판단 이유·만료가 표시됩니다. 승인 이후에도 현재가와
+실제 지정가가 범위 안인지, 판단이 만료·취소·대체되지 않았는지 주문 직전에 확인합니다.
+한 재판단에서 실행 요청을 만들면 거절·실패 후에도 같은 판단으로 승인을 재요청하지
+않습니다. 새 원본 판단에 따른 재검토가 필요합니다. 일반 이모지 반응 대신 카드의
+서명된 ✅ 승인 버튼을 사용합니다.
+
+계획과 재판단은 로컬 `entry_candidates`·`entry_reviews`에 저장하고 대시보드에서
+감시 상태를 읽습니다. 원본 판단의 학습 성과와 진입 시점 재판단 기록은 분리됩니다.
+진입 재판단 자체의 별도 학습 보상은 현재 자동 학습에 포함하지 않습니다.
+
+### 오프라인 검증
+
 ```powershell
 python -m unittest discover -s tests -t .
 python -m unittest tests.investment_agent.research.features.test_layer

@@ -103,6 +103,7 @@ class ContinuousRetrainTest(unittest.TestCase):
             train_policy=train_policy,
             policy_dir=Path(temp),
             timesteps=8,
+            min_evaluation_periods=3,
             **kwargs,
         )
 
@@ -134,19 +135,34 @@ class ContinuousRetrainTest(unittest.TestCase):
             self._run(temp, _Repository(), dry_run=True)
 
             self.assertEqual(list(Path(temp).glob("*")), [])
+            self.assertEqual(self.trained_on, [])
 
-    def test_promotion_records_the_training_provenance(self):
+    def test_trained_candidate_never_overwrites_active_policy(self):
         with tempfile.TemporaryDirectory() as temp:
             decision = self._run(temp, _Repository())
-            active = Path(temp) / "active_policy.json"
-            if not decision.is_promoted:
-                self.assertFalse(active.exists())
-                return
-            payload = json.loads(active.read_text(encoding="utf-8"))
-            self.assertEqual(payload["training"]["symbols"], list(SYMBOLS))
-            self.assertEqual(payload["training"]["feature_version"], SPEC.version)
-            self.assertIn("data_hash", payload["training"])
+            self.assertFalse((Path(temp) / "active_policy.json").exists())
+            self.assertEqual(decision.status, "trained")
+            payload = json.loads(Path(decision.candidate_path).read_text())
+            self.assertEqual(payload["symbols"], list(SYMBOLS))
             self.assertEqual(payload["training"]["holdout_periods"], 4)
+
+    def test_champion_is_re_evaluated_on_the_same_holdout(self):
+        from unittest.mock import patch
+        from investment_agent.research.rl.bundle import PPOPolicy
+        from investment_agent.research.rl.continuous_learner import ContinuousLearner
+        with tempfile.TemporaryDirectory() as temp:
+            active = Path(temp) / "active_policy.json"
+            active.write_text("{}")
+            champion = PPOPolicy(_StubModel(2), {"symbols": list(SYMBOLS), "feature_names": list(SPEC.names), "feature_version": SPEC.version})
+            seen = []
+            original = ContinuousLearner.evaluate_model
+            def evaluate(learner, model, dataset, **kwargs):
+                seen.append(dataset.as_of_values)
+                return original(learner, model, dataset, **kwargs)
+            with patch("investment_agent.research.commands.continuous_retrain.load_policy_bundle", return_value=champion), patch.object(ContinuousLearner, "evaluate_model", evaluate):
+                self._run(temp, _Repository())
+            self.assertEqual(len(seen), 2)
+            self.assertEqual(seen[0], seen[1])
 
 
 if __name__ == "__main__":

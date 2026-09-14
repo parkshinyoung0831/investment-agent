@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import json
 import os
 from pathlib import Path
 import re
@@ -36,7 +35,7 @@ from investment_agent.trading.portfolio.proposals import from_optimized_security
 from investment_agent.trading.risk.gate import DeterministicRiskGate, PortfolioRiskPolicy
 from investment_agent.trading.portfolio.signal_book import SignalBatch, SignalRecord
 from investment_agent.research.rl.serving import (
-    BLEND_FLAG,
+    default_active_policy_path,
     blend_proposals,
     compute_rl_blend,
 )
@@ -46,11 +45,32 @@ from investment_agent.platform.logging import get_logger
 
 log = get_logger(__name__)
 
-# 승격된 baseline 정책 artifact. 학습·승격이 여기에 쓰고, 판단은 여기서만 읽는다.
-_RL_POLICY_ARTIFACT = Path("artifacts/trading/rl_policies/active_baseline_policy.json")
-
 AGENT_POLICY_KEY = "tradingagents-supabase"
 AGENT_POLICY_VERSION = 1
+
+
+def _effective_proposals(repository, proposals, *, as_of: datetime, model_artifact_id: str):
+    """원본 case를 유지하고 실제 신호에 사용한 정책 조합을 별도 승격 대상으로 만든다."""
+    outcome = compute_rl_blend(repository, as_of_at=as_of, policy_path=default_active_policy_path(),
+                               proposals=proposals, current_weights={CASH_SYMBOL: 1.0})
+    effective, outcome = blend_proposals(proposals, blender=SignalBlender(base_rl_weight=0.25, max_rl_weight=0.50),
+                                        dsr_probability=outcome.dsr_probability, outcome=outcome)
+    log.info("RL signal comparison: %s", outcome.log_payload())
+    if not outcome.applied:
+        return effective, model_artifact_id
+    if not outcome.policy_artifact_id:
+        raise RuntimeError("applied RL policy requires immutable artifact identity")
+    identity = {"llm_artifact_id": model_artifact_id, "rl_artifact_id": outcome.policy_artifact_id,
+                "base_rl_weight": .25, "max_rl_weight": .50, "blender_version": 1}
+    artifact_id = stable_id("artifact", identity)
+    repository.save_model_artifact({
+        "artifact_id": artifact_id, "algorithm": "rule", "feature_version": "llm-ppo-blend-v1",
+        "train_start": None, "train_end": None, "seed": None,
+        "artifact_uri": str(default_active_policy_path()),
+        "sha256": hashlib.sha256(canonical_json(identity).encode()).hexdigest(),
+        "params": identity, "code_commit": os.environ.get("GITHUB_SHA"),
+    })
+    return effective, artifact_id
 
 
 def _case_key(ticker: str, as_of_at: datetime) -> str:
@@ -344,7 +364,14 @@ def main(argv: list[str] | None = None) -> int:
                     bundle.ticker, case_key, archived.artifact_error,
                 )
             log.exception("TradingAgents case failed ticker=%s run_id=%s", bundle.ticker, run_id)
+            if isinstance(exc, ModelPoolError):
+                # 예산이 없는 상태에서는 나머지 종목을 실패로 위장하지 않고 다음 회차에 남긴다.
+                log.warning('analysis paused: model pool budget unavailable; remaining symbols stay pending')
+                break
 
+    proposals, model_artifact_id = _effective_proposals(
+        repository, proposals, as_of=as_of, model_artifact_id=model_artifact_id,
+    )
     completed_at = datetime.now(timezone.utc)
     batch = SignalBatch(
         batch_id=stable_id("signal_batch", {"run_id": run_id, "as_of_at": as_of.isoformat()}),
@@ -371,53 +398,6 @@ def main(argv: list[str] | None = None) -> int:
         reason = "all TradingAgents cases failed: " + ", ".join(failures)
         repository.finish_decision_run(run_id, status="failed", failure_reason=reason[:2000])
         return 1
-
-    # RL 융합. 목표비중은 승격된 정책에서 오고, 그것을 **판단에 반영할지는 플래그 하나**가
-    # 정한다(`AI_INVESTOR_RL_BLEND_ENABLED`, 기본 off). 꺼져 있으면 제안은 종전과 같고,
-    # "켰다면 얼마나 달라졌을지"만 계산해 로그로 남긴다 — 바꾸기 전에 차이를 먼저 재기
-    # 위해서다. 사람이 명시적으로 켠다.
-    active_policy_path = Path("artifacts/trading/rl_policies/active_policy.json")
-    if active_policy_path.exists():
-        try:
-            policy_meta = json.loads(active_policy_path.read_text(encoding="utf-8"))
-            score = policy_meta.get("score", {})
-            dsr_probability = float(score.get("dsr_probability", 0.0))
-            rl_outcome = compute_rl_blend(
-                repository,
-                as_of_at=datetime.now(timezone.utc),
-                policy_path=_RL_POLICY_ARTIFACT,
-            )
-            blender = SignalBlender(base_rl_weight=0.25, max_rl_weight=0.50)
-            proposals, rl_outcome = blend_proposals(
-                proposals,
-                blender=blender,
-                dsr_probability=dsr_probability,
-                outcome=rl_outcome,
-            )
-            log.info(
-                "SignalBlender ran: %s",
-                {
-                    "dsr_probability": round(dsr_probability, 4),
-                    **rl_outcome.log_payload(),
-                },
-            )
-            if rl_outcome.available and not rl_outcome.applied:
-                log.warning(
-                    "RL target weights are available but NOT applied (%s is off). "
-                    "Turning it on would change %d of %d proposals (max delta %.6f).",
-                    BLEND_FLAG,
-                    len(rl_outcome.changed_symbols),
-                    len(rl_outcome.baseline_expected_returns),
-                    rl_outcome.max_abs_delta,
-                )
-            elif not rl_outcome.available:
-                log.warning(
-                    "SignalBlender ran without RL target weights (%s) — the RL signal falls "
-                    "back to the LLM signal, so the promoted policy is not affecting allocation.",
-                    rl_outcome.reason,
-                )
-        except Exception as exc:  # noqa: BLE001
-            log.warning("failed to blend RL signals: %s", exc)
 
     sectors = repository.sp500_sector_map(tickers)
     portfolio = from_optimized_security_proposals(
@@ -471,7 +451,7 @@ def main(argv: list[str] | None = None) -> int:
         "portfolio shadow done run_id=%s proposals=%d failures=%d risk_approved=%s",
         run_id, len(proposals), len(failures), risk.is_approved,
     )
-    return 1 if failures else 0
+    return 0
 
 
 if __name__ == "__main__":

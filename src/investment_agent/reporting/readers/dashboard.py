@@ -224,6 +224,31 @@ def load_tickers() -> DataResult:
 
 
 @cache_data(ttl="2m", max_entries=2)
+def load_entry_data() -> DataResult:
+    """원본 추천과 별도로 진입 조건과 재판단 상태를 읽는다."""
+    if os.environ.get('DASHBOARD_OFFLINE','').lower() in ('1','true','yes','on'):
+        return DataResult.offline(source='로컬 진입 감시')
+    from investment_agent.reporting.readers.runtime import read_runtime_rows
+    try:
+        return DataResult.ok(rows=read_runtime_rows('entry_candidates'),source='로컬 진입 감시')
+    except Exception as error:
+        return DataResult.error(source='로컬 진입 감시',message=public_exception_message('진입 감시 조회 실패',error))
+
+
+@cache_data(ttl="2m", max_entries=2)
+def load_performance_data() -> DataResult:
+    """외부 자격증명과 무관하게 로컬 성과 보고서를 읽는다."""
+    if os.environ.get("DASHBOARD_OFFLINE", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return DataResult.offline(source="로컬 성과 원장")
+    from investment_agent.reporting.notifications.investment.performance import performance_reports
+    try:
+        rows = performance_reports()
+        return DataResult.ok(rows=rows, source="로컬 성과 원장") if rows else DataResult.empty(source="로컬 성과 원장")
+    except Exception as error:
+        return DataResult.error(source="로컬 성과 원장", message=public_exception_message("성과 조회에 실패했습니다.", error))
+
+
+@cache_data(ttl="2m", max_entries=2)
 def load_execution_data() -> DataResult:
     """Execution 관측 원장은 reporting view로만 Dashboard에 공개한다."""
     payload: dict[str, list[dict[str, Any]]] = {key: [] for key in ("control_state", "intents", "approvals", "orders", "order_events", "fills", "tca_reports", "reconciliations")}

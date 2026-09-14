@@ -556,6 +556,7 @@ These run only when their flag is present (`--wiki`, `--neo4j`/`--neo4j-push`, `
 ```bash
 $(cat graphify-out/.graphify_python) -c "
 import json
+import shutil
 from pathlib import Path
 from datetime import datetime, timezone
 from graphify.detect import save_manifest
@@ -610,6 +611,71 @@ cost['runs'].append({
 })
 cost['total_input_tokens'] += input_tok
 cost['total_output_tokens'] += output_tok
+
+# 날짜 형식 snapshot은 실행 종료 시 즉시 제거한다. 최종 그래프와 manifest는 건드리지 않는다.
+removed_snapshots = 0
+removed_snapshot_bytes = 0
+for child in Path('graphify-out').iterdir():
+    if not child.is_dir() or len(child.name) != 10:
+        continue
+    try:
+        datetime.strptime(child.name, '%Y-%m-%d')
+    except ValueError:
+        continue
+    size = sum(path.stat().st_size for path in child.rglob('*') if path.is_file())
+    try:
+        shutil.rmtree(child)
+    except OSError as exc:
+        print(f'Warning: could not remove snapshot {child}: {exc}')
+        continue
+    removed_snapshots += 1
+    removed_snapshot_bytes += size
+
+# incremental 성능을 위해 cache/는 보존하되, 모든 원본이 삭제된 캐시만 제거한다.
+removed_cache_files = 0
+removed_cache_bytes = 0
+cache_root = Path('graphify-out/cache')
+if cache_root.is_dir():
+    for cache_file in cache_root.rglob('*.json'):
+        if cache_file.name == 'stat-index.json' or cache_file.parent == cache_root:
+            continue
+        try:
+            payload = json.loads(cache_file.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        source_files = set()
+        pending = [payload]
+        while pending:
+            value = pending.pop()
+            if isinstance(value, dict):
+                for key, nested in value.items():
+                    if key == 'source_file' and isinstance(nested, str):
+                        source_files.add(nested)
+                    else:
+                        pending.append(nested)
+            elif isinstance(value, list):
+                pending.extend(value)
+        if not source_files:
+            continue
+        if any(
+            (Path(source) if Path(source).is_absolute() else Path('INPUT_PATH') / source).exists()
+            for source in source_files
+        ):
+            continue
+        try:
+            size = cache_file.stat().st_size
+            cache_file.unlink()
+        except OSError as exc:
+            print(f'Warning: could not remove orphan cache {cache_file}: {exc}')
+            continue
+        removed_cache_files += 1
+        removed_cache_bytes += size
+
+print(
+    'Cleanup: removed '
+    f'{removed_snapshots} snapshot(s) ({removed_snapshot_bytes:,} bytes), '
+    f'{removed_cache_files} orphan cache file(s) ({removed_cache_bytes:,} bytes)'
+)
 cost_path.write_text(json.dumps(cost, indent=2, ensure_ascii=False), encoding=\"utf-8\")
 
 print(f'This run: {input_tok:,} input tokens, {output_tok:,} output tokens')
@@ -621,6 +687,12 @@ rm -f graphify-out/.needs_update 2>/dev/null || true
 ```
 
 Replace INPUT_PATH with the actual path (same value used in Steps 4-5) so the manifest is relativized to the scan root.
+
+All dated snapshot directories under graphify-out/ are removed immediately after
+each build. The incremental cache is retained, except for cache JSON entries
+whose recorded source files all no longer exist. Final outputs (graph.json,
+graph.html, GRAPH_REPORT.md, and manifest.json) are never removed by this
+cleanup.
 
 Tell the user (omit the obsidian line unless --obsidian was given):
 ```

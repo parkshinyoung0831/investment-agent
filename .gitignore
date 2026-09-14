@@ -29,6 +29,7 @@ graphify-out/20*/
 graphify-out/.graphify_*
 graphify-out/.needs_update
 graphify-out/.vocab.txt
+graphify-out/cost.json
 graphify-out/memory/
 graphify-out/reflections/
 

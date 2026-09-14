@@ -520,7 +520,7 @@ class ResearchStore:
     def _dataset_files(self, dataset: str) -> list[Path]:
         return sorted(self._dataset_root(dataset).glob("year=*/*.parquet"))
 
-    def upsert_records(self, dataset: str, rows: Iterable[dict[str, Any]], *, key: str) -> int:
+    def upsert_records(self, dataset: str, rows: Iterable[dict[str, Any]], *, key: str, ignore_existing: bool = False) -> int:
         normalized = [dict(row) for row in rows]
         if not normalized:
             return 0
@@ -551,6 +551,16 @@ class ResearchStore:
                     for row in normalized
                 ],
             )
+            # 최초 관측 경험은 같은 writer 트랜잭션 안에서 기존 키를 제외한다.
+            if ignore_existing and self._dataset_files(dataset):
+                connection.execute(
+                    "DELETE FROM incoming_records WHERE record_key IN "
+                    "(SELECT record_key FROM read_parquet(?, union_by_name=true))",
+                    [self._parquet_pattern(root)],
+                )
+            inserted_count = int(connection.execute("SELECT count(*) FROM incoming_records").fetchone()[0])
+            if inserted_count == 0:
+                return 0
             touched = {str(row[0]) for row in connection.execute(
                 "SELECT DISTINCT partition_year FROM incoming_records"
             ).fetchall()}
@@ -603,7 +613,7 @@ class ResearchStore:
                     root_path=excluded.root_path,row_count=excluded.row_count,
                     updated_at=excluded.updated_at
             """, [dataset, str(root), total])
-        return len(normalized)
+        return inserted_count
 
     def records(
         self,

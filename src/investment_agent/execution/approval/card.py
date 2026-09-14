@@ -36,6 +36,7 @@ def button_components(
                 "type": 2,
                 "style": 3,
                 "label": "이 주문안 승인",
+                "emoji": {"name": "✅"},
                 "custom_id": signer.custom_id(request, "approve"),
                 "disabled": disabled,
             },

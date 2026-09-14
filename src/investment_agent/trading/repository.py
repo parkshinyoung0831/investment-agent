@@ -257,6 +257,26 @@ class TradingRepository:
         )
         return str(rows[0]["batch_id"]) if rows else None
 
+    def publish_entry_signal(self, record, *, review: dict) -> str:
+        """재판단은 원본 신호를 바꾸지 않고 해당 종목만 실행 배치로 고정한다."""
+        from investment_agent.platform.serialization import stable_id
+        from investment_agent.trading.portfolio.signal_book import SignalBatch, SignalRecord
+        source = self._db.table(SCHEMA, T_SIGNAL_RUNS).select('*').eq('batch_id',record.batch_id).limit(1).execute().data
+        signals = self._db.table(SCHEMA, T_SIGNALS).select('*').eq('signal_id',record.signal_id).limit(1).execute().data
+        if not source or not signals:
+            raise ValueError('entry source signal missing')
+        batch = SignalBatch(batch_id=stable_id('signal_batch', {'entry_review_id':review['review_id']}),
+            as_of_at=record.proposal.as_of_at, completed_at=review['reviewed_at'],
+            requested_symbols=(record.proposal.ticker,), successful_symbols=(record.proposal.ticker,),
+            model_artifact_id=source[0]['model_artifact_id'])
+        effective = SignalRecord(batch_id=batch.batch_id, proposal=record.proposal,
+            recorded_at=review['reviewed_at'], expires_at=review['expires_at'], case_key=record.case_key)
+        row = {**signals[0], 'signal_id':effective.signal_id,'batch_id':batch.batch_id,
+               'recorded_at':effective.recorded_at,'expires_at':effective.expires_at}
+        row.pop('created_at', None)
+        self.record_signal_batch(batch={**batch.to_dict(), 'run_id':source[0]['run_id'], 'is_complete':True}, signals=[row])
+        return batch.batch_id
+
     def signal_batch_id_for_as_of(self, as_of_at: datetime) -> str:
         rows = (
             self._db.table(SCHEMA, T_SIGNAL_RUNS)
@@ -344,29 +364,15 @@ class TradingRepository:
                 return str(row["batch_id"])
         return None
 
-    def has_live_execution_for_batch(self, batch_id: str) -> bool:
-        batch_rows = (
-            self._db.table(SCHEMA, T_SIGNAL_RUNS)
-            .select("run_id")
-            .eq("batch_id", str(batch_id))
-            .limit(1)
-            .execute()
-            .data
-            or []
+    def live_proposal_ids_for_batch(self, batch_id: str) -> list[str]:
+        """분석 run과 별개인 구성 제안을 원본 배치 metadata로 연결한다."""
+        rows = self._db.select_paged(
+            lambda: self._db.table(SCHEMA, T_PROPOSALS)
+            .select("proposal_id,metadata").eq("stage", "live"),
+            order_by="proposal_id",
         )
-        if not batch_rows:
-            return False
-        proposals = (
-            self._db.table(SCHEMA, T_PROPOSALS)
-            .select("proposal_id")
-            .eq("run_id", batch_rows[0]["run_id"])
-            .eq("stage", "live")
-            .limit(1)
-            .execute()
-            .data
-            or []
-        )
-        return bool(proposals)
+        return [str(row["proposal_id"]) for row in rows
+                if (row.get("metadata") or {}).get("active_batch_id") == str(batch_id)]
 
     # ── portfolio proposal → risk → adoption ─────────────────────────────
     def portfolio_proposal(self, proposal_id: str) -> dict[str, Any] | None:
@@ -397,13 +403,43 @@ class TradingRepository:
     def evaluation_candidates(self, limit: int = 200) -> list[dict[str, Any]]:
         if limit < 1:
             raise ValueError("limit must be positive")
+        from investment_agent.research.evaluation.constants import EVALUATION_HORIZONS
+        from investment_agent.trading.local_store import LocalTradingDatabase
+        if isinstance(self._db, LocalTradingDatabase):
+            # PK(case_key,horizon_days) 반조회로 완료 행은 LIMIT 이전에 제외한다.
+            placeholders = ",".join("?" for _ in EVALUATION_HORIZONS)
+            with self._db.transaction(read_only=True) as connection:
+                cursor = connection.execute(
+                    f"SELECT d.* FROM {T_SECURITY_DECISIONS} d "
+                    "WHERE d.status IN ('completed','abstained') AND "
+                    f"(SELECT count(*) FROM {T_EVALUATIONS} e WHERE e.case_key=d.case_key "
+                    f"AND e.horizon_days IN ({placeholders})) < ? "
+                    "ORDER BY d.as_of_at,d.case_key LIMIT ?",
+                    [*EVALUATION_HORIZONS, len(EVALUATION_HORIZONS), limit],
+                )
+                columns = self._db.columns(connection, T_SECURITY_DECISIONS)
+                names = [item[0] for item in cursor.description]
+                return [self._db.decode(dict(zip(names, row)), columns) for row in cursor.fetchall()]
+        rows = self.decision_cases()
+        completed = self._db.select_in_chunks(
+            schema=SCHEMA, table=T_EVALUATIONS, columns="case_key,horizon_days",
+            filter_column="case_key", values=[str(row["case_key"]) for row in rows],
+            order_by="case_key,horizon_days",
+        ) if rows else []
+        horizons: dict[str, set[int]] = {}
+        for row in completed:
+            horizons.setdefault(str(row["case_key"]), set()).add(int(row["horizon_days"]))
+        return [{**row, "evaluated_horizons": sorted(horizons.get(str(row["case_key"]), set()))}
+                for row in rows if not set(EVALUATION_HORIZONS).issubset(
+                    horizons.get(str(row["case_key"]), set()))][:limit]
+
+    def decision_cases(self) -> list[dict[str, Any]]:
+        """승인·매수 여부와 무관한 원본 완료 판단을 읽는다."""
         return self._db.select_paged(
             lambda: self._db.table(SCHEMA, T_SECURITY_DECISIONS)
-            .select("case_key,security_id,as_of_at,horizon_days,final_decision,status")
-            .in_("status", ["completed", "abstained"]),
+            .select(_DECISION_COLUMNS).in_("status", ["completed", "abstained"]),
             order_by="as_of_at,case_key",
-            page_size=min(limit, 1000),
-        )[:limit]
+        )
 
     def evaluation_horizons(self, case_key: str) -> set[int]:
         rows = self._db.select_paged(

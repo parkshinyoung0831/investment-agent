@@ -197,6 +197,11 @@ if old_data:
 Before the merge step, save the old graph: `cp graphify-out/graph.json graphify-out/.graphify_old.json`
 Clean up after: `rm -f graphify-out/.graphify_old.json`
 
+After the update finishes, run the immediate snapshot and orphan-cache cleanup
+from Step 9 in the main Graphify skill. In update mode, run only that cleanup
+portion; do not repeat manifest or cumulative-cost writes. This removes all
+dated snapshots while preserving incremental cache entries with live sources.
+
 ---
 
 ## For --cluster-only

@@ -30,6 +30,7 @@ KIND_ENV: dict[str, str] = {
     "investment_portfolio": "DISCORD_CHANNEL_AI_REPORTS",
     "investment_candidates": "DISCORD_CHANNEL_AI_REPORTS",
     "investment_trades": "DISCORD_CHANNEL_AI_TRADES",
+    "investment_performance": "DISCORD_CHANNEL_AI_REPORTS",
 }
 
 

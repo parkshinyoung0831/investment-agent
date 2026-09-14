@@ -19,7 +19,7 @@ class ReconciliationRepository(Protocol):
     def order_attempt_events(self, attempt_id: str) -> list[OrderAttemptEvent]: ...
     def append_order_attempt_event(self, attempt_id: str, **kwargs): ...
     def update_order_execution(self, client_order_id: str, **kwargs) -> None: ...
-    def save_broker_order_snapshot(self, row: dict) -> None: ...
+    def save_broker_order_snapshot(self, row: dict) -> bool: ...
     def intent_orders(self, intent_id: str) -> list[dict]: ...
     def update_intent_status(
         self,
@@ -56,14 +56,14 @@ def classify_remote_order(order: TossOrderSnapshot) -> str:
     status = order.status.upper()
     if order.quantity > 0 and order.filled_quantity >= order.quantity:
         return "filled"
-    if order.filled_quantity > 0:
-        return "partially_filled"
     if "CANCEL" in status:
         return "cancelled"
     if "REJECT" in status:
         return "rejected"
     if "REPLAC" in status:
         return "replaced"
+    if order.filled_quantity > 0:
+        return "partially_filled"
     return "submitted"
 
 
@@ -267,11 +267,12 @@ class TossReconciliationWorker:
                 raw_response=remote.raw,
                 now=current,
             )
-            self.repository.save_broker_order_snapshot(_snapshot_row(
+            snapshot_changed = self.repository.save_broker_order_snapshot(_snapshot_row(
                 client_order_id=client_id,
                 remote=remote,
                 observed_at=current,
             ))
+            changed = changed or bool(snapshot_changed)
             self.repository.update_order_execution(
                 client_id,
                 status=remote_status,

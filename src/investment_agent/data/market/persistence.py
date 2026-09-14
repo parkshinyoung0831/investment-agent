@@ -221,7 +221,11 @@ def price_path_from(ticker: str, start_date: date, *, limit: int = 80) -> list[d
     for row in dividends:
         row["ticker"] = ticker.upper()
         row["ex_date"] = str(row["ex_date"])
-    return merge_corporate_actions(rows, dividends, [])
+    splits = [event.as_row() for event in MarketRepository(_db()).splits([security_id], since=start_date) if event.action_date <= last]
+    for row in splits:
+        row["ticker"] = ticker.upper()
+        row["action_date"] = str(row["action_date"])
+    return merge_corporate_actions(rows, dividends, splits)
 
 
 def monthly_close_history(tickers: list[str], *, period: str = "2y") -> pd.DataFrame:

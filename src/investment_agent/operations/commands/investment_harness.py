@@ -20,6 +20,9 @@ from investment_agent.operations.harness.pipeline import (
     account_risk_snapshot_job,
     autonomous_investment_job,
     continuous_learning_job,
+    decision_experience_job,
+    investment_reporting_job,
+    entry_watch_job,
     earnings_watch_job,
     feature_store_job,
     intelligence_job,
@@ -39,7 +42,7 @@ from investment_agent.operations.paths import HARNESS_STATE_DIR as _DEFAULT_STAT
 
 def build_registry(
     *,
-    analysis_interval_seconds: float = 24 * 60 * 60,
+    analysis_interval_seconds: float = 30 * 60,
     investment_interval_seconds: float = 60,
     risk_snapshot_interval_seconds: float = 5 * 60,
     reconciliation_interval_seconds: float = 60,
@@ -96,10 +99,16 @@ def build_registry(
         interval_seconds=reconciliation_interval_seconds,
     ))
     if hasattr(selected, "continuous_learning"):
+        if hasattr(selected, "build_decision_experiences"):
+            registry.register(decision_experience_job(build_decision_experiences=selected.build_decision_experiences))
         registry.register(continuous_learning_job(
             retrain=selected.continuous_learning,
             interval_seconds=feature_store_interval_seconds,
         ))
+    if hasattr(selected, "update_performance") and hasattr(selected, "notify_reports"):
+        registry.register(investment_reporting_job(update_performance=selected.update_performance, notify_reports=selected.notify_reports))
+    if hasattr(selected,'watch_entries'):
+        registry.register(entry_watch_job(watch=selected.watch_entries))
     # 뉴스·소셜 수집과 90일 보존 정리. 주문이 아니라 데이터 수집이라 거래 kill
     # switch·모드와 무관하게 항상 돈다.
     registry.register(intelligence_job(
@@ -131,7 +140,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--mode", choices=[item.value for item in HarnessMode],
                         default=HarnessMode.ANALYSIS_ONLY.value)
     parser.add_argument("--interval-seconds", type=float, default=None)
-    parser.add_argument("--analysis-interval-seconds", type=float, default=24 * 60 * 60)
+    parser.add_argument("--analysis-interval-seconds", type=float, default=30 * 60)
     parser.add_argument("--investment-interval-seconds", type=float, default=60.0)
     parser.add_argument("--risk-snapshot-interval-seconds", type=float, default=5 * 60)
     parser.add_argument("--reconciliation-interval-seconds", type=float, default=60)

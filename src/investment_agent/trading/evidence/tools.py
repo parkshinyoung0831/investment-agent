@@ -117,6 +117,14 @@ def total_return(rows_asc: list[Mapping[str, Any]], end_index: int) -> float:
     end = _finite(rows_asc[end_index].get("close"))
     if start is None or end is None or start <= 0:
         raise ValueError("invalid close in price path")
-    dividends = sum(_finite(row.get("div_amount")) or 0.0 for row in rows_asc[1:end_index + 1])
-    return (end + dividends) / start - 1
+    shares = 1.0
+    dividends = 0.0
+    for row in rows_asc[1:end_index + 1]:
+        ratio = _finite(row.get("split_ratio"))
+        if ratio is not None:
+            if ratio <= 0:
+                raise ValueError("invalid split ratio in price path")
+            shares *= ratio
+        dividends += shares * (_finite(row.get("div_amount")) or 0.0)
+    return (end * shares + dividends) / start - 1
 

@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import math
+import json
+from tempfile import TemporaryDirectory
 import os
 import re
 from datetime import datetime, time, timezone
@@ -32,6 +34,9 @@ _ID_PATTERNS = {
     "approval_id": re.compile(r"^approval_[0-9a-f]{32}$"),
 }
 _MODULES = frozenset({
+    "investment_agent.operations.commands.watch_entries",
+    "investment_agent.research.commands.build_decision_experiences",
+    "investment_agent.operations.commands.update_performance",
     "investment_agent.trading.decision.portfolio_shadow",
     # 학습 원장 생산. 주문이 아니라 데이터 수집이라 거래 kill switch와 무관하다.
     "investment_agent.research.commands.build_valuations",
@@ -148,6 +153,8 @@ class ProductionInvestmentAdapters:
         approval_ttl_minutes: int = 15,
         approval_poll_seconds: float = 15.0,
         timeouts: Mapping[str, float] | None = None,
+        entry_repository=None,
+        is_background_enabled: bool = False,
     ) -> None:
         if analysis_limit < 1 or analysis_limit > 500:
             raise ValueError("analysis_limit must be between 1 and 500")
@@ -156,6 +163,7 @@ class ProductionInvestmentAdapters:
         if not math.isfinite(approval_poll_seconds) or approval_poll_seconds <= 0:
             raise ValueError("approval_poll_seconds must be finite and positive")
         self.command_runner = command_runner
+        self.entry_repository = entry_repository
         self.decision_repository = decision_repository
         self.approval_repository = approval_repository
         self.construct_portfolio = construct_portfolio
@@ -167,6 +175,13 @@ class ProductionInvestmentAdapters:
         self.approval_ttl_minutes = approval_ttl_minutes
         self.approval_poll_seconds = float(approval_poll_seconds)
         self.timeouts = dict(timeouts or {})
+        if is_background_enabled:
+            from investment_agent.operations.harness.background import BackgroundStages
+            self._background=BackgroundStages()
+            for name in ('analysis','build_valuations','build_features','build_labels','build_training_samples',
+                         'build_events','evaluate_decisions','build_decision_experiences','continuous_learning',
+                         'watch_entries','update_performance','notify_reports','notify_investment'):
+                setattr(self,name,self._background.wrap(getattr(self,name)))
 
     @classmethod
     def from_env(
@@ -242,7 +257,10 @@ class ProductionInvestmentAdapters:
             start=_wall_time(values, "HARNESS_NY_RISK_START", time(9, 15)),
             end=_wall_time(values, "HARNESS_NY_RISK_END", time(16, 30)),
         )
+        from investment_agent.trading.entry.repository import EntryRepository
         return cls(
+            entry_repository=EntryRepository(),
+            is_background_enabled=True,
             command_runner=runner,
             decision_repository=SupabaseRepository(),
             approval_repository=ExecutionRepository(),
@@ -271,9 +289,6 @@ class ProductionInvestmentAdapters:
         )
 
     def analysis(self, context: StageContext) -> StageOutcome:
-        session_wait = self._session_wait(context)
-        if session_wait is not None:
-            return session_wait
         self.command_runner.run(
             PythonModuleCommand(
                 "investment_agent.trading.decision.portfolio_shadow",
@@ -320,6 +335,13 @@ class ProductionInvestmentAdapters:
         session_wait = self._session_wait(context)
         if session_wait is not None:
             return session_wait
+        if self.entry_repository is not None:
+            for entry in self.entry_repository.ready(now=self.now()):
+                batch_id=entry['batch_id']
+                if self.decision_repository.has_live_execution_for_batch(batch_id):
+                    continue
+                return StageOutcome.succeeded({'batch_id':batch_id,'entry_review_id':entry['review']['review_id']})
+            return StageOutcome.waiting(resume_after_seconds=60,metadata={'reason':'no_confirmed_entry_timing'})
         query_fn = getattr(
             self.decision_repository,
             "latest_execution_ready_batch_id",
@@ -601,6 +623,38 @@ class ProductionInvestmentAdapters:
         """실제로 나간 주문·체결을 `#매매-기록`으로 보낸다."""
         return self._notify(context, ("investment_trades",), "trade")
 
+    def build_decision_experiences(self, context: StageContext) -> StageOutcome:
+        """승인 여부와 무관하게 원본 판단의 확정된 결과를 학습 원장에 기록한다."""
+        self.command_runner.run(PythonModuleCommand(
+            "investment_agent.research.commands.build_decision_experiences",
+            ("--as-of", context.now.isoformat()),
+            self.timeouts.get("build_decision_experiences", 60 * 60),
+        ), stop_event=context.stop_event)
+        return StageOutcome.succeeded({"experiences_built_at": self.now().isoformat()})
+
+    def watch_entries(self, context: StageContext) -> StageOutcome:
+        """조건 감시는 주문 허용과 별개로 실행하고 실제 진입 후보만 저장한다."""
+        wait=self._session_wait(context)
+        if wait is not None:
+            return wait
+        self.command_runner.run(PythonModuleCommand('investment_agent.operations.commands.watch_entries',(),600),stop_event=context.stop_event)
+        return StageOutcome.succeeded({'checked_at':self.now().isoformat()})
+
+    def update_performance(self, context: StageContext) -> StageOutcome:
+        """계좌와 판단 성과를 각각 원장 사실로 집계한다."""
+        self.command_runner.run(PythonModuleCommand(
+            "investment_agent.operations.commands.update_performance",
+            ("--as-of", context.now.isoformat()),
+            self.timeouts.get("update_performance", 10 * 60),
+        ), stop_event=context.stop_event)
+        return StageOutcome.succeeded({"performance_updated_at": self.now().isoformat()})
+
+    def notify_reports(self, context: StageContext) -> StageOutcome:
+        """독립 주기에서 누락 보고와 뒤늦게 확정된 체결의 발송을 재시도한다."""
+        return self._notify(context, (
+            "investment_portfolio", "investment_candidates", "investment_trades", "investment_performance",
+        ), "reports")
+
     def evaluate_decisions(self, context: StageContext) -> StageOutcome:
         """성숙한 과거 Shadow 판단을 SPY 대비 5·20·60 거래일로 채점한다.
 
@@ -653,16 +707,18 @@ class ProductionInvestmentAdapters:
         return StageOutcome.succeeded({"labeled_at": self.now().isoformat()})
 
     def continuous_learning(self, context: StageContext) -> StageOutcome:
-        """누적된 학습 표본으로 강화학습 정책을 지속 재학습하고 검증 승격한다."""
-        self.command_runner.run(
-            PythonModuleCommand(
+        """자료 대기와 실제 후보 학습을 구분하고 채택 여부를 과장하지 않는다."""
+        with TemporaryDirectory() as directory:
+            result_path = Path(directory) / 'learning-result.json'
+            self.command_runner.run(PythonModuleCommand(
                 "investment_agent.research.commands.continuous_retrain",
-                ("--as-of", context.now.isoformat()),
+                ("--as-of", context.now.isoformat(), '--result-path', str(result_path)),
                 self.timeouts.get("continuous_learning", 60 * 60),
-            ),
-            stop_event=context.stop_event,
-        )
-        return StageOutcome.succeeded({"retrained_at": self.now().isoformat()})
+            ), stop_event=context.stop_event)
+            if not result_path.exists():
+                raise RuntimeError('learning command did not report its actual status')
+            result = json.loads(result_path.read_text(encoding='utf-8'))
+        return StageOutcome.skipped(result) if result['status'] == 'pending' else StageOutcome.succeeded(result)
 
 
 __all__ = ["ProductionInvestmentAdapters", "SessionWindow"]

@@ -1,9 +1,4 @@
-"""자율 지속 재학습 및 챔피언-챌린저(Champion-Challenger) 정책 승격기.
-
-누적된 실매매 경험 데이터셋을 바탕으로 강화학습 정책을 재학습하고,
-직전 OOS 검증 구간에서 기존 챔피언 모델 대비 샤프비율 개선 및 DSR 과적합 검정을
-통과한 신규 챌린저 모델만을 프로덕션 정책으로 안전하게 자동 승격한다.
-"""
+"""같은 독립 평가 구간에서 연구 후보의 수동 채택 자격을 판정한다."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -36,10 +31,12 @@ class PromotionDecision:
     """챔피언-챌린저 승격 판정 결과."""
 
     is_promoted: bool
-    challenger_score: PolicyEvaluationScore
+    challenger_score: PolicyEvaluationScore | None
     champion_score: PolicyEvaluationScore | None
     improvement_sharpe: float
     reason: str
+    status: str = "trained"
+    candidate_path: str | None = None
 
 
 class ContinuousLearner:
@@ -77,9 +74,7 @@ class ContinuousLearner:
             elif callable(model):
                 action = model(obs)
             else:
-                # 균등 비중 fallback. action 축은 종목 수 + CASH 한 칸이다.
-                n_actions = len(dataset.symbols) + 1
-                action = np.ones(n_actions, dtype=np.float32) / n_actions
+                raise TypeError("policy must provide predict or be callable")
 
             _, reward, _, info = core.step(action)
             rewards.append(float(reward))
@@ -89,9 +84,9 @@ class ContinuousLearner:
             turnover += float(info.get("turnover", 0.0))
 
         # DSR 과적합 검정 (연율화 샤프비율)
-        dsr_res = DeflatedSharpeRatio.compute(returns, num_trials=num_trials, annualize=True)
+        dsr_res = DeflatedSharpeRatio.compute(returns, num_trials=num_trials, annualize=False)
 
-        tot_excess = sum(returns) - sum(benchmark_returns)
+        tot_excess = float(np.prod(1.0 + np.asarray(returns)) - np.prod(1.0 + np.asarray(benchmark_returns)))
 
         return PolicyEvaluationScore(
             sharpe_ratio=round(float(dsr_res.observed_sr), 4),

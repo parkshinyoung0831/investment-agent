@@ -21,7 +21,7 @@ def main(argv: list[str] | None = None) -> int:
     repository = SupabaseRepository()
     saved = pending = 0
     for case in repository.cases_for_evaluation(args.limit):
-        existing = repository.existing_evaluation_horizons(str(case["case_key"]))
+        existing = set(case["evaluated_horizons"]) if "evaluated_horizons" in case else repository.existing_evaluation_horizons(str(case["case_key"]))
         results = [row for row in evaluate_case(repository, case) if row.horizon_days not in existing]
         if not results:
             pending += 1

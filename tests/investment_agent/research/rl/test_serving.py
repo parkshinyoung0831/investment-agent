@@ -198,13 +198,10 @@ class ComparisonRecordTest(unittest.TestCase):
         self.assertNotIn("weights", payload)
 
 
-@dataclass(frozen=True)
-class _Proposal:
-    """`expected_return_5d`/`confidence`만 쓰는 최소 제안."""
-
-    ticker: str
-    expected_return_5d: float
-    confidence: float
+def _Proposal(ticker, expected_excess_return, confidence):
+    from investment_agent.trading.portfolio.contracts import SecurityProposal
+    return SecurityProposal(ticker, NOW.isoformat(), "open", .6, confidence,
+                            expected_excess_return, .1, ("근거",), ())
 
 
 class BlendProposalsTest(unittest.TestCase):
@@ -232,7 +229,7 @@ class BlendProposalsTest(unittest.TestCase):
         )
         # 배선이 없던 때의 동작: 목표비중 없이 blend -> 입력과 같은 값.
         for before, after in zip(self.PROPOSALS, updated, strict=True):
-            self.assertAlmostEqual(before.expected_return_5d, after.expected_return_5d)
+            self.assertAlmostEqual(before.expected_excess_return, after.expected_excess_return)
             self.assertAlmostEqual(before.confidence, after.confidence)
         # 그래도 켰다면 달라졌을 것이라는 사실은 기록된다.
         self.assertTrue(outcome.changed_symbols)
@@ -247,14 +244,14 @@ class BlendProposalsTest(unittest.TestCase):
             outcome=self._blend_outcome(applied=True),
         )
         changed = [
-            after.expected_return_5d
+            after.expected_excess_return
             for before, after in zip(self.PROPOSALS, updated, strict=True)
-            if abs(after.expected_return_5d - before.expected_return_5d) > 1e-12
+            if abs(after.expected_excess_return - before.expected_excess_return) > 1e-12
         ]
         self.assertTrue(changed, "융합을 켰는데 아무것도 바뀌지 않았다")
         # RL이 평균보다 낮게 준 MSFT는 아래로 내려간다. (AAPL은 이 표본에서 RL이 함의하는
         # 기대수익률이 LLM 값과 우연히 같아 움직이지 않는다 — 그래서 방향이 분명한 쪽으로 본다.)
-        self.assertLess(updated[1].expected_return_5d, self.PROPOSALS[1].expected_return_5d)
+        self.assertLess(updated[1].expected_excess_return, self.PROPOSALS[1].expected_excess_return)
         self.assertTrue(outcome.applied)
 
     def test_unavailable_policy_still_returns_todays_proposals(self) -> None:
@@ -266,7 +263,7 @@ class BlendProposalsTest(unittest.TestCase):
             outcome=serving.unavailable("no policy"),
         )
         for before, after in zip(self.PROPOSALS, updated, strict=True):
-            self.assertAlmostEqual(before.expected_return_5d, after.expected_return_5d)
+            self.assertAlmostEqual(before.expected_excess_return, after.expected_excess_return)
         self.assertEqual((), outcome.changed_symbols)
 
 

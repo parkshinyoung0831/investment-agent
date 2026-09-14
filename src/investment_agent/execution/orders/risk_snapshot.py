@@ -57,6 +57,8 @@ def capture_and_store_risk_snapshot(
         "cash": snapshot.cash_value,
         "buying_power": snapshot.cash_value,
         "captured_at": snapshot.captured_at,
+        "currency": snapshot.base_currency,
+        "positions": [position.to_dict() for position in snapshot.positions],
         "raw_snapshot": {
             "source": "toss_usd_sleeve_baseline",
             "open_order_count": len(snapshot.open_order_ids),
@@ -65,6 +67,10 @@ def capture_and_store_risk_snapshot(
     repository.save_position_snapshots([
         {
             "account_snapshot_id": account_snapshot_id,
+            "captured_at": snapshot.captured_at,
+            "broker_account_hash": _account_ref(account_seq),
+            "execution_mode": "live",
+            "currency": snapshot.base_currency,
             "ticker": position.ticker,
             "quantity": position.quantity,
             "market_price": position.market_price,

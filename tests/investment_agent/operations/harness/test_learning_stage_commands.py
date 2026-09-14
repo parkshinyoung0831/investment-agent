@@ -24,6 +24,8 @@ LEARNING_STAGES = (
     ("build_training_samples", "investment_agent.research.commands.build_training_samples"),
     ("evaluate_decisions", "investment_agent.research.commands.evaluate"),
     ("build_events", "investment_agent.research.commands.build_events"),
+    ("build_decision_experiences", "investment_agent.research.commands.build_decision_experiences"),
+    ("update_performance", "investment_agent.operations.commands.update_performance"),
 )
 
 
@@ -89,6 +91,17 @@ class LearningStageCommandTest(unittest.TestCase):
                         arguments[arguments.index("--as-of") + 1],
                         NOW.isoformat(),
                     )
+
+    def test_unready_learning_is_not_reported_as_trained(self):
+        import json
+        from pathlib import Path
+        def run(command, *, stop_event):
+            path = Path(command.arguments[command.arguments.index('--result-path') + 1])
+            path.write_text(json.dumps({'status':'pending','reason':'not enough independent periods'}))
+        self.runner.run = run
+        outcome = self.adapters.continuous_learning(_context('continuous_learning'))
+        self.assertEqual(outcome.status, 'skipped')
+        self.assertEqual(outcome.metadata['status'], 'pending')
 
 
 if __name__ == "__main__":

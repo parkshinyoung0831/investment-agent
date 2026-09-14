@@ -105,8 +105,8 @@ class ContinuousLearnerTests(unittest.TestCase):
         self.assertFalse(decision.is_promoted)
         self.assertIn("초과수익", decision.reason)
 
-    def test_uniform_fallback_covers_cash_so_evaluation_does_not_crash(self) -> None:
-        """predict도 호출도 안 되는 모델은 균등비중으로 평가한다 — 그 축에도 CASH가 있다."""
+    def test_invalid_policy_fails_closed(self) -> None:
+        """정책이 없으면 가짜 균등비중 성과를 내지 않는다."""
         from tests.investment_agent.research.rl.fixtures import historical_training_set
 
         _, training_set = historical_training_set(periods=4)
@@ -114,9 +114,8 @@ class ContinuousLearnerTests(unittest.TestCase):
         class _Opaque:
             pass
 
-        score = ContinuousLearner().evaluate_model(_Opaque(), training_set.dataset)
-
-        self.assertEqual(score.periods_evaluated, 4)
+        with self.assertRaises(TypeError):
+            ContinuousLearner().evaluate_model(_Opaque(), training_set.dataset)
 
 
 if __name__ == "__main__":

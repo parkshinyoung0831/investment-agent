@@ -28,7 +28,7 @@ class DiscordTargetTests(unittest.TestCase):
         shared_pairs = (
             frozenset({"fundamentals_schedule", "fundamentals_flash",
                        "fundamentals_earnings"}),
-            frozenset({"investment_portfolio", "investment_candidates"}),
+            frozenset({"investment_portfolio", "investment_candidates", "investment_performance"}),
         )
         by_env: dict[str, set[str]] = {}
         for kind, env_name in KIND_ENV.items():

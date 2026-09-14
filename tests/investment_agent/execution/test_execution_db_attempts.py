@@ -124,7 +124,7 @@ class ExecutionAttemptRepositoryTest(unittest.TestCase):
             ).fetchone()
         payload = json.loads(row[0])
         self.assertEqual(payload["security_id"], 17)
-        self.assertNotIn("ticker", payload)
+        self.assertEqual("AAPL", payload["ticker"])
 
 
 if __name__ == "__main__":

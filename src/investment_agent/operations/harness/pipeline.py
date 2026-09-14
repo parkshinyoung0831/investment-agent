@@ -308,7 +308,7 @@ def continuous_learning_job(
     interval_seconds: float = 24 * 60 * 60,
     stale_after_seconds: float = 4 * 60 * 60,
 ) -> JobDefinition:
-    """누적된 실매매 경험을 바탕으로 강화학습 정책을 지속 재학습하고 검증 승격한다."""
+    """누적된 판단 경험으로 검증 후보를 만들며 실제 채택은 별도로 수행한다."""
     return JobDefinition(
         job_id=job_id,
         interval_seconds=interval_seconds,
@@ -323,6 +323,26 @@ def continuous_learning_job(
             ),
         ),
     )
+
+
+def investment_reporting_job(*, update_performance: StageHandler, notify_reports: StageHandler) -> JobDefinition:
+    """분석과 주문 실패에도 성과·늦은 체결·누락 알림을 독립적으로 갱신한다."""
+    return JobDefinition(job_id="investment_reporting", interval_seconds=300, stale_after_seconds=1800,
+        stages=(StageDefinition("update_performance", update_performance, approval_workflow_only=False, max_attempts=2),
+                StageDefinition("notify_reports", notify_reports, approval_workflow_only=False, max_attempts=2)))
+
+
+def entry_watch_job(*, watch: StageHandler) -> JobDefinition:
+    """매수 조건 감시와 LLM 재판단은 원본 분석 주기와 분리한다."""
+    return JobDefinition(job_id='entry_watch',interval_seconds=60,stale_after_seconds=1800,
+        stages=(StageDefinition('watch',watch,approval_workflow_only=False,max_attempts=1),))
+
+
+def decision_experience_job(*, build_decision_experiences: StageHandler) -> JobDefinition:
+    """feature 수집 장애와 무관하게 이미 저장된 판단의 경험을 완성한다."""
+    return JobDefinition(job_id="decision_experience", interval_seconds=86400, stale_after_seconds=108000,
+        stages=(StageDefinition("build_decision_experiences", build_decision_experiences,
+                                approval_workflow_only=False, max_attempts=2),))
 
 
 def _collect_news(database_path: Path | None = None) -> dict[str, Any]:

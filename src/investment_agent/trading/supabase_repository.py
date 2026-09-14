@@ -483,6 +483,14 @@ class SupabaseRepository:
         if not tickers:
             return []
         last_analyzed = self._candidate_last_analyzed(tickers, as_of_at=as_of_at)
+        # 실패 종목도 순환 위치를 전진시켜 한 종목의 장애가 전체 500개를 막지 않는다.
+        from investment_agent.reporting.readers.runtime import read_local_rows
+        for row in read_local_rows('security_decisions'):
+            ticker=normalize_ticker(row.get('ticker'))
+            if ticker in tickers and row.get('status')=='failed' and row.get('as_of_at'):
+                attempted=parse_datetime(row['as_of_at'])
+                if attempted <= as_of_at and (ticker not in last_analyzed or attempted > last_analyzed[ticker]):
+                    last_analyzed[ticker]=attempted
         features = assemble_candidate_features(
             tickers,
             last_analyzed_at=last_analyzed,
@@ -773,8 +781,10 @@ class SupabaseRepository:
         return self._trading_repository().latest_execution_ready_batch_id(as_of_at=as_of_at)
 
     def has_live_execution_for_batch(self, batch_id: str) -> bool:
-        """이미 해당 signal batch로 live 포트폴리오 제안/승인이 생성되었는지 확인한다."""
-        return self._trading_repository().has_live_execution_for_batch(batch_id)
+        """배치의 구성 제안을 실제 실행 원장 상태와 연결한다."""
+        from investment_agent.execution.db import ExecutionRepository
+        proposal_ids = self._trading_repository().live_proposal_ids_for_batch(batch_id)
+        return ExecutionRepository().has_active_execution_for_proposals(proposal_ids)
 
     def signal_batch_id_for_as_of(self, as_of_at: str | datetime) -> str:
         """Shadow 입력 시각과 정확히 같은 단일 batch만 반환해 완료시각 경합을 없앤다."""
@@ -1163,6 +1173,28 @@ class SupabaseRepository:
         if to_stage == "live":
             required.add(("paper", "live"))
         return required.issubset(approved_transitions)
+
+    def decision_cases_for_experiences(self) -> list[dict]:
+        """체결 여부로 거르지 않은 원본 판단이다."""
+        rows = self._trading_repository().decision_cases()
+        tickers = select_tickers_by_security_id([int(row["security_id"]) for row in rows])
+        return [{**row, "ticker": tickers[int(row["security_id"])]}
+                for row in rows if int(row["security_id"]) in tickers]
+
+    def decision_experience_rows(self, *, as_of_at: datetime | None = None) -> list[dict]:
+        """라벨 관측 시각으로 제한한 가상 판단 경험을 읽는다."""
+        try:
+            rows = ResearchStore(read_only=True).records("decision_experiences")
+        except FileNotFoundError:
+            return []
+        return [row for row in rows if as_of_at is None
+                or parse_datetime(row["available_at"]) <= as_of_at]
+
+    def save_decision_experiences(self, rows: Sequence[dict]) -> None:
+        """경험 최초 관측을 보존하며 같은 자연키 재시도는 무시한다."""
+        ResearchStore().upsert_records(
+            "decision_experiences", rows, key="record_key", ignore_existing=True,
+        )
 
     def cases_for_evaluation(self, limit: int = 200) -> list[dict]:
         rows = self._trading_repository().evaluation_candidates(limit=limit)

@@ -59,6 +59,7 @@ TOPICS: dict[str, Topic] = {topic.name: topic for topic in (
     Topic("ai.portfolio", "investment_portfolio"),
     Topic("ai.candidate", "investment_candidates"),
     Topic("ai.trade", "investment_trades", on_revision="edit"),
+    Topic("ai.performance", "investment_performance", on_revision="edit"),
 )}
 
 

@@ -34,6 +34,7 @@ KINDS: dict[str, str] = {
     "investment_portfolio": "investment_agent.notifications.investment.run_portfolio:run",
     "investment_candidates": "investment_agent.notifications.investment.run_candidates:run",
     "investment_trades": "investment_agent.notifications.investment.run_trades:run",
+    "investment_performance": "investment_agent.notifications.investment.run_performance:run",
 }
 
 

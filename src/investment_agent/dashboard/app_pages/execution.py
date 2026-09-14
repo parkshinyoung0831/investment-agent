@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from investment_agent.dashboard.components.animated_pipeline import animated_pipeline
-from investment_agent.reporting.readers.dashboard import load_execution_data
+from investment_agent.reporting.readers.dashboard import load_execution_data, load_performance_data, load_entry_data
 from investment_agent.dashboard.components.execution_view import execution_summary, trace_for_intent
 from investment_agent.dashboard.components.theme import dashboard_palette, plotly_layout
 from investment_agent.dashboard.components.ui import (
@@ -118,6 +118,44 @@ page_header(
 )
 render_source_help()
 st.caption(":material/lock: 읽기 전용 · 시작·정지는 로컬 ATLAS 제어센터")
+
+entry_result=load_entry_data()
+with st.container(border=True):
+    st.subheader('진입 조건 감시')
+    labels={'new':'계획 대기','watching':'조건 감시','ready':'승인 후보','expired':'만료',
+            'cancelled':'취소','superseded':'새 판단으로 대체','consumed':'처리됨'}
+    if entry_result.rows:
+        st.dataframe([{'종목':row['ticker'],'상태':labels.get(row['status'],'확인 필요'),
+            '진입 하한':row.get('plan',{}).get('lower_price'),'진입 상한':row.get('plan',{}).get('upper_price'),
+            '최근 재판단':row.get('review',{}).get('reason','아직 없음'),
+            '판단 유효 시각':row.get('review',{}).get('expires_at',row.get('plan',{}).get('expires_at'))}
+            for row in entry_result.rows],hide_index=True)
+    else:
+        st.caption('분석 결과에서 진입 후보가 만들어지면 가격 조건과 재판단 상태를 표시합니다.')
+
+performance_result = load_performance_data()
+performance_rows = [row for row in performance_result.rows if row.get("report_kind") == "daily"]
+with st.container(border=True):
+    st.subheader("매매 성과")
+    if not performance_rows:
+        st.caption("성과 집계 대기 중입니다. 확인되지 않은 손익은 0으로 표시하지 않습니다.")
+    else:
+        report = performance_rows[-1]
+        accounting = report.get("accounting", {})
+        st.caption(f"{report['execution_mode']} · {report['currency']} · {report['as_of_at']}")
+        with st.container(horizontal=True):
+            st.metric("기록된 체결 손익", display_money(accounting.get("realized_pnl")), border=True)
+            st.metric("평가 손익", display_money(accounting.get("unrealized_pnl")), border=True)
+            total_return = report.get('nav', {}).get('cumulative_return')
+            st.metric("관측 기간 수익률", '미확인' if total_return is None else f'{total_return:+.2%}', border=True)
+        if report.get("quality_issues"):
+            st.caption("원가·수수료·입출금 자료의 완전성이 확인된 항목만 확정 성과로 사용할 수 있습니다.")
+    decision_reports = [row for row in performance_result.rows if row.get('report_kind') == 'recommendation']
+    comparisons = decision_reports[-1]['recommendation']['horizons'] if decision_reports else []
+    if comparisons:
+        st.caption("원본 판단의 가상 성과 · 실제 계좌 수익률과 별도로 평가합니다.")
+        st.dataframe([{'평가 기간':f"{row['horizon_days']}일", '판단 수':row['count'],
+                       '평균 가상 성과':f"{row['mean_net_reward']:+.2%}"} for row in comparisons], hide_index=True)
 
 result = load_execution_data()
 payload = result_payload(result, default={}) or {}

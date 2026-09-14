@@ -538,7 +538,7 @@ with sentiment_column.container(border=True):
                      aria-valuemax="100" aria-valuenow="{value:.1f}"
                      aria-valuetext="{scale['label']}">
                     <div class="macro-fear-greed__label">
-                        {scale['label']} · {value:.1f}/100
+                        공포탐욕지수 · {value:.1f}/100
                     </div>
                     <div class="macro-fear-greed__track">
                         <span class="macro-fear-greed__line" style="left: 25%"></span>

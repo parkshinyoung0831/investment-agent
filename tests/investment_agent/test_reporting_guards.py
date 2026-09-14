@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = ROOT / "src/investment_agent/reporting"
 SQL = ROOT / "db/postgres/v1/90_reporting.sql"
 ALLOWED_IMPORTS = {
+    "investment_agent.reporting.notifications.investment.performance",
     "__future__", "os", "re", "json", "dataclasses", "datetime", "typing", "collections.abc", "types", "pandas", "pathlib",
     "investment_agent.platform.db.postgres", "investment_agent.research.storage.repository", "investment_agent.platform.cache",
     "investment_agent.platform.db.sqlite",

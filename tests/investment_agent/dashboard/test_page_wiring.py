@@ -41,6 +41,12 @@ class PageRenderTest(unittest.TestCase):
         """화면을 못 찾으면 아래 검사가 공허하게 통과한다."""
         self.assertGreaterEqual(len(_page_files()), 10)
 
+    def test_sidebar_uses_the_market_and_earnings_release_labels(self) -> None:
+        entrypoint = ENTRYPOINT.read_text(encoding="utf-8")
+
+        self.assertIn('st.Page("app_pages/macro.py", title="시장 환경"', entrypoint)
+        self.assertIn('st.Page("app_pages/earnings.py", title="실적 발표"', entrypoint)
+
     def test_every_page_renders_offline_without_raising(self) -> None:
         from streamlit.testing.v1 import AppTest
 

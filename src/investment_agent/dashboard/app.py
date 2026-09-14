@@ -269,9 +269,9 @@ navigation = st.navigation(
             ),
         ],
         "가지고 있는 데이터": [
-            st.Page("app_pages/macro.py", title="매크로", icon=":material/public:"),
+            st.Page("app_pages/macro.py", title="시장 환경", icon=":material/public:"),
             st.Page("app_pages/econ_calendar.py", title="지표 발표", icon=":material/event:"),
-            st.Page("app_pages/earnings.py", title="실적", icon=":material/finance:"),
+            st.Page("app_pages/earnings.py", title="실적 발표", icon=":material/finance:"),
             st.Page("app_pages/gurus.py", title="13F", icon=":material/radar:"),
             st.Page("app_pages/news_social.py", title="뉴스·소셜", icon=":material/newspaper:"),
             st.Page("app_pages/quant.py", title="시세·지표", icon=":material/query_stats:"),

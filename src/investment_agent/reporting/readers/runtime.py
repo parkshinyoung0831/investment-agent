@@ -31,6 +31,7 @@ _PLAIN_DATASETS = frozenset({
     "risk_decisions", "model_promotions",
 })
 _PAYLOAD_DATASETS = frozenset({
+    "entry_candidates", "entry_reviews",
     "intents", "approvals", "orders", "fills",
 })
 
@@ -76,6 +77,8 @@ def read_runtime_rows(dataset: str) -> list[dict]:
         if dataset in _PLAIN_DATASETS:
             return _table_rows(connection, dataset)
         if dataset in _PAYLOAD_DATASETS:
+            if dataset in ('entry_candidates','entry_reviews') and not connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",(dataset,)).fetchone():
+                return []
             return _payload_rows(connection, dataset)
         if dataset == "execution_control":
             return [json.loads(row[0]) for row in connection.execute(

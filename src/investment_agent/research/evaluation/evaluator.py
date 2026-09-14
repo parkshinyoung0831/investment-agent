@@ -60,7 +60,7 @@ def evaluate_case(
             excess_return=excess,
             max_adverse_excursion=min(path_returns),
             max_favorable_excursion=max(path_returns),
-            direction_correct=_direction(str(decision.get("action", "watch")), excess),
+            direction_correct=_direction(str(decision.get("signal", decision.get("action", "watch"))), excess),
             brier_score=(probability - outcome) ** 2,
             evaluated_at=datetime.now(timezone.utc).isoformat(),
         ))

@@ -54,6 +54,12 @@ _TRUE = {"1", "true", "yes", "on"}
 DEFAULT_SNAPSHOT_LOOKBACK_DAYS = 3
 
 
+def default_active_policy_path() -> Path:
+    """명시적으로 채택한 정책만 읽는 경로."""
+    from investment_agent.platform.storage_paths import repository_root
+    return repository_root() / "artifacts" / "trading" / "rl_policies" / "active_policy.json"
+
+
 def blend_enabled(environ: Mapping[str, str] | None = None) -> bool:
     """RL 목표비중을 판단에 반영할지. 기본은 꺼짐."""
     source = os.environ if environ is None else environ
@@ -75,6 +81,7 @@ class RlBlendOutcome:
     feature_version: str | None = None
     inference_input_hash: str | None = None
     membership_hash: str | None = None
+    dsr_probability: float = 0.0
     weights: dict[str, float] = field(default_factory=dict)
     baseline_expected_returns: dict[str, float] = field(default_factory=dict)
     blended_expected_returns: dict[str, float] = field(default_factory=dict)
@@ -144,8 +151,13 @@ def load_active_policy(policy_path: Path) -> BaselinePolicyModel | None:
     if not path.exists():
         return None
     try:
+        import json
+        from investment_agent.research.rl.bundle import load_policy_bundle
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if payload.get("schema") == "ppo-policy-v1":
+            return load_policy_bundle(path)
         return load_baseline_policy(path)
-    except (OSError, ValueError, KeyError, TypeError) as exc:
+    except (OSError, ValueError, KeyError, TypeError, ImportError) as exc:
         log.warning("failed to load active RL policy: %s", exc)
         return None
 
@@ -172,6 +184,9 @@ def build_inference_frame(
     )
     if not rows:
         raise RLSafetyError("no RL feature snapshot is stored for the inference window")
+    rows = [row for row in rows if (point - timedelta(days=lookback_days)) <= parse_datetime(row["as_of_at"]) <= point]
+    if not rows:
+        raise RLSafetyError("RL feature snapshots are stale")
     snapshots = [
         FeatureSnapshot(
             feature_version=str(row.get("feature_version") or spec.version),
@@ -214,6 +229,8 @@ def compute_rl_blend(
     as_of_at: str | datetime,
     policy_path: Path,
     enabled: bool | None = None,
+    proposals: Sequence[Any] = (),
+    current_weights: Mapping[str, float] | None = None,
     lookback_days: int = DEFAULT_SNAPSHOT_LOOKBACK_DAYS,
 ) -> RlBlendOutcome:
     """승격된 정책으로 목표비중을 만든다. 못 만들면 이유를 담은 결과를 돌려준다.
@@ -225,10 +242,19 @@ def compute_rl_blend(
     if model is None:
         return unavailable("no promoted RL policy artifact")
     try:
-        frame = build_inference_frame(
-            repository, model, as_of_at=as_of_at, lookback_days=lookback_days
-        )
-        weights = model.predict_weights(frame)
+        from investment_agent.research.rl.bundle import PPOPolicy
+        if isinstance(model, PPOPolicy):
+            trained_at = parse_datetime(model.metadata["training"]["as_of_at"])
+            age = parse_datetime(as_of_at) - trained_at
+            if age < timedelta(0) or age > timedelta(days=90):
+                raise RLSafetyError("policy training timestamp is future or stale")
+        from investment_agent.research.rl.decision_dataset import FEATURE_VERSION, decision_inference_frame
+        frame = (decision_inference_frame(model, proposals, as_of_at=as_of_at)
+                 if model.feature_version == FEATURE_VERSION else build_inference_frame(
+                     repository, model, as_of_at=as_of_at, lookback_days=lookback_days))
+        from investment_agent.research.rl.bundle import PPOPolicy
+        weights = (model.predict_weights(frame, current_weights=current_weights)
+                   if isinstance(model, PPOPolicy) else model.predict_weights(frame))
     except (RLSafetyError, ValueError, KeyError, TypeError) as exc:
         return unavailable(f"inference unavailable: {exc}")
     except Exception as exc:  # noqa: BLE001 - 저장소 오류가 판단을 멈추게 두지 않는다
@@ -243,6 +269,7 @@ def compute_rl_blend(
         feature_version=model.feature_version,
         inference_input_hash=frame.input_hash,
         membership_hash=frame.membership_hash,
+        dsr_probability=getattr(model, "dsr_probability", 0.0),
         weights=risky_target_weights(weights),
     )
 
@@ -261,8 +288,8 @@ def blend_proposals(
     """
     from dataclasses import replace
 
-    llm_returns = {p.ticker: float(p.expected_return_5d or 0.0) for p in proposals}
-    llm_confidences = {p.ticker: float(p.confidence or 0.5) for p in proposals}
+    llm_returns = {p.ticker: float(p.expected_excess_return or 0.0) for p in proposals}
+    llm_confidences = {p.ticker: float(p.confidence) for p in proposals}
 
     def run(target_weights: dict[str, float] | None) -> dict[str, Any]:
         return blender.blend(
@@ -279,10 +306,10 @@ def blend_proposals(
     updated = [
         replace(
             item,
-            expected_return_5d=applied[item.ticker].expected_return,
+            expected_excess_return=applied[item.ticker].expected_return,
             confidence=applied[item.ticker].confidence,
         )
-        if item.ticker in applied
+        if outcome.applied and item.ticker in applied
         else item
         for item in proposals
     ]
@@ -309,6 +336,7 @@ def with_comparison(
         feature_version=outcome.feature_version,
         inference_input_hash=outcome.inference_input_hash,
         membership_hash=outcome.membership_hash,
+        dsr_probability=outcome.dsr_probability,
         weights=dict(outcome.weights),
         baseline_expected_returns={str(k).upper(): float(v) for k, v in baseline.items()},
         blended_expected_returns={str(k).upper(): float(v) for k, v in blended.items()},
