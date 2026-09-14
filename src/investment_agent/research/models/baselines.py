@@ -201,14 +201,21 @@ def fit_baseline(
         alpha = float(params.get("alpha", 1.0))
         if not math.isfinite(alpha) or alpha <= 0:
             raise ValueError("ridge alpha must be positive")
+        # 규제항은 계수 크기에 벌점을 주므로 단위가 큰 feature(시가총액 log, RSI)가
+        # 단위가 작은 feature(수익률)보다 덜 깎인다. train 구간 통계로만 z-score해
+        # 벌점을 공정하게 만들고, 해를 원 단위 계수로 되돌려 저장한다 — 그래서
+        # 추론 쪽(`ml_inference`)은 scaler 없이 같은 `x @ coefficients + intercept`를 쓴다.
         means = train_x.mean(axis=0)
-        centered_x = train_x - means
+        scales = train_x.std(axis=0)
+        scales = np.where(scales > 1e-12, scales, 1.0)
+        standardized_x = (train_x - means) / scales
         target_mean = float(train_y.mean())
         centered_y = train_y - target_mean
-        gram = centered_x.T @ centered_x + alpha * np.eye(train_x.shape[1])
-        coefficients = np.linalg.solve(gram, centered_x.T @ centered_y)
+        gram = standardized_x.T @ standardized_x + alpha * np.eye(train_x.shape[1])
+        coefficients = np.linalg.solve(gram, standardized_x.T @ centered_y) / scales
         model = _RidgeModel(coefficients, target_mean - float(means @ coefficients))
         params["alpha"] = alpha
+        params["feature_scaling"] = "train_zscore"
     elif kind == "lightgbm":
         try:
             from lightgbm import LGBMRegressor

@@ -405,6 +405,7 @@ class TossOrderApi:
         risk_state: RuntimeRiskState,
         manifest_hash: str,
         now: datetime | None = None,
+        position_quantity: Decimal | float | None = None,
     ) -> TossOrderReceipt:
         assert_live_order_allowed(
             permit=permit,
@@ -414,6 +415,7 @@ class TossOrderApi:
             manifest_hash=manifest_hash,
             now=now,
             lockdown_state_dir=self._lockdown_state_dir,
+            position_quantity=(float(position_quantity) if position_quantity is not None else None),
         )
         try:
             response = self._request(

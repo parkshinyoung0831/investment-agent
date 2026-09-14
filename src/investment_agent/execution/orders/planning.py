@@ -15,10 +15,14 @@
 `target_weights`에 없는 종목은 이번 판단의 대상이 아니다. 0으로 추론하면 일부 종목만
 분석한 배치가 나머지를 전량 매도한다.
 
-## 한도를 넘으면 조용히 줄이지 않고 멈춘다
+## 한도를 넘으면 조용히 줄이지 않는다
 
-종목 하나가 한도를 넘으면 예외다. 잘라서 넣으면 "승인받은 계획"과 "실제 나간 주문"이
+매수 한 건이 주문 한도를 넘으면 예외다. 잘라서 넣으면 "승인받은 계획"과 "실제 나간 주문"이
 달라지고, 그 차이는 아무 데도 기록되지 않는다.
+
+매도는 다르다. 보유를 줄이는 매도를 주문 한도 때문에 통째로 막으면 큰 포지션은 빠져나갈
+수 없다. 그래서 매도는 한도 이하의 자식 주문 여러 건으로 **계획 단계에서** 나눈다. 나뉜
+주문 전부가 승인 카드에 그대로 보이므로 승인한 것과 나가는 것이 같다. 총액 한도는 그대로다.
 """
 from __future__ import annotations
 
@@ -83,14 +87,23 @@ class OrderPlan:
         return asdict(self)
 
 
-def client_order_id(*, intent_id: str, symbol: str, side: str, quantity: float) -> str:
+def client_order_id(
+    *,
+    intent_id: str,
+    symbol: str,
+    side: str,
+    quantity: float,
+    slice_index: int = 0,
+) -> str:
     """주문 하나의 멱등키.
 
     입력에서 계산하므로 같은 계획은 같은 id를 낳는다. 무작위 id를 쓰면 재시도가
-    새 주문이 되고, 그 사실은 체결이 두 번 난 뒤에야 드러난다.
+    새 주문이 되고, 그 사실은 체결이 두 번 난 뒤에야 드러난다. 나눈 매도는 자식마다
+    수량이 같을 수 있어 순번을 키에 넣는다(나누지 않은 주문의 키는 그대로다).
     """
+    suffix = f"|slice{slice_index}" if slice_index else ""
     digest = hashlib.sha256(
-        f"{intent_id}|{symbol}|{side}|{quantity:.6f}".encode("utf-8")
+        f"{intent_id}|{symbol}|{side}|{quantity:.6f}{suffix}".encode("utf-8")
     ).hexdigest()[:20]
     return f"aix_{digest}"
 
@@ -163,24 +176,26 @@ class TargetWeightOrderPlanner:
             if notional < self.limits.min_order_notional:
                 # 수수료가 이득보다 큰 주문이다. 건너뛰는 것이 정상 동작이다.
                 continue
-            if notional > self.limits.max_order_notional + EPSILON:
+            side = "buy" if delta > 0.0 else "sell"
+            if notional > self.limits.max_order_notional + EPSILON and side == "buy":
                 raise ExecutionSafetyError(
                     f"{symbol} order notional {notional:.2f} exceeds "
                     f"{self.limits.max_order_notional:.2f}"
                 )
-
-            side = "buy" if delta > 0.0 else "sell"
-            plans.append(OrderPlan(
-                intent_id=intent.intent_id,
-                client_order_id=client_order_id(
-                    intent_id=intent.intent_id, symbol=symbol, side=side, quantity=quantity
-                ),
-                symbol=symbol,
-                side=side,
-                quantity=quantity,
-                reference_price=price,
-                notional=notional,
-            ))
+            for index, child_quantity in enumerate(self._sell_slices(symbol, quantity, price)
+                                                   if side == "sell" else (quantity,)):
+                plans.append(OrderPlan(
+                    intent_id=intent.intent_id,
+                    client_order_id=client_order_id(
+                        intent_id=intent.intent_id, symbol=symbol, side=side,
+                        quantity=child_quantity, slice_index=index,
+                    ),
+                    symbol=symbol,
+                    side=side,
+                    quantity=child_quantity,
+                    reference_price=price,
+                    notional=child_quantity * price,
+                ))
 
         total = math.fsum(plan.notional for plan in plans)
         if total > self.limits.max_total_notional + EPSILON:
@@ -190,11 +205,95 @@ class TargetWeightOrderPlanner:
             )
         return tuple(sorted(plans, key=lambda plan: (plan.side != "sell", plan.symbol)))
 
+    def _sell_slices(self, symbol: str, quantity: float, price: float) -> tuple[float, ...]:
+        """매도 수량을 주문 한도 이하 자식으로 나눈다. 반올림은 계획 수량 자리수에 맞춰 0 방향이다."""
+        if quantity * price <= self.limits.max_order_notional + EPSILON:
+            return (quantity,)
+        scale = 10 ** self.limits.quantity_decimals
+        per_child = math.floor(self.limits.max_order_notional / price * scale + 1e-12) / scale
+        if per_child <= 0.0:
+            raise ExecutionSafetyError(
+                f"{symbol} price {price:.2f} exceeds the per-order limit even for the smallest quantity"
+            )
+        slices: list[float] = []
+        remaining = quantity
+        while remaining > 1e-12:
+            child = min(per_child, remaining)
+            child = math.floor(child * scale + 1e-12) / scale
+            if child <= 0.0:
+                break
+            slices.append(child)
+            remaining = round(remaining - child, self.limits.quantity_decimals)
+        return tuple(slices)
+
+
+FUNDING_PHASE_FULL = "full"
+FUNDING_PHASE_SELLS = "funding_sells"
+FUNDING_PHASES = frozenset({FUNDING_PHASE_FULL, FUNDING_PHASE_SELLS})
+# 승인 뒤 worker는 기준가보다 높은 LIMIT(band)과 수수료까지 현재 매수 가능 금액으로
+# 다시 검사한다. 계획 단계가 그보다 낙관적이면 "전부 매수 가능"으로 승인된 주문표가
+# 실행 직전에 통째로 막히므로, band(25bp)+수수료 여유보다 넉넉한 버퍼로 판정한다.
+BUY_CASH_BUFFER_BPS = 50
+
+
+def plan_with_funding(
+    planner: TargetWeightOrderPlanner,
+    intent: ExecutionIntent,
+    *,
+    portfolio_value: float,
+    current_quantities: Mapping[str, float],
+    prices: Mapping[str, float],
+    available_cash: float,
+    eligible_buy_symbols: set[str] | None = None,
+    required_mode: str = "paper",
+    now: datetime | None = None,
+    buy_cash_buffer_bps: int = BUY_CASH_BUFFER_BPS,
+) -> tuple[tuple[OrderPlan, ...], str]:
+    """지금 가진 현금으로 매수를 다 못 대면 이번 승인은 **매도만** 담는다.
+
+    아직 체결되지 않은 매도대금은 현금이 아니다(worker의 연쇄 매수 금지와 같은 원칙).
+    예전에는 매수 자금이 모자라면 같은 주문표의 매도까지 함께 막혀, 위험을 줄이는
+    매도가 매수 때문에 나가지 못했다. 매수 일부만 고르는 것은 하지 않는다 — 어느
+    종목을 살지는 분석 순서가 아니라 optimizer가 실제 현금으로 다시 정해야 하므로,
+    매도 체결 뒤 새 계좌 snapshot으로 포트폴리오를 다시 구성한다.
+
+    같은 입력이면 같은 결과가 나오므로 승인 시점과 실행 직전 재검증이 같은 판정을 한다.
+    """
+    if isinstance(buy_cash_buffer_bps, bool) or not 0 <= int(buy_cash_buffer_bps) <= 500:
+        raise ValueError("buy_cash_buffer_bps must be between 0 and 500")
+    cash = float(available_cash)
+    if not math.isfinite(cash) or cash < 0.0:
+        raise ExecutionSafetyError("available cash must be finite and non-negative")
+    plans = planner.plan(
+        intent,
+        portfolio_value=portfolio_value,
+        current_quantities=current_quantities,
+        prices=prices,
+        eligible_buy_symbols=eligible_buy_symbols,
+        required_mode=required_mode,
+        now=now,
+    )
+    buy_notional = math.fsum(plan.notional for plan in plans if plan.side == "buy")
+    required = buy_notional * (1.0 + int(buy_cash_buffer_bps) / 10_000)
+    if buy_notional <= 0.0 or required <= cash + EPSILON:
+        return plans, FUNDING_PHASE_FULL
+    sells = tuple(plan for plan in plans if plan.side == "sell")
+    if not sells:
+        raise ExecutionSafetyError(
+            "current USD buying power cannot fund the planned buys and there is nothing to sell first"
+        )
+    return sells, FUNDING_PHASE_SELLS
+
 
 __all__ = [
+    "BUY_CASH_BUFFER_BPS",
     "EPSILON",
     "ExecutionLimits",
+    "FUNDING_PHASES",
+    "FUNDING_PHASE_FULL",
+    "FUNDING_PHASE_SELLS",
     "OrderPlan",
     "TargetWeightOrderPlanner",
     "client_order_id",
+    "plan_with_funding",
 ]

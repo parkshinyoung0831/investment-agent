@@ -25,6 +25,8 @@ HORIZON_SCALE = {1: 0.25, 5: 1.0, 20: 2.5}
 # 상태만으로 결정적으로 복원되는 모델. 부스팅 계열은 artifact에 재현 가능한 상태가
 # 남지 않아(중요도 목록만 저장) live 경로에서 쓰지 않는다.
 RELOADABLE_KINDS = ("naive", "ridge")
+# 평균 IC가 우연이 아니라고 볼 최소 t-통계량.
+MIN_IC_T_STAT = 2.0
 
 
 @dataclass(frozen=True)
@@ -41,6 +43,8 @@ class LoadedModel:
     mean: float
     rank_correlation: float
     direction_accuracy: float
+    # 학습 때 기록한 OOS 날짜별 단면 IC 요약(`evaluation.alpha`). 없으면 None.
+    oos_alpha: Mapping[str, Any] | None = None
 
     def predict(self, matrix: np.ndarray) -> np.ndarray:
         values = np.asarray(matrix, dtype=np.float64)
@@ -55,11 +59,20 @@ class LoadedModel:
 
     @property
     def confidence(self) -> float:
-        """OOS 순위 상관을 0~1 신뢰도로 옮긴다.
+        """OOS 순위 능력을 0~1 신뢰도로 옮긴다.
 
-        음의 상관은 신호가 아니라 잡음이므로 0으로 깎는다. 상한을 0.8로 두는 것은
-        단일 baseline이 LLM 의견을 완전히 압도하지 못하게 하려는 것이다.
+        날짜별 단면 IC가 기록돼 있으면 그것을 쓴다. 날짜를 섞은 순위 상관은 시장 전체의
+        공통 움직임을 순위 능력으로 착각하기 때문이다. 평균 IC가 통계적으로 0과 구별되지
+        않으면(t < 2) 신뢰도는 0이다. 일별 주식 단면에서 IC 0.05면 강한 편이라 10배로
+        옮기고, 단일 모델이 LLM 의견을 압도하지 못하게 0.8에서 자른다. 음의 상관은 신호가
+        아니라 잡음이므로 0으로 깎는다.
         """
+        if self.oos_alpha:
+            mean_ic = float(self.oos_alpha.get("mean_ic") or 0.0)
+            t_stat = float(self.oos_alpha.get("ic_t_stat") or 0.0)
+            if not math.isfinite(mean_ic) or not math.isfinite(t_stat) or t_stat < MIN_IC_T_STAT:
+                return 0.0
+            return float(min(0.8, max(0.0, mean_ic * 10.0)))
         return float(min(0.8, max(0.0, self.rank_correlation)))
 
     def probability_up(self, prediction: float) -> float:
@@ -112,6 +125,7 @@ def load_model(payload: Mapping[str, Any]) -> LoadedModel:
         mean=mean,
         rank_correlation=float(oos.get("rank_correlation") or 0.0),
         direction_accuracy=float(oos.get("direction_accuracy") or 0.5),
+        oos_alpha=(dict(payload["out_of_sample_alpha"]) if isinstance(payload.get("out_of_sample_alpha"), Mapping) else None),
     )
 
 
@@ -170,6 +184,7 @@ def predict_numeric(
 
 __all__ = [
     "HORIZON_SCALE",
+    "MIN_IC_T_STAT",
     "RELOADABLE_KINDS",
     "LoadedModel",
     "load_model",

@@ -355,9 +355,103 @@ def rank_candidate_features(
     return tuple(ranked[:limit])
 
 
+# 이 이상이면 한 사건만으로도 재분석할 만한 뉴스로 본다(`summarize_event_features`의 고영향 기준).
+HIGH_IMPACT_EVENT_IMPORTANCE = 0.75
+
+
+@dataclass(frozen=True)
+class PriorityCandidate:
+    ticker: str
+    tier: int
+    reason: str
+    importance: float
+
+
+def priority_candidates(
+    *,
+    tickers: Sequence[str],
+    held_tickers: Sequence[str],
+    last_analyzed_at: Mapping[str, datetime],
+    latest_filed_at: Mapping[str, str],
+    event_features: Sequence[Mapping[str, Any]],
+    as_of_at: datetime | str,
+) -> tuple[PriorityCandidate, ...]:
+    """정기 순환보다 **먼저** 분석할 종목. 새 정보가 생긴 뒤 아직 판단하지 않은 것만 고른다.
+
+    순환 랭커는 오래 안 본 종목을 앞세우므로, 오늘 이미 본 보유종목에 실적 공시나 큰
+    사건이 나와도 다음 바퀴까지 기다린다. 돈이 이미 들어간 종목의 논지가 깨졌는지가 새
+    후보 발굴보다 급하다.
+
+    - tier 0: 보유 중이고, 마지막 분석 이후 새 공시가 올라왔거나 고영향 사건이 공개됨.
+      한 번도 분석한 적 없는 보유종목도 여기에 든다.
+    - tier 1: 보유하지 않았지만 마지막 분석 이후 고영향 사건이 공개됨.
+    공개 시각(`available_at`·`filed_at`)이 판단 시점보다 뒤인 정보는 쓰지 않는다.
+    """
+    as_of = parse_datetime(as_of_at).astimezone(timezone.utc)
+    universe = {_ticker(value) for value in tickers if _ticker(value)}
+    held = {_ticker(value) for value in held_tickers if _ticker(value)} & universe
+    last = {
+        _ticker(key): parse_datetime(value).astimezone(timezone.utc)
+        for key, value in last_analyzed_at.items()
+    }
+
+    def after_last(ticker: str, moment: datetime) -> bool:
+        previous = last.get(ticker)
+        return moment <= as_of and (previous is None or moment > previous)
+
+    best_event: dict[str, float] = {}
+    for row in event_features:
+        ticker = _ticker(row.get("ticker"))
+        if ticker not in universe or not row.get("available_at"):
+            continue
+        if int(row.get("high_impact_event_count") or 0) <= 0:
+            continue
+        importance = _finite(row.get("event_importance")) or 0.0
+        if after_last(ticker, parse_datetime(str(row["available_at"])).astimezone(timezone.utc)):
+            best_event[ticker] = max(best_event.get(ticker, 0.0), importance)
+
+    result: list[PriorityCandidate] = []
+    for ticker in sorted(universe):
+        filed = str(latest_filed_at.get(ticker) or "")[:10]
+        # filed_at은 날짜뿐이라, 마지막 분석 날짜보다 뒤인 날짜만 새 공시로 본다.
+        new_filing = bool(filed) and filed <= as_of.date().isoformat() and (
+            ticker not in last or filed > last[ticker].date().isoformat()
+        )
+        if ticker in held:
+            if ticker not in last:
+                result.append(PriorityCandidate(ticker, 0, "held_never_analyzed", 1.0))
+            elif new_filing:
+                result.append(PriorityCandidate(ticker, 0, "held_new_filing", 1.0))
+            elif ticker in best_event:
+                result.append(PriorityCandidate(ticker, 0, "held_high_impact_event", best_event[ticker]))
+        elif best_event.get(ticker, 0.0) >= HIGH_IMPACT_EVENT_IMPORTANCE:
+            result.append(PriorityCandidate(ticker, 1, "high_impact_event", best_event[ticker]))
+    return tuple(sorted(result, key=lambda item: (item.tier, -item.importance, item.ticker)))
+
+
+def merge_priority_lane(
+    priority: Sequence[PriorityCandidate],
+    ranked_tickers: Sequence[str],
+    *,
+    limit: int,
+) -> list[str]:
+    """우선 레인을 먼저 채우고 남은 자리를 정기 순위로 채운다. 같은 종목은 한 번만 든다."""
+    if limit < 1:
+        raise ValueError("candidate limit must be positive")
+    selected: list[str] = []
+    for ticker in [item.ticker for item in priority] + list(ranked_tickers):
+        if ticker not in selected:
+            selected.append(ticker)
+    return selected[:limit]
+
+
 __all__ = [
     "CandidateFeatures",
     "CandidateRank",
+    "HIGH_IMPACT_EVENT_IMPORTANCE",
+    "PriorityCandidate",
+    "merge_priority_lane",
+    "priority_candidates",
     "LIVE_CANDIDATE_MAX_AGE_HOURS",
     "assemble_candidate_features",
     "fundamental_statistics",

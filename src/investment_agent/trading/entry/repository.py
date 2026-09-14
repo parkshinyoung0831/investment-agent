@@ -39,9 +39,12 @@ class EntryRepository:
                 (row['review_id'],row['signal_id'],row['reviewed_at'],canonical_json(row)))
 
     def ready(self, *, now):
+        from investment_agent.execution.db import funding_followup_batch_ids
         with runtime_connection(read_only=True) as connection:
             claimed = {row[0] for row in connection.execute(
                 "SELECT record_key FROM runtime_records WHERE record_type='signal_batch_execution'")}
+        # 자금 확보 매도가 끝난 batch는 새 계좌로 한 번 더 구성할 수 있게 대기열에 되돌린다.
+        claimed -= funding_followup_batch_ids()
         return [row for row in self.candidates() if row['status']=='ready'
                 and row.get('batch_id') not in claimed
                 and parse_datetime(row['review']['expires_at']) > now]

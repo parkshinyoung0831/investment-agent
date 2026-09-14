@@ -190,8 +190,36 @@ flowchart TD
 | LightGBM | 비선형 tree boosting 비교 | 선택 설치 |
 | XGBoost | 독립 boosting 구현 비교 | 선택 설치 |
 
-기본 목표는 5D expected return이며 1D·20D도 사용할 수 있다. RMSE/MAE뿐 아니라 방향 정확도와
-cross-sectional rank correlation을 기록하고 실제 비용 반영 portfolio OOS 결과를 함께 본다.
+기본 목표는 5D expected return이며 1D·20D도 사용할 수 있다. RMSE/MAE와 방향 정확도 외에,
+학습 결과에는 **OOS 날짜별 단면 IC**(`research/evaluation/alpha.py`: 평균 IC·ICIR·t-통계량·
+상위-하위 분위 spread)가 `out_of_sample_alpha`로 남는다. 날짜를 섞은 순위 상관은 시장 전체의
+공통 움직임을 순위 능력으로 착각하므로 채택·신뢰도 판단에 쓰지 않는다.
+
+### ML을 판단에 합치는 경로
+
+```text
+TradingAgents SecurityProposal ─┐
+                                ├→ research/ml_serving.py (fusion) → SignalBatch → construct.py
+채택된 ML artifact + PIT feature ┘
+```
+
+- 채택은 `python -m investment_agent.research.commands.adopt_ml_model --artifact <json>` 하나다.
+  재로딩 가능한 모델(naive·ridge)이고, OOS 평균 IC > 0, IC t ≥ 2, OOS 20일 이상, 분위 spread > 0일
+  때만 `artifacts/trading/ml_models/active_ml_model.json`으로 복사된다.
+- ML 반영 비중은 사람이 정하지 않는다. 신뢰도 = min(0.8, 평균 IC × 10)이고 t < 2면 0이라 합치지 않는다.
+- ML은 기대수익·상승확률·신뢰도만 바꾼다. `exit`·`reduce` 같은 행동은 TradingAgents 의견 그대로이고,
+  부정 의견(avoid·watch·exit)의 기대수익을 0 위로 올리지 못한다.
+- 추론 feature는 판단 시점 이전에 공개된 가장 최근 한 날짜의 **전 종목** snapshot으로 결측을 대체한다
+  (학습 dataset과 같은 규칙). 분석한 몇 종목만으로 중앙값을 내면 training-serving skew가 생긴다.
+- 반영되면 LLM·ML 조합이 새 artifact ID로 기록되어, paper/live는 그 조합이 승격돼야 실행된다.
+  `AI_INVESTOR_ML_FUSION_ENABLED=false`면 비교만 기록한다.
+
+### 분석 후보의 우선 레인
+
+정기 후보 순위는 오래 안 본 종목을 앞세운다. 그 앞에 `candidate_ranker.priority_candidates`가
+**마지막 분석 이후 새 정보가 생긴 종목**을 먼저 넣는다 — tier 0은 보유 중이면서 새 공시(`filed_at`)나
+고영향 사건(`event_feature_snapshots`)이 공개된 종목과 한 번도 분석하지 않은 보유종목, tier 1은
+미보유지만 중요도 0.75 이상 사건이 난 종목이다. 보유 목록은 최근 7일 안의 live position snapshot이다.
 
 ```powershell
 uv sync --group ml
@@ -278,27 +306,103 @@ ML/RL/TradingAgents output은 다음 계약으로 정규화한다.
 `RiskAwareOptimizer`는 CVXPY로 다음 목적을 결정론적으로 최적화한다.
 
 ```text
-expected return
+expected return × confidence
 - risk aversion × variance
-- turnover penalty
-- transaction-cost penalty
+- turnover penalty (L1)
+- Σ 반스프레드·|Δw| + Σ impact·σ·√(NAV/ADV)·|Δw|^1.5
 ```
 
-총합 1, long-only, 종목·섹터 최대, 현금 최소와 turnover 최대를 명시적 constraint로 사용한다.
-confidence는 약한 signal의 expected return을 낮추고, covariance가 없으면 risk score 기반의
-보수적 diagonal 근사를 metadata에 표시한다.
+거래비용 항은 cvxportfolio의 선형+1.5승 시장충격 모형이다. 주문이 20일 평균 거래대금(ADV)에
+비해 클수록 단위 비용이 커져, 기대수익이 약간 높아도 거래하기 비싼 종목은 비중이 줄어든다.
+반스프레드는 호가 이력이 없어 ADV 구간(1·3·10bp)으로 근사한다 — TCA 실측이 쌓이면 대체할 자리다.
+늘리는 금액은 ADV의 5%(`max_adv_participation`)를 넘지 못한다. 매도는 이 한도로 묶지 않는다.
+paper/live는 비용 재료(거래량·변동성)가 없으면 fail-closed한다. 실행 원장에 같은 종목 체결이
+5건 이상 쌓이면 승인 기준가 대비 평균 체결가·수수료로 잰 편도 비용 중앙값이 추정 반스프레드보다
+클 때만 그 값으로 **올린다**(`calibrate_trading_costs`) — 몇 건의 유리한 체결로 비용을 낮춰 잡으면
+회전이 늘어난 손해가 나중에 드러난다. 포트폴리오 시장 베타는 RiskGate의 사후 검사와 같은 상한
+(`max_abs_beta`)을 optimizer 제약으로도 건다. 미분석 보유가 이미 상한을 넘기면 신호 종목은 베타를
+지금보다 늘리지 못한다. 총합 1, long-only, 종목·섹터 최대, 현금 최소와 turnover 최대를 명시적
+constraint로 사용한다. 실전 경로(`construct.py`)는 PIT 가격 260일의 Ledoit-Wolf 수축 공분산을
+넣고, covariance가 없으면 risk score 기반의 보수적 diagonal 근사를 metadata에 표시한다.
+
+종목 의견의 **행동**은 기대수익과 별개로 비중의 방향을 강제한다.
+
+| action | optimizer 제약 | 이유 |
+|---|---|---|
+| `exit` | 비중 = 0 | 전량 청산 명령. 기대수익만 낮추면 turnover 벌점이 잔량을 남긴다 |
+| `reduce`·`avoid`·`watch` | 비중 ≤ 현재 | 늘리지 못하게만 막고 얼마나 줄일지는 optimizer가 정한다 |
+| `open`·`increase`·`hold` | 없음 | 의견이다. 자금이 한정돼 있어 더 나은 후보에 밀려 0이 될 수 있어야 한다 |
+
+turnover 최대는 **재량 매매**에만 건다. `exit` 청산과 종목 상한 초과분의 현금화를 먼저 반영한
+출발점에서 turnover를 잰다. 그렇지 않으면 여러 종목을 한꺼번에 빼야 하는 날 한도가 위험 축소를
+막는다(optimizer는 infeasible, RiskGate는 잘라 둔 비중을 도로 살린다).
 
 ## DeterministicRiskGate
 
 optimizer 결과도 반드시 RiskGate를 통과한다.
 
 - 종목·섹터 비중, 최대 position 수와 최소 position
-- 최소 cash와 최대 turnover
-- volatility, beta, concentration/HHI와 correlated exposure
-- drawdown과 daily loss 상태
-- order notional, liquidity와 spread
-- stale quote/signal/proposal
-- trading halt와 market session
+- 최소 cash와 최대 turnover(청산·상한 준수분을 뺀 재량 turnover, 축소는 그 출발점 쪽으로)
+- `exit` 의견을 받은 보유가 남아 있으면 거부
+- volatility, beta, concentration/HHI와 최대 pairwise correlation
+- stale proposal
+
+주문 notional·daily loss·drawdown·stale quote·market session은 RiskGate가 아니라 실행 단계
+(`execution/orders/live_worker.py`, `execution/safety/control.py`)가 주문 직전에 검사한다.
+### Regime 위험 예산
+
+`trading/risk/regime_budget.py`가 판단 시점까지의 SPY 일봉(20일 수익률·20일 실현 변동성·252일
+고점 대비 낙폭)으로 regime을 정하고, 기본 한도를 **조이기만** 한다.
+
+| regime | 종목 상한 | 섹터 상한 | 최소 현금 | 신규 위험 |
+|---|---|---|---|---|
+| RISK_ON·NORMAL | 기본 | 기본 | 기본 | 허용 |
+| RISK_OFF | ×0.8 | ×0.8 | ≥15% | 허용 |
+| CRISIS | ×0.5 | ×0.6 | ≥40% | 금지(어떤 종목도 현재 비중을 넘지 못함) |
+
+조인 정책은 `portfolio-risk:<regime>` key로 원장에 따로 남는다(같은 key·version은 무시되므로).
+최소 현금도 의무 출발점에 들어가, turnover 축소가 채워 둔 현금을 되돌리지 않는다. optimizer는 움직일
+수 없는 미분석 보유가 허용하는 만큼만 현금을 요구하고, 나머지는 RiskGate가 비례로 현금화한다.
+배율은 초기값이며 쌓이는 stress 지표 분포로 다시 보정한다.
+
+RiskDecision 원장의 market risk 기록에는 평소 변동성과 따로 꼬리 위험(`stress`)이 남는다 —
+5거래일 historical CVaR95, 최근 창의 최악 5·20거래일 손실, 시장 -10% 충격 시 베타 손실.
+분포가 쌓이기 전이라 아직 한도가 아니라 기록이다.
+
+주문 직전 거래 상태는 셋이다(`execution/safety/control.py`).
+
+| 상태 | 조건 | 허용 |
+|---|---|---|
+| `ACTIVE` | 정상 | 매수·매도 |
+| `REDUCING` | 당일 손실 또는 drawdown 한도 도달 | 보유 수량 이하를 파는 매도만 |
+| `HALTED` | 실주문 꺼짐·kill switch·durable lockdown | 없음 |
+
+손실 한도가 매도까지 막으면 탈출구가 닫힌다. 보유 수량을 모르는 매도는 줄인다고 증명할 수
+없어 늘리는 주문으로 본다. REDUCING인데 주문표에 매수가 섞여 있으면 매도만 골라 내보내지
+않고 승인을 소비하기 전에 멈춘다. 원장에 결과가 확정되지 않은 주문(`planned`·`submitted`·
+`partially_filled`·`outcome_unknown`·`reconciling`)이 하나라도 있으면 재시작 직후를 포함해
+새 실주문을 내지 않는다.
+
+새 live intent가 저장되면, 아직 주문이 하나도 나가지 않은 이전 승인 대기 intent는 `cancelled`
+(`superseded_by`)로 닫힌다. 시간이 지나서가 아니라 더 새로운 판단이 대체했기 때문이다. 이미 주문이
+나간 intent는 건드리지 않는다 — 미체결 취소는 운영자 승인이 필요한 별도 동작이고, 미체결이 있는 동안
+새 포트폴리오 구성 자체가 막힌다.
+
+보유를 줄이는 매도가 주문 한도(`max_order_notional`)를 넘으면 한도 이하 자식 주문 여러 건으로 계획
+단계에서 나눈다. 전부 승인 카드에 보이므로 승인한 것과 나가는 것이 같고, 총액 한도는 그대로다. 매수는
+나누지 않고 거부한다. 시간 분할 TWAP은 쓰지 않는다 — 실주문 permit이 120초·주문표 1장 단위라 시간을
+두고 나눠 내려면 permit 모델을 느슨하게 하거나 조각마다 승인해야 하기 때문이다.
+
+현재 현금으로 매수를 다 댈 수 없으면 주문표는 **매도만** 담는다(`funding_phase=funding_sells`).
+아직 체결되지 않은 매도대금은 현금으로 치지 않는다. 매수 일부만 고르지 않는 이유는, 무엇을
+살지는 분석 순서가 아니라 optimizer가 실제 현금으로 다시 정해야 하기 때문이다.
+
+한 signal batch는 원칙적으로 실행을 한 번만 한다. 예외는 하나다 — 직전 주문표가 `funding_sells`였고
+그 주문이 모두 종결(체결·취소·거부)됐으면, 같은 batch로 **한 번 더** 포트폴리오를 구성한다
+(`execution/db.py`의 `funding_followup_allowed`). 이때 계좌를 새로 읽어 다시 최적화하므로 부분체결로
+생긴 실제 현금만 쓰고, 그 사이 가격이 움직였으면 그것도 반영된다. 후속 실행은 batch당 1회라
+체결 부족 → 재매도가 같은 신호로 되풀이되지 않는다. 진입 재판단(entry review)이 이미 만료됐으면
+실행 단계의 진입 가격 검사가 막고, 매수는 다음 batch로 넘어간다.
 
 문서의 기본값은 설명용이며 실제 SSOT는 `OptimizerPolicy`와 `PortfolioRiskPolicy` 코드다.
 LLM prompt나 문서 수정으로 완화할 수 없다.

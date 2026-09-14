@@ -13,10 +13,20 @@ from investment_agent.platform.serialization import stable_id
 from investment_agent.trading.portfolio.market_risk import (
     MarketCovariance,
     MarketRiskMetrics,
+    TradingCostInputs,
+    calibrate_trading_costs,
     calculate_market_covariance,
     calculate_market_risk,
+    estimate_betas,
+    estimate_trading_costs,
 )
+from investment_agent.trading.portfolio.optimizer import OptimizerPolicy
 from investment_agent.trading.risk.gate import DeterministicRiskGate, PortfolioRiskPolicy
+from investment_agent.trading.risk.regime_budget import (
+    REGIME_BUDGET_VERSION,
+    regime_from_benchmark_prices,
+    tighten_for_regime,
+)
 from investment_agent.platform.logging import get_logger
 from investment_agent.execution.brokers.toss.client import resolve_account_seq
 from investment_agent.execution.orders.toss_snapshot import capture_toss_account_snapshot
@@ -67,24 +77,87 @@ def _market_risk_metrics(
     return calculate_market_risk(rows_by_symbol, target_weights=weights)
 
 
-def _optimizer_covariance(
+def _filled_order_costs() -> list[dict]:
+    """실행 원장의 실제 체결 비용. 원장이 없는 환경(분석 전용)에서는 빈 목록이다."""
+    from investment_agent.execution.db import filled_order_costs
+    try:
+        return filled_order_costs()
+    except Exception as exc:  # noqa: BLE001 - 보정 재료가 없어도 추정 비용으로 계속한다
+        log.warning("filled order costs unavailable; estimated trading costs apply: %s", type(exc).__name__)
+        return []
+
+
+def _optimizer_betas(
+    repository: SupabaseRepository,
+    *,
+    symbols: tuple[str, ...],
+    held_symbols: tuple[str, ...],
+    as_of_at: datetime,
+) -> dict[str, float] | None:
+    """신호 종목과 고정될 미분석 보유 전부의 시장 베타. optimizer 베타 제약의 재료다."""
+    if not hasattr(repository, "market_prices"):
+        return None
+    wanted = tuple(sorted(set(symbols) | set(held_symbols)))
+    rows = {symbol: repository.market_prices(symbol, as_of_at, limit=260) for symbol in (*wanted, "SPY")}
+    return estimate_betas(rows, symbols=wanted)
+
+
+def _optimizer_market_inputs(
     repository: SupabaseRepository,
     *,
     symbols: tuple[str, ...],
     as_of_at: datetime,
-) -> MarketCovariance | None:
-    """Optimizer 입력 종목 순서 그대로 point-in-time 공분산을 계산한다."""
+) -> tuple[MarketCovariance | None, dict[str, TradingCostInputs] | None]:
+    """같은 PIT 일봉 한 번으로 공분산과 거래비용 재료를 함께 만든다.
+
+    둘을 따로 조회하면 종목당 왕복이 두 배가 되고, 서로 다른 시점의 봉을 볼 수도 있다.
+    """
     if not hasattr(repository, "market_prices"):
-        return None
+        return None, None
     rows_by_symbol = {
         symbol: repository.market_prices(symbol, as_of_at, limit=260)
         for symbol in symbols
     }
     # 현재 TradingAgents ExpectedReturnSignal은 모두 5거래일 horizon이다.
-    return calculate_market_covariance(
+    covariance = calculate_market_covariance(
         rows_by_symbol,
         symbols=symbols,
         horizon_days=5,
+    )
+    costs = calibrate_trading_costs(
+        estimate_trading_costs(rows_by_symbol, symbols=symbols),
+        _filled_order_costs(),
+    )
+    return covariance, costs
+
+
+def _market_regime(repository: SupabaseRepository, *, as_of_at: datetime):
+    """벤치마크 일봉으로 regime을 만든다. 가격 이력이 없으면 None — 기본 한도를 그대로 쓴다."""
+    if not hasattr(repository, "market_prices"):
+        return None
+    try:
+        return regime_from_benchmark_prices(
+            repository.market_prices("SPY", as_of_at, limit=260), as_of_at=as_of_at,
+        )
+    except ContractError as exc:
+        log.warning("market regime unavailable; base risk limits apply: %s", exc)
+        return None
+
+
+def _optimizer_policy_for(risk_policy: PortfolioRiskPolicy, *, unanalyzed_weight: float) -> OptimizerPolicy:
+    """optimizer에 같은 한도를 넘긴다. 최소 현금은 고정된 미분석 보유가 허용하는 만큼만 요구한다.
+
+    미분석 보유는 optimizer가 움직일 수 없어, regime이 올린 최소 현금이 그보다 크면 문제가
+    풀리지 않는다. 그 나머지는 RiskGate가 보유 전체를 비례로 현금화해 채운다(위험 축소 방향).
+    """
+    feasible_cash = max(0.0, 1.0 - unanalyzed_weight)
+    return OptimizerPolicy(
+        max_symbol_weight=risk_policy.max_symbol_weight,
+        max_sector_weight=risk_policy.max_sector_weight,
+        max_turnover=risk_policy.max_turnover,
+        min_cash_weight=min(risk_policy.min_cash_weight, feasible_cash),
+        allow_increases=risk_policy.allow_risk_increase,
+        max_portfolio_beta=risk_policy.max_abs_beta,
     )
 
 
@@ -136,7 +209,7 @@ def construct_portfolio(
     active_records = signal_book.valid_records_for_batch(active_batch_id, as_of_at=decision_at)
     optimizer_symbols = tuple(sorted(active_records))
     try:
-        optimizer_covariance = _optimizer_covariance(
+        optimizer_covariance, trading_costs = _optimizer_market_inputs(
             selected_repository,
             symbols=optimizer_symbols,
             as_of_at=decision_at,
@@ -144,9 +217,40 @@ def construct_portfolio(
     except ContractError as exc:
         if stage != "shadow":
             raise
-        # Shadow는 공분산 적재 전에도 관찰을 이어가되, 원장에 fallback을 남긴다.
-        log.warning("optimizer covariance unavailable: %s", exc)
-        optimizer_covariance = None
+        # Shadow는 공분산·거래비용 적재 전에도 관찰을 이어가되, 원장에 fallback을 남긴다.
+        log.warning("optimizer market inputs unavailable: %s", exc)
+        optimizer_covariance, trading_costs = None, None
+    regime = _market_regime(selected_repository, as_of_at=decision_at)
+    risk_policy = tighten_for_regime(PortfolioRiskPolicy(), regime)
+    unanalyzed_weight = sum(
+        weight for symbol, weight in snapshot.weights.items()
+        if symbol != CASH_SYMBOL and symbol not in active_records
+    )
+    regime_metadata = {
+        "market_regime": (
+            {
+                "risk_state": regime.risk_state,
+                "regime_id": regime.regime_id,
+                "trend": regime.trend,
+                "volatility_state": regime.volatility_state,
+                "inputs": dict(regime.metadata.get("inputs", {})),
+            }
+            if regime is not None else None
+        ),
+        "regime_budget_version": REGIME_BUDGET_VERSION,
+    }
+    held_unanalyzed = tuple(sorted(
+        symbol for symbol in snapshot.weights if symbol != CASH_SYMBOL and symbol not in active_records
+    ))
+    try:
+        optimizer_betas = _optimizer_betas(
+            selected_repository, symbols=optimizer_symbols, held_symbols=held_unanalyzed, as_of_at=decision_at,
+        )
+    except ContractError as exc:
+        if stage != "shadow":
+            raise
+        log.warning("optimizer betas unavailable: %s", exc)
+        optimizer_betas = None
     proposal = PortfolioConstructor().construct_optimized(
         run_id=run_id,
         source_version=_SOURCE_VERSION,
@@ -161,8 +265,11 @@ def construct_portfolio(
         covariance=(optimizer_covariance.matrix if optimizer_covariance else None),
         covariance_symbols=(optimizer_covariance.symbols if optimizer_covariance else None),
         covariance_metadata=(optimizer_covariance.to_metadata() if optimizer_covariance else None),
+        trading_costs=trading_costs,
+        optimizer_policy=_optimizer_policy_for(risk_policy, unanalyzed_weight=unanalyzed_weight),
+        extra_metadata=regime_metadata,
+        betas=optimizer_betas,
     )
-    risk_policy = PortfolioRiskPolicy()
     target_symbols = sorted(set(proposal.weights) - {CASH_SYMBOL})
     try:
         market_risk = _market_risk_metrics(
@@ -185,7 +292,10 @@ def construct_portfolio(
         portfolio_beta=(market_risk.portfolio_beta if market_risk else None),
         max_pairwise_correlation=(market_risk.max_pairwise_correlation if market_risk else None),
         drawdown_fraction=(market_risk.drawdown_fraction if market_risk else None),
-        market_risk_metadata=(market_risk.to_metadata() if market_risk else None),
+        market_risk_metadata={
+            **(market_risk.to_metadata() if market_risk else {}),
+            **regime_metadata,
+        },
     )
     if dry_run:
         log.info(

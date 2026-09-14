@@ -70,6 +70,7 @@ Actions secrets/variables(CI)에 주입하며, 이 파일에는 이름·용도·
 | `AI_INVESTOR_INTELLIGENCE_PARQUET_ROOT` | Intelligence 뉴스·소셜 본문 Parquet 루트 (기본 `data/local/intelligence/parquet`) |
 | `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` / `REDDIT_USER_AGENT` | Reddit 수집 자격증명. 없으면 소셜 수집을 건너뛴다 |
 | `AI_INVESTOR_ARTIFACT_DIR` | TradingAgents cache/report와 선택적 raw 저장 루트 |
+| `AI_INVESTOR_ML_FUSION_ENABLED` | 채택된 ML 모델(`adopt_ml_model`로 올린 `active_ml_model.json`)의 예측을 TradingAgents 의견과 **실제로 합칠지**. 미설정은 켜짐 — 채택 파일을 두는 것이 사람의 결정이고, OOS IC가 유의하지 않으면 스스로 합치지 않는다. `false`면 비교만 로그로 남긴다 |
 | `AI_INVESTOR_RL_BLEND_ENABLED` | 승격된 RL 정책의 목표비중을 **판단에 실제로 반영**할지. 기본 `false`. 꺼져 있으면 제안은 종전과 같고 "켰다면 얼마나 달라졌을지"만 로그로 남는다. 사람이 명시적으로 켠다 |
 | `LIVE_ENABLED` | broker-independent live opt-in. DB durable control/permit와 AND 결합, 기본 `false` |
 | `TOSS_CLIENT_ID`, `TOSS_CLIENT_SECRET`, `TOSS_ACCOUNT_SEQ` | 허용 IP가 등록된 execution 전용 장비. 분석·학습 환경에는 주입 금지 |

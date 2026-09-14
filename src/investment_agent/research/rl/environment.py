@@ -251,14 +251,17 @@ class WeightEnvironmentCore:
         window = self.realized_returns[-self.reward_config.volatility_window:]
         volatility = float(np.std(window, ddof=1)) if len(window) > 1 else 0.0
         concentration = float(np.square(target[:-1]).sum())
-        reward = (
-            self.reward_config.return_weight * net_return
-            + self.reward_config.alpha_weight * alpha
-            - self.reward_config.drawdown_penalty * drawdown
-            - self.reward_config.volatility_penalty * volatility
-            - self.reward_config.turnover_penalty * turnover
-            - self.reward_config.concentration_penalty * concentration
-        )
+        # 항목별 기여를 따로 남긴다. 합계만 보면 정책이 현금만 드는 이유가 벌점 때문인지
+        # 수익 신호가 약해서인지 가를 수 없다. 거래비용은 net_return 안에 이미 빠져 있다.
+        reward_components = {
+            "return": self.reward_config.return_weight * net_return,
+            "alpha": self.reward_config.alpha_weight * alpha,
+            "drawdown": -self.reward_config.drawdown_penalty * drawdown,
+            "volatility": -self.reward_config.volatility_penalty * volatility,
+            "turnover": -self.reward_config.turnover_penalty * turnover,
+            "concentration": -self.reward_config.concentration_penalty * concentration,
+        }
+        reward = math.fsum(reward_components.values())
 
         # 다음 구간 시작 비중은 목표가 아니라 **가격 변동을 반영한 실제 비중**이다.
         # target을 그대로 이월하면 리밸런싱이 공짜로 일어난 셈이 되어 회전율과
@@ -285,6 +288,7 @@ class WeightEnvironmentCore:
             "drawdown": drawdown,
             "volatility": volatility,
             "concentration": concentration,
+            "reward_components": reward_components,
             "weights": {
                 **{symbol: float(target[i]) for i, symbol in enumerate(self.dataset.symbols)},
                 CASH_SYMBOL: float(target[-1]),

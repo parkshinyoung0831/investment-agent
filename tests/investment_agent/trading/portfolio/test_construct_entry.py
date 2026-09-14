@@ -98,14 +98,20 @@ class _PricedRepository(_Repository):
     def market_prices(self, ticker, as_of_at, limit=260):
         value = 100.0
         origin = date(2026, 5, 1)
-        rows = [{"trade_date": origin.isoformat(), "close": value}]
+        rows = [{"trade_date": origin.isoformat(), "close": value, "volume": 50_000_000}]
         for offset in range(1, 81):
             value *= 1.0 + (0.001 + (offset % 5 - 2) * 0.0002)
-            rows.append({"trade_date": (origin + timedelta(days=offset)).isoformat(), "close": value})
+            rows.append({"trade_date": (origin + timedelta(days=offset)).isoformat(), "close": value, "volume": 50_000_000})
         return rows
 
 
 class ConstructPortfolioEntryTest(unittest.TestCase):
+    def setUp(self):
+        # 실행 원장(로컬 SQLite)의 실제 체결 기록을 읽지 않는다.
+        costs = patch("investment_agent.trading.portfolio.construct._filled_order_costs", return_value=[])
+        costs.start()
+        self.addCleanup(costs.stop)
+
     def test_returns_stable_ids_without_ops_raw_query(self):
         repository = _Repository()
         with (
@@ -189,6 +195,10 @@ class ConstructPortfolioEntryTest(unittest.TestCase):
         covariance = proposal["metadata"]["optimizer"]["covariance"]
         self.assertEqual(covariance["method"], "sample_covariance")
         self.assertEqual(covariance["symbols"], ["AAPL"])
+        optimizer = proposal["metadata"]["optimizer"]
+        self.assertEqual(set(optimizer["trading_costs"]), {"AAPL"})
+        self.assertGreater(optimizer["trading_costs"]["AAPL"]["adv_usd"], 0.0)
+        self.assertGreaterEqual(optimizer["transaction_cost"], 0.0)
 
 
 if __name__ == "__main__":

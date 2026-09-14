@@ -14,6 +14,7 @@ from investment_agent.trading.portfolio.contracts import (
     RiskDecision,
     validated_weights,
 )
+from investment_agent.trading.portfolio.optimizer import ACTION_EXIT, mandatory_base_weights
 from investment_agent.execution.orders.intents import ExecutionIntent
 from investment_agent.platform.serialization import canonical_json, stable_id
 
@@ -38,6 +39,8 @@ class PortfolioRiskPolicy:
     require_market_risk_for_execution: bool = True
     allow_short: bool = False
     require_sector_map: bool = False
+    # False면 어떤 종목도 현재 비중을 넘겨 늘리지 못한다. 위기 regime에서 신규 위험을 막는다.
+    allow_risk_increase: bool = True
 
     def __post_init__(self) -> None:
         if self.version < 1:
@@ -186,6 +189,13 @@ class DeterministicRiskGate:
                 weights[CASH_SYMBOL] += removed
                 adjustments.append(f"sector {sector} capped at {self.policy.max_sector_weight:.6f}")
 
+        if not self.policy.allow_risk_increase:
+            for symbol in sorted(set(weights) - {CASH_SYMBOL}):
+                excess = weights[symbol] - float(current.get(symbol, 0.0))
+                if excess > 1e-12:
+                    self._move_to_cash(weights, symbol, excess)
+                    adjustments.append(f"{symbol} increase blocked by risk policy")
+
         if weights[CASH_SYMBOL] < self.policy.min_cash_weight:
             risky_total = 1.0 - weights[CASH_SYMBOL]
             target_risky = 1.0 - self.policy.min_cash_weight
@@ -199,20 +209,49 @@ class DeterministicRiskGate:
                 weights[CASH_SYMBOL] = self.policy.min_cash_weight
                 adjustments.append(f"CASH raised to {self.policy.min_cash_weight:.6f}")
 
+        signal_actions = {
+            str(symbol).upper(): str(action)
+            for symbol, action in dict(proposal.metadata.get("signal_actions") or {}).items()
+        }
+        exit_symbols = frozenset(
+            symbol for symbol, action in signal_actions.items()
+            if action == ACTION_EXIT and float(current.get(symbol, 0.0)) > 0.0
+        )
+        kept_exits = sorted(symbol for symbol in exit_symbols if weights.get(symbol, 0.0) > 0.0)
+        if kept_exits:
+            # 청산 명령을 받은 종목이 남아 있으면 optimizer가 명령을 어긴 것이다.
+            violations.append("exit signal kept a position: " + ", ".join(kept_exits))
+
+        # turnover 한도는 재량 매매에만 건다. 청산·종목 상한 준수를 위한 현금화는 먼저
+        # 반영한 출발점(base)으로 보고, 축소 비율도 그 출발점 쪽으로만 당긴다 — 현재 비중
+        # 쪽으로 당기면 잘라 둔 상한 초과분과 청산분이 도로 살아난다.
+        base = mandatory_base_weights(
+            current,
+            exit_symbols=exit_symbols,
+            max_symbol_weight=self.policy.max_symbol_weight,
+            min_cash_weight=self.policy.min_cash_weight,
+        )
+        mandatory_turnover = portfolio_turnover(current, base)
         if not violations:
-            turnover = portfolio_turnover(current, weights)
+            turnover = portfolio_turnover(base, weights)
             if turnover > self.policy.max_turnover:
                 scale = self.policy.max_turnover / turnover
-                symbols = set(current) | set(weights)
+                symbols = set(base) | set(weights)
                 weights = {
-                    symbol: float(current.get(symbol, 0.0))
-                    + scale * (float(weights.get(symbol, 0.0)) - float(current.get(symbol, 0.0)))
+                    symbol: float(base.get(symbol, 0.0))
+                    + scale * (float(weights.get(symbol, 0.0)) - float(base.get(symbol, 0.0)))
                     for symbol in symbols
                 }
                 weights = {s: max(0.0, w) for s, w in weights.items()}
                 residual = 1.0 - math.fsum(weights.values())
                 weights[CASH_SYMBOL] = weights.get(CASH_SYMBOL, 0.0) + residual
                 adjustments.append(f"turnover scaled from {turnover:.6f} to {self.policy.max_turnover:.6f}")
+            over_cap = sorted(
+                symbol for symbol, weight in weights.items()
+                if symbol != CASH_SYMBOL and weight > self.policy.max_symbol_weight + 1e-9
+            )
+            if over_cap:
+                violations.append("symbol weight exceeds the absolute limit: " + ", ".join(over_cap))
 
         concentration_hhi = math.fsum(
             weight * weight for symbol, weight in weights.items() if symbol != CASH_SYMBOL
@@ -256,6 +295,8 @@ class DeterministicRiskGate:
                 "drawdown_fraction": drawdown_fraction,
                 "concentration_hhi": concentration_hhi,
                 "turnover": portfolio_turnover(current, weights),
+                "mandatory_turnover": mandatory_turnover,
+                "discretionary_turnover": portfolio_turnover(base, weights),
                 "market_risk": dict(market_risk_metadata or {}),
                 "policy_limits": self.policy.to_config(),
             },

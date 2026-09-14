@@ -111,6 +111,10 @@ class PortfolioConstructor:
         covariance: Sequence[Sequence[float]] | None = None,
         covariance_symbols: Sequence[str] | None = None,
         covariance_metadata: Mapping[str, Any] | None = None,
+        trading_costs: Mapping[str, Any] | None = None,
+        optimizer_policy: Any | None = None,
+        extra_metadata: Mapping[str, Any] | None = None,
+        betas: Mapping[str, float] | None = None,
     ) -> PortfolioProposal:
         """LLM 예비 비중 없이, 계좌·완료 배치·optimizer를 하나의 실행 제안으로 결합한다."""
         decision_time, active_batch, tracked_tuple, records = self._validated_batch_inputs(
@@ -135,6 +139,10 @@ class PortfolioConstructor:
             covariance_symbols=covariance_symbols,
             covariance_metadata=covariance_metadata,
             preserve_unanalyzed_holdings=True,
+            trading_costs=trading_costs,
+            portfolio_value=(snapshot.total_value if trading_costs is not None else None),
+            optimizer_policy=optimizer_policy,
+            betas=betas,
         )
         analyzed = set(records)
         current_weights = snapshot.weights
@@ -186,6 +194,7 @@ class PortfolioConstructor:
             "snapshot_open_order_count": len(snapshot.open_order_ids),
             "target_weight_source": "cvxpy_optimizer",
             "llm_target_weight_used": False,
+            **dict(extra_metadata or {}),
         }
         return PortfolioProposal.create(
             run_id=run_id,

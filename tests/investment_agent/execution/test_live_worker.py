@@ -13,8 +13,15 @@ from investment_agent.execution.approval.ledger import ApprovalRequest
 from investment_agent.execution.contracts import ExecutionSafetyError
 from investment_agent.execution.safety.control import (
     LiveTradingControls,
+    ORDER_RISK_INCREASING,
+    ORDER_RISK_REDUCING,
+    TRADING_STATE_ACTIVE,
+    TRADING_STATE_HALTED,
+    TRADING_STATE_REDUCING,
     RuntimeRiskState,
     assert_live_order_allowed,
+    classify_order_risk,
+    resolve_trading_state,
 )
 from investment_agent.execution.orders.live_worker import (
     LiveExecutionPolicy,
@@ -23,7 +30,13 @@ from investment_agent.execution.orders.live_worker import (
     guarded_limit_price,
 )
 from investment_agent.execution.orders.ledger import OrderAttemptReservation
-from investment_agent.execution.orders.planning import ExecutionLimits, TargetWeightOrderPlanner
+from investment_agent.execution.orders.planning import (
+    FUNDING_PHASE_FULL,
+    FUNDING_PHASE_SELLS,
+    ExecutionLimits,
+    TargetWeightOrderPlanner,
+    plan_with_funding,
+)
 from investment_agent.execution.brokers.toss.client import TossUsRegularSession
 from investment_agent.execution.brokers.toss.orders import (
     TossOrderOutcomeUnknown,
@@ -197,6 +210,8 @@ class FakeRepository:
         self.trace: list[str] = []
         self.events = []
         self.orders = {}
+        self.unresolved = []
+        self.risk_override = None
 
     def load_approval(self, approval_id):
         return self.approval if approval_id == self.approval.approval_id else None
@@ -209,6 +224,9 @@ class FakeRepository:
 
     def current_tracked_tickers(self):
         return {ticket.symbol for ticket in self.handoff.tickets}
+
+    def unresolved_orders(self, *, account_seq):
+        return list(self.unresolved)
 
     def consume_approval(self, approval_id, *, manifest_hash):
         self.trace.append("consume")
@@ -257,6 +275,8 @@ class FakeRepository:
 
     def runtime_risk_state(self, **kwargs):
         self.trace.append("risk")
+        if self.risk_override is not None:
+            return self.risk_override
         return RuntimeRiskState(
             submitted_order_count=0,
             submitted_notional_usd=0,
@@ -534,6 +554,239 @@ class LiveWorkerTest(unittest.TestCase):
             instance.execute(repository.approval.approval_id, now=NOW)
         self.assertEqual(repository.trace, [])
         self.assertEqual(api.posts, 0)
+
+
+def rotation_intent() -> ExecutionIntent:
+    """AAPL 전량 매도 후 MSFT로 갈아타는 목표. 현재 현금만으로는 MSFT를 못 산다."""
+    return replace(
+        intent(),
+        target_weights={"AAPL": 0.0, "MSFT": 0.5, "CASH": 0.5},
+        input_hash=hashlib.sha256(b"live-worker-rotation").hexdigest(),
+    )
+
+
+def rotation_snapshot(*, cash: float = 500.0) -> TossManualSnapshot:
+    return TossManualSnapshot(
+        captured_at=NOW.isoformat(),
+        currency="USD",
+        portfolio_value=cash + 20 * 200.0,
+        cash_buying_power=cash,
+        current_quantities={"AAPL": 20.0},
+        prices={"AAPL": 200.0, "MSFT": 100.0},
+        price_timestamps={"AAPL": NOW.isoformat(), "MSFT": NOW.isoformat()},
+    )
+
+
+def rotation_planner() -> TargetWeightOrderPlanner:
+    return TargetWeightOrderPlanner(ExecutionLimits(
+        min_order_notional=10, max_order_notional=5_000, max_total_notional=20_000, quantity_decimals=0,
+    ))
+
+
+def funding_handoff() -> TossManualHandoff:
+    plans, phase = plan_with_funding(
+        rotation_planner(), rotation_intent(),
+        portfolio_value=rotation_snapshot().portfolio_value,
+        current_quantities=rotation_snapshot().current_quantities,
+        prices=rotation_snapshot().prices,
+        available_cash=rotation_snapshot().cash_buying_power,
+        eligible_buy_symbols={"AAPL", "MSFT"}, required_mode="live", now=NOW,
+    )
+    value = TossManualHandoff(
+        intent_id=intent().intent_id,
+        account_seq=ACCOUNT,
+        contract_version="toss-manual-v1",
+        snapshot=rotation_snapshot(),
+        tickets=tuple(
+            TossManualTicket(
+                intent_id=intent().intent_id, client_order_id=plan.client_order_id,
+                expires_at=intent().expires_at, symbol=plan.symbol, side=plan.side,
+                current_quantity=rotation_snapshot().current_quantities.get(plan.symbol, 0.0),
+                target_weight=rotation_intent().target_weights[plan.symbol], target_quantity=0.0,
+                order_quantity=plan.quantity, reference_price=plan.reference_price,
+                price_timestamp=NOW.isoformat(), estimated_notional=plan.notional,
+            )
+            for plan in plans
+        ),
+        manifest_hash="0" * 64,
+        funding_phase=phase,
+    )
+    return replace(value, manifest_hash=value.recomputed_manifest_hash())
+
+
+class FundingPhaseTest(unittest.TestCase):
+    def test_short_cash_turns_the_plan_into_sells_only(self):
+        handoff_value = funding_handoff()
+        self.assertEqual(handoff_value.funding_phase, FUNDING_PHASE_SELLS)
+        self.assertEqual([(t.symbol, t.side) for t in handoff_value.tickets], [("AAPL", "sell")])
+
+    def test_enough_cash_keeps_sells_and_buys_together(self):
+        snap = rotation_snapshot(cash=5_000.0)
+        plans, phase = plan_with_funding(
+            rotation_planner(), rotation_intent(),
+            portfolio_value=snap.portfolio_value, current_quantities=snap.current_quantities,
+            prices=snap.prices, available_cash=snap.cash_buying_power,
+            eligible_buy_symbols={"AAPL", "MSFT"}, required_mode="live", now=NOW,
+        )
+        self.assertEqual(phase, FUNDING_PHASE_FULL)
+        self.assertEqual([plan.side for plan in plans], ["sell", "buy"])
+
+    def test_unfundable_buys_with_nothing_to_sell_fail_closed(self):
+        with self.assertRaisesRegex(ExecutionSafetyError, "nothing to sell first"):
+            plan_with_funding(
+                rotation_planner(), intent(),
+                portfolio_value=10_000.0, current_quantities={}, prices={"AAPL": 200.0},
+                available_cash=100.0, eligible_buy_symbols={"AAPL"}, required_mode="live", now=NOW,
+            )
+
+    def test_sell_first_manifest_executes_without_the_buy_cash(self):
+        # 예전에는 MSFT 매수 자금 부족 때문에 위험을 줄이는 AAPL 매도까지 막혔다.
+        repository = FakeRepository(value_intent=rotation_intent(), value_handoff=funding_handoff())
+        api = FakeApi(buying_power=Decimal(500))
+        runner = worker(repository, api, fresh=rotation_snapshot())
+        runner.planner = rotation_planner()
+        repository.current_tracked_tickers = lambda: {"AAPL", "MSFT"}
+        result = runner.execute(repository.approval.approval_id, now=NOW)
+        self.assertEqual(api.posts, 1)
+        self.assertEqual(result.status, "reconciling")
+
+    def test_cash_change_that_flips_the_phase_requires_reapproval(self):
+        repository = FakeRepository(value_intent=rotation_intent(), value_handoff=funding_handoff())
+        api = FakeApi(buying_power=Decimal(5_000))
+        runner = worker(repository, api, fresh=rotation_snapshot(cash=5_000.0))
+        runner.planner = rotation_planner()
+        repository.current_tracked_tickers = lambda: {"AAPL", "MSFT"}
+        with self.assertRaisesRegex(ExecutionSafetyError, "whether buys can be funded"):
+            runner.execute(repository.approval.approval_id, now=NOW)
+        self.assertEqual(api.posts, 0)
+        self.assertNotIn("consume", repository.trace)
+
+    def test_phase_is_bound_to_the_manifest_but_full_hashes_are_unchanged(self):
+        full = handoff()
+        self.assertNotIn("funding_phase", full.identity())
+        funding = funding_handoff()
+        self.assertEqual(funding.identity()["funding_phase"], FUNDING_PHASE_SELLS)
+        relabeled = replace(funding, funding_phase=FUNDING_PHASE_FULL)
+        with self.assertRaisesRegex(ExecutionSafetyError, "contents changed"):
+            relabeled.validate_manifest()
+        restored = TossManualHandoff.from_private_dict(funding.to_dict(), account_seq=ACCOUNT)
+        self.assertEqual(restored.funding_phase, FUNDING_PHASE_SELLS)
+        with self.assertRaisesRegex(ExecutionSafetyError, "sells only"):
+            replace(full, funding_phase=FUNDING_PHASE_SELLS)
+
+
+def sell_only_handoff() -> TossManualHandoff:
+    """보유 20주 중 10주를 파는, 노출을 줄이기만 하는 주문표."""
+    snap = replace(rotation_snapshot(cash=5_000.0), current_quantities={"AAPL": 20.0})
+    order_id = "aix_" + hashlib.sha256(b"intent-live-worker|AAPL|sell|10.000000").hexdigest()[:20]
+    value = TossManualHandoff(
+        intent_id=intent().intent_id, account_seq=ACCOUNT, contract_version="toss-manual-v1",
+        snapshot=snap,
+        tickets=(TossManualTicket(
+            intent_id=intent().intent_id, client_order_id=order_id, expires_at=intent().expires_at,
+            symbol="AAPL", side="sell", current_quantity=20.0, target_weight=0.2222222222,
+            target_quantity=10.0, order_quantity=10.0, reference_price=200.0,
+            price_timestamp=NOW.isoformat(), estimated_notional=2_000.0,
+        ),),
+        manifest_hash="0" * 64,
+    )
+    return replace(value, manifest_hash=value.recomputed_manifest_hash())
+
+
+def reducing_state() -> RuntimeRiskState:
+    return RuntimeRiskState(
+        submitted_order_count=0, submitted_notional_usd=0, realized_pnl_usd=-900,
+        drawdown_fraction=0.01, captured_at=NOW.isoformat(),
+    )
+
+
+class TradingStateTest(unittest.TestCase):
+    def controls(self, **overrides):
+        values = dict(
+            live_enabled=True, kill_switch_on=False, account_seq=ACCOUNT,
+            max_daily_loss_usd=500, max_drawdown_fraction=0.05,
+        )
+        values.update(overrides)
+        return LiveTradingControls(**values)
+
+    def test_state_resolution(self):
+        healthy = RuntimeRiskState(0, 0, 0, 0.0, NOW.isoformat())
+        self.assertEqual(resolve_trading_state(self.controls(), healthy), TRADING_STATE_ACTIVE)
+        self.assertEqual(resolve_trading_state(self.controls(), reducing_state()), TRADING_STATE_REDUCING)
+        deep = RuntimeRiskState(0, 0, 0, 0.08, NOW.isoformat())
+        self.assertEqual(resolve_trading_state(self.controls(), deep), TRADING_STATE_REDUCING)
+        self.assertEqual(
+            resolve_trading_state(self.controls(kill_switch_on=True), healthy), TRADING_STATE_HALTED,
+        )
+
+    def test_order_risk_classification_is_fail_closed(self):
+        self.assertEqual(classify_order_risk(side="BUY", quantity=1, position_quantity=10), ORDER_RISK_INCREASING)
+        self.assertEqual(classify_order_risk(side="SELL", quantity=5, position_quantity=10), ORDER_RISK_REDUCING)
+        # 보유 수량을 모르면 줄인다고 증명할 수 없다.
+        self.assertEqual(classify_order_risk(side="SELL", quantity=5, position_quantity=None), ORDER_RISK_INCREASING)
+        with self.assertRaisesRegex(ExecutionSafetyError, "short selling"):
+            classify_order_risk(side="SELL", quantity=11, position_quantity=10)
+
+    def test_reducing_state_lets_a_position_reducing_sell_through(self):
+        repository = FakeRepository(value_handoff=sell_only_handoff())
+        repository.intent = replace(intent(), target_weights={"AAPL": 10 * 200 / 9_000, "CASH": 1 - 10 * 200 / 9_000})
+        repository.risk_override = reducing_state()
+        api = FakeApi(buying_power=Decimal(5_000))
+        runner = worker(repository, api, fresh=sell_only_handoff().snapshot)
+        runner.execute(repository.approval.approval_id, now=NOW)
+        self.assertEqual(api.posts, 1)
+
+    def test_reducing_state_blocks_buys_before_the_approval_is_consumed(self):
+        repository = FakeRepository()
+        repository.risk_override = reducing_state()
+        api = FakeApi()
+        with self.assertRaisesRegex(ExecutionSafetyError, "REDUCING"):
+            worker(repository, api).execute(repository.approval.approval_id, now=NOW)
+        self.assertEqual(api.posts, 0)
+        self.assertNotIn("consume", repository.trace)
+
+    def test_broker_gate_rejects_buy_but_not_reducing_sell_in_reducing_state(self):
+        permit = type("Permit", (), {
+            "account_seq": ACCOUNT, "manifest_hash": "m" * 64, "allowed_client_order_ids": ("c1",),
+            "issued_at": (NOW - timedelta(seconds=5)).isoformat(),
+            "expires_at": (NOW + timedelta(seconds=60)).isoformat(),
+        })()
+
+        def order(side):
+            return type("Order", (), {
+                "client_order_id": "c1", "order_type": "LIMIT", "side": side,
+                "quantity": Decimal(5), "estimated_notional_usd": 1_000.0,
+            })()
+
+        with TemporaryDirectory() as state_dir:
+            common = dict(
+                permit=permit, controls=self.controls(), state=reducing_state(),
+                manifest_hash="m" * 64, now=NOW, lockdown_state_dir=Path(state_dir),
+            )
+            assert_live_order_allowed(order=order("SELL"), position_quantity=10, **common)
+            with self.assertRaisesRegex(ExecutionSafetyError, "daily loss limit"):
+                assert_live_order_allowed(order=order("BUY"), position_quantity=10, **common)
+            with self.assertRaisesRegex(ExecutionSafetyError, "daily loss limit"):
+                assert_live_order_allowed(order=order("SELL"), position_quantity=None, **common)
+
+    def test_superseded_intent_stops_before_the_approval_is_consumed(self):
+        # 대체된 intent는 cancelled다. 계획 단계의 intent 검증이 승인 소비 전에 막는다.
+        repository = FakeRepository()
+        repository.intent = replace(intent(), status="cancelled")
+        api = FakeApi()
+        with self.assertRaises(ExecutionSafetyError):
+            worker(repository, api).execute(repository.approval.approval_id, now=NOW)
+        self.assertNotIn("consume", repository.trace)
+        self.assertEqual(api.posts, 0)
+
+    def test_unreconciled_orders_block_new_live_orders(self):
+        repository = FakeRepository()
+        repository.unresolved = [{"client_order_id": "aix_old", "status": "outcome_unknown"}]
+        api = FakeApi()
+        with self.assertRaisesRegex(ExecutionSafetyError, "await reconciliation"):
+            worker(repository, api).execute(repository.approval.approval_id, now=NOW)
+        self.assertEqual(api.posts, 0)
+        self.assertNotIn("consume", repository.trace)
 
 
 if __name__ == "__main__":

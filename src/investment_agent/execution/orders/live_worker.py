@@ -24,9 +24,20 @@ from investment_agent.execution.brokers.toss.orders import (
     TossOrderRejected,
 )
 from investment_agent.execution.contracts import ExecutionSafetyError
-from investment_agent.execution.safety.control import LiveTradingControls, RuntimeRiskState
+from investment_agent.execution.safety.control import (
+    ORDER_RISK_REDUCING,
+    TRADING_STATE_REDUCING,
+    LiveTradingControls,
+    RuntimeRiskState,
+    classify_order_risk,
+    resolve_trading_state,
+)
 from investment_agent.execution.orders.ledger import OrderAttempt, OrderAttemptReservation
-from investment_agent.execution.orders.planning import ExecutionLimits, TargetWeightOrderPlanner
+from investment_agent.execution.orders.planning import (
+    ExecutionLimits,
+    TargetWeightOrderPlanner,
+    plan_with_funding,
+)
 from investment_agent.execution.orders.toss_manual import (
     TossManualHandoff,
     TossManualSnapshot,
@@ -41,6 +52,7 @@ class LiveExecutionRepository(Protocol):
     def load_intent(self, intent_id: str) -> ExecutionIntent | None: ...
     def load_handoff(self, manifest_hash: str) -> TossManualHandoff | None: ...
     def current_tracked_tickers(self) -> set[str]: ...
+    def unresolved_orders(self, *, account_seq: int) -> list[dict]: ...
     def consume_approval(self, approval_id: str, *, manifest_hash: str) -> ApprovalRequest | None: ...
     def reserve_order_attempt(self, attempt: OrderAttempt) -> OrderAttemptReservation | None: ...
     def append_order_attempt_event(
@@ -240,15 +252,23 @@ def revalidate_live_handoff(
         if quote_age < 0 or quote_age > policy.max_quote_age_seconds:
             raise ExecutionSafetyError(f"Toss {symbol} quote is stale or future-dated")
 
-    fresh_plans = planner.plan(
+    fresh_plans, fresh_phase = plan_with_funding(
+        planner,
         intent,
         portfolio_value=fresh.portfolio_value,
         current_quantities=fresh.current_quantities,
         prices=fresh.prices,
+        available_cash=fresh.cash_buying_power,
         eligible_buy_symbols=eligible_buy_symbols,
         required_mode="live",
         now=now,
     )
+    if fresh_phase != handoff.funding_phase:
+        # 승인은 "매도만" 또는 "매도+매수" 중 하나에 대한 것이다. 현금이 바뀌어 단계가
+        # 달라졌다면 사람이 본 주문표와 다르므로 다시 승인받는다.
+        raise ExecutionSafetyError(
+            "Toss buying power changed whether buys can be funded; reapproval required"
+        )
     approved_identity = tuple(
         (item.client_order_id, item.symbol, item.side, float(item.order_quantity))
         for item in handoff.tickets
@@ -428,6 +448,13 @@ class TossLiveExecutionWorker:
         if approval.account_seq != self.controls.account_seq:
             raise ExecutionSafetyError("approved Toss account differs from live controls")
 
+        unresolved = self.repository.unresolved_orders(account_seq=self.controls.account_seq)
+        if unresolved:
+            # 원장이 결과를 모르는 주문이 남아 있으면 계좌 상태를 신뢰할 수 없다. 재시작 직후나
+            # 결과 불명 뒤에는 reconciliation이 모두 닫을 때까지 새 주문을 내지 않는다.
+            raise ExecutionSafetyError(
+                f"{len(unresolved)} live order(s) await reconciliation; new orders are blocked"
+            )
         eligible = self.repository.current_tracked_tickers()
         fresh = self.snapshot_provider(
             intent,
@@ -455,6 +482,23 @@ class TossLiveExecutionWorker:
             broker_daily_pnl_usd=fresh.daily_profit_loss_usd,
             captured_at=current,
         )
+        trading_state = resolve_trading_state(self.controls, risk_state)
+        if trading_state == TRADING_STATE_REDUCING:
+            increasing = sorted(
+                command.symbol for command in commands
+                if classify_order_risk(
+                    side=command.side,
+                    quantity=float(command.quantity or 0),
+                    position_quantity=fresh.current_quantities.get(command.symbol),
+                ) != ORDER_RISK_REDUCING
+            )
+            if increasing:
+                # 승인은 주문표 전체에 대한 것이다. 매도만 골라 내보내지 않고, 승인을 소비하기
+                # 전에 멈춰 매도만 담긴 주문표로 다시 승인받게 한다.
+                raise ExecutionSafetyError(
+                    "trading state is REDUCING; only position-reducing sells may be submitted: "
+                    + ", ".join(increasing)
+                )
 
         # 모든 읽기·사전검증이 끝난 뒤에만 승인을 소비한다.
         consumed = self.repository.consume_approval(
@@ -553,6 +597,7 @@ class TossLiveExecutionWorker:
                     risk_state=state,
                     manifest_hash=handoff.manifest_hash,
                     now=submit_time,
+                    position_quantity=fresh.current_quantities.get(command.symbol, 0.0),
                 )
             except TossOrderOutcomeUnknown as exc:
                 self.repository.append_order_attempt_event(

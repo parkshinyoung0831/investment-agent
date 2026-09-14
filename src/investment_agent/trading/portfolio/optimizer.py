@@ -11,6 +11,53 @@ import numpy as np
 from investment_agent.trading.contracts import ContractError, parse_datetime
 from investment_agent.platform.serialization import canonical_json
 from investment_agent.trading.portfolio.contracts import CASH_SYMBOL, SecurityProposal, validated_weights
+from investment_agent.trading.portfolio.market_risk import TradingCostInputs
+
+# 의견의 강도가 아니라 **방향**을 optimizer에 강제하는 행동들이다.
+# exit는 전량 청산 명령이다 — 기대수익을 0 이하로 낮추는 것만으로는 turnover 벌점이
+# 잔여 비중을 남길 수 있다. reduce·avoid·watch는 비중을 늘리지 못하게만 막고, 얼마나
+# 줄일지는 optimizer에 맡긴다(watch가 보유를 암묵적으로 청산하지 않는 것과 같은 이유).
+# open·increase·hold는 의견일 뿐이라 제약하지 않는다 — 돈은 한정돼 있어 더 나은 종목과
+# 경쟁해 0이 될 수 있어야 한다.
+ACTION_EXIT = "exit"
+NO_INCREASE_ACTIONS = frozenset({"reduce", "avoid", "watch"})
+ALL_ACTIONS = frozenset({"open", "increase", "hold", "reduce", "exit", "avoid", "watch"})
+
+
+def mandatory_base_weights(
+    current: Mapping[str, float],
+    *,
+    exit_symbols: set[str] | frozenset[str],
+    max_symbol_weight: float,
+    min_cash_weight: float = 0.0,
+) -> dict[str, float]:
+    """한도 준수에 **반드시** 필요한 매도만 먼저 반영한 출발 비중이다.
+
+    turnover 한도는 재량 매매의 비용을 묶는 장치다. 청산 명령과 종목 상한 초과분까지
+    그 예산에서 깎으면, 한꺼번에 여러 종목을 빼야 하는 날 위험 축소가 막히거나 이미
+    잘라 둔 상한 초과분이 도로 살아난다. 그래서 turnover는 이 출발점에서부터 잰다.
+    출발점으로 가는 이동은 전부 현금화라 위험을 늘리지 않는다.
+    """
+    base: dict[str, float] = {}
+    for symbol, weight in current.items():
+        if symbol == CASH_SYMBOL:
+            continue
+        value = float(weight)
+        if symbol in exit_symbols:
+            value = 0.0
+        else:
+            value = min(value, max_symbol_weight)
+        if value > 0.0:
+            base[symbol] = value
+    risky = math.fsum(base.values())
+    ceiling = max(0.0, 1.0 - float(min_cash_weight))
+    if risky > ceiling and risky > 0.0:
+        # 최소 현금도 한도 준수다. 비례로 현금화한 지점을 출발점으로 둬야 turnover 축소가
+        # 채워 둔 현금을 다시 주식으로 되돌리지 않는다.
+        scale = ceiling / risky
+        base = {symbol: value * scale for symbol, value in base.items()}
+    base[CASH_SYMBOL] = max(0.0, 1.0 - math.fsum(base.values()))
+    return base
 
 
 @dataclass(frozen=True)
@@ -24,11 +71,15 @@ class ExpectedReturnSignal:
     timestamp: str
     version: str
     evidence_ids: tuple[str, ...] = ()
+    # 종목 의견의 행동. 기대수익과 달리 비중의 방향을 제약한다(`ACTION_*` 참조).
+    action: str | None = None
 
     def __post_init__(self) -> None:
         symbol = str(self.symbol).upper().strip()
         if not symbol or symbol == CASH_SYMBOL:
             raise ValueError("signal symbol must be a risky asset")
+        if self.action is not None and self.action not in ALL_ACTIONS:
+            raise ValueError(f"unsupported signal action: {self.action}")
         if self.horizon_days not in {1, 5, 20}:
             raise ValueError("signal horizon must be 1, 5, or 20 trading days")
         for name in ("expected_return", "confidence", "risk_score"):
@@ -66,6 +117,7 @@ class ExpectedReturnSignal:
             timestamp=proposal.as_of_at,
             version=version,
             evidence_ids=proposal.evidence_ids,
+            action=proposal.signal,
         )
 
 
@@ -79,10 +131,23 @@ class OptimizerPolicy:
     max_sector_weight: float = 0.30
     max_turnover: float = 0.25
     min_cash_weight: float = 0.05
+    # 시장충격 계수. cvxportfolio의 σ·|x|^1.5/√ADV 형태를 쓰며 1은 문헌의 대형주 기본값이다.
+    impact_coefficient: float = 1.0
+    # 한 번에 늘리는 금액이 20일 평균 거래대금의 이 비율을 넘지 못한다. 매도는 막지 않는다 —
+    # 위험을 줄이는 쪽을 유동성 한도로 묶으면 탈출이 막힌다.
+    max_adv_participation: float = 0.05
+    # False면 어떤 종목도 현재 비중보다 늘릴 수 없다(위기 regime의 신규 위험 금지).
+    allow_increases: bool = True
+    # 포트폴리오 시장 베타 상한. None이면 제약하지 않는다(베타 재료가 없을 때).
+    max_portfolio_beta: float | None = None
 
     def __post_init__(self) -> None:
         if self.version < 1 or self.risk_aversion <= 0 or self.turnover_penalty < 0:
             raise ValueError("invalid optimizer objective configuration")
+        if not math.isfinite(self.impact_coefficient) or self.impact_coefficient < 0:
+            raise ValueError("impact_coefficient must be finite and non-negative")
+        if not 0 < float(self.max_adv_participation) <= 1:
+            raise ValueError("max_adv_participation must be in (0, 1]")
         for name in ("max_symbol_weight", "max_sector_weight", "max_turnover", "min_cash_weight"):
             if not 0 <= float(getattr(self, name)) <= 1:
                 raise ValueError(f"{name} must be between 0 and 1")
@@ -105,6 +170,7 @@ class OptimizationResult:
     solver: str
     policy_hash: str
     input_hash: str
+    transaction_cost: float = 0.0
 
 
 class RiskAwareOptimizer:
@@ -121,6 +187,9 @@ class RiskAwareOptimizer:
         covariance: Sequence[Sequence[float]] | None = None,
         sector_by_symbol: Mapping[str, str] | None = None,
         fixed_weights: Mapping[str, float] | None = None,
+        trading_costs: Mapping[str, TradingCostInputs] | None = None,
+        portfolio_value: float | None = None,
+        betas: Mapping[str, float] | None = None,
     ) -> OptimizationResult:
         if not signals:
             raise ContractError("optimizer requires at least one signal")
@@ -176,28 +245,62 @@ class RiskAwareOptimizer:
         if minimum_eigenvalue < 0:
             cov += np.eye(len(symbols)) * (-minimum_eigenvalue + 1e-9)
         current_risky = np.array([float(current.get(symbol, 0.0)) for symbol in symbols])
+        exit_symbols = frozenset(
+            symbol for symbol in symbols if by_symbol[symbol].action == ACTION_EXIT
+        )
+        base = mandatory_base_weights(
+            {symbol: current.get(symbol, 0.0) for symbol in symbols} | fixed,
+            exit_symbols=exit_symbols,
+            max_symbol_weight=self.policy.max_symbol_weight,
+        )
+        base_risky = np.array([float(base.get(symbol, 0.0)) for symbol in symbols])
+        if float(base_risky.sum()) > available_risky + 1e-12 and float(base_risky.sum()) > 0.0:
+            # 고정 보유는 못 움직이므로 최소 현금을 채우는 매도는 신호 종목에서만 비례로 한다.
+            base_risky = base_risky * (available_risky / float(base_risky.sum()))
+        # 고정 보유는 움직이지 않으므로 출발 현금은 신호 종목의 강제 매도분만 더한다.
+        base_cash = 1.0 - fixed_risky - float(base_risky.sum())
         try:
             import cvxpy as cp
         except ImportError as exc:  # pragma: no cover - 설치 경계
             raise RuntimeError("cvxpy가 필요하다: uv sync --group portfolio") from exc
 
+        costs = self._cost_arrays(symbols, trading_costs, portfolio_value)
         weights = cp.Variable(len(symbols), nonneg=True)
+        trade = weights - current_risky
+        cost_expression: Any = 0.0
+        if costs is not None:
+            half_spread, impact_scale, _ = costs
+            # 반스프레드는 거래액에 선형, 시장충격은 거래액의 1.5승에 비례한다(주문이 ADV에
+            # 비해 클수록 단위당 비용이 커진다). 둘 다 볼록이라 해가 유일하게 정해진다.
+            cost_expression = half_spread @ cp.abs(trade) + impact_scale @ cp.power(cp.abs(trade), 1.5)
         objective = cp.Maximize(
             expected @ weights
             - self.policy.risk_aversion * cp.quad_form(weights, cov)
-            - self.policy.turnover_penalty * cp.norm1(weights - current_risky)
+            - self.policy.turnover_penalty * cp.norm1(trade)
+            - cost_expression
         )
         constraints: list[Any] = [
             weights <= self.policy.max_symbol_weight,
             cp.sum(weights) <= available_risky,
             0.5 * (
-                cp.norm1(weights - current_risky)
-                + cp.abs(
-                    float(current.get(CASH_SYMBOL, 0.0))
-                    - (1.0 - fixed_risky - cp.sum(weights))
-                )
+                cp.norm1(weights - base_risky)
+                + cp.abs(base_cash - (1.0 - fixed_risky - cp.sum(weights)))
             ) <= self.policy.max_turnover,
         ]
+        if costs is not None:
+            constraints.append(weights - current_risky <= costs[2])
+        beta_budget = self._beta_budget(symbols, fixed, current, betas)
+        if beta_budget is not None:
+            signal_betas, budget = beta_budget
+            constraints.append(signal_betas @ weights <= budget)
+        if not self.policy.allow_increases:
+            constraints.append(weights <= current_risky)
+        for index, symbol in enumerate(symbols):
+            action = by_symbol[symbol].action
+            if action == ACTION_EXIT:
+                constraints.append(weights[index] == 0.0)
+            elif action in NO_INCREASE_ACTIONS:
+                constraints.append(weights[index] <= float(current_risky[index]))
         sectors = {str(key).upper(): str(value) for key, value in (sector_by_symbol or {}).items()}
         for sector in sorted(set(sectors.values())):
             indexes = [index for index, symbol in enumerate(symbols) if sectors.get(symbol) == sector]
@@ -216,6 +319,12 @@ class RiskAwareOptimizer:
         if problem.status not in {cp.OPTIMAL, cp.OPTIMAL_INACCURATE} or weights.value is None:
             raise ContractError(f"portfolio optimization is not usable: {problem.status}")
         raw = np.maximum(np.asarray(weights.value, dtype=float).reshape(-1), 0.0)
+        for index, symbol in enumerate(symbols):
+            # solver 허용오차가 남긴 1e-9 수준의 잔량이 1주 매도 누락으로 이어지지 않게 한다.
+            if symbol in exit_symbols:
+                raw[index] = 0.0
+            elif by_symbol[symbol].action in NO_INCREASE_ACTIONS or not self.policy.allow_increases:
+                raw[index] = min(raw[index], float(current_risky[index]))
         result_weights = {
             **fixed,
             **{symbol: float(raw[index]) for index, symbol in enumerate(symbols)},
@@ -231,6 +340,10 @@ class RiskAwareOptimizer:
         optimizer_turnover = float(np.sum(np.abs(raw - current_risky)))
         risk_penalty = self.policy.risk_aversion * estimated_variance
         turnover_penalty = self.policy.turnover_penalty * optimizer_turnover
+        transaction_cost = 0.0
+        if costs is not None:
+            realized_trade = np.abs(raw - current_risky)
+            transaction_cost = float(costs[0] @ realized_trade + costs[1] @ realized_trade ** 1.5)
         inputs = {
             "signals": [asdict(by_symbol[symbol]) for symbol in symbols],
             "current_weights": current,
@@ -238,6 +351,11 @@ class RiskAwareOptimizer:
             "covariance": cov.tolist(),
             "sectors": sectors,
             "policy": asdict(self.policy),
+            "trading_costs": (
+                {symbol: trading_costs[symbol].to_metadata() for symbol in symbols}
+                if costs is not None and trading_costs is not None else None
+            ),
+            "portfolio_value": portfolio_value if costs is not None else None,
         }
         return OptimizationResult(
             weights=result_weights,
@@ -247,11 +365,71 @@ class RiskAwareOptimizer:
             expected_return_component=expected_return_component,
             risk_penalty=risk_penalty,
             turnover_penalty=turnover_penalty,
-            objective_value=expected_return_component - risk_penalty - turnover_penalty,
+            objective_value=expected_return_component - risk_penalty - turnover_penalty - transaction_cost,
             solver="cvxpy:CLARABEL",
             policy_hash=self.policy.hash,
             input_hash=hashlib.sha256(canonical_json(inputs).encode("utf-8")).hexdigest(),
+            transaction_cost=transaction_cost,
         )
 
+    def _beta_budget(
+        self,
+        symbols: tuple[str, ...],
+        fixed: Mapping[str, float],
+        current: Mapping[str, float],
+        betas: Mapping[str, float] | None,
+    ) -> tuple[np.ndarray, float] | None:
+        """신호 종목이 쓸 수 있는 베타 여유. 고정 보유가 이미 상한을 넘으면 지금보다 늘리지만 않게 한다.
 
-__all__ = ["ExpectedReturnSignal", "OptimizationResult", "OptimizerPolicy", "RiskAwareOptimizer"]
+        베타 상한을 사후 검사(RiskGate)로만 두면 optimizer는 한도를 모른 채 고베타 종목에 몰고,
+        게이트는 제안 전체를 거부한다. 처음부터 한도 안에서 풀어야 거래가 살아남는다.
+        """
+        if self.policy.max_portfolio_beta is None or betas is None:
+            return None
+        normalized = {str(key).upper(): float(value) for key, value in betas.items()}
+        missing = sorted((set(symbols) | set(fixed)) - set(normalized))
+        if missing:
+            raise ContractError("beta inputs are missing: " + ", ".join(missing))
+        if not all(math.isfinite(value) for value in normalized.values()):
+            raise ContractError("beta inputs must be finite")
+        signal_betas = np.array([normalized[symbol] for symbol in symbols], dtype=float)
+        fixed_beta = math.fsum(weight * normalized[symbol] for symbol, weight in fixed.items())
+        current_signal_beta = float(signal_betas @ np.array([float(current.get(s, 0.0)) for s in symbols]))
+        budget = max(float(self.policy.max_portfolio_beta) - fixed_beta, current_signal_beta)
+        return signal_betas, budget
+
+    def _cost_arrays(
+        self,
+        symbols: tuple[str, ...],
+        trading_costs: Mapping[str, TradingCostInputs] | None,
+        portfolio_value: float | None,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+        """비중 단위 비용 계수와 매수 한도를 만든다. 일부 종목만 비용을 모르면 거부한다."""
+        if trading_costs is None and portfolio_value is None:
+            return None
+        if trading_costs is None or portfolio_value is None:
+            raise ContractError("trading costs require both per-symbol inputs and portfolio_value")
+        nav = float(portfolio_value)
+        if not math.isfinite(nav) or nav <= 0:
+            raise ContractError("portfolio_value must be finite and positive")
+        missing = sorted(set(symbols) - {str(key).upper() for key in trading_costs})
+        if missing:
+            raise ContractError("trading cost inputs are missing: " + ", ".join(missing))
+        normalized = {str(key).upper(): value for key, value in trading_costs.items()}
+        half_spread = np.array([normalized[symbol].half_spread for symbol in symbols], dtype=float)
+        volatility = np.array([normalized[symbol].daily_volatility for symbol in symbols], dtype=float)
+        adv = np.array([normalized[symbol].adv_usd for symbol in symbols], dtype=float)
+        if not (np.isfinite(half_spread).all() and np.isfinite(volatility).all() and np.isfinite(adv).all()):
+            raise ContractError("trading cost inputs must be finite")
+        if (half_spread < 0).any() or (volatility < 0).any() or (adv <= 0).any():
+            raise ContractError("trading cost inputs are out of range")
+        # 비중 w의 거래액은 w·NAV. 충격 비용 σ·(w·NAV)^1.5/√ADV 를 NAV로 나누면 σ·√(NAV/ADV)·w^1.5.
+        impact_scale = self.policy.impact_coefficient * volatility * np.sqrt(nav / adv)
+        buy_capacity = self.policy.max_adv_participation * adv / nav
+        return half_spread, impact_scale, buy_capacity
+
+
+__all__ = [
+    "ACTION_EXIT", "ALL_ACTIONS", "NO_INCREASE_ACTIONS", "ExpectedReturnSignal", "OptimizationResult",
+    "OptimizerPolicy", "RiskAwareOptimizer", "mandatory_base_weights",
+]

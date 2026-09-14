@@ -137,13 +137,71 @@ def _attempt_event(row: dict) -> OrderAttemptEvent:
     )
 
 
+# 자금 확보(매도만) 주문표 뒤에 같은 signal batch로 허용하는 후속 실행 수. 1을 넘기면
+# 체결 부족 → 재매도 → 재최적화가 같은 신호로 되풀이될 수 있다.
+MAX_FUNDING_FOLLOWUPS = 1
+_TERMINAL_ORDER_STATUSES = ("filled", "cancelled", "rejected", "failed", "replaced")
+
+
+def funding_followup_allowed(connection, claim: dict | None) -> bool:
+    """직전 실행이 끝난 자금 확보 매도였다면 같은 batch의 재구성을 한 번 허용한다.
+
+    배치당 실행 1회 원칙은 같은 신호로 주문이 두 번 나가는 것을 막는다. 그런데 매수 자금이
+    모자라 매도만 먼저 낸 경우에는, 그 매도가 끝난 뒤 **새 계좌 snapshot으로 다시 최적화한**
+    주문표가 필요하다 — 그렇지 않으면 매도대금이 다음 batch까지 현금으로 논다. 그래서 다음을
+    모두 만족할 때만 연다.
+
+    - 직전 주문표가 `funding_sells`였다(매수가 한 주도 나가지 않았다).
+    - 그 intent가 끝났다(completed/failed)고, 원장의 주문이 전부 종결 상태다(대사 완료).
+    - 이 batch의 후속 실행 수가 한도 미만이다.
+    """
+    if not claim or int(claim.get("funding_followups") or 0) >= MAX_FUNDING_FOLLOWUPS:
+        return False
+    intent_id = str(claim.get("intent_id") or "")
+    manifest = connection.execute(
+        "SELECT payload_json FROM order_manifests WHERE intent_id=?", (intent_id,),
+    ).fetchone()
+    if manifest is None or json.loads(manifest[0]).get("funding_phase") != "funding_sells":
+        return False
+    intent = connection.execute("SELECT status FROM intents WHERE intent_id=?", (intent_id,)).fetchone()
+    if intent is None or intent[0] not in ("completed", "failed"):
+        return False
+    statuses = [row[0] for row in connection.execute(
+        "SELECT status FROM orders WHERE intent_id=?", (intent_id,),
+    ).fetchall()]
+    return bool(statuses) and all(status in _TERMINAL_ORDER_STATUSES for status in statuses)
+
+
+def funding_followup_batch_ids() -> set[str]:
+    """지금 후속 실행을 받을 수 있는 signal batch. 진입 대기열과 batch 선택이 같은 판정을 쓴다."""
+    with runtime_connection(read_only=True) as connection:
+        rows = connection.execute(
+            "SELECT record_key,payload_json FROM runtime_records WHERE record_type='signal_batch_execution'"
+        ).fetchall()
+        return {
+            str(key) for key, payload in rows
+            if funding_followup_allowed(connection, json.loads(payload))
+        }
+
+
 class ExecutionRepository:
     """실행 컴퓨터의 SQLite 원장만 사용하는 주문·승인 저장소."""
 
-    def has_active_execution_for_proposals(self, proposal_ids: Sequence[str], *, as_of_at: datetime | None = None) -> bool:
-        """살아 있는 승인 대기와 제출 증거가 있는 실행만 재실행을 막는다."""
+    def has_active_execution_for_proposals(
+        self,
+        proposal_ids: Sequence[str],
+        *,
+        as_of_at: datetime | None = None,
+        batch_id: str | None = None,
+    ) -> bool:
+        """살아 있는 승인 대기와 제출 증거가 있는 실행만 재실행을 막는다.
+
+        `batch_id`를 주면 그 batch가 자금 확보 매도 뒤 후속 실행을 받을 수 있는지 먼저 본다.
+        """
         identities = set(proposal_ids)
         if not identities:
+            return False
+        if batch_id is not None and str(batch_id) in funding_followup_batch_ids():
             return False
         current = parse_datetime(as_of_at or datetime.now(timezone.utc))
         with runtime_connection(read_only=True) as connection:
@@ -316,7 +374,8 @@ class ExecutionRepository:
                 batch_id = (proposal or {}).get('metadata', {}).get('active_batch_id')
                 if batch_id:
                     claim = self._record(connection, 'signal_batch_execution', str(batch_id))
-                    if claim:
+                    followup = funding_followup_allowed(connection, claim)
+                    if claim and not followup:
                         if self._record(connection, 'entry_guard', str(batch_id)) is not None:
                             raise ExecutionSafetyError('signal batch entry review was already used')
                         previous = connection.execute(
@@ -328,7 +387,13 @@ class ExecutionRepository:
                         if previous and (previous[3] or previous[4] or previous[0] in ('executing','completed') or previous[2] == 'consumed'
                             or (previous[0] in ('approved','claimed') and previous[2] not in ('rejected','expired') and parse_datetime(previous[1]) > parse_datetime(now))):
                             raise ExecutionSafetyError('signal batch already has an active execution')
-                    self._save_record(connection, 'signal_batch_execution', str(batch_id), {'intent_id': payload['intent_id']})
+                    record = {'intent_id': payload['intent_id']}
+                    if followup:
+                        record.update(
+                            funding_followups=int(claim.get('funding_followups') or 0) + 1,
+                            previous_intent_ids=[*claim.get('previous_intent_ids', ()), claim['intent_id']],
+                        )
+                    self._save_record(connection, 'signal_batch_execution', str(batch_id), record)
             connection.execute(
                 "INSERT INTO intents(intent_id,proposal_id,risk_decision_id,execution_mode,status,not_before,expires_at,payload_json,created_at,updated_at) "
                 "VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(intent_id) DO NOTHING",
@@ -336,6 +401,41 @@ class ExecutionRepository:
                  payload["execution_mode"], payload["status"], payload["not_before"],
                  payload["expires_at"], self._encode(payload), now, now),
             )
+            if payload["execution_mode"] == "live":
+                self._supersede_pending_live_intents(connection, new_intent_id=payload["intent_id"], now=now)
+
+    @classmethod
+    def _supersede_pending_live_intents(cls, connection, *, new_intent_id: str, now: str) -> list[str]:
+        """새 live 판단이 생기면, 아직 주문이 하나도 나가지 않은 이전 승인 대기 intent를 닫는다.
+
+        만료와 다르다 — 시간이 지나서가 아니라 더 새로운 판단이 대체했기 때문이다. 옛 카드를
+        뒤늦게 승인해도 worker가 승인을 소비하기 전에 멈추도록 `cancelled`로 두고, 무엇이
+        대체했는지 `superseded_by`에 남긴다. 주문이 이미 나간 intent는 건드리지 않는다 —
+        미체결 주문 취소는 운영자 승인이 필요한 별도 동작이고, 미체결이 있는 동안에는 새
+        포트폴리오 구성 자체가 막힌다.
+        """
+        rows = connection.execute(
+            "SELECT i.intent_id,i.payload_json FROM intents i WHERE i.execution_mode='live' "
+            "AND i.status='approved' AND i.intent_id != ? "
+            "AND NOT EXISTS(SELECT 1 FROM orders o WHERE o.intent_id=i.intent_id) "
+            "AND NOT EXISTS(SELECT 1 FROM order_attempts a WHERE a.intent_id=i.intent_id)",
+            (new_intent_id,),
+        ).fetchall()
+        superseded: list[str] = []
+        for intent_id, raw in rows:
+            payload = cls._decode(raw)
+            payload.update(
+                status="cancelled",
+                failure_reason=f"superseded_by:{new_intent_id}",
+                superseded_by=new_intent_id,
+                superseded_at=now,
+            )
+            connection.execute(
+                "UPDATE intents SET status='cancelled',payload_json=?,updated_at=? WHERE intent_id=? AND status='approved'",
+                (cls._encode(payload), now, intent_id),
+            )
+            superseded.append(str(intent_id))
+        return superseded
 
     def save_handoff(self, handoff: TossManualHandoff) -> None:
         handoff.validate_manifest()
@@ -653,6 +753,12 @@ class ExecutionRepository:
             raise ValueError("unsupported runtime decision record type")
         self._save_auxiliary(record_type, record_key, payload)
 
+    def unresolved_orders(self, *, account_seq: int) -> list[dict]:
+        """브로커 결과가 아직 확정되지 않은 주문. 하나라도 있으면 새 실주문을 막는다."""
+        with runtime_connection(read_only=True) as connection:
+            rows = connection.execute("SELECT payload_json FROM orders WHERE account_seq=? AND status IN ('planned','submitted','partially_filled','outcome_unknown','reconciling') ORDER BY updated_at,client_order_id", (account_seq,)).fetchall()
+        return [self._decode(row[0]) for row in rows]
+
     def reconcilable_orders(self, *, account_seq: int) -> list[dict]:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
         with runtime_connection(read_only=True) as connection:
@@ -791,6 +897,63 @@ class ExecutionRepository:
 
 
 # ops가 execution 스키마를 직접 조회하지 않도록 계약을 여기서 소유한다.
+
+
+def filled_order_costs(*, since_days: int = 180) -> list[dict]:
+    """체결된 live 주문의 승인 기준가와 브로커 평균 체결가·수수료. 거래비용 보정의 원천이다."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=since_days)).isoformat()
+    with runtime_connection(read_only=True) as connection:
+        orders = {
+            str(row[0]): ExecutionRepository._decode(row[1])
+            for row in connection.execute(
+                "SELECT client_order_id,payload_json FROM orders WHERE status IN ('filled','partially_filled') "
+                "AND submitted_at >= ?", (cutoff,),
+            ).fetchall()
+        }
+        snapshots = [
+            ExecutionRepository._decode(row[0])
+            for row in connection.execute(
+                "SELECT payload_json FROM runtime_records WHERE record_type='broker_order_snapshot'"
+            ).fetchall()
+        ]
+    latest: dict[str, dict] = {}
+    for snapshot in snapshots:
+        key = str(snapshot.get("client_order_id") or "")
+        if key in orders and str(snapshot.get("observed_at") or "") >= str(latest.get(key, {}).get("observed_at") or ""):
+            latest[key] = snapshot
+    return [
+        {
+            "ticker": orders[key].get("ticker"),
+            "side": orders[key].get("side"),
+            "reference_price": orders[key].get("reference_price"),
+            "average_fill_price": snapshot.get("average_fill_price"),
+            "filled_quantity": snapshot.get("filled_quantity"),
+            "commission": snapshot.get("commission"),
+            "observed_at": snapshot.get("observed_at"),
+        }
+        for key, snapshot in sorted(latest.items())
+    ]
+
+
+def latest_live_position_tickers(*, max_age_days: int = 7) -> list[str]:
+    """가장 최근 live 계좌 snapshot 한 번에 잡힌 보유종목. 너무 오래된 snapshot은 쓰지 않는다."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).isoformat()
+    with runtime_connection(read_only=True) as connection:
+        rows = connection.execute(
+            "SELECT payload_json FROM runtime_records WHERE record_type='position_snapshot' "
+            "AND json_extract(payload_json,'$.execution_mode')='live' "
+            "AND json_extract(payload_json,'$.captured_at') >= ?",
+            (cutoff,),
+        ).fetchall()
+    payloads = [ExecutionRepository._decode(row[0]) for row in rows]
+    if not payloads:
+        return []
+    latest = max(str(row.get("captured_at") or "") for row in payloads)
+    return sorted({
+        str(row["ticker"]).upper()
+        for row in payloads
+        if str(row.get("captured_at") or "") == latest and float(row.get("quantity") or 0) > 0
+    })
 
 
 def latest_paper_account_snapshot() -> dict | None:

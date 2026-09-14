@@ -163,6 +163,9 @@ def from_optimized_security_proposals(
     covariance_symbols: Sequence[str] | None = None,
     covariance_metadata: Mapping[str, Any] | None = None,
     preserve_unanalyzed_holdings: bool = False,
+    trading_costs: Mapping[str, Any] | None = None,
+    portfolio_value: float | None = None,
+    betas: Mapping[str, float] | None = None,
 ) -> PortfolioProposal:
     """LLM의 target_weight를 폐기하고 expected-return signal만 최적화한다."""
     if not proposals:
@@ -205,6 +208,9 @@ def from_optimized_security_proposals(
         covariance=covariance,
         sector_by_symbol=sector_by_symbol,
         fixed_weights=fixed_weights,
+        trading_costs=trading_costs,
+        portfolio_value=portfolio_value,
+        betas=betas,
     )
     confidence = sum(signal.confidence for signal in signals) / len(signals)
     return PortfolioProposal.create(
@@ -238,6 +244,12 @@ def from_optimized_security_proposals(
                 "risk_penalty": optimization.risk_penalty,
                 "turnover_penalty": optimization.turnover_penalty,
                 "objective_value": optimization.objective_value,
+                "transaction_cost": optimization.transaction_cost,
+                "betas": dict(sorted(betas.items())) if betas is not None else None,
+                "trading_costs": (
+                    {symbol: value.to_metadata() for symbol, value in sorted(trading_costs.items())}
+                    if trading_costs is not None else None
+                ),
                 "covariance": (
                     dict(covariance_metadata or {})
                     if covariance is not None

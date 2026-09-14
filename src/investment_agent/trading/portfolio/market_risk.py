@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from typing import Any, Mapping, Sequence
 
@@ -26,6 +26,13 @@ class MarketRiskMetrics:
     first_trade_date: str
     last_trade_date: str
     benchmark_symbol: str
+    # 평소 변동성과 따로 보는 꼬리·스트레스 손실(양수 = 손실 비율). 한도로 쓰기 전에
+    # 분포를 먼저 쌓아 보정해야 하므로 지금은 원장 기록용이다.
+    historical_cvar_95_5d: float | None = None
+    worst_5d_loss: float | None = None
+    worst_20d_loss: float | None = None
+    market_shock_loss: float | None = None
+    market_shock: float = -0.10
 
     def to_metadata(self) -> dict[str, object]:
         """RiskDecision 원장에 남길 계산 구간과 benchmark를 제공한다."""
@@ -34,6 +41,13 @@ class MarketRiskMetrics:
             "first_trade_date": self.first_trade_date,
             "last_trade_date": self.last_trade_date,
             "benchmark_symbol": self.benchmark_symbol,
+            "stress": {
+                "historical_cvar_95_5d": self.historical_cvar_95_5d,
+                "worst_5d_loss": self.worst_5d_loss,
+                "worst_20d_loss": self.worst_20d_loss,
+                "market_shock": self.market_shock,
+                "market_shock_loss": self.market_shock_loss,
+            },
         }
 
 
@@ -49,6 +63,7 @@ class MarketCovariance:
     last_trade_date: str
     method: str
     input_hash: str
+    shrinkage: float = 0.0
 
     def to_metadata(self) -> dict[str, object]:
         """제안 원장에 재현 가능한 행렬과 계산 방법·기간을 함께 남긴다."""
@@ -60,6 +75,7 @@ class MarketCovariance:
             "first_trade_date": self.first_trade_date,
             "last_trade_date": self.last_trade_date,
             "method": self.method,
+            "shrinkage": self.shrinkage,
             "input_hash": self.input_hash,
         }
 
@@ -119,6 +135,46 @@ def _aligned_returns(
     return normalized, common_dates, matrix
 
 
+def ledoit_wolf_constant_correlation(returns: np.ndarray) -> tuple[np.ndarray, float]:
+    """표본 공분산을 '분산은 그대로, 상관은 평균 상관'인 prior 쪽으로 최적 강도만큼 당긴다.
+
+    종목 수에 비해 관측일이 짧으면 표본 상관의 극단값이 대부분 추정 잡음이고, optimizer는
+    그 잡음을 "헤지"로 오인해 비중을 몰아준다. prior를 단위행렬이 아니라 평균 상관으로 두는
+    이유는 같은 방향으로 움직이는 주식 묶음의 공통 위험을 지우지 않기 위해서다
+    (상관을 0으로 당기면 분산 효과가 과대평가된다). 강도는 Ledoit & Wolf(2003)의
+    추정식이며 관측 행렬만으로 정해지므로 조정할 하이퍼파라미터가 없다.
+    반환 행렬은 ddof=1 표본 공분산과 같은 스케일이다.
+    """
+    x = np.asarray(returns, dtype=float)
+    t, n = x.shape
+    if n < 2 or t < 2:
+        raise ValueError("shrinkage requires at least two assets and two observations")
+    x = x - x.mean(axis=0)
+    sample = (x.T @ x) / t
+    variance = np.diag(sample)
+    if float(np.min(variance)) <= 1e-18:
+        # 가격이 움직이지 않은 종목은 상관이 정의되지 않는다 — 표본 그대로 두고 강도 0을 남긴다.
+        return sample * (t / (t - 1)), 0.0
+    std = np.sqrt(variance)
+    outer_std = np.outer(std, std)
+    mean_correlation = float((np.sum(sample / outer_std) - n) / (n * (n - 1)))
+    prior = mean_correlation * outer_std
+    np.fill_diagonal(prior, variance)
+
+    squared = x ** 2
+    pi_matrix = (squared.T @ squared) / t - 2.0 * (x.T @ x) * sample / t + sample ** 2
+    pi_hat = float(np.sum(pi_matrix))
+    theta = ((x ** 3).T @ x) / t - variance[:, None] * sample
+    np.fill_diagonal(theta, 0.0)
+    rho_hat = float(np.sum(np.diag(pi_matrix))) + mean_correlation * float(
+        np.sum((std[None, :] / std[:, None]) * theta)
+    )
+    gamma_hat = float(np.linalg.norm(sample - prior, "fro") ** 2)
+    shrinkage = 0.0 if gamma_hat <= 1e-24 else max(0.0, min(1.0, (pi_hat - rho_hat) / gamma_hat / t))
+    shrunk = shrinkage * prior + (1.0 - shrinkage) * sample
+    return shrunk * (t / (t - 1)), float(shrinkage)
+
+
 def calculate_market_covariance(
     price_rows_by_symbol: Mapping[str, Sequence[Mapping[str, Any]]],
     *,
@@ -126,7 +182,7 @@ def calculate_market_covariance(
     horizon_days: int,
     minimum_observations: int = 60,
 ) -> MarketCovariance:
-    """기대수익 보유기간에 맞춘 point-in-time 표본 공분산을 계산한다."""
+    """기대수익 보유기간에 맞춘 point-in-time 수축 공분산을 계산한다."""
     if isinstance(horizon_days, bool) or horizon_days < 1:
         raise ValueError("horizon_days must be a positive integer")
     normalized, common_dates, asset_returns = _aligned_returns(
@@ -134,10 +190,11 @@ def calculate_market_covariance(
         symbols,
         minimum_observations=minimum_observations,
     )
+    shrinkage = 0.0
     if len(normalized) == 1:
         covariance = np.asarray([[float(np.var(asset_returns[:, 0], ddof=1))]], dtype=float)
     else:
-        covariance = np.asarray(np.cov(asset_returns, rowvar=False, ddof=1), dtype=float)
+        covariance, shrinkage = ledoit_wolf_constant_correlation(asset_returns)
     covariance *= horizon_days
     covariance = (covariance + covariance.T) / 2.0
     if covariance.shape != (len(normalized), len(normalized)) or not np.isfinite(covariance).all():
@@ -163,9 +220,147 @@ def calculate_market_covariance(
         observation_count=len(common_dates),
         first_trade_date=common_dates[0].isoformat(),
         last_trade_date=common_dates[-1].isoformat(),
-        method="sample_covariance",
+        method="sample_covariance" if len(normalized) == 1 else "ledoit_wolf_constant_correlation",
         input_hash=hashlib.sha256(canonical_json(inputs).encode("utf-8")).hexdigest(),
+        shrinkage=round(shrinkage, 12),
     )
+
+
+@dataclass(frozen=True)
+class TradingCostInputs:
+    """optimizer가 거래 **전에** 비용을 뺄 수 있도록 종목별로 추정한 거래 비용 재료."""
+
+    symbol: str
+    half_spread: float
+    daily_volatility: float
+    adv_usd: float
+    method: str = "adv_bucket_half_spread_v1"
+
+    def to_metadata(self) -> dict[str, object]:
+        return {
+            "half_spread": self.half_spread,
+            "daily_volatility": self.daily_volatility,
+            "adv_usd": self.adv_usd,
+            "method": self.method,
+        }
+
+
+# 호가 이력이 없어 반스프레드는 거래대금 구간으로 근사한다. S&P 500 대형주 실측 범위
+# (1~10bp)의 보수적인 쪽이다. TCA 체결이 쌓이면 종목별 실측값으로 바꿀 자리다.
+_HALF_SPREAD_BY_ADV = ((1_000_000_000.0, 0.0001), (100_000_000.0, 0.0003), (0.0, 0.0010))
+
+
+def estimate_trading_costs(
+    price_rows_by_symbol: Mapping[str, Sequence[Mapping[str, Any]]],
+    *,
+    symbols: Sequence[str],
+    adv_window: int = 20,
+    volatility_window: int = 60,
+) -> dict[str, TradingCostInputs]:
+    """point-in-time 일봉만으로 ADV·일간 변동성·반스프레드를 추정한다."""
+    result: dict[str, TradingCostInputs] = {}
+    for raw_symbol in symbols:
+        symbol = str(raw_symbol).upper().strip()
+        rows = price_rows_by_symbol.get(symbol) or ()
+        ordered = []
+        for row in rows:
+            try:
+                ordered.append((
+                    str(row["trade_date"])[:10], float(row["close"]), float(row.get("volume") or 0.0),
+                ))
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ContractError(f"{symbol} market price row is invalid") from exc
+        ordered.sort()
+        if len(ordered) < max(adv_window, 2) + 1:
+            raise ContractError(f"{symbol} has insufficient history for trading cost estimates")
+        dollar_volume = [close * volume for _, close, volume in ordered[-adv_window:]]
+        adv_usd = float(np.mean(dollar_volume))
+        closes = np.asarray([close for _, close, _ in ordered[-(volatility_window + 1):]], dtype=float)
+        if not np.isfinite(closes).all() or (closes <= 0).any():
+            raise ContractError(f"{symbol} closes must be positive and finite")
+        returns = closes[1:] / closes[:-1] - 1.0
+        daily_volatility = float(np.std(returns, ddof=1))
+        if not math.isfinite(adv_usd) or adv_usd <= 0.0 or not math.isfinite(daily_volatility):
+            raise ContractError(f"{symbol} has no usable dollar volume or volatility")
+        half_spread = next(spread for floor, spread in _HALF_SPREAD_BY_ADV if adv_usd >= floor)
+        result[symbol] = TradingCostInputs(symbol, half_spread, daily_volatility, adv_usd)
+    return result
+
+
+def realized_one_way_cost(observation: Mapping[str, Any]) -> float | None:
+    """승인 기준가 대비 실제 평균 체결가와 수수료로 잰 편도 비용(비율, 양수 = 비용).
+
+    매수는 기준가보다 비싸게, 매도는 싸게 체결되면 비용이다. LIMIT band 안에서 유리하게
+    체결되면 음수가 될 수 있다.
+    """
+    try:
+        reference = float(observation["reference_price"])
+        fill = float(observation["average_fill_price"])
+        quantity = float(observation["filled_quantity"])
+        commission = float(observation.get("commission") or 0.0)
+        side = str(observation["side"]).lower()
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not all(math.isfinite(value) for value in (reference, fill, quantity, commission)):
+        return None
+    if reference <= 0 or fill <= 0 or quantity <= 0 or side not in {"buy", "sell"}:
+        return None
+    direction = 1.0 if side == "buy" else -1.0
+    return direction * (fill - reference) / reference + commission / (fill * quantity)
+
+
+def calibrate_trading_costs(
+    inputs: Mapping[str, TradingCostInputs],
+    observations: Sequence[Mapping[str, Any]],
+    *,
+    minimum_fills: int = 5,
+) -> dict[str, TradingCostInputs]:
+    """실제 체결이 충분히 쌓인 종목은 추정 반스프레드를 실측 편도 비용 중앙값으로 **올린다**.
+
+    내리지는 않는다. 체결 몇 건이 우연히 유리했다고 비용을 낮춰 잡으면 optimizer가 회전을
+    늘리고, 그 손해는 나중에야 드러난다. 표본이 모자란 종목은 추정값 그대로다.
+    """
+    by_symbol: dict[str, list[float]] = {}
+    for row in observations:
+        cost = realized_one_way_cost(row)
+        symbol = str(row.get("ticker") or "").upper().strip()
+        if cost is not None and symbol:
+            by_symbol.setdefault(symbol, []).append(cost)
+    result: dict[str, TradingCostInputs] = {}
+    for symbol, value in inputs.items():
+        costs = by_symbol.get(symbol, [])
+        if len(costs) >= minimum_fills:
+            realized = float(np.median(costs))
+            if realized > value.half_spread:
+                result[symbol] = replace(value, half_spread=realized, method=f"tca_median_{len(costs)}_fills")
+                continue
+        result[symbol] = value
+    return result
+
+
+def estimate_betas(
+    price_rows_by_symbol: Mapping[str, Sequence[Mapping[str, Any]]],
+    *,
+    symbols: Sequence[str],
+    benchmark_symbol: str = "SPY",
+    minimum_observations: int = 60,
+) -> dict[str, float]:
+    """종목별 시장 베타. 같은 거래일 수익률로만 추정한다(결측일을 채우지 않는다)."""
+    benchmark = str(benchmark_symbol).upper()
+    result: dict[str, float] = {}
+    for raw_symbol in symbols:
+        symbol = str(raw_symbol).upper().strip()
+        if symbol == benchmark:
+            result[symbol] = 1.0
+            continue
+        _, _, matrix = _aligned_returns(
+            price_rows_by_symbol, (symbol, benchmark), minimum_observations=minimum_observations,
+        )
+        variance = float(np.var(matrix[:, 1], ddof=1))
+        if variance <= 1e-12:
+            raise ContractError("benchmark return variance is too small for beta")
+        result[symbol] = float(np.cov(matrix[:, 0], matrix[:, 1], ddof=1)[0, 1] / variance)
+    return result
 
 
 def calculate_market_risk(
@@ -213,6 +408,7 @@ def calculate_market_risk(
         max_pairwise_correlation = float(np.max(upper))
     wealth = np.cumprod(1.0 + portfolio_returns)
     drawdown_fraction = float(np.max(1.0 - wealth / np.maximum.accumulate(wealth)))
+    tail = historical_tail_losses(portfolio_returns)
     return MarketRiskMetrics(
         portfolio_volatility=portfolio_volatility,
         portfolio_beta=portfolio_beta,
@@ -222,9 +418,45 @@ def calculate_market_risk(
         first_trade_date=common_dates[0].isoformat(),
         last_trade_date=common_dates[-1].isoformat(),
         benchmark_symbol=benchmark,
+        historical_cvar_95_5d=tail["historical_cvar_95_5d"],
+        worst_5d_loss=tail["worst_5d_loss"],
+        worst_20d_loss=tail["worst_20d_loss"],
+        # 단일 요인 충격: 시장이 10% 빠질 때 베타만큼 따라 빠진다고 본다.
+        market_shock_loss=max(0.0, -portfolio_beta * -0.10) if math.isfinite(portfolio_beta) else None,
     )
+
+
+def historical_tail_losses(daily_returns: Sequence[float] | np.ndarray) -> dict[str, float | None]:
+    """겹치는 5·20거래일 누적수익으로 과거 최악 구간과 5일 CVaR95를 계산한다.
+
+    변동성은 좌우 대칭으로 위험을 보지만, 계좌를 망가뜨리는 것은 한쪽 꼬리다. 최근 약 1년
+    창에서 실제로 있었던 연속 손실을 지금 비중에 그대로 적용해 본다.
+    """
+    returns = np.asarray(daily_returns, dtype=float)
+    if returns.ndim != 1 or not np.isfinite(returns).all():
+        raise ContractError("tail loss inputs must be a finite 1-D return series")
+    wealth = np.concatenate(([1.0], np.cumprod(1.0 + returns)))
+
+    def window_returns(days: int) -> np.ndarray | None:
+        if len(wealth) <= days:
+            return None
+        return wealth[days:] / wealth[:-days] - 1.0
+
+    five = window_returns(5)
+    twenty = window_returns(20)
+    cvar = None
+    if five is not None:
+        worst_count = max(1, int(math.floor(len(five) * 0.05)))
+        cvar = float(max(0.0, -np.mean(np.sort(five)[:worst_count])))
+    return {
+        "historical_cvar_95_5d": cvar,
+        "worst_5d_loss": float(max(0.0, -np.min(five))) if five is not None else None,
+        "worst_20d_loss": float(max(0.0, -np.min(twenty))) if twenty is not None else None,
+    }
 
 
 __all__ = [
     "MarketCovariance", "MarketRiskMetrics", "calculate_market_covariance", "calculate_market_risk",
+    "ledoit_wolf_constant_correlation", "TradingCostInputs", "estimate_trading_costs", "historical_tail_losses",
+    "calibrate_trading_costs", "estimate_betas", "realized_one_way_cost",
 ]

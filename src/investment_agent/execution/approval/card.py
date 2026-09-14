@@ -5,6 +5,7 @@ from typing import Any
 
 from investment_agent.execution.approval.ledger import ApprovalRequest, ApprovalSigner
 from investment_agent.execution.contracts import ExecutionSafetyError
+from investment_agent.execution.orders.planning import FUNDING_PHASE_SELLS
 from investment_agent.execution.orders.toss_manual import TossManualHandoff
 
 _BLUE = 0x3182F6
@@ -81,6 +82,12 @@ def build_approval_card(
         description = (
             "버튼 자체는 주문을 보내지 않습니다. 승인 뒤 동일 계좌·intent·plan hash를 "
             "원자적으로 1회 소비하고 모든 실시간 위험 조건을 다시 통과해야만 permit이 생깁니다."
+        )
+    if handoff.funding_phase == FUNDING_PHASE_SELLS:
+        description += (
+            "\n\n**자금 확보 단계** — 지금 현금으로는 매수를 다 댈 수 없어 매도만 담았습니다. "
+            "매수는 이 주문표에 없습니다. 매도가 모두 끝나면 같은 분석 결과로 새 계좌 현금 기준 "
+            "포트폴리오를 한 번 더 계산해 별도 승인으로 요청합니다."
         )
     embed = {
         "title": title,

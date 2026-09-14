@@ -8,6 +8,7 @@ from typing import Any
 from investment_agent.trading.contracts import parse_datetime
 from investment_agent.research.models.baselines import ExpectedReturnModel, ModelArtifact, fit_baseline
 from investment_agent.research.datasets import ResearchDataset
+from investment_agent.research.evaluation.alpha import CrossSectionalAlphaScore, cross_sectional_alpha_metrics
 
 
 @dataclass(frozen=True)
@@ -17,6 +18,8 @@ class BaselineTrainingResult:
     train_indexes: tuple[int, ...]
     validation_indexes: tuple[int, ...]
     test_indexes: tuple[int, ...]
+    # OOS 구간의 날짜별 단면 IC. 종목 수가 모자라 계산할 수 없으면 None이다.
+    oos_alpha: CrossSectionalAlphaScore | None = None
 
 
 def _indexes(dataset: ResearchDataset, split: tuple[int, int]) -> tuple[int, ...]:
@@ -70,7 +73,27 @@ def train_baseline_dataset(
         random_seed=random_seed,
         code_version=code_version,
     )
-    return BaselineTrainingResult(return_model, artifact, train, validation, test)
+    return BaselineTrainingResult(
+        return_model, artifact, train, validation, test,
+        oos_alpha=_oos_alpha(dataset, test, return_model),
+    )
+
+
+def _oos_alpha(
+    dataset: ResearchDataset,
+    test: tuple[int, ...],
+    model: ExpectedReturnModel,
+) -> CrossSectionalAlphaScore | None:
+    """OOS 예측이 같은 날짜 안에서 종목 순위를 맞혔는지. 모델 신뢰도의 근거가 된다."""
+    predicted = model.predict(dataset.features[list(test)])
+    try:
+        return cross_sectional_alpha_metrics(
+            [dataset.rows[index].as_of_at for index in test],
+            [float(dataset.targets[index]) for index in test],
+            [float(value) for value in predicted],
+        )
+    except ValueError:
+        return None
 
 
 __all__ = ["BaselineTrainingResult", "train_baseline_dataset"]

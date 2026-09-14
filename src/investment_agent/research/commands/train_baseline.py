@@ -98,6 +98,7 @@ def main(argv: list[str] | None = None) -> int:
     artifact_payload = {
         "artifact": result.artifact.to_record(),
         "model_state": model_state,
+        "out_of_sample_alpha": result.oos_alpha.to_dict() if result.oos_alpha is not None else None,
         "dataset_manifest": dataset.manifest.to_dict(),
         "feature_names": list(dataset.feature_names),
         "splits": {

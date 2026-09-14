@@ -17,7 +17,14 @@ from investment_agent.platform.serialization import canonical_json, parse_dateti
 from investment_agent.execution.orders.intents import CASH_SYMBOL, ExecutionIntent
 from investment_agent.execution.brokers.toss import client as toss
 from investment_agent.execution.contracts import ExecutionSafetyError
-from investment_agent.execution.orders.planning import OrderPlan, TargetWeightOrderPlanner
+from investment_agent.execution.orders.planning import (
+    FUNDING_PHASE_FULL,
+    FUNDING_PHASE_SELLS,
+    FUNDING_PHASES,
+    OrderPlan,
+    TargetWeightOrderPlanner,
+    plan_with_funding,
+)
 
 _CONTRACT_VERSION = "toss-manual-v1"
 
@@ -224,20 +231,32 @@ class TossManualHandoff:
     snapshot: TossManualSnapshot
     tickets: tuple[TossManualTicket, ...]
     manifest_hash: str
+    # 매수 자금이 모자라 매도만 담은 주문표인지. 승인자가 보는 내용이 달라지므로 hash에 묶는다.
+    funding_phase: str = FUNDING_PHASE_FULL
 
     def __post_init__(self) -> None:
         if not isinstance(self.account_seq, int) or self.account_seq <= 0:
             raise ExecutionSafetyError("Toss handoff account_seq must be positive")
+        if self.funding_phase not in FUNDING_PHASES:
+            raise ExecutionSafetyError("Toss handoff funding phase is invalid")
+        if self.funding_phase == FUNDING_PHASE_SELLS and any(
+            ticket.side != "sell" for ticket in self.tickets
+        ):
+            raise ExecutionSafetyError("funding-phase Toss handoff may contain sells only")
 
     def identity(self) -> dict[str, Any]:
         """내보내지 않는 계좌 결박까지 포함한 manifest 원본이다."""
-        return {
+        identity = {
             "intent_id": self.intent_id,
             "account_binding": self.account_seq,
             "contract_version": self.contract_version,
             "snapshot": self.snapshot.to_dict(),
             "tickets": [ticket.to_dict() for ticket in self.tickets],
         }
+        # 전체 주문표는 키를 넣지 않아 이미 승인·저장된 manifest hash가 그대로 유효하다.
+        if self.funding_phase != FUNDING_PHASE_FULL:
+            identity["funding_phase"] = self.funding_phase
+        return identity
 
     def recomputed_manifest_hash(self) -> str:
         return hashlib.sha256(canonical_json(self.identity()).encode("utf-8")).hexdigest()
@@ -256,6 +275,7 @@ class TossManualHandoff:
             "snapshot": self.snapshot.to_dict(),
             "tickets": [ticket.to_dict() for ticket in self.tickets],
             "manifest_hash": self.manifest_hash,
+            "funding_phase": self.funding_phase,
             "disclaimer": "NON_EXECUTABLE_TOSS_MANUAL_ORDER_SHEET",
         }
 
@@ -279,6 +299,7 @@ class TossManualHandoff:
             snapshot=TossManualSnapshot.from_dict(dict(value.get("snapshot") or {})),
             tickets=tuple(TossManualTicket.from_dict(dict(item)) for item in raw_tickets),
             manifest_hash=str(value.get("manifest_hash") or ""),
+            funding_phase=str(value.get("funding_phase") or FUNDING_PHASE_FULL),
         )
         if handoff.contract_version != _CONTRACT_VERSION:
             raise ExecutionSafetyError("unsupported Toss handoff contract version")
@@ -371,11 +392,13 @@ def prepare_handoff(
         required_mode=required_mode,
     )
     snapshot = build_snapshot(intent, account_seq=account_seq, captured_at=now)
-    plans = planner.plan(
+    plans, funding_phase = plan_with_funding(
+        planner,
         intent,
         portfolio_value=snapshot.portfolio_value,
         current_quantities=snapshot.current_quantities,
         prices=snapshot.prices,
+        available_cash=snapshot.cash_buying_power,
         eligible_buy_symbols=eligible_buy_symbols,
         required_mode=required_mode,
         now=now,
@@ -388,6 +411,7 @@ def prepare_handoff(
         snapshot=snapshot,
         tickets=tickets,
         manifest_hash="0" * 64,
+        funding_phase=funding_phase,
     )
     return replace(handoff, manifest_hash=handoff.recomputed_manifest_hash())
 

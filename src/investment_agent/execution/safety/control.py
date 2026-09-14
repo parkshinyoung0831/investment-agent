@@ -180,6 +180,55 @@ class LiveCancellationPermit:
         object.__setattr__(self, "expires_at", expires)
 
 
+TRADING_STATE_ACTIVE = "ACTIVE"
+TRADING_STATE_REDUCING = "REDUCING"
+TRADING_STATE_HALTED = "HALTED"
+ORDER_RISK_INCREASING = "risk_increasing"
+ORDER_RISK_REDUCING = "risk_reducing"
+
+
+def resolve_trading_state(controls: LiveTradingControls, state: RuntimeRiskState) -> str:
+    """손실 한도는 **신규 위험**만 멈춘다. 보유를 줄이는 매도까지 막으면 탈출구가 닫힌다.
+
+    - HALTED: 실주문이 꺼졌거나 kill switch가 켜짐. 어떤 주문도 나가지 않는다.
+    - REDUCING: 당일 손실·drawdown 한도 도달. 기존 long을 줄이는 매도만 허용한다.
+    - ACTIVE: 정상.
+    잠금 sentinel은 파일 읽기라 `assert_live_order_allowed`가 따로 먼저 본다.
+    """
+    if not controls.live_enabled or controls.kill_switch_on:
+        return TRADING_STATE_HALTED
+    if (
+        state.realized_pnl_usd <= -controls.max_daily_loss_usd
+        or state.drawdown_fraction >= controls.max_drawdown_fraction
+    ):
+        return TRADING_STATE_REDUCING
+    return TRADING_STATE_ACTIVE
+
+
+def classify_order_risk(*, side: str, quantity: float, position_quantity: float | None) -> str:
+    """long-only 계좌에서 주문이 노출을 늘리는지 줄이는지 판정한다.
+
+    보유 수량을 모르면 줄인다고 증명할 수 없으므로 늘리는 쪽으로 본다(fail-closed).
+    보유보다 많이 파는 매도는 공매도가 되므로 분류하지 않고 거부한다.
+    """
+    normalized = str(side).upper()
+    amount = float(quantity)
+    if not math.isfinite(amount) or amount <= 0:
+        raise ExecutionSafetyError("order quantity must be finite and positive")
+    if normalized == "BUY":
+        return ORDER_RISK_INCREASING
+    if normalized != "SELL":
+        raise ExecutionSafetyError("order side is invalid")
+    if position_quantity is None:
+        return ORDER_RISK_INCREASING
+    held = float(position_quantity)
+    if not math.isfinite(held) or held < 0:
+        raise ExecutionSafetyError("position quantity must be finite and nonnegative")
+    if amount > held + 1e-9:
+        raise ExecutionSafetyError("sell quantity exceeds the held position; short selling is not allowed")
+    return ORDER_RISK_REDUCING
+
+
 def assert_live_order_allowed(
     *,
     permit: object,
@@ -190,6 +239,7 @@ def assert_live_order_allowed(
     now: datetime | None = None,
     max_state_age_seconds: int = MAX_STATE_AGE_SECONDS,
     lockdown_state_dir: Path | str | None = None,
+    position_quantity: float | None = None,
 ) -> None:
     """모든 실주문 조건을 한 곳에서 fail-closed로 검사한다.
 
@@ -232,9 +282,17 @@ def assert_live_order_allowed(
         raise ExecutionSafetyError("daily order count limit reached")
     if state.submitted_notional_usd + notional > controls.max_daily_notional_usd:
         raise ExecutionSafetyError("daily submitted notional limit reached")
-    if state.realized_pnl_usd <= -controls.max_daily_loss_usd:
-        raise ExecutionSafetyError("daily loss limit reached")
-    if state.drawdown_fraction >= controls.max_drawdown_fraction:
+    quantity = getattr(order, "quantity", None)
+    side = getattr(order, "side", None)
+    risk = (
+        classify_order_risk(side=str(side), quantity=float(quantity), position_quantity=position_quantity)
+        if quantity is not None and side is not None
+        else ORDER_RISK_INCREASING
+    )
+    if resolve_trading_state(controls, state) == TRADING_STATE_REDUCING and risk != ORDER_RISK_REDUCING:
+        # REDUCING 상태에서는 보유를 줄이는 매도만 통과한다. 사유는 원래 한도 이름으로 남긴다.
+        if state.realized_pnl_usd <= -controls.max_daily_loss_usd:
+            raise ExecutionSafetyError("daily loss limit reached")
         raise ExecutionSafetyError("drawdown limit reached")
     if order.order_type == "MARKET" and not controls.allow_market_orders:
         # 시장가는 체결가를 모른 채 내는 주문이라 한도 계산이 사후에 어긋난다.
@@ -274,5 +332,12 @@ __all__ = [
     "RuntimeRiskState",
     "assert_live_cancel_allowed",
     "assert_live_order_allowed",
+    "classify_order_risk",
+    "resolve_trading_state",
+    "ORDER_RISK_INCREASING",
+    "ORDER_RISK_REDUCING",
+    "TRADING_STATE_ACTIVE",
+    "TRADING_STATE_HALTED",
+    "TRADING_STATE_REDUCING",
     "parse_datetime",
 ]

@@ -13,6 +13,8 @@ from typing import Any
 
 from investment_agent.trading.decision.candidate_ranker import (
     assemble_candidate_features,
+    merge_priority_lane,
+    priority_candidates,
     rank_candidate_features,
     validate_live_candidate_as_of,
 )
@@ -491,24 +493,62 @@ class SupabaseRepository:
                 attempted=parse_datetime(row['as_of_at'])
                 if attempted <= as_of_at and (ticker not in last_analyzed or attempted > last_analyzed[ticker]):
                     last_analyzed[ticker]=attempted
+        fundamental_rows = self._candidate_fundamental_rows(tickers, as_of_at)
         features = assemble_candidate_features(
             tickers,
             last_analyzed_at=last_analyzed,
             market_rows=self._candidate_market_rows(tickers, as_of_at),
             technical_rows=self._candidate_technical_rows(tickers, as_of_at),
-            fundamental_rows=self._candidate_fundamental_rows(tickers, as_of_at),
+            fundamental_rows=fundamental_rows,
             segment_signals=self._candidate_segment_signals(tickers, as_of_at),
             guru_signals=self._candidate_guru_signals(tickers, as_of_at),
         )
-        ranking = rank_candidate_features(features, as_of_at=as_of_at, limit=limit)
+        latest_filed: dict[str, str] = {}
+        for row in fundamental_rows:
+            ticker = normalize_ticker(row.get("ticker"))
+            filed = str(row.get("filed_at") or "")
+            if ticker and filed > latest_filed.get(ticker, ""):
+                latest_filed[ticker] = filed
+        priority = priority_candidates(
+            tickers=tickers,
+            held_tickers=self._candidate_held_tickers(),
+            last_analyzed_at=last_analyzed,
+            latest_filed_at=latest_filed,
+            event_features=self._candidate_event_features(as_of_at),
+            as_of_at=as_of_at,
+        )
+        ranking = rank_candidate_features(features, as_of_at=as_of_at, limit=limit + len(priority))
+        selected = merge_priority_lane(priority, [row.ticker for row in ranking], limit=limit)
         log.info(
-            "ai investor candidate ranking as_of=%s universe=%d selected=%s scores=%s",
+            "ai investor candidate ranking as_of=%s universe=%d selected=%s priority=%s scores=%s",
             as_of_at.isoformat(),
             len(tickers),
-            [row.ticker for row in ranking],
+            selected,
+            {item.ticker: item.reason for item in priority},
             {row.ticker: row.score for row in ranking},
         )
-        return [row.ticker for row in ranking]
+        return selected
+
+    def _candidate_held_tickers(self) -> list[str]:
+        """최근 live 계좌 snapshot의 보유종목. 원장이 없으면(분석 전용 환경) 빈 목록이다."""
+        from investment_agent.execution.db import latest_live_position_tickers
+        try:
+            return latest_live_position_tickers()
+        except Exception as exc:  # noqa: BLE001 - 보유 조회 실패가 정기 분석을 멈추게 두지 않는다
+            log.warning("held tickers unavailable for candidate priority: %s", type(exc).__name__)
+            return []
+
+    def _candidate_event_features(self, as_of_at: datetime) -> list[dict[str, Any]]:
+        """최근 7일 사건 요약. 로컬 research 저장소가 없으면 빈 목록이다."""
+        try:
+            return ResearchStore(read_only=True).records(
+                "event_feature_snapshots",
+                start_as_of=(as_of_at - timedelta(days=7)).isoformat(),
+                end_as_of=as_of_at.isoformat(),
+            )
+        except Exception as exc:  # noqa: BLE001 - 사건 저장소 부재가 정기 분석을 멈추게 두지 않는다
+            log.warning("event features unavailable for candidate priority: %s", type(exc).__name__)
+            return []
 
     def sp500_sector_map(self, tickers: list[str] | tuple[str, ...]) -> dict[str, str]:
         symbols = sorted({str(ticker).upper() for ticker in tickers})
@@ -784,7 +824,7 @@ class SupabaseRepository:
         """배치의 구성 제안을 실제 실행 원장 상태와 연결한다."""
         from investment_agent.execution.db import ExecutionRepository
         proposal_ids = self._trading_repository().live_proposal_ids_for_batch(batch_id)
-        return ExecutionRepository().has_active_execution_for_proposals(proposal_ids)
+        return ExecutionRepository().has_active_execution_for_proposals(proposal_ids, batch_id=batch_id)
 
     def signal_batch_id_for_as_of(self, as_of_at: str | datetime) -> str:
         """Shadow 입력 시각과 정확히 같은 단일 batch만 반환해 완료시각 경합을 없앤다."""

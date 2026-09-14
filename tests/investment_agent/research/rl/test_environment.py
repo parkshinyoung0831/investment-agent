@@ -77,6 +77,22 @@ class WeightEnvironmentTest(unittest.TestCase):
         )
         self.assertAlmostEqual(reward, info["net_return"])
 
+    def test_reward_components_explain_the_whole_reward(self):
+        core = WeightEnvironmentCore(dataset(), RewardConfig())
+        core.reset()
+        _, reward, _, info = core.step([1.0, 1.0, 0.0])
+        components = info["reward_components"]
+        self.assertEqual(
+            set(components),
+            {"return", "alpha", "drawdown", "volatility", "turnover", "concentration"},
+        )
+        self.assertAlmostEqual(sum(components.values()), reward, places=12)
+        # 벌점 항목은 보상을 늘리지 않는다.
+        for name in ("drawdown", "volatility", "turnover", "concentration"):
+            self.assertLessEqual(components[name], 0.0)
+        self.assertLess(components["turnover"], 0.0)
+        self.assertLess(components["concentration"], 0.0)
+
     def test_every_labeled_period_is_consumed_before_terminal_state(self):
         core = WeightEnvironmentCore(dataset())
         done_values = []
