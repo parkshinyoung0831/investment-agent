@@ -108,8 +108,8 @@ class NoIncreaseAndCashFloorTest(unittest.TestCase):
             turnover_penalty=0.0, risk_aversion=0.1,
         )
         signals = (
-            ExpectedReturnSignal("AAPL", 0.05, 1.0, 0.1, 5, "t", AS_OF.isoformat(), "v", action="hold"),
-            ExpectedReturnSignal("MSFT", 0.08, 1.0, 0.1, 5, "t", AS_OF.isoformat(), "v", action="open"),
+            ExpectedReturnSignal("AAPL", 0.05, 1.0, 0.1, 5, "t", AS_OF.isoformat(), "v"),
+            ExpectedReturnSignal("MSFT", 0.08, 1.0, 0.1, 5, "t", AS_OF.isoformat(), "v"),
         )
         result = RiskAwareOptimizer(policy).optimize(
             signals, current_weights={"AAPL": 0.50, "MSFT": 0.45, "CASH": 0.05},

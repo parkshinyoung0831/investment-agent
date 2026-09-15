@@ -18,19 +18,18 @@ from investment_agent.operations.harness.kill_switches import default_job_kill_e
 from investment_agent.operations.harness.lock import ProcessFileLock
 from investment_agent.operations.harness.pipeline import (
     account_risk_snapshot_job,
-    autonomous_investment_job,
     continuous_learning_job,
     decision_experience_job,
-    investment_reporting_job,
-    entry_watch_job,
     earnings_watch_job,
+    event_reanalysis_job,
     feature_store_job,
     intelligence_job,
-    scheduled_analysis_job,
-    toss_reconciliation_job,
-    virtual_books_job,
+    investment_reporting_job,
     ml_challengers_job,
-    event_reanalysis_job,
+    my_portfolio_follow_job,
+    scheduled_analysis_job,
+    system_portfolio_job,
+    toss_reconciliation_job,
 )
 from investment_agent.operations.harness.reporting import DiscordOpsAlert, HarnessReporter
 from investment_agent.operations.harness.runtime import HarnessScheduler, JobRegistry
@@ -90,9 +89,10 @@ def build_registry(
         build_events=selected.build_events,
         interval_seconds=feature_store_interval_seconds,
     ))
-    registry.register(autonomous_investment_job(
-        select_signal=selected.select_signal,
-        portfolio=selected.portfolio,
+    registry.register(system_portfolio_job(run_system_portfolio=selected.run_system_portfolio))
+    registry.register(my_portfolio_follow_job(
+        select_target=selected.select_target,
+        follow=selected.follow,
         execution_intent=selected.execution_intent,
         approval_request=selected.approval_request,
         approval_worker=selected.approval_worker,
@@ -116,10 +116,6 @@ def build_registry(
         registry.register(event_reanalysis_job(reanalyze=selected.reanalyze_events))
     if hasattr(selected, "run_ml_challengers"):
         registry.register(ml_challengers_job(train_challengers=selected.run_ml_challengers))
-    if hasattr(selected, "run_virtual_books"):
-        registry.register(virtual_books_job(run_books=selected.run_virtual_books))
-    if hasattr(selected,'watch_entries'):
-        registry.register(entry_watch_job(watch=selected.watch_entries))
     # 뉴스·소셜 수집과 90일 보존 정리. 주문이 아니라 데이터 수집이라 거래 kill
     # switch·모드와 무관하게 항상 돈다.
     registry.register(intelligence_job(

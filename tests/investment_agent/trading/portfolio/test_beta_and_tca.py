@@ -4,10 +4,7 @@ import unittest
 from datetime import date, timedelta
 
 from investment_agent.trading.portfolio.market_risk import (
-    TradingCostInputs,
-    calibrate_trading_costs,
     estimate_betas,
-    realized_one_way_cost,
 )
 from investment_agent.trading.portfolio.optimizer import ExpectedReturnSignal, OptimizerPolicy, RiskAwareOptimizer
 
@@ -23,7 +20,7 @@ def _rows(returns: list[float]) -> list[dict]:
 
 
 def _signal(symbol: str, expected: float) -> ExpectedReturnSignal:
-    return ExpectedReturnSignal(symbol, expected, 1.0, 0.1, 5, "t", AT, "v", action="open")
+    return ExpectedReturnSignal(symbol, expected, 1.0, 0.1, 5, "t", AT, "v")
 
 
 class BetaConstraintTest(unittest.TestCase):
@@ -74,37 +71,6 @@ class BetaConstraintTest(unittest.TestCase):
                 (_signal("HIGH", 0.01), _signal("LOW", 0.01)),
                 current_weights={"CASH": 1.0}, betas={"HIGH": 1.0},
             )
-
-
-class TcaCalibrationTest(unittest.TestCase):
-    def test_realized_cost_sign_convention(self):
-        buy = {"side": "buy", "reference_price": 100, "average_fill_price": 100.1, "filled_quantity": 10, "commission": 0}
-        sell = {"side": "sell", "reference_price": 100, "average_fill_price": 100.1, "filled_quantity": 10, "commission": 0}
-        self.assertAlmostEqual(realized_one_way_cost(buy), 0.001)
-        self.assertAlmostEqual(realized_one_way_cost(sell), -0.001)
-        self.assertIsNone(realized_one_way_cost({"side": "buy"}))
-
-    def test_costs_rise_with_enough_expensive_fills_but_never_fall(self):
-        estimate = {
-            "AAPL": TradingCostInputs("AAPL", 0.0001, 0.02, 1e10),
-            "MSFT": TradingCostInputs("MSFT", 0.0003, 0.02, 1e9),
-            "NVDA": TradingCostInputs("NVDA", 0.0001, 0.02, 1e10),
-        }
-
-        def fill(ticker, price):
-            return {"ticker": ticker, "side": "buy", "reference_price": 100.0,
-                    "average_fill_price": price, "filled_quantity": 10, "commission": 0.0}
-
-        observations = (
-            [fill("AAPL", 100.2)] * 5          # 20bp 실측 → 상향
-            + [fill("MSFT", 99.9)] * 5         # 유리한 체결 → 내리지 않음
-            + [fill("NVDA", 100.5)] * 4        # 표본 부족 → 그대로
-        )
-        calibrated = calibrate_trading_costs(estimate, observations, minimum_fills=5)
-        self.assertAlmostEqual(calibrated["AAPL"].half_spread, 0.002)
-        self.assertTrue(calibrated["AAPL"].method.startswith("tca_median"))
-        self.assertEqual(calibrated["MSFT"], estimate["MSFT"])
-        self.assertEqual(calibrated["NVDA"], estimate["NVDA"])
 
 
 if __name__ == "__main__":

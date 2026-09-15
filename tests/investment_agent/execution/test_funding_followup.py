@@ -1,4 +1,4 @@
-"""자금 확보 매도가 끝난 batch만 한 번 더 구성할 수 있다."""
+"""자금 확보 매도가 끝난 System 목표만 한 번 더 따라갈 수 있다."""
 from __future__ import annotations
 
 import hashlib
@@ -11,9 +11,9 @@ from unittest.mock import patch
 
 from investment_agent.execution.contracts import ExecutionSafetyError
 from investment_agent.execution.db import (
+    RECORD_SYSTEM_TARGET_EXECUTION,
     ExecutionRepository,
     funding_followup_allowed,
-    funding_followup_batch_ids,
 )
 from investment_agent.platform.db.sqlite import runtime_connection
 
@@ -60,22 +60,20 @@ class FundingFollowupTest(unittest.TestCase):
             claim = {"intent_id": "intent-1"}
             if followups:
                 claim["funding_followups"] = followups
-            ExecutionRepository._save_record(connection, "signal_batch_execution", "batch-1", claim)
+            ExecutionRepository._save_record(connection, RECORD_SYSTEM_TARGET_EXECUTION, "target-1", claim)
 
     def allowed(self) -> bool:
         with runtime_connection(read_only=True) as connection:
-            claim = ExecutionRepository._record(connection, "signal_batch_execution", "batch-1")
+            claim = ExecutionRepository._record(connection, RECORD_SYSTEM_TARGET_EXECUTION, "target-1")
             return funding_followup_allowed(connection, claim)
 
     def test_finished_funding_sells_open_exactly_one_followup(self):
         self.seed()
         self.assertTrue(self.allowed())
-        self.assertEqual(funding_followup_batch_ids(), {"batch-1"})
-        self.assertFalse(self.repository.has_active_execution_for_proposals(["proposal-intent-1"], batch_id="batch-1"))
-        # batch를 모르면 기존 규칙대로 막힌다.
-        self.assertTrue(self.repository.has_active_execution_for_proposals(["proposal-intent-1"]))
+        # 승인을 이미 물었더라도 매도만 끝난 목표는 다시 따라갈 수 있다.
+        self.assertFalse(self.repository.is_system_target_followed("target-1"))
 
-    def test_each_unsettled_or_non_funding_state_keeps_the_batch_closed(self):
+    def test_each_unsettled_or_non_funding_state_keeps_the_target_closed(self):
         for overrides in (
             {"phase": "full"},
             {"intent_status": "executing"},
@@ -87,28 +85,18 @@ class FundingFollowupTest(unittest.TestCase):
                 self.setUp()
                 self.seed(**overrides)
                 self.assertFalse(self.allowed())
-                self.assertEqual(funding_followup_batch_ids(), set())
 
-    def test_followup_intent_is_accepted_once_and_then_the_batch_closes(self):
+    def test_followup_intent_is_accepted_once_and_then_the_target_closes(self):
         self.seed()
-        with patch.object(self.repository, "_decision_row", return_value={"metadata": {"active_batch_id": "batch-1"}}):
+        with patch.object(self.repository, "_decision_row", return_value={"metadata": {"system_target_id": "target-1"}}):
             self.repository.save_intent(_intent_row("intent-2", status="approved"))
             with runtime_connection(read_only=True) as connection:
-                claim = ExecutionRepository._record(connection, "signal_batch_execution", "batch-1")
+                claim = ExecutionRepository._record(connection, RECORD_SYSTEM_TARGET_EXECUTION, "target-1")
             self.assertEqual(claim["intent_id"], "intent-2")
             self.assertEqual(claim["funding_followups"], 1)
             self.assertEqual(claim["previous_intent_ids"], ["intent-1"])
             with self.assertRaisesRegex(ExecutionSafetyError, "active execution"):
                 self.repository.save_intent(_intent_row("intent-3", status="approved"))
-
-    def test_entry_queue_returns_a_followup_batch(self):
-        from investment_agent.trading.entry.repository import EntryRepository
-        self.seed()
-        review = {"expires_at": (NOW + timedelta(minutes=5)).isoformat(), "reviewed_at": NOW.isoformat()}
-        store = EntryRepository()
-        store.save({"signal_id": "s1", "ticker": "META", "status": "ready", "next_check_at": NOW.isoformat(),
-                    "batch_id": "batch-1", "review": review})
-        self.assertEqual([row["batch_id"] for row in store.ready(now=NOW)], ["batch-1"])
 
 
 class SupersessionTest(unittest.TestCase):

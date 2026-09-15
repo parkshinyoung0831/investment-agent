@@ -1,6 +1,6 @@
 from __future__ import annotations
 import unittest
-from investment_agent.trading.repository import TradingRepository, SCHEMA, T_SECURITY_DECISIONS, T_EVALUATIONS, T_PROPOSALS
+from investment_agent.trading.repository import TradingRepository, SCHEMA, T_SECURITY_DECISIONS, T_EVALUATIONS
 from tests.investment_agent.fakes import FakeDatabase
 
 class QueueTest(unittest.TestCase):
@@ -25,11 +25,6 @@ class QueueTest(unittest.TestCase):
             connection.close()
             rows=TradingRepository(LocalTradingDatabase(path)).evaluation_candidates(200)
             self.assertEqual(["c200"],[row["case_key"] for row in rows])
-
-    def test_batch_is_construction_metadata_not_analysis_run(self):
-        db=FakeDatabase(); repo=TradingRepository(db)
-        db.put(SCHEMA,T_PROPOSALS,[dict(proposal_id="p",stage="live",run_id="construction",metadata={"active_batch_id":"batch"})])
-        self.assertEqual(["p"],repo.live_proposal_ids_for_batch("batch"))
 
 class ExperienceTest(unittest.TestCase):
     def test_unbought_original_and_flat_actions_and_future_exclusion(self):

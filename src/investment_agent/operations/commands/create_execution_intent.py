@@ -33,6 +33,9 @@ def validate_promoted_execution_scope(
     if proposal.get("stage") != execution_mode:
         raise RuntimeError(f"{execution_mode} intent requires a fresh {execution_mode}-stage portfolio proposal")
     metadata = dict(proposal.get("metadata") or {})
+    if execution_mode == "live" and not metadata.get("system_target_id"):
+        # 실계좌는 System Portfolio 목표를 따라가기만 한다. 다른 경로의 비중으로 주문하지 않는다.
+        raise RuntimeError("live intent must follow a System Portfolio target")
     if metadata.get("execution_eligible") is not True:
         raise RuntimeError("portfolio proposal is not marked execution_eligible")
     captured_at = metadata.get("snapshot_captured_at")

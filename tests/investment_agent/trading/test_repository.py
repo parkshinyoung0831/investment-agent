@@ -114,17 +114,16 @@ class PolicyAndModelRepositoryTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "multiple signal batches"):
             self.repo.signal_batch_id_for_as_of(NOW)
 
-    def test_execution_ready_reader_ignores_incomplete_or_expired_batches(self) -> None:
-        self.db.put(SCHEMA, T_SIGNAL_RUNS, [
-            {"batch_id": "expired", "is_complete": True, "completed_at": NOW.isoformat()},
-            {"batch_id": "ready", "is_complete": True, "completed_at": NOW.isoformat()},
-            {"batch_id": "incomplete", "is_complete": False, "completed_at": NOW.isoformat()},
-        ])
+    def test_thesis_rows_are_read_by_record_time_not_signal_expiry(self) -> None:
+        """System 논지는 판단 시점으로 유효를 가른다. 24시간 신호 만료가 지난 논지도 창 안이면 읽는다."""
         self.db.put(SCHEMA, T_SIGNALS, [
-            {"signal_id": "old", "batch_id": "expired", "expires_at": "2026-09-04T00:00:00+00:00"},
-            {"signal_id": "live", "batch_id": "ready", "expires_at": "2026-09-06T00:00:00+00:00"},
+            {"signal_id": "expired", "batch_id": "b1", "security_id": 1, "proposal": {},
+             "recorded_at": "2026-09-01T00:00:00+00:00", "expires_at": "2026-09-02T00:00:00+00:00"},
+            {"signal_id": "future", "batch_id": "b2", "security_id": 1, "proposal": {},
+             "recorded_at": "2026-09-30T00:00:00+00:00", "expires_at": "2026-10-01T00:00:00+00:00"},
         ])
-        self.assertEqual("ready", self.repo.latest_execution_ready_batch_id(as_of_at=NOW))
+        rows = self.repo.signal_rows_recorded_between(start=NOW - timedelta(days=28), end=NOW)
+        self.assertEqual(["expired"], [row["signal_id"] for row in rows])
 
     def test_proposal_and_risk_readers_are_v1_scoped(self) -> None:
         self.db.put(SCHEMA, "portfolio_proposals", [{"proposal_id": "p1", "run_id": "r1"}])

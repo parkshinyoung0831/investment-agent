@@ -16,58 +16,25 @@ from investment_agent.platform.logging import get_logger, log_fields
 log = get_logger(__name__)
 
 
-def investment_pipeline_job(
+def my_portfolio_follow_job(
     *,
-    analysis: StageHandler,
-    portfolio: StageHandler,
-    approval_listener: StageHandler,
-    approval_worker: StageHandler,
-    job_id: str = "investment_pipeline",
-    interval_seconds: float = 24 * 60 * 60,
-    stale_after_seconds: float = 180.0,
-    kill_switch_env: str | None = None,
-) -> JobDefinition:
-    """실제 구현을 주입하되 주문 client 타입은 전혀 받지 않는 등록 경계다."""
-    return JobDefinition(
-        job_id=job_id,
-        interval_seconds=interval_seconds,
-        stale_after_seconds=stale_after_seconds,
-        kill_switch_env=kill_switch_env,
-        stages=(
-            StageDefinition("analysis", analysis, max_attempts=2),
-            StageDefinition("portfolio", portfolio, max_attempts=2),
-            StageDefinition(
-                "approval_listener", approval_listener,
-                trading_sensitive=True,
-                max_attempts=5,
-            ),
-            StageDefinition(
-                "approval_worker", approval_worker,
-                trading_sensitive=True,
-                max_attempts=3,
-            ),
-        ),
-    )
-
-
-def autonomous_investment_job(
-    *,
-    select_signal: StageHandler,
-    portfolio: StageHandler,
+    select_target: StageHandler,
+    follow: StageHandler,
     execution_intent: StageHandler,
     approval_request: StageHandler,
     approval_worker: StageHandler,
     notify_trades: StageHandler,
-    job_id: str = "investment_pipeline",
+    job_id: str = "my_portfolio_follow",
     interval_seconds: float = 24 * 60 * 60,
     stale_after_seconds: float = 8 * 60 * 60,
     kill_switch_env: str | None = None,
 ) -> JobDefinition:
-    """Gateway listener와 분리된 실제 분석→1회 승인→실행 흐름이다.
+    """My Portfolio가 현재 System 목표를 따라갈지 한 번 묻고, 승인되면 실행한다.
 
-    ``trading_sensitive`` 단계는 ``approval_workflow`` 모드와 꺼진 전역 kill
-    switch를 모두 요구한다. Discord Gateway는 이 job 안에서 기다리지 않고 별도
-    장기 서비스가 interaction을 원장에 기록한다.
+    System 목표는 이 job 밖(`system_portfolio`)에서 이미 정해졌다. 여기서는 목표와 실제 계좌의 차이만
+    다룬다. ``trading_sensitive`` 단계는 ``approval_workflow`` 모드와 꺼진 전역 kill switch를 모두
+    요구한다. Discord Gateway는 이 job 안에서 기다리지 않고 별도 장기 서비스가 interaction을 원장에
+    기록한다.
     """
     return JobDefinition(
         job_id=job_id,
@@ -76,15 +43,15 @@ def autonomous_investment_job(
         kill_switch_env=kill_switch_env,
         stages=(
             StageDefinition(
-                "select_signal",
-                select_signal,
+                "select_target",
+                select_target,
                 trading_sensitive=True,
                 max_attempts=2,
                 retry_delay_seconds=60,
             ),
             StageDefinition(
-                "portfolio",
-                portfolio,
+                "follow",
+                follow,
                 trading_sensitive=True,
                 max_attempts=2,
                 retry_delay_seconds=60,
@@ -332,25 +299,15 @@ def investment_reporting_job(*, update_performance: StageHandler, notify_reports
                 StageDefinition("notify_reports", notify_reports, approval_workflow_only=False, max_attempts=2)))
 
 
-def entry_watch_job(*, watch: StageHandler, interval_seconds: float = 5 * 60) -> JobDefinition:
-    """매수 조건 감시와 LLM 재판단은 원본 분석 주기와 분리한다.
+def system_portfolio_job(*, run_system_portfolio: StageHandler, interval_seconds: float = 60 * 60) -> JobDefinition:
+    """System Portfolio 평가·목표 갱신. 주문을 내지 않으므로 거래 kill switch·모드와 무관하다.
 
-    중장기 보유라 진입 가격을 분 단위로 쫓을 이유가 없다. 5분이면 장중 급변에서 계획이 무효가 되는 것은
-    잡고, 매 회차 시세 조회·LLM 재판단 호출은 5분의 1로 준다. 시세는 회차 시작에 새로 받으므로 신선도
-    기준(120초)과 충돌하지 않는다.
+    승인 흐름 밖에서 돌아야 시스템 자신의 판단 성과가 사람의 승인·거절과 섞이지 않는다. 한 시간 주기면
+    장 마감 뒤 확정 종가와 밤사이 feature 횡단면을 몇 시간 안에 반영한다.
     """
-    return JobDefinition(job_id='entry_watch',interval_seconds=interval_seconds,stale_after_seconds=1800,
-        stages=(StageDefinition('watch',watch,approval_workflow_only=False,max_attempts=1),))
-
-
-def virtual_books_job(*, run_books: StageHandler, interval_seconds: float = 30 * 60) -> JobDefinition:
-    """Shadow·Paper 가상계좌 정산·평가·판단. 주문을 내지 않으므로 거래 kill switch·모드와 무관하다.
-
-    승인 흐름 밖에서 돌아야 시스템 자신의 판단 성과가 사람의 승인·거절과 섞이지 않는다.
-    """
-    return JobDefinition(job_id="virtual_books", interval_seconds=interval_seconds, stale_after_seconds=6 * 60 * 60,
-        stages=(StageDefinition("run_books", run_books, approval_workflow_only=False, max_attempts=2,
-                                retry_delay_seconds=5 * 60),))
+    return JobDefinition(job_id="system_portfolio", interval_seconds=interval_seconds, stale_after_seconds=6 * 60 * 60,
+        stages=(StageDefinition("run_system_portfolio", run_system_portfolio, approval_workflow_only=False,
+                                max_attempts=2, retry_delay_seconds=5 * 60),))
 
 
 def event_reanalysis_job(*, reanalyze: StageHandler, interval_seconds: float = 10 * 60) -> JobDefinition:

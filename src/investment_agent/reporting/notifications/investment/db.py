@@ -15,8 +15,12 @@ log = get_logger(__name__)
 
 
 def latest_portfolio() -> dict[str, Any] | None:
-    """가장 최근 제안과 그 risk 판정·실행을 로컬 원장에서 묶는다."""
-    proposals = read_runtime_rows("portfolio_proposals")
+    """가장 최근 System Portfolio 목표와 그 risk 판정·실행을 로컬 원장에서 묶는다.
+
+    실계좌 추종 제안(`system_target_id`가 있는 live 제안)은 System 판단이 아니라 주문 계획이라 제외한다.
+    """
+    proposals = [row for row in read_runtime_rows("portfolio_proposals")
+                 if (row.get("metadata") or {}).get("system_policy")]
     if not proposals:
         return None
     proposal = max(proposals, key=lambda row: str(row.get("as_of_at") or ""))
@@ -32,6 +36,14 @@ def latest_portfolio() -> dict[str, Any] | None:
         return None
     risk = max(risks, key=lambda row: str(row.get("decided_at") or ""))
     return {"proposal": dict(proposal), "risk": dict(risk), "run": dict(runs[0])}
+
+
+def latest_analysis_run_id() -> str | None:
+    """종목 판단이 기록된 가장 최근 분석 회차. System 목표 회차와 달리 종목 논지를 갖는다."""
+    rows = [row for row in read_runtime_rows("security_decisions") if row.get("run_id") and row.get("as_of_at")]
+    if not rows:
+        return None
+    return str(max(rows, key=lambda row: (str(row["as_of_at"]), str(row["run_id"])))["run_id"])
 
 
 def top_candidates(run_id: str, *, limit: int) -> list[dict[str, Any]]:
@@ -86,4 +98,4 @@ def recent_orders(*, since_at: str) -> list[dict[str, Any]]:
     } for order in orders]
 
 
-__all__ = ["latest_portfolio", "recent_orders", "top_candidates"]
+__all__ = ["latest_analysis_run_id", "latest_portfolio", "recent_orders", "top_candidates"]

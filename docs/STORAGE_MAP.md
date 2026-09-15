@@ -47,7 +47,7 @@ Supabase                        ← GitHub Actions가 읽고 쓰는 유일한 �
 | `10_account.sql` | `account_snapshots` |
 | `20_decisions.sql` | `policies` · `model_versions` · `model_promotions` · `decision_runs` · `security_decisions` · `decision_evidence` · `signal_runs` · `signals` · `portfolio_proposals` · `risk_decisions` · `portfolio_decisions` · `decision_evaluations` · `attribution_reports` |
 | `30_execution.sql` | `execution_control` · `runtime_records` · `intents` · `approvals` · `order_manifests` · `order_attempts` · `order_events` · `orders` · `fills` · `reconciliation_runs` |
-| `47_virtual_books.sql` | `virtual_books` · `virtual_positions` · `virtual_decisions` · `virtual_orders` · `virtual_fills` · `virtual_nav` — Shadow·Paper 가상계좌. 실계좌 원장과 표를 나눠 가상 잔고가 실주문 게이트에 섞이지 않는다 |
+| `47_system_portfolio.sql` | `system_targets` · `system_nav` — System Portfolio 목표비중과 비중 기반 NAV. 실계좌·승인 원장을 참조하지 않아 사람의 선택이 System 성과에 섞이지 않는다 |
 
 알림 중복 방지는 여기가 아니라 Postgres `notifications`에 있다. 같은 알림을 GitHub Actions
 러너와 로컬 하네스가 함께 보내므로, 기계마다 원장을 두면 원장끼리 서로를 모른 채 같은 카드를

@@ -33,36 +33,12 @@ class PerformanceSourcesTest(unittest.TestCase):
         with self.assertRaises(ExecutionSafetyError):
             self.repository.set_manual_control_state(expected_version=1, is_enabled=False, reason='낡은 요청')
 
-    def test_entry_guard_blocks_price_change_and_expired_review(self):
-        from datetime import timedelta
-        from investment_agent.execution.contracts import ExecutionSafetyError
-        now=datetime.now(timezone.utc)
-        guard=dict(ticker='AAPL',plan={'lower_price':99,'upper_price':101},review={'decision':'enter','reviewed_at':now.isoformat(),'expires_at':(now+timedelta(minutes=5)).isoformat()})
-        with runtime_connection() as connection:
-            self.repository._save_record(connection,'entry_guard','batch',guard)
-        with patch.object(self.repository,'_decision_row',return_value={'metadata':{'active_batch_id':'batch'}}):
-            self.repository.assert_entry_timing('p',prices={'AAPL':100},now=now)
-            with self.assertRaises(ExecutionSafetyError):
-                self.repository.assert_entry_timing('p',prices={'AAPL':102},now=now)
-            with self.assertRaises(ExecutionSafetyError):
-                self.repository.assert_entry_timing('p',prices={'AAPL':100},now=now+timedelta(minutes=6))
-
     def test_detailed_performance_snapshots_survive_risk_retention(self):
         for day in (1, 5):
             self.repository.save_account_snapshot({"execution_mode": "live", "broker_account_hash": "account", "currency": "USD", "equity": 100 + day, "cash": 100 + day, "captured_at": f"2026-09-{day:02d}T12:00:00+00:00", "positions": []})
         sources = self.repository.performance_sources()
         self.assertEqual(len(sources["account_snapshots"]), 2)
         self.assertEqual({row["currency"] for row in sources["account_snapshots"]}, {"USD"})
-
-    def test_only_active_or_executed_live_intents_block_batch(self):
-        now = datetime(2026, 9, 13, tzinfo=timezone.utc)
-        with runtime_connection() as connection:
-            for name, status, expires in (("pending", "approved", "2026-09-14"), ("stale", "approved", "2026-09-12"), ("done", "completed", "2026-09-12"), ("failed", "failed", "2026-09-14")):
-                connection.execute("INSERT INTO intents VALUES(?,?,?,?,?,?,?,?,?,?)", (name, name, name, "live", status, "2026-09-01", expires + "T00:00:00+00:00", "{}", "2026-09-01", "2026-09-01"))
-        for name in ("pending", "done"):
-            self.assertTrue(self.repository.has_active_execution_for_proposals([name], as_of_at=now))
-        for name in ("stale", "failed", "missing"):
-            self.assertFalse(self.repository.has_active_execution_for_proposals([name], as_of_at=now))
 
     def test_broker_observations_produce_net_realization_without_individual_fills(self):
         from investment_agent.trading.performance.service import update_performance
@@ -82,7 +58,22 @@ class PerformanceSourcesTest(unittest.TestCase):
         self.assertEqual(report['realization']['net_pnl'], 18)
         self.assertEqual(update_performance(source=self.repository, repository=performance, as_of_at=datetime(2026,9,13,tzinfo=timezone.utc))['created'], 0)
 
-    def test_distinct_constructions_cannot_claim_same_signal_batch(self):
+    def test_a_system_target_counts_as_followed_once_approval_was_requested(self):
+        """승인을 물었으면(거절·만료 포함) 같은 목표로 다시 묻지 않는다. 카드가 안 나간 intent는 다시 연다."""
+        import json
+        now = datetime.now(timezone.utc).isoformat()
+        with runtime_connection() as connection:
+            connection.execute("INSERT INTO intents VALUES(?,?,?,?,?,?,?,?,?,?)",
+                               ("intent", "proposal", "risk", "live", "approved", now, now, "{}", now, now))
+            self.repository._save_record(connection, "system_target_execution", "target", {"intent_id": "intent"})
+        self.assertFalse(self.repository.is_system_target_followed("missing"))
+        self.assertFalse(self.repository.is_system_target_followed("target"))
+        with runtime_connection() as connection:
+            connection.execute("INSERT INTO approvals VALUES(?,?,?,?,?,?,?,?)",
+                               ("approval", "intent", "rejected", "m" * 64, now, json.dumps({}), now, now))
+        self.assertTrue(self.repository.is_system_target_followed("target"))
+
+    def test_distinct_follow_plans_cannot_claim_the_same_system_target(self):
         from datetime import timedelta
         from investment_agent.execution.orders.intents import ExecutionIntent
         from investment_agent.execution.contracts import ExecutionSafetyError
@@ -91,27 +82,9 @@ class PerformanceSourcesTest(unittest.TestCase):
             return ExecutionIntent(intent_id=identity, proposal_id=identity, risk_decision_id=identity,
                 execution_mode='live', target_weights={'CASH':1.0}, input_hash='a'*64,
                 not_before=now, expires_at=now+timedelta(hours=1)).as_row()
-        with patch.object(self.repository, '_decision_row', return_value={'metadata':{'active_batch_id':'same-batch'}}):
+        with patch.object(self.repository, '_decision_row', return_value={'metadata':{'system_target_id':'same-target'}}):
             self.repository.save_intent(intent('first'))
-            with self.assertRaisesRegex(ExecutionSafetyError, 'signal batch'):
+            with self.assertRaisesRegex(ExecutionSafetyError, 'System target'):
                 self.repository.save_intent(intent('second'))
         with runtime_connection(read_only=True) as connection:
             self.assertEqual(connection.execute('SELECT count(*) FROM intents').fetchone()[0], 1)
-
-    def test_rejected_entry_review_cannot_create_another_intent(self):
-        from datetime import timedelta
-        from investment_agent.execution.orders.intents import ExecutionIntent
-        from investment_agent.execution.contracts import ExecutionSafetyError
-        now = datetime.now(timezone.utc)
-        def intent(identity):
-            return ExecutionIntent(intent_id=identity, proposal_id=identity, risk_decision_id=identity,
-                execution_mode='live', target_weights={'CASH':1.0}, input_hash='a'*64,
-                not_before=now, expires_at=now+timedelta(minutes=5)).as_row()
-        with runtime_connection() as connection:
-            self.repository._save_record(connection,'entry_guard','entry-batch',{'review':{}})
-        with patch.object(self.repository,'_decision_row',return_value={'metadata':{'active_batch_id':'entry-batch'}}):
-            self.repository.save_intent(intent('first'))
-            with runtime_connection() as connection:
-                connection.execute("UPDATE intents SET status='failed' WHERE intent_id='first'")
-            with self.assertRaisesRegex(ExecutionSafetyError,'already used'):
-                self.repository.save_intent(intent('second'))

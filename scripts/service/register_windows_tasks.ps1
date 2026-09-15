@@ -20,7 +20,7 @@ $shadowName = "InvestmentAgent-ShadowDaily"
 $evaluateName = "InvestmentAgent-Evaluate"
 $portfolioName = "InvestmentAgent-PortfolioShadow"
 $shadowArgs = "-m investment_agent.trading.decision.shadow_daily --limit $DailyLimit"
-$portfolioArgs = "-m investment_agent.trading.decision.portfolio_shadow --limit $DailyLimit"
+$portfolioArgs = "-m investment_agent.trading.decision.analysis --limit $DailyLimit"
 $evaluateArgs = "-m investment_agent.research.commands.evaluate"
 
 Write-Output "Workspace: $workspace"

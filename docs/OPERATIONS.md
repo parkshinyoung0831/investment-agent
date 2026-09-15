@@ -46,7 +46,7 @@ uv sync --group dev --inexact
 uv pip install "tradingagents @ git+https://github.com/TauricResearch/TradingAgents.git@a33fd4c0f134485a43553a2c23a63cb14adbd88f" "openai>=2.45,<3"
 ```
 
-`portfolio_shadow`는 첫 종목 전에 요금 없는 모델 목록 조회로 이 경로를 확인하고, 실패하면 종목
+`trading.decision.analysis`는 첫 종목 전에 요금 없는 모델 목록 조회로 이 경로를 확인하고, 실패하면 종목
 실패를 원장에 쌓지 않고 회차를 시작하지 않는다.
 
 한 회차가 고르는 종목 수는 `AI_INVESTOR_DAILY_LIMIT`와 **오늘 남은 모델 예산**(하루 요청 한도 ÷ 종목당
@@ -270,7 +270,7 @@ DB 없이 오프라인 테스트로 상시 실행)·선언 적용 가능성(`v1_
 ```powershell
 python -m compileall -q src tests
 python -m unittest discover -s tests -t .
-python -m investment_agent.trading.decision.portfolio_shadow --ticker AAPL --dry-run
+python -m investment_agent.trading.decision.analysis --ticker AAPL --dry-run
 python -m investment_agent.operations.commands.harness_switch --status
 ```
 
@@ -441,8 +441,7 @@ GitHub Actions = GitHub 서버의 자동 시간표
 
 하네스는 자식 프로세스마다 비밀값 범위를 정한다. 주문·대사·계좌·시세 조회 모듈
 (`harness_adapters.EXECUTION_MODULES`)만 broker·승인 비밀을 받고, LLM 판단·학습·보고 모듈은
-판단 범위로 떠서 `.env`를 다시 읽어도 그 비밀이 지워진다. 진입 재검토처럼 시세가 필요한 LLM 작업은
-`capture_toss_quotes`가 실행 범위에서 시세 파일을 만들어 넘긴다.
+판단 범위로 떠서 `.env`를 다시 읽어도 그 비밀이 지워진다. System Portfolio는 계좌·시세 비밀이 필요 없다.
 
 하네스는 다음을 관리한다.
 

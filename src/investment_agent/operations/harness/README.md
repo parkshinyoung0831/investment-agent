@@ -27,9 +27,13 @@ flowchart TD
         ANA["analysis<br/>TradingAgents 일일 분석"] --> SB["Exact Signal Batch 생성"]
     end
 
-    subgraph PipelineFlow["주문 승인 및 실행 파이프라인"]
-        SB --> SEL["Exact Batch 고정"]
-        SEL --> PORT["construct_portfolio<br/>실계좌 잔고 결합"]
+    subgraph SystemJob["System Portfolio 잡"]
+        SB --> SYS["system_portfolio<br/>1시간 주기 NAV 평가·목표 갱신"]
+    end
+
+    subgraph PipelineFlow["My Portfolio 추종 파이프라인"]
+        SYS --> SEL["select_target<br/>최신 승인 System 목표, 같은 목표는 한 번만"]
+        SEL --> PORT["follow<br/>System 목표 − 새 Toss 스냅샷"]
         PORT --> INT["create_execution_intent<br/>15분 유효 Intent 발행"]
         INT --> REQ["request_toss_approval<br/>#투자-승인 카드 발행"]
         REQ --> POLL["승인 원장 Polling<br/>15초 주기 확인"]
@@ -97,7 +101,8 @@ stateDiagram-v2
 |---|---|---|
 | `TRADING_KILL_SWITCH` | 포트폴리오 산출, Intent 발행, 승인 요청, 실주문 발주 전역 차단 | `on` (안전 차단) |
 | `HARNESS_JOB_INVESTMENT_ANALYSIS_KILL_SWITCH` | TradingAgents 일일 분석 잡 차단 | `off` |
-| `HARNESS_JOB_INVESTMENT_PIPELINE_KILL_SWITCH` | 하네스 전체 파이프라인 잡 차단 | `off` |
+| `HARNESS_JOB_MY_PORTFOLIO_FOLLOW_KILL_SWITCH` | My Portfolio 추종(승인 요청·실주문) 잡 차단 | `off` |
+| `HARNESS_JOB_SYSTEM_PORTFOLIO_KILL_SWITCH` | System Portfolio 평가·목표 갱신 잡 차단 | `off` |
 | `HARNESS_JOB_ACCOUNT_RISK_SNAPSHOT_KILL_SWITCH` | 계좌 위험 스냅샷 수집 잡 차단 | `off` |
 | `HARNESS_JOB_TOSS_RECONCILIATION_KILL_SWITCH` | 브로커 체결 상태 동기화 잡 차단 | `off` |
 

@@ -39,12 +39,11 @@ def _top_n() -> int:
 
 
 def run(*, target: str | None = None, context: PublishContext | None = None) -> int:
-    """가장 최근 실행의 상위 후보를 종목별 카드로 원장에 맡긴다."""
-    latest = db.latest_portfolio()
-    if latest is None:
-        log.info("no decision run to report candidates for")
+    """가장 최근 분석 회차의 상위 논지를 종목별 카드로 원장에 맡긴다."""
+    run_id = db.latest_analysis_run_id()
+    if run_id is None:
+        log.info("no analysis run to report candidates for")
         return 0
-    run_id = str(latest["run"]["run_id"])
     decisions = db.top_candidates(run_id, limit=_top_n())
     if not decisions:
         log.info("no completed candidate to report run_id=%s", run_id)
@@ -53,7 +52,7 @@ def run(*, target: str | None = None, context: PublishContext | None = None) -> 
         Notice(
             subject=str(decision.get("ticker") or decision["case_key"]),
             occurrence=str(decision["case_key"]),
-            fact_at=fact_time(decision.get("as_of_at") or latest["proposal"]["as_of_at"]),
+            fact_at=fact_time(decision["as_of_at"]),
             basis={"final_decision": decision.get("final_decision") or {}},
             data=decision,
         )

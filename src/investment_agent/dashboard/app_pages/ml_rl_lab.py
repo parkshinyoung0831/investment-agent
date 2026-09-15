@@ -1,7 +1,7 @@
 """AI·강화학습(ML/RL) 자율진화 관제 랩 대시보드 페이지.
 
 하네스 7대 전자동 잡의 실제 실행 상태, PPO 강화학습 챔피언 정책 파일(active_policy.json),
-Lopez de Prado의 DSR 과적합 검정 게이지, RL challenger의 역할 설명,
+Lopez de Prado의 DSR 과적합 검정 게이지, RL 연구 후보의 역할 설명,
 그리고 실제 시장·매크로 DB 데이터를 조회하는 근거 묶음(Evidence Bundle)을 제공한다.
 가짜 목업이나 하드코딩된 더미 수치는 일체 사용하지 않는다.
 """
@@ -150,11 +150,11 @@ def show() -> None:
     st.divider()
 
     # 3. RL의 역할
-    st.subheader("3. RL 정책의 역할 — challenger 포트폴리오")
+    st.subheader("3. RL 정책의 역할 — 오프라인 연구 후보")
     st.info(
-        "승격된 RL 정책은 TradingAgents·ML 기대수익을 바꾸지 않습니다. 목표비중을 별도 포트폴리오 "
-        "후보로 계산해 기록하고, 같은 기간·같은 비용 가정의 champion과 성과로 비교합니다. "
-        "비중을 기대수익으로 되돌려 섞으면 이미 반영된 위험·비용을 두 번 세기 때문입니다.",
+        "RL 정책은 System Portfolio를 움직이지 않는 연구 후보입니다. 과거 재현·walk-forward 평가로만 "
+        "System과 비교하고, 별도 가상계좌를 운영하지 않습니다. 비중을 기대수익으로 되돌려 섞으면 이미 "
+        "반영된 위험·비용을 두 번 세기 때문입니다.",
         icon=":material/science:",
     )
 

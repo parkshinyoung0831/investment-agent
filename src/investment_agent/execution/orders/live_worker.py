@@ -476,10 +476,6 @@ class TossLiveExecutionWorker:
             now=current,
         )
         commands = commands_from_handoff(handoff, policy=self.policy)
-        if hasattr(self.repository,'assert_entry_timing'):
-            self.repository.assert_entry_timing(intent.proposal_id,prices=fresh.prices,now=current)
-            self.repository.assert_entry_timing(intent.proposal_id,
-                prices={command.symbol:float(command.limit_price_usd) for command in commands if command.limit_price_usd is not None},now=current)
         self._preflight_broker(commands)
         risk_state = self.repository.runtime_risk_state(
             account_seq=self.controls.account_seq,

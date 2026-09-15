@@ -98,19 +98,20 @@ Windows에서는 `scripts/dashboard.bat`을 실행한다. 대시보드는 관제
 AI 기반 판단의 중심은 `src/investment_agent/trading`다.
 
 ```text
-universe.py + candidate_ranker.py       분석할 종목 선택
+SYSTEM PORTFOLIO (실계좌·승인을 모른다)
+universe.py + candidate_ranker.py       분석할 종목 선택(System 보유·새 정보 우선)
 → context.py                            Supabase PIT 근거 묶음 생성
-→ agents/tradingagents_adapter.py       AI 분석과 토론
-→ portfolio/signal_book.py              공통 수익·확신·위험 신호
-→ portfolio/optimizer.py                목표 비중 계산
-→ risk/gate.py                절대 위험 제한 검사
-→ trading/repository.py / execution/db.py 판단·제안·risk·주문 결과 저장
+→ decision/analysis.py                  TradingAgents 논지 → 신호 배치
+→ decision/alpha.py                     factor 기대수익 + 논지 검증 → 기대수익·제약
+→ system/target.py                      위험예산 → optimizer → RiskGate → 목표비중
+→ system/engine.py                      비중 기반 NAV·성과
+MY PORTFOLIO
+→ my_portfolio.py                       System 목표 − Toss 계좌 = 추종 제안
+→ execution/                            Discord 승인 → Toss 주문 → 대사
 ```
 
-현재 하네스가 호출하는 주 분석 파일은 `trading/decision/portfolio_shadow.py`다. 이 경로는 투자안을 DB에
-저장하지만 주문은 보내지 않는다.
-
-`trading/shadow/`는 같은 판단을 가상계좌로 이어 운영해 성과를 증명하는 경로다(주문 없음).
+System Portfolio는 프로그램 판단을 100% 따랐다면의 전략을 추적하고 주문을 내지 않는다. 실계좌 주문은
+My Portfolio 추종 제안이 Discord에서 승인된 뒤에만 나간다.
 `feature_layer.py`, `ml`, `rl`, `backtest`, `qlib_adapter.py`는
 연구·검증 계층이며 파일이 있다는 이유만으로 실전 채택된 것은 아니다.
 

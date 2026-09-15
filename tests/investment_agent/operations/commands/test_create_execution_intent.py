@@ -19,6 +19,7 @@ def proposal(**changes):
         "metadata": {
             "coverage": "full_portfolio",
             "execution_eligible": True,
+            "system_target_id": "system_target_1",
             "snapshot_captured_at": "2026-08-22T00:59:00+00:00",
         },
     }
@@ -33,6 +34,16 @@ class CreateExecutionIntentScopeTest(unittest.TestCase):
             current_tracked={"AAPL"}, now=NOW,
         )
         self.assertEqual(result, "artifact_1")
+
+    def test_live_intent_must_follow_a_system_target(self):
+        """실계좌 주문은 System Portfolio 목표를 따라가는 제안에서만 나온다."""
+        orphan = proposal(metadata={"coverage": "full_portfolio", "execution_eligible": True,
+                                    "snapshot_captured_at": "2026-08-22T00:59:00+00:00"})
+        with self.assertRaisesRegex(RuntimeError, "System Portfolio target"):
+            validate_promoted_execution_scope(
+                orphan, execution_mode="live", approved_weights={"AAPL": 0.1, "CASH": 0.9},
+                current_tracked={"AAPL"}, now=NOW,
+            )
 
     def test_shadow_proposal_cannot_be_relabelled_live(self):
         with self.assertRaisesRegex(RuntimeError, "live-stage"):
@@ -104,7 +115,7 @@ class CreateExecutionIntentScopeTest(unittest.TestCase):
 
     def test_stale_snapshot_fails_closed(self):
         stale = proposal(metadata={
-            "coverage": "full_portfolio", "execution_eligible": True,
+            "coverage": "full_portfolio", "execution_eligible": True, "system_target_id": "system_target_1",
             "snapshot_captured_at": "2026-08-22T00:00:00+00:00",
         })
         with self.assertRaisesRegex(RuntimeError, "stale"):

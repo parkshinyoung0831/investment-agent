@@ -774,7 +774,7 @@ class DashboardStaticBoundaryTests(unittest.TestCase):
         violations: list[str] = []
         forbidden_modules = {
             "subprocess",
-            "investment_agent.trading.decision.portfolio_shadow",
+            "investment_agent.trading.decision.analysis",
             "investment_agent.execution.brokers.toss.orders",
             "investment_agent.notifications.channels.discord",
             # 룰 재현 백테스트는 순수 계산 함수만 쓴다. 전략 적재 경로는 닿지 않는다.
@@ -811,7 +811,7 @@ class DashboardStaticBoundaryTests(unittest.TestCase):
                         violations.append(f"{relative}:{node.lineno} from {module}")
                 elif isinstance(node, ast.Constant) and isinstance(node.value, str):
                     lowered = node.value.lower()
-                    if "portfolio_shadow" in lowered or "toss_orders" in lowered:
+                    if "trading.decision.analysis" in lowered or "toss_orders" in lowered:
                         violations.append(f"{relative}:{node.lineno} forbidden target string")
                 elif isinstance(node, ast.Call):
                     for keyword in node.keywords:
@@ -861,6 +861,7 @@ class DashboardStaticBoundaryTests(unittest.TestCase):
             "load_guru_data",
             "load_strategy_data",
             "load_latest_target",
+            "load_system_portfolio_data",
             "load_latest_account_snapshot",
             "load_price_history",
             "load_reporting_view",

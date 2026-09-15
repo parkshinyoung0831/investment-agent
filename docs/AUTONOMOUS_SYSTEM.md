@@ -32,13 +32,17 @@ src/investment_agent/trading/decision/
   ├─ regime.py              # 공통 MarketRegime
   ├─ candidate_ranker.py    # LLM 없는 deep-analysis priority
   ├─ event_impact.py        # 글로벌 사건 → 테마 → 대표 ETF → 민감한 보유 종목 재분석
-  ├─ portfolio_shadow.py    # TradingAgents 판단 → ML 융합 → SignalBatch (주 분석 경로)
+  ├─ analysis.py            # TradingAgents 논지 → ML 융합 → SignalBatch (비중을 정하지 않음)
+  ├─ alpha.py               # factor 기대수익 + 논지 검증 → 기대수익·제약
   └─ fusion.py              # 수치 예측 계약(보고용 policy snapshot이 참조)
 
-src/investment_agent/trading/shadow/
-  ├─ simulator.py           # 가상 체결·비용·부분체결
-  ├─ engine.py              # 정산 → 평가 → 판단 (실계좌와 같은 evaluate_portfolio)
-  └─ store.py               # runtime SQLite virtual_* 원장
+src/investment_agent/trading/system/   # System Portfolio — 실계좌·승인을 모른다
+  ├─ target.py              # 위험예산 → optimizer → no-trade band → RiskGate → 목표비중
+  ├─ accounting.py          # 비중 기반 NAV·배당·분할·비용
+  ├─ engine.py              # 평가 → 재조정 필요 판단 → 목표 기록
+  └─ store.py               # runtime SQLite system_* 원장
+
+src/investment_agent/trading/my_portfolio.py  # System 목표 − Toss 계좌 = 추종 제안
 
 src/investment_agent/research/
   ├─ features/               # PIT feature 공개 경계
@@ -50,11 +54,11 @@ src/investment_agent/research/
   └─ promotion/              # 수동 promotion gate
 
 src/investment_agent/trading/portfolio/
-  ├─ signal_book.py          # 종목 신호 모음
-  ├─ constructor.py          # SignalBook + 계좌 snapshot → 목표 비중
+  ├─ signal_book.py          # 분석 배치·논지 기록 계약
   ├─ optimizer.py            # 비중 최적화
-  ├─ ../risk/gate.py         # DeterministicRiskGate — 주문 직전 hard limit
-  ├─ proposals.py / decision.py / evaluator.py / promotion.py
+  ├─ ../risk/budget.py       # 시장·거시 입력 → 위험 한도
+  ├─ ../risk/gate.py         # DeterministicRiskGate — hard limit
+  ├─ evaluator.py
   └─ (snapshot contract는 src/investment_agent/execution/orders/snapshots.py)
 
 src/investment_agent/research/backtest/      # fill/slippage/fee 가정과 walk-forward 검증
@@ -137,7 +141,7 @@ risk limit 변경 권한을 갖지 않는다 — 위 박스를 벗어나는 순�
 - runtime SQLite `decision_runs` · `signal_runs` · `signals`
 - runtime SQLite `portfolio_proposals` · `risk_decisions` · `portfolio_decisions`
 - runtime SQLite `runtime_records`(`tca_summary` — 완전 체결 시 대사가 기록 · `quote_snapshot`)
-- runtime SQLite `virtual_*` — Shadow·Paper 가상계좌(`docs/STORAGE_MAP.md`)
+- runtime SQLite `system_targets` · `system_nav` — System Portfolio(`docs/STORAGE_MAP.md`)
 
 runtime SQLite는 local filesystem 경계와 `runtime_connection()`의 읽기 전용 연결을 사용한다.
 원격 PostgreSQL에는 금융 canonical 사실과 reporting view만 둔다.
@@ -151,8 +155,8 @@ runtime SQLite는 local filesystem 경계와 `runtime_connection()`의 읽기 �
 | 3 | Selection/Allocation/Timing 분리, PPO allocation/timing 명세 (PPO는 broker API를 호출하지 않는다) | 구현됨 |
 | 4 | RAM MarketState, quote snapshot, Reality Model 및 Native Backtest 변환 경계 | 구현됨 |
 | 5 | TCA, PnL/Attribution, TrainingSample 누적 경계 | 구현됨 |
-| 6 | 가상계좌(Shadow·Paper)·TCA 기록·ML challenger 자동 비교 | 구현됨 |
-| 7 | 가상계좌 성과 축적, 실제 fill calibration, 충분한 walk-forward/OOS 증거, 사람의 promotion 승인, Live 전환 | 운영 작업 |
+| 6 | System Portfolio(비중 기반 NAV)·My Portfolio 추종·TCA 기록·ML 후보 자동 비교 | 구현됨 |
+| 7 | System 성과 축적, 충분한 walk-forward/OOS 증거, 사람의 promotion 승인, Live 전환 | 운영 작업 |
 
 Phase 6은 서로 다른 두 게이트를 통과해야 한다 — 모델 artifact의 단계 승격
 (`src/investment_agent/trading/portfolio/promotion.py`의 `ManualPromotionGate`)과 실제 live 주문

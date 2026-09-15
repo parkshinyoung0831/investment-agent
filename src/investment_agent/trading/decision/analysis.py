@@ -1,4 +1,8 @@
-"""TradingAgents 종목 분석을 공통 목표 비중과 Risk Gate까지 Shadow 실행한다."""
+"""ALPHA 분석: 선정된 종목을 TradingAgents로 분석해 논지(기대초과수익·확신·근거)를 신호 배치로 남긴다.
+
+비중을 정하지 않는다. System Portfolio가 이 논지를 factor 기대수익의 검증·소폭 조정으로 읽는다
+(`trading.decision.alpha`). 채택된 ML 모델이 있으면 수치 예측을 합친 뒤 저장한다.
+"""
 from __future__ import annotations
 
 import argparse
@@ -32,17 +36,8 @@ from investment_agent.trading.decision.model_pool import (
     remaining_ticker_budget,
     select_model_for_ticker,
 )
-from investment_agent.trading.portfolio.contracts import CASH_SYMBOL
 from investment_agent.platform.serialization import stable_id
-from investment_agent.trading.portfolio.optimizer import OptimizerPolicy
-from investment_agent.trading.portfolio.proposals import from_optimized_security_proposals
-from investment_agent.trading.risk.gate import DeterministicRiskGate, PortfolioRiskPolicy
 from investment_agent.trading.portfolio.signal_book import SignalBatch, SignalRecord
-from investment_agent.research.rl.serving import (
-    RlPolicyOutcome,
-    compute_rl_target_weights,
-    default_active_policy_path,
-)
 from investment_agent.research.ml_serving import compute_ml_fusion, default_active_model_path
 from investment_agent.trading.decision.universe import NoCandidatesDue, select_tracked_tickers
 from investment_agent.platform.logging import get_logger
@@ -51,16 +46,6 @@ log = get_logger(__name__)
 
 AGENT_POLICY_KEY = "tradingagents-supabase"
 AGENT_POLICY_VERSION = 1
-
-
-def _rl_challenger(repository, proposals, *, as_of: datetime) -> RlPolicyOutcome:
-    """승격된 RL 정책의 목표비중을 challenger 후보로만 계산한다. 신호는 바꾸지 않는다."""
-    outcome = compute_rl_target_weights(
-        repository, as_of_at=as_of, policy_path=default_active_policy_path(),
-        proposals=proposals, current_weights={CASH_SYMBOL: 1.0},
-    )
-    log.info("RL challenger weights: %s", outcome.log_payload())
-    return outcome
 
 
 def _ml_fused_proposals(repository, proposals, *, as_of: datetime, model_artifact_id: str):
@@ -175,7 +160,7 @@ def verify_runtime(pool, *, verify=verify_tradingagents_runtime) -> str:
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(prog="investment_agent.trading.decision.portfolio_shadow")
+    parser = argparse.ArgumentParser(prog="investment_agent.trading.decision.analysis")
     parser.add_argument("--ticker", action="append")
     parser.add_argument("--limit", type=int, default=int(os.environ.get("AI_INVESTOR_DAILY_LIMIT", "5")))
     parser.add_argument("--as-of")
@@ -247,7 +232,6 @@ def main(argv: list[str] | None = None) -> int:
     # 환경이 깨졌으면 종목마다 같은 실패를 원장에 쌓지 않고 회차를 시작하지 않는다.
     verify_runtime(pool)
     ledger_path = _model_pool_ledger_path()
-    risk_policy = PortfolioRiskPolicy()
     repository.save_policy({
         "policy_key": AGENT_POLICY_KEY,
         "policy_version": AGENT_POLICY_VERSION,
@@ -275,15 +259,6 @@ def main(argv: list[str] | None = None) -> int:
             ),
             "signal_ttl_hours": signal_ttl_hours,
         },
-    })
-    repository.save_policy({
-        "policy_key": risk_policy.key,
-        "policy_version": risk_policy.version,
-        "stage": "shadow",
-        "model_provider": "deterministic_python",
-        "model_name": "DeterministicRiskGate",
-        "prompt_version": "none",
-        "config": risk_policy.to_config(),
     })
 
     artifact_payload = {
@@ -456,7 +431,6 @@ def main(argv: list[str] | None = None) -> int:
     if not attempted:
         repository.finish_decision_run(run_id, status="failed", failure_reason="model budget ran out before any ticker")
         return 0
-    _rl_challenger(repository, proposals, as_of=as_of)
     proposals, model_artifact_id = _ml_fused_proposals(
         repository, proposals, as_of=as_of, model_artifact_id=model_artifact_id,
     )
@@ -489,57 +463,13 @@ def main(argv: list[str] | None = None) -> int:
         repository.finish_decision_run(run_id, status="failed", failure_reason=reason[:2000])
         return 1
 
-    sectors = repository.sp500_sector_map(tickers)
-    portfolio = from_optimized_security_proposals(
-        proposals,
-        run_id=run_id,
-        source_version=runner.version,
-        current_weights={CASH_SYMBOL: 1.0},
-        case_keys=tuple(successful_case_keys),
-        sector_by_symbol=sectors,
-        optimizer_policy=OptimizerPolicy(
-            max_symbol_weight=risk_policy.max_symbol_weight,
-            max_sector_weight=risk_policy.max_sector_weight,
-            max_turnover=risk_policy.max_turnover,
-            min_cash_weight=risk_policy.min_cash_weight,
-        ),
-        coverage=(
-            "full_portfolio"
-            if {proposal.ticker for proposal in proposals} == set(universe.members)
-            else "partial_universe"
-        ),
-    )
-    repository.save_portfolio_proposal(portfolio.to_dict())
-    risk = DeterministicRiskGate(risk_policy).evaluate(
-        portfolio,
-        current_weights={CASH_SYMBOL: 1.0},
-        tradable_symbols=set(universe.members),
-        decided_at=datetime.now(timezone.utc),
-        sector_by_symbol=sectors,
-    )
-    repository.save_risk_decision(risk.to_dict())
-    decision_identity = {
-        "run_id": run_id,
-        "proposal_id": portfolio.proposal_id,
-        "risk_decision_id": risk.risk_decision_id,
-    }
-    repository.save_portfolio_decision({
-        "decision_id": stable_id("decision", decision_identity),
-        **decision_identity,
-        "champion_policy": {
-            "source_type": "optimizer",
-            "source_version": f"optimizer:{runner.version}",
-            "automatic_promotion": False,
-        },
-        "status": "approved" if risk.is_approved else "rejected",
-    })
     repository.finish_decision_run(
         run_id,
         status="partial" if failures else "completed",
     )
     log.info(
-        "portfolio shadow done run_id=%s proposals=%d failures=%d risk_approved=%s",
-        run_id, len(proposals), len(failures), risk.is_approved,
+        "thesis analysis done run_id=%s proposals=%d failures=%d",
+        run_id, len(proposals), len(failures),
     )
     return 0
 

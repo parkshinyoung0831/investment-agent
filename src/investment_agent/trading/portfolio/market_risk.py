@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import math
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import date
 from typing import Any, Mapping, Sequence
 
@@ -287,57 +287,6 @@ def estimate_trading_costs(
     return result
 
 
-def realized_one_way_cost(observation: Mapping[str, Any]) -> float | None:
-    """승인 기준가 대비 실제 평균 체결가와 수수료로 잰 편도 비용(비율, 양수 = 비용).
-
-    매수는 기준가보다 비싸게, 매도는 싸게 체결되면 비용이다. LIMIT band 안에서 유리하게
-    체결되면 음수가 될 수 있다.
-    """
-    try:
-        reference = float(observation["reference_price"])
-        fill = float(observation["average_fill_price"])
-        quantity = float(observation["filled_quantity"])
-        commission = float(observation.get("commission") or 0.0)
-        side = str(observation["side"]).lower()
-    except (KeyError, TypeError, ValueError):
-        return None
-    if not all(math.isfinite(value) for value in (reference, fill, quantity, commission)):
-        return None
-    if reference <= 0 or fill <= 0 or quantity <= 0 or side not in {"buy", "sell"}:
-        return None
-    direction = 1.0 if side == "buy" else -1.0
-    return direction * (fill - reference) / reference + commission / (fill * quantity)
-
-
-def calibrate_trading_costs(
-    inputs: Mapping[str, TradingCostInputs],
-    observations: Sequence[Mapping[str, Any]],
-    *,
-    minimum_fills: int = 5,
-) -> dict[str, TradingCostInputs]:
-    """실제 체결이 충분히 쌓인 종목은 추정 반스프레드를 실측 편도 비용 중앙값으로 **올린다**.
-
-    내리지는 않는다. 체결 몇 건이 우연히 유리했다고 비용을 낮춰 잡으면 optimizer가 회전을
-    늘리고, 그 손해는 나중에야 드러난다. 표본이 모자란 종목은 추정값 그대로다.
-    """
-    by_symbol: dict[str, list[float]] = {}
-    for row in observations:
-        cost = realized_one_way_cost(row)
-        symbol = str(row.get("ticker") or "").upper().strip()
-        if cost is not None and symbol:
-            by_symbol.setdefault(symbol, []).append(cost)
-    result: dict[str, TradingCostInputs] = {}
-    for symbol, value in inputs.items():
-        costs = by_symbol.get(symbol, [])
-        if len(costs) >= minimum_fills:
-            realized = float(np.median(costs))
-            if realized > value.half_spread:
-                result[symbol] = replace(value, half_spread=realized, method=f"tca_median_{len(costs)}_fills")
-                continue
-        result[symbol] = value
-    return result
-
-
 def estimate_betas(
     price_rows_by_symbol: Mapping[str, Sequence[Mapping[str, Any]]],
     *,
@@ -458,5 +407,5 @@ def historical_tail_losses(daily_returns: Sequence[float] | np.ndarray) -> dict[
 __all__ = [
     "MarketCovariance", "MarketRiskMetrics", "calculate_market_covariance", "calculate_market_risk",
     "ledoit_wolf_constant_correlation", "TradingCostInputs", "estimate_trading_costs", "historical_tail_losses",
-    "calibrate_trading_costs", "estimate_betas", "realized_one_way_cost",
+    "estimate_betas",
 ]

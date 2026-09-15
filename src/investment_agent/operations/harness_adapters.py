@@ -27,23 +27,42 @@ from investment_agent.operations.harness.market_schedule import SessionWindow
 
 log = get_logger(__name__)
 
+
+def follow_system_target(*, target_id: str, store: Any, repository: Any, now: datetime) -> Any:
+    """System 목표 하나를 새 Toss 계좌 스냅샷과 비교해 추종 제안을 기록한다.
+
+    계좌 조회는 여기서만 한다 — System 목표는 이미 정해진 뒤다.
+    """
+    from investment_agent.execution.brokers.toss.client import resolve_account_seq
+    from investment_agent.execution.orders.toss_snapshot import capture_toss_account_snapshot
+    from investment_agent.trading.my_portfolio import plan_follow
+
+    target = store.latest_target(approved_only=True)
+    if target is None or target.target_id != target_id:
+        raise RuntimeError("the selected System target is no longer the latest approved target")
+    if not repository.has_approved_promotion(target.model_artifact_id, "live"):
+        # 승격되지 않은 조합으로 브로커를 부르지 않는다.
+        raise RuntimeError("System target model artifact has not been manually promoted to live")
+    snapshot = capture_toss_account_snapshot(account_seq=resolve_account_seq(None))
+    return plan_follow(repository, target=target, snapshot=snapshot, now=now)
+
 _ID_PATTERNS = {
     "batch_id": re.compile(r"^signal_batch_[0-9a-f]{24}$"),
+    "target_id": re.compile(r"^system_target_[0-9a-f]{24}$"),
     "risk_decision_id": re.compile(r"^risk_[0-9a-f]{24}$"),
     "intent_id": re.compile(r"^intent_[0-9a-f]{24}$"),
     "approval_id": re.compile(r"^approval_[0-9a-f]{32}$"),
 }
 _MODULES = frozenset({
-    "investment_agent.operations.commands.watch_entries",
-    # 가상계좌. 실계좌 원장과 표가 다르고 주문을 내지 않는다.
-    "investment_agent.operations.commands.virtual_books",
+    # System Portfolio. 실계좌·승인 원장과 표가 다르고 주문을 내지 않는다.
+    "investment_agent.operations.commands.system_portfolio",
     # 사건 기반 즉시 재분석. 결과는 보통의 signal batch이고 주문은 내지 않는다.
     "investment_agent.operations.commands.event_reanalysis",
     # ML 후보 재학습·비교. 채택 파일은 쓰지 않는다.
     "investment_agent.research.commands.ml_challengers",
     "investment_agent.research.commands.build_decision_experiences",
     "investment_agent.operations.commands.update_performance",
-    "investment_agent.trading.decision.portfolio_shadow",
+    "investment_agent.trading.decision.analysis",
     # 학습 원장 생산. 주문이 아니라 데이터 수집이라 거래 kill switch와 무관하다.
     "investment_agent.research.commands.build_valuations",
     "investment_agent.research.commands.build_features",
@@ -59,7 +78,6 @@ _MODULES = frozenset({
     "investment_agent.operations.commands.execute_toss_live",
     "investment_agent.operations.commands.reconcile_toss",
     "investment_agent.operations.commands.capture_toss_risk_snapshot",
-    "investment_agent.operations.commands.capture_toss_quotes",
 })
 # broker·승인 비밀을 받는 모듈. LLM을 부르지 않는 주문·대사·계좌·시세 조회뿐이다.
 # 여기 없는 모듈은 판단 범위로 떠서 `.env`를 읽어도 그 비밀이 지워진다.
@@ -68,19 +86,20 @@ EXECUTION_MODULES = frozenset({
     "investment_agent.operations.commands.execute_toss_live",
     "investment_agent.operations.commands.reconcile_toss",
     "investment_agent.operations.commands.capture_toss_risk_snapshot",
-    "investment_agent.operations.commands.capture_toss_quotes",
 })
 
 
 class DecisionRepositoryPort(Protocol):
-    def latest_signal_batch_id(self, *, as_of_at: datetime) -> str | None: ...
-    def latest_execution_ready_batch_id(self, *, as_of_at: datetime) -> str | None: ...
     def signal_batch_id_for_as_of(self, *, as_of_at: datetime) -> str: ...
-    def has_live_execution_for_batch(self, batch_id: str) -> bool: ...
 
 
 class ApprovalRepositoryPort(Protocol):
     def approval_for_intent(self, intent_id: str) -> Any | None: ...
+    def is_system_target_followed(self, target_id: str) -> bool: ...
+
+
+class SystemTargetPort(Protocol):
+    def latest_target(self, *, approved_only: bool = False) -> Any | None: ...
 
 
 def _clock() -> datetime:
@@ -160,7 +179,8 @@ class ProductionInvestmentAdapters:
         command_runner: ModuleCommandRunner,
         decision_repository: DecisionRepositoryPort,
         approval_repository: ApprovalRepositoryPort,
-        construct_portfolio: Callable[..., Any],
+        system_store: SystemTargetPort,
+        follow_target: Callable[..., Any],
         create_execution_intent: Callable[..., Any],
         now: Callable[[], datetime] = _clock,
         session_window: SessionWindow = SessionWindow(),
@@ -169,7 +189,6 @@ class ProductionInvestmentAdapters:
         approval_ttl_minutes: int = 15,
         approval_poll_seconds: float = 15.0,
         timeouts: Mapping[str, float] | None = None,
-        entry_repository=None,
         is_background_enabled: bool = False,
     ) -> None:
         if analysis_limit < 1 or analysis_limit > 500:
@@ -179,10 +198,10 @@ class ProductionInvestmentAdapters:
         if not math.isfinite(approval_poll_seconds) or approval_poll_seconds <= 0:
             raise ValueError("approval_poll_seconds must be finite and positive")
         self.command_runner = command_runner
-        self.entry_repository = entry_repository
         self.decision_repository = decision_repository
         self.approval_repository = approval_repository
-        self.construct_portfolio = construct_portfolio
+        self.system_store = system_store
+        self.follow_target = follow_target
         self.create_execution_intent = create_execution_intent
         self.now = now
         self.session_window = session_window
@@ -196,7 +215,7 @@ class ProductionInvestmentAdapters:
             self._background=BackgroundStages()
             for name in ('analysis','build_valuations','build_features','build_labels','build_training_samples',
                          'build_events','evaluate_decisions','build_decision_experiences','continuous_learning',
-                         'watch_entries','update_performance','notify_reports','notify_investment'):
+                         'run_system_portfolio','update_performance','notify_reports','notify_investment'):
                 setattr(self,name,self._background.wrap(getattr(self,name)))
 
     @classmethod
@@ -209,7 +228,7 @@ class ProductionInvestmentAdapters:
         values = os.environ if environ is None else environ
         # 무거운 파이프라인 import는 dry-run 계획 생성 이후 실제 registry를 만들 때만 한다.
         from investment_agent.trading.supabase_repository import SupabaseRepository
-        from investment_agent.trading.portfolio.construct import construct_portfolio
+        from investment_agent.trading.system.store import SystemPortfolioStore
         from investment_agent.operations.commands.create_execution_intent import create_execution_intent
         from investment_agent.execution.db import ExecutionRepository
 
@@ -274,14 +293,13 @@ class ProductionInvestmentAdapters:
             start=_wall_time(values, "HARNESS_NY_RISK_START", time(9, 15)),
             end=_wall_time(values, "HARNESS_NY_RISK_END", time(16, 30)),
         )
-        from investment_agent.trading.entry.repository import EntryRepository
         return cls(
-            entry_repository=EntryRepository(),
             is_background_enabled=True,
             command_runner=runner,
             decision_repository=SupabaseRepository(),
             approval_repository=ExecutionRepository(),
-            construct_portfolio=construct_portfolio,
+            system_store=SystemPortfolioStore(),
+            follow_target=follow_system_target,
             create_execution_intent=create_execution_intent,
             session_window=window,
             risk_window=risk_window,
@@ -308,7 +326,7 @@ class ProductionInvestmentAdapters:
     def analysis(self, context: StageContext) -> StageOutcome:
         self.command_runner.run(
             PythonModuleCommand(
-                "investment_agent.trading.decision.portfolio_shadow",
+                "investment_agent.trading.decision.analysis",
                 (
                     "--as-of", context.now.isoformat(), "--limit", str(self.analysis_limit),
                     # timeout에 걸려 강제 종료되면 끝낸 종목의 신호까지 잃는다. 여유를 두고 스스로 멈추게 한다.
@@ -333,67 +351,54 @@ class ProductionInvestmentAdapters:
             "decision_as_of_at": context.now.isoformat(),
         })
 
-    def portfolio(self, context: StageContext) -> StageOutcome:
+    def select_target(self, context: StageContext) -> StageOutcome:
+        """따라갈 System 목표를 고른다. 같은 목표로는 한 번만 승인을 묻는다."""
         session_wait = self._session_wait(context)
         if session_wait is not None:
             return session_wait
-        batch_id = _metadata_id(context, stage_id="select_signal", key="batch_id")
-        outcome = self.construct_portfolio(
-            batch_id=batch_id,
-            as_of_at=self.now(),
-            stage="live",
-            dry_run=False,
+        target = self.system_store.latest_target(approved_only=True)
+        if target is None:
+            return StageOutcome.waiting(resume_after_seconds=60 * 60, metadata={"reason": "no_system_target"})
+        if _ID_PATTERNS["target_id"].fullmatch(str(target.target_id)) is None:
+            raise RuntimeError("System target ID is invalid")
+        if self.approval_repository.is_system_target_followed(target.target_id):
+            return StageOutcome.skipped({"target_id": target.target_id, "reason": "system_target_already_asked"})
+        return StageOutcome.succeeded({"target_id": target.target_id})
+
+    def follow(self, context: StageContext) -> StageOutcome:
+        """새 Toss 계좌 스냅샷으로 `System 목표 − 실제 계좌` 제안을 기록한다. 주문은 아직 없다."""
+        session_wait = self._session_wait(context)
+        if session_wait is not None:
+            return session_wait
+        target_id = _metadata_id(context, stage_id="select_target", key="target_id")
+        outcome = self.follow_target(
+            target_id=target_id,
+            store=self.system_store,
             repository=self.decision_repository,
+            now=self.now(),
         )
+        metadata = {"target_id": target_id, "status": outcome.status, "reason": outcome.reason}
+        if outcome.status != "planned":
+            return StageOutcome.skipped(metadata)
         risk_id = str(outcome.risk_decision_id)
         if _ID_PATTERNS["risk_decision_id"].fullmatch(risk_id) is None:
-            raise RuntimeError("portfolio did not return a valid risk decision ID")
-        metadata = {
+            raise RuntimeError("follow did not return a valid risk decision ID")
+        return StageOutcome.succeeded({
+            **metadata,
             "proposal_id": str(outcome.proposal_id),
             "risk_decision_id": risk_id,
-            "risk_approved": bool(outcome.is_approved),
             "account_snapshot_id": str(outcome.account_snapshot_id or ""),
             "constructed_at": self.now().isoformat(),
-        }
-        return StageOutcome.succeeded(metadata) if outcome.is_approved else StageOutcome.skipped(metadata)
-
-    def select_signal(self, context: StageContext) -> StageOutcome:
-        session_wait = self._session_wait(context)
-        if session_wait is not None:
-            return session_wait
-        if self.entry_repository is not None:
-            for entry in self.entry_repository.ready(now=self.now()):
-                batch_id=entry['batch_id']
-                if self.decision_repository.has_live_execution_for_batch(batch_id):
-                    continue
-                return StageOutcome.succeeded({'batch_id':batch_id,'entry_review_id':entry['review']['review_id']})
-            return StageOutcome.waiting(resume_after_seconds=60,metadata={'reason':'no_confirmed_entry_timing'})
-        query_fn = getattr(
-            self.decision_repository,
-            "latest_execution_ready_batch_id",
-            self.decision_repository.latest_signal_batch_id,
-        )
-        batch_id = query_fn(as_of_at=self.now())
-        if batch_id is None or _ID_PATTERNS["batch_id"].fullmatch(batch_id) is None:
-            raise RuntimeError("no valid completed signal batch is available")
-        if (
-            hasattr(self.decision_repository, "has_live_execution_for_batch")
-            and self.decision_repository.has_live_execution_for_batch(batch_id)
-        ):
-            return StageOutcome.skipped({
-                "batch_id": batch_id,
-                "reason": "already_executed_live_batch",
-            })
-        return StageOutcome.succeeded({"batch_id": batch_id})
+        })
 
     def execution_intent(self, context: StageContext) -> StageOutcome:
-        portfolio = context.completed_metadata.get("portfolio", {})
-        if portfolio.get("risk_approved") is not True:
-            return StageOutcome.skipped({"reason": "risk_not_approved"})
+        follow = context.completed_metadata.get("follow", {})
+        if follow.get("status") != "planned":
+            return StageOutcome.skipped({"reason": "no_follow_plan"})
         risk_id = _metadata_id(
-            context, stage_id="portfolio", key="risk_decision_id",
+            context, stage_id="follow", key="risk_decision_id",
         )
-        constructed_at = parse_datetime(str(portfolio.get("constructed_at") or ""))
+        constructed_at = parse_datetime(str(follow.get("constructed_at") or ""))
         age = (self.now() - constructed_at).total_seconds()
         if age < 0 or age > 240:
             raise RuntimeError("portfolio snapshot expired before intent creation")
@@ -658,30 +663,14 @@ class ProductionInvestmentAdapters:
         ), stop_event=context.stop_event)
         return StageOutcome.succeeded({"experiences_built_at": self.now().isoformat()})
 
-    def watch_entries(self, context: StageContext) -> StageOutcome:
-        """조건 감시는 주문 허용과 별개로 실행하고 실제 진입 후보만 저장한다."""
-        wait=self._session_wait(context)
-        if wait is not None:
-            return wait
-        with TemporaryDirectory() as directory:
-            quotes = str(Path(directory) / "entry-quotes.json")
-            # 시세 조회는 실행 범위, LLM 재검토는 판단 범위로 나눠 broker 자격증명이 LLM 프로세스에 가지 않게 한다.
-            self.command_runner.run(PythonModuleCommand(
-                "investment_agent.operations.commands.capture_toss_quotes", ("--out", quotes), 120,
-            ), stop_event=context.stop_event)
-            self.command_runner.run(PythonModuleCommand(
-                "investment_agent.operations.commands.watch_entries", ("--quotes", quotes), 600,
-            ), stop_event=context.stop_event)
-        return StageOutcome.succeeded({'checked_at':self.now().isoformat()})
-
-    def run_virtual_books(self, context: StageContext) -> StageOutcome:
-        """승인 여부와 무관하게 가상계좌를 정산·평가하고 새 신호로 다시 판단한다."""
+    def run_system_portfolio(self, context: StageContext) -> StageOutcome:
+        """승인 여부와 무관하게 System Portfolio를 평가하고 필요하면 목표비중을 다시 만든다."""
         self.command_runner.run(PythonModuleCommand(
-            "investment_agent.operations.commands.virtual_books",
+            "investment_agent.operations.commands.system_portfolio",
             ("--as-of", context.now.isoformat()),
-            self.timeouts.get("virtual_books", 30 * 60),
+            self.timeouts.get("system_portfolio", 30 * 60),
         ), stop_event=context.stop_event)
-        return StageOutcome.succeeded({"virtual_books_run_at": self.now().isoformat()})
+        return StageOutcome.succeeded({"system_portfolio_run_at": self.now().isoformat()})
 
     def reanalyze_events(self, context: StageContext) -> StageOutcome:
         """새 공시·고영향 사건·검증된 글로벌 사건이 있는 보유 종목만 곧바로 다시 분석한다."""

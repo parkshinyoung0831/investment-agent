@@ -12,7 +12,6 @@ from investment_agent.operations.harness.contracts import (
     StageOutcome,
 )
 from investment_agent.operations.harness.health import inspect_health
-from investment_agent.operations.harness.pipeline import investment_pipeline_job
 from investment_agent.operations.harness.runtime import HarnessScheduler, JobRegistry
 from investment_agent.operations.harness.state import JsonStateStore
 
@@ -38,6 +37,21 @@ def registry_with(definition: JobDefinition) -> JobRegistry:
     return registry
 
 
+def _approval_pipeline(*, analysis, portfolio, approval_listener, approval_worker, interval_seconds=24 * 60 * 60):
+    """스케줄러 계약만 보는 4단계 job. 앞 둘은 판단, 뒤 둘은 거래에 민감하다."""
+    return JobDefinition(
+        job_id="approval_pipeline",
+        interval_seconds=interval_seconds,
+        stale_after_seconds=180.0,
+        stages=(
+            StageDefinition("analysis", analysis, max_attempts=2),
+            StageDefinition("portfolio", portfolio, max_attempts=2),
+            StageDefinition("approval_listener", approval_listener, trading_sensitive=True, max_attempts=5),
+            StageDefinition("approval_worker", approval_worker, trading_sensitive=True, max_attempts=3),
+        ),
+    )
+
+
 class HarnessSchedulerTest(unittest.TestCase):
     def test_pipeline_waits_for_approval_and_resumes_with_same_idempotency_key(self):
         calls: list[tuple[str, str]] = []
@@ -55,7 +69,7 @@ class HarnessSchedulerTest(unittest.TestCase):
                 return StageOutcome.waiting(resume_after_seconds=60.0)
             return StageOutcome.succeeded({"approval": "recorded"})
 
-        definition = investment_pipeline_job(
+        definition = _approval_pipeline(
             analysis=complete,
             portfolio=complete,
             approval_listener=listener,
@@ -198,7 +212,7 @@ class HarnessSchedulerTest(unittest.TestCase):
             calls.append(context.stage_id)
             return StageOutcome.succeeded()
 
-        definition = investment_pipeline_job(
+        definition = _approval_pipeline(
             analysis=handler,
             portfolio=handler,
             approval_listener=handler,

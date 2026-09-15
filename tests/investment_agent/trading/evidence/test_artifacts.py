@@ -173,7 +173,7 @@ class EvidenceEntryIntegrationTest(unittest.TestCase):
     def test_shadow_entries_archive_evidence_before_case_save(self) -> None:
         root = Path(__file__).resolve().parents[4]
         entry_paths = (
-            root / "src/investment_agent/trading/decision/portfolio_shadow.py",
+            root / "src/investment_agent/trading/decision/analysis.py",
         )
 
         for path in entry_paths:

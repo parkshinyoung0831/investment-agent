@@ -90,7 +90,7 @@ Supabase 쿼리 빌더는 `src/investment_agent/data/fundamentals/infrastructure
 | [macro](src/investment_agent/data/macro/README.md) | 일별 시장 상태 (FRED/ECOS/yfinance/웹/내부 계산) | `investment_agent.data.macro.commands.macro_refresh` | 화~토 + 월(`macro_etl_monday`) |
 | macro releases | macro owner의 자연키 발표·일정 변경·원자료·예상값 변경; actual은 reporting view에서 계산 | `investment_agent.data.macro.commands.econ_calendar_*` | daily + 발표창(UTC 12~15시 평일) 15분 watcher + 주간 revision audit |
 | [strategy](src/investment_agent/research/strategies/README.md) | 팩터/룰 기반 전략 배분 | `investment_agent.research.strategies.etl` | 월 1회 |
-| [trading](src/investment_agent/trading/README.md) | TradingAgents 판단·full portfolio·backtest/RL·평가/승격 | `investment_agent.trading.decision.portfolio_shadow` / `investment_agent.trading.portfolio.construct` | 로컬 하네스/수동 |
+| [trading](src/investment_agent/trading/README.md) | ALPHA 논지·System Portfolio 목표·My Portfolio 추종·backtest/RL·평가/승격 | `investment_agent.trading.decision.analysis` / `investment_agent.operations.commands.system_portfolio` | 로컬 하네스/수동 |
 | [watchlists](src/investment_agent/data/universe/watchlists/README.md) | 관심종목 설정·Toss 보유 출처 동기화 | `investment_agent.data.universe.watchlists.watchlist` | 수동 / 로컬 |
 | [intelligence](src/investment_agent/intelligence/README.md)(news) | 관심종목 뉴스 수집 | `investment_agent.intelligence.commands.collect_news` | 로컬 하네스 |
 | intelligence(social) | 서브레딧 스트림·종목 언급 | `investment_agent.intelligence.commands.collect_social` | 로컬 하네스 |

@@ -14,7 +14,7 @@ from investment_agent.trading.portfolio.contracts import (
     RiskDecision,
     validated_weights,
 )
-from investment_agent.trading.portfolio.optimizer import ACTION_EXIT, mandatory_base_weights
+from investment_agent.trading.portfolio.optimizer import mandatory_base_weights
 from investment_agent.trading.risk.stress import scenario_losses
 from investment_agent.execution.orders.intents import ExecutionIntent
 from investment_agent.platform.serialization import canonical_json, stable_id
@@ -254,18 +254,14 @@ class DeterministicRiskGate:
                 weights[CASH_SYMBOL] = self.policy.min_cash_weight
                 adjustments.append(f"CASH raised to {self.policy.min_cash_weight:.6f}")
 
-        signal_actions = {
-            str(symbol).upper(): str(action)
-            for symbol, action in dict(proposal.metadata.get("signal_actions") or {}).items()
-        }
         exit_symbols = frozenset(
-            symbol for symbol, action in signal_actions.items()
-            if action == ACTION_EXIT and float(current.get(symbol, 0.0)) > 0.0
+            str(symbol).upper() for symbol in proposal.metadata.get("forced_exits") or ()
+            if float(current.get(str(symbol).upper(), 0.0)) > 0.0
         )
         kept_exits = sorted(symbol for symbol in exit_symbols if weights.get(symbol, 0.0) > 0.0)
         if kept_exits:
             # 청산 명령을 받은 종목이 남아 있으면 optimizer가 명령을 어긴 것이다.
-            violations.append("exit signal kept a position: " + ", ".join(kept_exits))
+            violations.append("forced exit kept a position: " + ", ".join(kept_exits))
 
         # turnover 한도는 재량 매매에만 건다. 청산·종목 상한 준수를 위한 현금화는 먼저
         # 반영한 출발점(base)으로 보고, 축소 비율도 그 출발점 쪽으로만 당긴다 — 현재 비중

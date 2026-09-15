@@ -10,11 +10,10 @@ from investment_agent.operations.harness.contracts import (
 )
 from investment_agent.operations.harness.pipeline import (
     account_risk_snapshot_job,
-    autonomous_investment_job,
+    my_portfolio_follow_job,
     earnings_watch_job,
     feature_store_job,
     intelligence_job,
-    investment_pipeline_job,
     scheduled_analysis_job,
     toss_reconciliation_job,
 )
@@ -43,14 +42,13 @@ __all__ = [
     "StageDefinition",
     "StageOutcome",
     "account_risk_snapshot_job",
-    "autonomous_investment_job",
+    "my_portfolio_follow_job",
     "check_runtime_status",
     "earnings_watch_job",
     "emergency_stop",
     "feature_store_job",
     "generate_hmac_secret",
     "intelligence_job",
-    "investment_pipeline_job",
     "run_security_audit",
     "scheduled_analysis_job",
     "toss_reconciliation_job",

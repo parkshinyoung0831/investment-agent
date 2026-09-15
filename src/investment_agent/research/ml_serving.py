@@ -3,7 +3,7 @@
 ## 왜 이 파일이 있나
 
 학습(`train_baseline`)·재로딩(`ml_inference`)·융합(`decision.fusion`)은 따로 있었지만,
-실제 분석 경로(`portfolio_shadow`)는 셋 중 아무것도 부르지 않았다. 그래서 ML이 아무리
+실제 분석 경로(`trading.decision.analysis`)는 셋 중 아무것도 부르지 않았다. 그래서 ML이 아무리
 좋아져도 비중은 LLM 의견만으로 정해졌다. 이 모듈이 그 배선이다.
 
 ## ML은 얼마나 반영되나

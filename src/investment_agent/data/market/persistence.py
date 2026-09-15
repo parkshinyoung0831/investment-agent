@@ -142,25 +142,6 @@ def split_history(ticker: str) -> list[dict]:
     ]
 
 
-def corporate_actions(ticker: str, *, since: str | date) -> list[dict]:
-    """행위일이 `since` 이후인 분할·배당. 가상계좌가 보유 수량과 현금을 맞출 때 쓴다."""
-    security_id = _ticker_id(ticker)
-    if security_id is None:
-        return []
-    start = date.fromisoformat(str(since)[:10])
-    repo = MarketRepository(_db())
-    rows = [
-        {"ticker": ticker.upper(), "action_date": event.action_date.isoformat(), "kind": "split", "value": event.split_ratio}
-        for event in repo.splits([security_id], since=start)
-    ]
-    rows += [
-        {"ticker": ticker.upper(), "action_date": event.ex_date.isoformat(), "kind": "dividend", "value": event.div_amount}
-        for event in repo.dividends([security_id], since=start)
-        if event.div_amount and event.div_amount > 0
-    ]
-    return rows
-
-
 def _ticker_id(ticker: str) -> int | None:
     return _ids([ticker]).get(str(ticker).upper())
 
