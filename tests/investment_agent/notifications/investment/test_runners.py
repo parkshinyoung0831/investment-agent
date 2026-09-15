@@ -64,7 +64,7 @@ class PortfolioRunnerTest(_Base):
 class CandidateRunnerTest(_Base):
     def test_each_candidate_gets_its_own_card_once(self):
         second = {**_CANDIDATE, "case_key": "case_b", "ticker": "MSFT"}
-        with mock.patch.object(run_candidates.db, "latest_portfolio", return_value=_PORTFOLIO), \
+        with mock.patch.object(run_candidates.db, "latest_analysis_run_id", return_value="run_1"), \
              mock.patch.object(run_candidates.db, "top_candidates", return_value=[_CANDIDATE, second]):
             self.assertEqual(run_candidates.run(target="111", context=self.context), 2)
             self.assertEqual(run_candidates.run(target="111", context=self.context), 0)
@@ -72,7 +72,7 @@ class CandidateRunnerTest(_Base):
     def test_top_n_limit_is_passed_to_the_query(self):
         queried = mock.Mock(return_value=[])
         with mock.patch.dict("os.environ", {"AI_INVESTOR_REPORT_TOP_N": "3"}, clear=False), \
-             mock.patch.object(run_candidates.db, "latest_portfolio", return_value=_PORTFOLIO), \
+             mock.patch.object(run_candidates.db, "latest_analysis_run_id", return_value="run_1"), \
              mock.patch.object(run_candidates.db, "top_candidates", queried):
             self.assertEqual(run_candidates.run(target="111", context=self.context), 0)
         self.assertEqual(queried.call_args.kwargs["limit"], 3)

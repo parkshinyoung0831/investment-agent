@@ -1,4 +1,4 @@
-"""portfolio_shadow의 모델 풀 재시도 배선 — 실제 TradingAgents/네트워크는 주입으로 뗀다."""
+"""analysis의 모델 풀 재시도 배선 — 실제 TradingAgents/네트워크는 주입으로 뗀다."""
 from __future__ import annotations
 
 import os
@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
-from investment_agent.trading.decision.portfolio_shadow import _select_and_run
+from investment_agent.trading.decision.analysis import _select_and_run
 from investment_agent.trading.decision.model_pool import CALLS_PER_TICKER_ESTIMATE, ModelCandidate, ModelPoolError
 
 NOW = datetime(2026, 9, 3, 12, 0, tzinfo=timezone.utc)
@@ -120,7 +120,7 @@ class RuntimePreflightTest(unittest.TestCase):
     def test_first_configured_candidate_that_passes_is_returned(self):
         import os
         from unittest import mock
-        from investment_agent.trading.decision.portfolio_shadow import verify_runtime
+        from investment_agent.trading.decision.analysis import verify_runtime
 
         pool = (_candidate("no-key", api_key_env="PREFLIGHT_MISSING"), _candidate("ok", api_key_env="PREFLIGHT_KEY"))
         calls = []
@@ -132,7 +132,7 @@ class RuntimePreflightTest(unittest.TestCase):
         import os
         from unittest import mock
         from investment_agent.trading.decision.llm.agents.tradingagents_adapter import TradingAgentsRuntimeError
-        from investment_agent.trading.decision.portfolio_shadow import verify_runtime
+        from investment_agent.trading.decision.analysis import verify_runtime
 
         def broken():
             raise TradingAgentsRuntimeError("connection failed")
@@ -173,9 +173,9 @@ class RuntimePreflightTest(unittest.TestCase):
         # main()은 Supabase를 읽어 단위 테스트로 돌리기 어렵다. 확인 호출이 종목 루프보다 앞에 있는지 구조로 본다.
         import ast
         import inspect
-        from investment_agent.trading.decision import portfolio_shadow
+        from investment_agent.trading.decision import analysis
 
-        tree = ast.parse(inspect.getsource(portfolio_shadow.main))
+        tree = ast.parse(inspect.getsource(analysis.main))
         calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)]
         lines = {node.func.id: node.lineno for node in sorted(calls, key=lambda node: node.lineno)
                  if node.func.id in {"verify_runtime", "_select_and_run"}}
@@ -188,14 +188,14 @@ class AnalysisBudgetTest(unittest.TestCase):
     """고르는 종목 수를 남은 모델 예산과 시간에 맞춰, 판단 없이 회차를 붙잡는 종목을 만들지 않는다."""
 
     def test_limit_is_the_smaller_of_request_and_remaining_budget(self):
-        from investment_agent.trading.decision.portfolio_shadow import analysis_limit
+        from investment_agent.trading.decision.analysis import analysis_limit
 
         self.assertEqual(analysis_limit(250, remaining_budget=20), 20)
         self.assertEqual(analysis_limit(5, remaining_budget=20), 5)
         self.assertEqual(analysis_limit(250, remaining_budget=0), 0)
 
     def test_next_ticker_starts_only_if_the_longest_case_still_fits(self):
-        from investment_agent.trading.decision.portfolio_shadow import should_start_next
+        from investment_agent.trading.decision.analysis import should_start_next
 
         self.assertTrue(should_start_next(elapsed_seconds=0, longest_case_seconds=0, max_runtime_seconds=100))
         self.assertTrue(should_start_next(elapsed_seconds=60, longest_case_seconds=40, max_runtime_seconds=100))
@@ -240,7 +240,7 @@ class AnalysisBudgetTest(unittest.TestCase):
 
         adapters = ProductionInvestmentAdapters(
             command_runner=Runner(), decision_repository=Repo(), approval_repository=None,
-            construct_portfolio=lambda **k: None, create_execution_intent=lambda **k: None,
+            system_store=None, follow_target=lambda **k: None, create_execution_intent=lambda **k: None,
             timeouts={"analysis": 1000},
         )
         now = datetime(2026, 9, 14, tzinfo=timezone.utc)
@@ -253,9 +253,9 @@ class AnalysisBudgetTest(unittest.TestCase):
     def test_main_wires_budget_time_limit_and_attempted_symbols(self):
         import ast
         import inspect
-        from investment_agent.trading.decision import portfolio_shadow
+        from investment_agent.trading.decision import analysis
 
-        tree = ast.parse(inspect.getsource(portfolio_shadow.main))
+        tree = ast.parse(inspect.getsource(analysis.main))
         called = {node.func.id for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)}
         self.assertTrue({"analysis_limit", "remaining_ticker_budget", "should_start_next"} <= called)
         batch = next(node for node in ast.walk(tree) if isinstance(node, ast.Call)
@@ -268,9 +268,9 @@ class NothingDueTest(unittest.TestCase):
     def test_no_candidates_due_ends_the_run_without_a_batch(self):
         import ast
         import inspect
-        from investment_agent.trading.decision import portfolio_shadow
+        from investment_agent.trading.decision import analysis
 
-        tree = ast.parse(inspect.getsource(portfolio_shadow.main))
+        tree = ast.parse(inspect.getsource(analysis.main))
         handlers = [node for node in ast.walk(tree) if isinstance(node, ast.ExceptHandler)
                     and isinstance(node.type, ast.Name) and node.type.id == "NoCandidatesDue"]
         self.assertEqual(len(handlers), 1)
@@ -281,9 +281,9 @@ class BudgetExhaustionTest(unittest.TestCase):
     def test_budget_exhaustion_leaves_the_ticker_unattempted_not_failed(self):
         import ast
         import inspect
-        from investment_agent.trading.decision import portfolio_shadow
+        from investment_agent.trading.decision import analysis
 
-        tree = ast.parse(inspect.getsource(portfolio_shadow.main))
+        tree = ast.parse(inspect.getsource(analysis.main))
         handlers = [node for node in ast.walk(tree) if isinstance(node, ast.ExceptHandler)
                     and isinstance(node.type, ast.Name) and node.type.id == "ModelPoolError"]
         self.assertEqual(len(handlers), 1)
@@ -308,7 +308,7 @@ class BudgetExhaustionTest(unittest.TestCase):
 
         adapters = ProductionInvestmentAdapters(
             command_runner=Runner(), decision_repository=Repo(), approval_repository=None,
-            construct_portfolio=lambda **k: None, create_execution_intent=lambda **k: None,
+            system_store=None, follow_target=lambda **k: None, create_execution_intent=lambda **k: None,
         )
         now = datetime(2026, 9, 14, tzinfo=timezone.utc)
         outcome = adapters.analysis(StageContext(job_id="j", run_id="r", stage_id="analysis", attempt=1,

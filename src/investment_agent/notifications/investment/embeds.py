@@ -15,25 +15,26 @@ from investment_agent.platform.serialization import finite_float
 from .palette import COLOR_APPROVED, COLOR_INFO, COLOR_REJECTED
 
 CASH_SYMBOL = "CASH"
-ENGINE_FOOTER = "TradingAgents LLM → cvxpy optimizer → 결정론적 RiskGate"
+ENGINE_FOOTER = "factor 기대수익 · TradingAgents 논지 검증 → cvxpy optimizer → 결정론적 RiskGate"
 # 카드 한 장에 담을 상한. Discord embed field는 1024자 제한이 있다.
 _MAX_HOLDINGS = 10
 _MAX_LINES = 3
 _MAX_VIOLATIONS = 6
 _EMPTY = "없음"
 
+# TradingAgents가 적은 의견 단어. 주문이 아니다 — 실제 비중 변화는 System 목표가 정한다.
 _SIGNAL_LABELS = {
-    "open": "신규 편입",
-    "increase": "비중 확대",
-    "hold": "유지",
-    "reduce": "비중 축소",
-    "exit": "전량 청산",
+    "open": "편입 의견",
+    "increase": "확대 의견",
+    "hold": "유지 의견",
+    "reduce": "축소 의견",
+    "exit": "청산 의견",
     "watch": "관찰",
     "avoid": "회피",
 }
 _BUY_SIDE = frozenset({"open", "increase"})
 _SELL_SIDE = frozenset({"reduce", "exit"})
-# optimizer가 비중을 바꾼 주 사유(`proposals.trade_reasons`). "유지 의견인데 왜 파나"에 답한다.
+# optimizer가 비중을 바꾼 주 사유(`trading.system.target.trade_reasons`). "유지 의견인데 왜 파나"에 답한다.
 _REASON_LABELS = {
     "HARD_RISK_LIMIT": "위험 한도 준수",
     "THESIS_EXIT": "청산 판단",
@@ -41,11 +42,10 @@ _REASON_LABELS = {
     "REBALANCE": "더 나은 후보로 자금 이동",
     "ALPHA_OPPORTUNITY": "전망 개선",
 }
-_ADJUSTMENT_LABELS = {
-    "exit_without_bearish_outlook": "청산 의견이지만 수치 전망이 하락이 아니라 축소로 낮춤",
-    "hold_with_bearish_outlook": "유지 의견이지만 수치 전망이 하락이라 축소로 표시",
-    "open_without_bullish_outlook": "편입 의견이지만 수치 전망이 상승이 아니라 유지로 낮춤",
-    "increase_without_bullish_outlook": "확대 의견이지만 수치 전망이 상승이 아니라 유지로 낮춤",
+# 기대수익으로 표현할 수 없어 optimizer에 건 제약(`CONSTRAINT_*`).
+_CONSTRAINT_LABELS = {
+    "force_exit": "논지 붕괴로 전량 청산",
+    "block_increase": "확대 금지(검증 전·품질 약화·하락 논지)",
 }
 _MAX_REASONS = 8
 
@@ -93,9 +93,9 @@ def _trade_reason_lines(metadata: Mapping[str, Any]) -> str:
             f"• `{symbol}` {_percent(row.get('current_weight'))} → {_percent(row.get('target_weight'))} · "
             f"{_REASON_LABELS.get(str(row.get('code')), str(row.get('code')))}"
         )
-        adjustment = _ADJUSTMENT_LABELS.get(str(row.get("action_adjustment") or ""))
-        if adjustment:
-            line += f" ({adjustment})"
+        constraint = _CONSTRAINT_LABELS.get(str(row.get("constraint") or ""))
+        if constraint:
+            line += f" ({constraint})"
         if row.get("expected_return_capped"):
             line += " · 과대 기대수익 상한 적용"
         lines.append(line)
@@ -110,7 +110,7 @@ def portfolio_embed(
     risk: Mapping[str, Any],
     run: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """하루 한 장의 종합 판단 카드. 승인 여부와 그 근거가 중심이다."""
+    """System Portfolio 목표 카드. RiskGate 판정과 비중이 바뀐 이유가 중심이다."""
     is_approved = bool(risk.get("is_approved"))
     violations = list(risk.get("violations") or ())
     weights = dict(proposal.get("weights") or {})
@@ -121,7 +121,7 @@ def portfolio_embed(
         reverse=True,
     )
     requested = list(run.get("candidate_tickers") or ())
-    analysed = len(list(proposal.get("case_keys") or ()))
+    metadata = dict(proposal.get("metadata") or {})
     metrics = dict(risk.get("metrics") or {})
 
     verdict = "승인" if is_approved else "거절"
@@ -129,8 +129,8 @@ def portfolio_embed(
         "\n".join(f"• `{symbol}` {_percent(weight)}" for symbol, weight in holdings[:_MAX_HOLDINGS])
         or _EMPTY
     )
-    # shadow 경로는 시장위험을 계산하지 않아 키는 있고 값이 null이다. 그 자리를
-    # 0으로 채우면 "베타 0.00"이라는 없는 사실이 카드에 적힌다 — 아예 빼는 게 맞다.
+    # 시장위험 값이 원장에 없으면 그 자리를 0으로 채우지 않는다 — "베타 0.00"이라는 없는 사실이 카드에
+    # 적힌다. 아예 빼는 게 맞다.
     metric_text = " · ".join(
         f"{label} {finite_float(metrics.get(key)):.2f}"
         for key, label in (
@@ -156,11 +156,11 @@ def portfolio_embed(
             "inline": False,
         },
         {
-            "name": "🔎 분석 범위",
+            "name": "🔎 판단 범위",
             "value": (
-                f"분석 성공 **{analysed}/{len(requested)}**종목 · "
+                f"후보 **{len(requested)}**종목 · "
                 f"실행 상태 `{run.get('status', '—')}` · "
-                f"coverage `{(proposal.get('metadata') or {}).get('coverage', '—')}`"
+                f"factor 횡단면 `{_date(metadata.get('factor_snapshot_as_of'))}`"
             ),
             "inline": False,
         },
@@ -170,7 +170,7 @@ def portfolio_embed(
             "inline": False,
         },
     ]
-    reason_text = _trade_reason_lines(dict(proposal.get("metadata") or {}))
+    reason_text = _trade_reason_lines(metadata)
     if reason_text:
         fields.insert(2, {"name": "🔁 비중 변경 사유", "value": reason_text[:1024], "inline": False})
     if run.get("failure_reason"):
@@ -181,7 +181,7 @@ def portfolio_embed(
         })
 
     return {
-        "title": f"오늘의 투자 판단 · {_date(proposal.get('as_of_at'))}",
+        "title": f"System Portfolio 목표 · {_date(proposal.get('as_of_at'))}",
         "description": (
             f"신뢰도 **{_percent(proposal.get('confidence'))}** · "
             f"제안 `{proposal.get('proposal_id', '—')}`"

@@ -1,86 +1,112 @@
-# 투자 시스템 — 판단, ML/RL, Backtest와 Portfolio Risk
+# 투자 시스템 — System Portfolio와 My Portfolio
 
-이 문서는 Supabase 데이터가 투자 신호와 포트폴리오 제안으로 바뀌는 과정을 설명한다.
-`src/investment_agent/trading`은 투자안을 만드는 계층이며 broker 주문을 직접 보내지 않는다.
+프로그램은 데이터로 종목 기대수익을 판단하고 위험을 고려해 목표비중을 정한 뒤 **System Portfolio**에서
+그 전략을 100% 자동으로 추적한다. 사용자는 그 성과와 근거를 보고 실제 Toss 계좌(**My Portfolio**)도
+현재 System 목표를 따라갈지 Discord에서 선택한다.
 
-## 전체 판단 흐름
+## 전체 흐름
 
 ```text
-tracked universe
-→ data quality·coverage·liquidity filter
-→ 후보 순위와 실행 limit
-→ PIT EvidenceBundle / FeatureBundle
-├→ TradingAgents 정성 분석
-├→ ML expected-return baseline
-└→ RL challenger research
-→ 공통 ExpectedReturnSignal
-→ CVXPY Portfolio Optimizer
-→ PortfolioProposal
-→ DeterministicRiskGate
-→ RiskDecision
-→ Backtest 또는 Shadow/Paper/Live 실행 경계
+DATA (재무·가격·밸류에이션·추정치·거시·공시·사건)
+→ FEATURES (PIT feature store, factor 횡단면)
+→ ALPHA        trading/decision/alpha.py
+   factor 기대수익(IC×σ×z) + TradingAgents 논지 검증 + 채택된 ML 보정
+   → 종목별 기대초과수익, 필요할 때만 제약(force_exit·block_increase)
+→ PORTFOLIO    trading/system/target.py
+   위험예산(trading/risk/budget.py) → cvxpy optimizer → no-trade band → DeterministicRiskGate
+→ SYSTEM TARGET WEIGHTS
+→ SYSTEM PORTFOLIO   trading/system/engine.py · accounting.py
+   비중 기반 NAV(시작 100)·SPY 대비·낙폭·회전율·비용
+══════════ 여기까지 실계좌·Discord 승인과 완전히 독립 (테스트 강제) ══════════
+SYSTEM TARGET + 새 Toss 계좌 스냅샷
+→ MY PORTFOLIO FOLLOW   trading/my_portfolio.py
+   목표비중 × (현금 + 보유 평가액) − 현재 보유 = 주문, 목표에 없는 보유는 전량 매도
+→ Discord 승인 → Toss 주문 → 원장·대사 (execution/)
 ```
 
-LLM은 분석·토론·설명과 종목별 신호를 만든다. 최종 비중은 optimizer가 계산하고 hard risk는
-RiskGate가 강제한다. AI/ML/RL은 risk policy, broker credential과 durable safety control을
-수정할 권한이 없다.
+LLM은 논지·근거·위험을 만든다. 최종 비중은 optimizer가 계산하고 hard risk는 RiskGate가 강제한다.
+AI/ML/RL은 risk policy, broker credential과 durable safety control을 수정할 권한이 없다.
+
+## 두 세계의 경계
+
+| | System Portfolio | My Portfolio |
+|---|---|---|
+| 질문 | 프로그램 판단을 100% 따랐다면? | 실제 계좌가 현재 System 목표를 따라갈까? |
+| 코드 | `trading/system/`, `trading/decision/alpha.py`, `trading/risk/budget.py` | `trading/my_portfolio.py`, `execution/` |
+| 읽는 것 | 가격·feature·논지·거시 | System 목표 + 새 Toss 스냅샷 |
+| 읽지 않는 것 | Toss 잔고·주문·승인 원장, Discord | — |
+| 하네스 job | `system_portfolio`(1시간) | `my_portfolio_follow`(승인 워크플로 모드에서만) |
+| 원장 | runtime SQLite `system_targets`·`system_nav` | `intents`·`approvals`·`orders`·`fills` |
+
+- 분석 대상 선정과 사건 재분석이 보는 "보유 종목"은 System 보유다(`SystemPortfolioStore.held_tickers`).
+- System 거래비용은 가격 이력으로만 추정한다. 실계좌 체결 비용으로 보정하면 사람의 주문이 System 판단에 들어온다.
+- 경계는 `tests/investment_agent/trading/system/test_system_portfolio.py`의 import 검사와 "승인 거절·수동 주문이
+  있는 원장과 빈 원장에서 System NAV가 같다" 검사가 강제한다.
 
 ## 현재 실행 경로
 
-현재 로컬 하네스가 호출하는 분석 진입점은
-`src/investment_agent/trading/decision/portfolio_shadow.py`다.
-
-| 구분 | 파일 | 현재 역할 |
+| 구분 | 파일 | 역할 |
 |---|---|---|
-| 현재 주 경로 | `trading/decision/portfolio_shadow.py` | TradingAgents→signal→optimizer→RiskGate Shadow 실행 |
-| 현재 adapter | `agents/tradingagents_adapter.py` | Supabase EvidenceBundle을 TradingAgents에 전달 |
-| LLM provider | `llm.py` | OpenAI-compatible endpoint와 structured output |
-| 사건 즉시 재분석 | `operations/commands/event_reanalysis.py` | 새 공시·고영향·글로벌 사건이 있는 보유 종목만 곧바로 `portfolio_shadow` |
-| 가상계좌 | `trading/shadow/`, `operations/commands/virtual_books.py` | Shadow·Paper 가상계좌를 시간축으로 이어 운영(하네스 `virtual_books` job) |
-
-### 가상계좌(Shadow·Paper)
-
-판단 하나가 맞았는지(`decision_evaluations`)와, 그 판단들을 실제로 이어서 운용했을 때 돈을 벌었는지는
-다른 질문이다. 가상계좌는 뒤의 질문에 답한다.
-
-- **판단은 실계좌와 같은 함수다.** optimizer 계좌는 `construct.evaluate_portfolio`에 토스 계좌 대신
-  가상계좌 상태를 넣는다. `paper` 계좌는 같은 함수를 `stage="paper"`로 불러 승격 확인과 fail-closed
-  입력 검사를 받는다. RL challenger 계좌는 승격된 정책의 목표비중을 `construct.evaluate_target_weights`로
-  champion과 **같은 regime·섹터·회전율·베타·CVaR·스트레스 RiskGate**에 통과시키고 그 승인 비중만 체결한다.
-- **체결은 판단 뒤 첫 정규장 시가**, 그 봉이 확정된 뒤에만 한다. 가격은 시가 × (1 ± 반스프레드 +
-  impact·σ·√(주문액/ADV))로 optimizer의 비용 가정과 같고, 비용 재료는 체결일 **이전** 이력으로만 잰다.
-- 매도 대금이 들어온 뒤의 현금 안에서만 산다. 봉 거래량 × 참여율 상한을 넘는 수량은 부분체결로 남기고
-  나머지는 취소한다. 체결 안 된 주문이 남아 있으면 새 판단을 하지 않는다 — 옛 계획을 이어 사지 않는다.
-- 거래정지·데이터 공백으로 체결 봉이 없으면 추정 가격으로 체결하지 않고 취소한다.
-- 매 실행마다 가장 최근 확정 종가로 NAV를 기록한다(`virtual_nav`). 하네스가 여러 거래일 동안 멈춰
-  있었으면 그 사이 날짜는 비어 있으므로 낙폭은 기록된 날짜 기준이다. 그날 종가가 없어 이전 종가로 잰
-  종목은 `stale_price_tickers_json`에 남는다.
-- **분할·배당을 반영한다**(`virtual_corporate_actions`). 저장 가격은 분할 기준으로 다시 수집되므로 행위일
-  전날까지 보유한 수량에 분할 비율을 곱하고(미체결 주문 수량도 함께), 종가가 배당 조정 전 값이라 배당은
-  그 수량만큼 현금으로 넣는다. 행위일에 새로 산 주식은 권리가 없다. 한 행위는 한 번만 반영한다.
-- Discord 승인·거절은 이 원장에 흔적을 남기지 않는다. 기본 계좌는 `shadow-champion`,
-  `shadow-rl-challenger`, `shadow-factor-composite`이고(없는 것만 만든다), `--create paper-champion --stage paper`로
-  Paper 계좌를 더한다.
-
-### factor 가상계좌(`shadow-factor-composite`)
-
-중장기 선별 전략을 실계좌 경로와 비교하는 계좌다(`trading/portfolio/factor_portfolio.py`). 실계좌 판단
-경로는 바꾸지 않는다 — 어느 쪽을 실계좌에 쓸지는 두 계좌의 성과를 보고 사람이 정한다.
-
-- **기대수익은 factor가 만든다.** `기대수익 = IC × σ(20일) × z`. z는 종합 factor 점수의 유니버스 내 순위를
-  표준정규 점수로 바꾼 값(백분위 2~98%로 절단), IC는 초기값 0.04이고 `factor_research`로 다시 정한다.
-- **LLM은 논리 검증자다.** 유효한(28일 이내) 판단이 하락이면 비중을 못 늘리고 청산 판단이면 청산한다.
-  factor와 LLM이 둘 다 상승일 때만 LLM 쪽으로 `0.25 × 신뢰도`만큼 옮긴다(LLM 값은 ±1σ로 자른다).
-  보유하지 않은 종목은 유효한 LLM 판단이 있어야 새로 담는다. 품질 기준에서 떨어진 보유는 줄이기만 한다.
-- **대상은 품질 기준 통과 상위 40종목 + 보유 종목**이다. 점수·변동성을 모르는 보유는 고정한다.
-- **짧게 사고팔지 않는다.** L1 turnover 벌점 없이 스프레드·충격 비용만 두고, 비중 차이 1%p 미만은 거래하지
-  않는다(no-trade band, 전량 청산은 예외). 새 factor 횡단면이 있고 마지막 판단에서 7일이 지났을 때만 판단한다.
-- **factor 노출 범위**: 보유 비중 가중평균 품질 점수 ≥ 0.55, 모멘텀·가치 점수 ≤ 0.80. 기존 보유 때문에
-  한 번에 맞출 수 없으면 제약 없이 풀고 `exposure_limits_relaxed`에 남긴다.
-- 위험 한도는 champion과 같은 `construct.risk_policy_for`(가격 regime + 거시 노출)와 RiskGate다.
+| 논지 분석 | `trading/decision/analysis.py` | 선정된 종목을 TradingAgents로 분석해 신호 배치(논지)로 저장. 비중을 정하지 않는다 |
+| 사건 즉시 재분석 | `operations/commands/event_reanalysis.py` | System 보유 종목의 새 공시·고영향·글로벌 사건을 곧바로 분석 |
+| System | `operations/commands/system_portfolio.py` | 평가 → 재조정 필요 판단 → 목표 기록 |
+| My Portfolio | `operations/harness_adapters.py::follow_system_target` | 최신 System 목표를 새 Toss 스냅샷과 비교해 추종 제안 기록 |
 
 파일이 존재한다는 이유만으로 예약 실행 경로라고 판단하지 않는다. 실제 호출 여부는
 `src/investment_agent/operations/harness_adapters.py`와 `.github/workflows`에서 확인한다.
+
+### System Portfolio 회계
+
+- **목표는 판단 다음 정규장 종가에 적용한다.** 판단 시각의 종가로 비중을 바꾸면 판단할 때 몰랐던 가격 변화를 가져간다.
+- 매 거래일 `NAV_t = NAV_{t-1} × Σ w_i × (종가 + 배당) × 분할비율 ÷ 전날 종가`. 전날 종가는 NAV 행에 저장한 값을 쓴다 —
+  가격 이력이 분할 뒤 다시 수집돼도 수익률이 두 번 보정되지 않는다.
+- 재조정일 비용 = Σ|Δw| × (추정 반스프레드 + 수수료). 이력이 모자라 추정할 수 없는 종목은 0.5%로 둔다(0으로 두지 않는다).
+- 종가가 없는 보유는 전날 종가로 평가하고 `stale_price_tickers_json`에 남긴다. 목표 종목에 적용일 종가가 없으면 다음 거래일에 적용한다.
+- SPY는 같은 방식의 총수익 NAV로 함께 기록한다.
+
+### 언제 목표를 다시 만드나
+
+- 목표가 한 번도 없었다.
+- 새 factor 횡단면이 있고 마지막 목표에서 7일(`rebalance_days`)이 지났다.
+- 보유 종목에 마지막 목표 뒤 논지 붕괴가 새로 기록됐다 — 주기를 기다리지 않는다.
+
+아직 NAV에 반영되지 않은 목표가 있으면 새로 만들지 않는다. 공분산·비용·베타·스트레스·SPY 이력이 없어 목표를
+만들 수 없는 날은 이전 목표를 유지하고 회차를 `failed`로 남긴다. 기본값으로 목표를 만들면 실계좌가 할 수 없는
+판단이 System 성과에 섞인다.
+
+### ALPHA — 기대수익과 논지
+
+- **기대수익은 factor가 만든다.** `기대수익 = IC × σ(20일) × z`. z는 종합 factor 점수의 유니버스 내 순위를
+  표준정규 점수로 바꾼 값(백분위 2~98%로 절단), IC는 초기값 0.04이고 `factor_research`로 다시 정한다.
+- **논지는 검증자다.** 논지는 채택된 ML 보정이 반영된 최신 신호 기록이다(유효 28일). TradingAgents가 적는 행동
+  단어는 ALPHA에서 한 번만 논지 상태로 해석한다(`ThesisView.thesis_state`, 행동 단어와 수치가 엇갈리면 수치를 따른다).
+
+| 논지 상태 | 조건 | ALPHA 출력 |
+|---|---|---|
+| broken | 하락 전망(기대초과수익 < 0, 상승확률 < 0.5) + `exit` | 보유면 `force_exit`, 기대수익 ≤ 논지·0 |
+| negative | 하락 전망 또는 `exit`·`reduce`·`avoid` | `block_increase`, 기대수익 ≤ 0 |
+| positive | 상승 전망 + `open`·`increase`·`hold` | factor가 양수일 때만 논지 쪽으로 `0.25 × 신뢰도` 이동(±1σ 절단) |
+| neutral | 그 외 | factor 기대수익 그대로 |
+
+- 보유하지 않은 종목은 유효한 논지가 있어야 새로 담는다(`UNVERIFIED_ENTRY_BLOCKED`). 품질 기준에서 떨어진 종목은 늘리지 못한다.
+- **대상은 품질 기준 통과 factor 상위 40종목(`candidate_count`) + 보유 종목**이다. 이 숫자는 투자 대상이 아니라
+  공분산·비용 조회 규모를 묶는 계산 한도다. 점수·변동성을 모르는 보유는 고정한다.
+
+### PORTFOLIO — 목표비중
+
+- L1 turnover 벌점 없이 스프레드·충격 비용만 목적함수에 두고, 비중 차이 1%p 미만은 거래하지 않는다(no-trade band, 전량 청산은 예외).
+- **factor 노출 범위**: 보유 비중 가중평균 품질 점수 ≥ 0.55, 모멘텀·가치 점수 ≤ 0.80. 한 번에 맞출 수 없으면 제약 없이 풀고 `exposure_limits_relaxed`에 남긴다.
+- 시장충격·ADV 참여 한도의 기준 규모는 따라가는 실계좌 규모(`reference_portfolio_value` 5,000달러)다.
+
+### My Portfolio — 따라가기
+
+- 대상은 가장 최근 **승인된** System 목표다. 10일보다 오래된 목표는 System 엔진이 멈췄다는 뜻이라 따라가지 않는다.
+- 주문 금액 = 계좌 전체(현금 + 보유 평가액) × 목표비중. 목표에 없는 보유(직접 산 종목 포함)는 0 — 전량 매도.
+- 과거 거절·무응답을 복구하지 않는다. 오늘 따라가면 오늘의 목표와 오늘의 계좌 차이만 주문한다.
+- 모든 차이가 최소 주문금액(10달러) 미만이면 승인을 묻지 않는다. 미체결 주문이 있으면 기다린다.
+- **같은 목표는 한 번만 묻는다**(거절·만료 포함, `ExecutionRepository.is_system_target_followed`). 다음 목표가 생기면 다시 묻는다.
+- 수동 모델 승격(live)·새 스냅샷 신선도·승인 만료·중복 주문 방지·결과 불명 처리·대사·킬스위치는 `execution/`이 그대로 강제한다.
+- live intent는 `system_target_id`가 있는 제안에서만 만들 수 있다(`create_execution_intent`).
 
 ## 후보 선정과 Evidence
 
@@ -93,7 +119,7 @@ S&P 500 전체를 매일 LLM에 보내지 않는다.
 | 근거 생성 | `context.py::ContextBuilder.build` | PIT `EvidenceBundle`, missing/warnings |
 | Agent 실행 | `TradingAgentsDecisionEngine.run` | role output와 외부 evidence manifest |
 | 계약 검증 | `SecurityProposal.from_dict` | ticker/as-of/range/evidence ID 검증 |
-| 신호 보관 | `SignalBook` | batch, TTL, 성공·실패 ticker |
+| 논지 보관 | `SignalBatch`·`SignalRecord` | batch, 성공·실패 ticker, ML 보정 반영 논지 |
 
 ### EvidenceBundle 도메인 구성
 
@@ -203,7 +229,7 @@ tracked universe
 ```
 
 `OpenAICompatibleClient`는 원격 endpoint와 Ollama/local model 교체를 허용하지만 provider,
-model, prompt와 engine version이 달라지면 별도 artifact로 기록하고 Shadow 검증을 다시 한다.
+model, prompt와 engine version이 달라지면 별도 artifact로 기록하고 System Portfolio에서 다시 검증한다.
 
 ## Memory와 평가
 
@@ -308,7 +334,7 @@ RMSE/MAE와 방향 정확도 외에,
 
 ```text
 TradingAgents SecurityProposal ─┐
-                                ├→ research/ml_serving.py (fusion) → SignalBatch → construct.py
+                                ├→ research/ml_serving.py (fusion) → SignalBatch(논지) → ALPHA
 채택된 ML artifact + PIT feature ┘
 ```
 
@@ -327,7 +353,7 @@ TradingAgents SecurityProposal ─┐
   champion보다 OOS ICIR이 높은 후보를 `candidates/latest_summary.json`에 추천으로 남기지만
   **`active_ml_model.json`은 건드리지 않는다** — 채택은 `adopt_ml_model`, 사람의 행위다. 학습 dataset은
   창 안에서 한 번이라도 S&P 500이었던 종목까지 포함한다(생존 편향 방지).
-- 반영되면 LLM·ML 조합이 새 artifact ID로 기록되어, paper/live는 그 조합이 승격돼야 실행된다.
+- 반영되면 LLM·ML 조합이 새 artifact ID로 기록되고, System 목표의 artifact가 바뀌어 실계좌 추종은 그 조합의 승격을 요구한다.
   `AI_INVESTOR_ML_FUSION_ENABLED=false`면 비교만 기록한다.
 
 ### 분석 후보의 우선 레인
@@ -335,7 +361,7 @@ TradingAgents SecurityProposal ─┐
 정기 후보 순위는 오래 안 본 종목을 앞세운다. 그 앞에 `candidate_ranker.priority_candidates`가
 **마지막 분석 이후 새 정보가 생긴 종목**을 먼저 넣는다 — tier 0은 보유 중이면서 새 공시(`filed_at`)나
 고영향 사건(`event_feature_snapshots`)이 공개된 종목과 한 번도 분석하지 않은 보유종목, tier 1은
-미보유지만 중요도 0.75 이상 사건이 난 종목이다. 보유 목록은 최근 7일 안의 live position snapshot이다.
+미보유지만 중요도 0.75 이상 사건이 난 종목이다. 보유 목록은 System Portfolio의 현재 보유다 — 실계좌 보유는 분석 대상 선정에 들어오지 않는다.
 
 ```powershell
 uv sync --group ml
@@ -347,8 +373,8 @@ python -m unittest tests.investment_agent.research.rl.test_baseline
 하네스 `event_reanalysis` job(10분 주기, `operations/commands/event_reanalysis.py`)은 로컬 뉴스·소셜을 사건으로
 다시 압축한 뒤 `SupabaseRepository.event_reanalysis_priorities`로 지금 다시 볼 종목을 고른다 — 보유
 종목의 새 공시·고영향 사건(위 우선 레인)과, 검증된 **글로벌 사건**(ticker 없음)에 민감한 보유 종목이다.
-한 번에 3종목만 `portfolio_shadow`로 분석하고, 그 사건 뒤에 이미 분석한 종목은 다시 고르지 않는다.
-결과는 보통의 signal batch라 매매는 optimizer·RiskGate·승인을 거친다.
+한 번에 3종목만 `trading.decision.analysis`로 분석하고, 그 사건 뒤에 이미 분석한 종목은 다시 고르지 않는다.
+결과는 보통의 논지 기록이고, 깨진 논지는 System 목표를 주기와 무관하게 다시 만든다.
 
 글로벌 사건은 `trading/decision/event_impact.py`가 이렇게 옮긴다.
 
@@ -404,10 +430,9 @@ train
 PPO라는 이름만으로 실전에 승격하지 않는다. 여러 walk-forward window와 Paper 무사고 조건을
 별도로 통과해야 한다. algorithm class 경계를 통해 A2C/SAC/TD3/DDPG 등을 나중에 추가할 수 있다.
 
-승격된 정책도 TradingAgents·ML 기대수익을 바꾸지 않는다. `portfolio_shadow`는 목표비중을
-challenger 후보로만 계산해 기록한다(`research/rl/serving.compute_rl_target_weights`). 비중을
-"평균 대비 초과비중 × 배율"로 기대수익에 되돌려 섞으면 이미 위험·비용을 반영한 결과를 목적함수에
-다시 넣어 같은 위험을 두 번 센다. 비교는 같은 기간·비용 가정의 Shadow 포트폴리오 성과로 한다.
+RL 정책은 System Portfolio를 움직이지 않는 연구 후보다. 비교는 과거 재현·walk-forward 평가로만 하고, 별도
+가상계좌를 운영하지 않는다. 비중을 "평균 대비 초과비중 × 배율"로 기대수익에 되돌려 섞으면 이미 위험·비용을
+반영한 결과를 목적함수에 다시 넣어 같은 위험을 두 번 센다.
 
 ## Qlib의 제한된 사용 범위
 
@@ -440,13 +465,9 @@ ML/RL/TradingAgents output은 다음 계약으로 정규화한다.
 | `source`/`version` | model/engine artifact identity |
 | `timestamp` | timezone-aware 생성시각 |
 | `evidence_ids` | 사용한 stable evidence IDs |
-| `action`/`action_adjustment` | 비중 방향을 제약하는 최종 행동과, LLM 원문 행동을 낮췄다면 그 사유 |
+| `constraint` | 기대수익으로 표현할 수 없는 예외만: `force_exit`(보유 전량 청산), `block_increase`(늘리지 못함) |
 
-LLM의 행동 단어와 수치 전망이 반대면 강제력이 약한 쪽으로 낮춘다(`coherent_action`, 부호만 본다).
-`exit`인데 하락 전망(기대초과수익 < 0 **그리고** 상승확률 < 0.5)이 아니면 `reduce`, `open`·`increase`인데
-상승 전망이 아니면 `hold`, `hold`인데 하락 전망이면 `reduce`. 카드에 "유지"와 "전량 매도"가 함께 뜨거나,
-전망은 좋은데 LLM 단어 하나로 비중이 0으로 강제되는 일을 막는다. RiskGate의 청산 검사도 낮춘 뒤의
-행동(`signal_actions`)을 본다.
+사고팔기(신규·확대·유지·축소·청산)는 결과 비중과 직전 비중의 차이일 뿐 입력이 아니다. 입력으로 받으면 판단자가 둘이 된다.
 
 ## Portfolio Optimizer
 
@@ -463,13 +484,10 @@ expected return × confidence
 비해 클수록 단위 비용이 커져, 기대수익이 약간 높아도 거래하기 비싼 종목은 비중이 줄어든다.
 반스프레드는 호가 이력이 없어 ADV 구간(1·3·10bp)으로 근사한다 — TCA 실측이 쌓이면 대체할 자리다.
 늘리는 금액은 ADV의 5%(`max_adv_participation`)를 넘지 못한다. 매도는 이 한도로 묶지 않는다.
-paper/live는 비용 재료(거래량·변동성)가 없으면 fail-closed한다. 실행 원장에 같은 종목 체결이
-5건 이상 쌓이면 승인 기준가 대비 평균 체결가·수수료로 잰 편도 비용 중앙값이 추정 반스프레드보다
-클 때만 그 값으로 **올린다**(`calibrate_trading_costs`) — 몇 건의 유리한 체결로 비용을 낮춰 잡으면
-회전이 늘어난 손해가 나중에 드러난다. 포트폴리오 시장 베타는 RiskGate의 사후 검사와 같은 상한
+비용 재료(거래량·변동성)가 없으면 목표를 만들지 않는다. 포트폴리오 시장 베타는 RiskGate의 사후 검사와 같은 상한
 (`max_abs_beta`)을 optimizer 제약으로도 건다. 미분석 보유가 이미 상한을 넘기면 신호 종목은 베타를
 지금보다 늘리지 못한다. 총합 1, long-only, 종목·섹터 최대, 현금 최소와 turnover 최대를 명시적
-constraint로 사용한다. 실전 경로(`construct.py`)는 PIT 가격 260일의 Ledoit-Wolf 수축 공분산을
+constraint로 사용한다. System 목표(`trading/system/target.py`)는 PIT 가격 260일의 Ledoit-Wolf 수축 공분산을
 넣고, covariance가 없으면 risk score 기반의 보수적 diagonal 근사를 metadata에 표시한다.
 
 기대초과수익은 **그 종목의 신호 기간 수익률 σ의 `max_expected_return_sigma`배(기본 1)** 안으로 자른다.
@@ -478,20 +496,18 @@ constraint로 사용한다. 실전 경로(`construct.py`)는 PIT 가격 260일�
 `capped_expected_returns`와 제안 metadata에 원래 값과 함께 남긴다. 공분산이 없는 관찰용 fallback은
 종목 변동성을 몰라 자르지 않는다.
 
-비중이 바뀐 종목마다 주 사유를 결정적 규칙으로 하나 붙인다(`proposals.trade_reasons`):
-`HARD_RISK_LIMIT`(종목 상한·최소 현금까지만 줄임), `THESIS_EXIT`, `ALPHA_DECAY`(reduce·avoid·watch),
+비중이 바뀐 종목마다 주 사유를 결정적 규칙으로 하나 붙인다(`trading/system/target.py::trade_reasons`):
+`HARD_RISK_LIMIT`(종목 상한·최소 현금까지만 줄임), `THESIS_EXIT`(force_exit), `ALPHA_DECAY`(block_increase),
 `REBALANCE`(전망은 나쁘지 않으나 위험·비용 대비 더 나은 후보에 자리를 내줌), `ALPHA_OPPORTUNITY`.
-Discord 종합 카드의 "비중 변경 사유"가 이 값을 그대로 보여준다.
+Discord System Portfolio 카드와 대시보드의 "최근 목표 변경 이유"가 이 값을 그대로 보여준다.
 
-종목 의견의 **행동**은 기대수익과 별개로 비중의 방향을 강제한다.
-
-| action | optimizer 제약 | 이유 |
+| constraint | optimizer 제약 | 이유 |
 |---|---|---|
-| `exit` | 비중 = 0 | 전량 청산 명령. 기대수익만 낮추면 turnover 벌점이 잔량을 남긴다 |
-| `reduce`·`avoid`·`watch` | 비중 ≤ 현재 | 늘리지 못하게만 막고 얼마나 줄일지는 optimizer가 정한다 |
-| `open`·`increase`·`hold` | 없음 | 의견이다. 자금이 한정돼 있어 더 나은 후보에 밀려 0이 될 수 있어야 한다 |
+| `force_exit` | 비중 = 0 | 논지가 깨진 보유. 기대수익만 낮추면 turnover 한도가 잔량을 남긴다 |
+| `block_increase` | 비중 ≤ 현재 | 늘리지 못하게만 막고 얼마나 줄일지는 optimizer가 정한다 |
+| 없음 | 없음 | 자금이 한정돼 있어 더 나은 후보에 밀려 0이 될 수 있어야 한다 |
 
-turnover 최대는 **재량 매매**에만 건다. `exit` 청산과 종목 상한 초과분의 현금화를 먼저 반영한
+turnover 최대는 **재량 매매**에만 건다. `force_exit` 청산과 종목 상한 초과분의 현금화를 먼저 반영한
 출발점에서 turnover를 잰다. 그렇지 않으면 여러 종목을 한꺼번에 빼야 하는 날 한도가 위험 축소를
 막는다(optimizer는 infeasible, RiskGate는 잘라 둔 비중을 도로 살린다).
 
@@ -501,7 +517,7 @@ optimizer 결과도 반드시 RiskGate를 통과한다.
 
 - 종목·섹터 비중, 최대 position 수와 최소 position
 - 최소 cash와 최대 turnover(청산·상한 준수분을 뺀 재량 turnover, 축소는 그 출발점 쪽으로)
-- `exit` 의견을 받은 보유가 남아 있으면 거부
+- `forced_exits`에 오른 보유가 남아 있으면 거부
 - volatility, beta, concentration/HHI와 최대 pairwise correlation
 - stale proposal
 
@@ -537,14 +553,14 @@ optimizer 결과도 반드시 RiskGate를 통과한다.
 
 노출 상한: 경계만 90%, 위험 1개 75%, 2개 이상 55%. 최소 현금으로 바꿔 regime 정책과 `max`로 합친다
 (key `…:macro<상한%>`). 판단일 전날까지의 관측만 쓰고, 10일보다 오래됐거나 읽지 못한 series는 판단하지
-않는다 — 조이지도, 멈추지도 않는다(가격 regime이 hard gate로 남는다). 실계좌·RL·factor 계좌가 모두
-`construct.risk_policy_for` 하나를 거친다.
+않는다 — 조이지도, 멈추지도 않는다(가격 regime이 hard gate로 남는다). System 목표는 `trading/risk/budget.py::risk_budget`
+하나를 거친다. 시장 상태 이름(RISK_ON·NORMAL·RISK_OFF·CRISIS)은 보고용이고 판단에 쓰이는 것은 그 결과 한도뿐이다.
 
 RiskDecision 원장의 market risk 기록에는 평소 변동성과 따로 꼬리 위험(`stress`)이 남는다 —
 5거래일 historical CVaR95, 최근 창의 최악 5·20거래일 손실, 시장 -10% 충격 시 베타 손실.
 그중 **5거래일 CVaR95는 hard limit**이다(`PortfolioRiskPolicy.cvar_95_5d_limit`, 정책 v2). 새 숫자를
 들이지 않으려고 기본 상한을 연 변동성 상한(30%)을 5거래일로 옮긴 정규분포의 CVaR95(≈8.7%)로
-둔다 — 역사적 꼬리가 그보다 나쁘면 변동성 숫자가 가린 위험이다. paper/live는 이 값이 없으면 거부한다.
+둔다 — 역사적 꼬리가 그보다 나쁘면 변동성 숫자가 가린 위험이다. System 목표는 이 값이 없으면 만들지 않는다.
 최악 구간 손실과 베타 충격은 분포가 쌓일 때까지 기록이다.
 
 **스트레스 시나리오**(`trading/risk/stress.py`)는 대표 ETF 충격을 비중 손실로 옮긴다 — SPY -10%,
@@ -553,7 +569,7 @@ QQQ -15%, XLK -20%, IWM -15%, TLT -16%(금리 약 +100bp), DBC +20%(원자재 �
 회귀하면 계수가 불안정하다). 어떤 시나리오 손실이든 `stress_loss_limit`(기본 = 베타 상한 × 10%, 즉
 베타 상한 포트폴리오가 시장 -10%에서 잃는 만큼)를 넘으면 RiskGate가 위험 자산 전체를 같은 비율로
 현금화해 정확히 한도로 맞춘다. 손실이 비중에 선형이라 가능하고, 회전율 한도 뒤에 적용해 위험 축소를
-회전율 때문에 되돌리지 않는다. paper/live는 민감도가 없으면 거부한다. 충격 크기는 초기 정의다.
+회전율 때문에 되돌리지 않는다. System 목표는 민감도가 없으면 만들지 않는다. 충격 크기는 초기 정의다.
 
 실계좌 주문이 완전히 체결되면 대사(`reconciliation/worker.py`)가 승인 기준가 대비 TCA를 한 번
 기록한다(`tca_summary`). 호가 스냅샷이 없어 arrival은 승인 기준가이고, 기준가나 평균 체결가가 없으면
@@ -576,7 +592,7 @@ QQQ -15%, XLK -20%, IWM -15%, TLT -16%(금리 약 +100bp), DBC +20%(원자재 �
 새 live intent가 저장되면, 아직 주문이 하나도 나가지 않은 이전 승인 대기 intent는 `cancelled`
 (`superseded_by`)로 닫힌다. 시간이 지나서가 아니라 더 새로운 판단이 대체했기 때문이다. 이미 주문이
 나간 intent는 건드리지 않는다 — 미체결 취소는 운영자 승인이 필요한 별도 동작이고, 미체결이 있는 동안
-새 포트폴리오 구성 자체가 막힌다.
+실계좌 추종 제안 자체를 만들지 않는다.
 
 보유를 줄이는 매도가 주문 한도(`max_order_notional`)를 넘으면 한도 이하 자식 주문 여러 건으로 계획
 단계에서 나눈다. 전부 승인 카드에 보이므로 승인한 것과 나가는 것이 같고, 총액 한도는 그대로다. 매수는
@@ -585,14 +601,12 @@ QQQ -15%, XLK -20%, IWM -15%, TLT -16%(금리 약 +100bp), DBC +20%(원자재 �
 
 현재 현금으로 매수를 다 댈 수 없으면 주문표는 **매도만** 담는다(`funding_phase=funding_sells`).
 아직 체결되지 않은 매도대금은 현금으로 치지 않는다. 매수 일부만 고르지 않는 이유는, 무엇을
-살지는 분석 순서가 아니라 optimizer가 실제 현금으로 다시 정해야 하기 때문이다.
+살지는 매도 체결 뒤 새 계좌 스냅샷으로 System 목표와의 차이를 다시 계산해야 하기 때문이다.
 
-한 signal batch는 원칙적으로 실행을 한 번만 한다. 예외는 하나다 — 직전 주문표가 `funding_sells`였고
-그 주문이 모두 종결(체결·취소·거부)됐으면, 같은 batch로 **한 번 더** 포트폴리오를 구성한다
-(`execution/db.py`의 `funding_followup_allowed`). 이때 계좌를 새로 읽어 다시 최적화하므로 부분체결로
-생긴 실제 현금만 쓰고, 그 사이 가격이 움직였으면 그것도 반영된다. 후속 실행은 batch당 1회라
-체결 부족 → 재매도가 같은 신호로 되풀이되지 않는다. 진입 재판단(entry review)이 이미 만료됐으면
-실행 단계의 진입 가격 검사가 막고, 매수는 다음 batch로 넘어간다.
+한 System 목표는 원칙적으로 실행을 한 번만 한다(`system_target_execution` 선점). 예외는 하나다 — 직전 주문표가
+`funding_sells`였고 그 주문이 모두 종결(체결·취소·거부)됐으면, 같은 목표를 **한 번 더** 따라간다
+(`execution/db.py`의 `funding_followup_allowed`). 이때 계좌를 새로 읽어 차이를 다시 계산하므로 부분체결로
+생긴 실제 현금만 쓰고, 그 사이 가격이 움직였으면 그것도 반영된다. 후속 실행은 목표당 1회다.
 
 문서의 기본값은 설명용이며 실제 SSOT는 `OptimizerPolicy`와 `PortfolioRiskPolicy` 코드다.
 LLM prompt나 문서 수정으로 완화할 수 없다.
@@ -609,23 +623,7 @@ LLM prompt나 문서 수정으로 완화할 수 없다.
 | 연환산 volatility | 30% |
 | absolute beta | 1.5 |
 
-Paper/Live에서 필수 market-risk 입력이 없으면 fail-closed한다.
-
-## Partial universe와 Full portfolio
-
-하루에 5종목만 분석했다면 그 결과는 `partial_universe`이지 전체 계좌 목표가 아니다.
-
-```text
-partial SignalBatch
-+ fresh AccountSnapshot
-+ 유효한 과거 SignalBook records
-→ PortfolioConstructor
-→ full_portfolio
-→ RiskGate
-```
-
-미분석 보유는 유지하고 명시적 exit/reduce만 줄인다. 현재 universe에서 빠진 기존 보유는 추가
-매수할 수 없지만 위험을 줄이는 매도는 허용할 수 있다.
+필수 market-risk 입력이 없으면 System 목표를 만들지 않는다(fail-closed).
 
 ## Native Backtest
 
@@ -677,10 +675,14 @@ adapter와 comparator 단위 테스트 통과는 장기간 실제 LumiBot run이
 
 ```powershell
 # Supabase context만 확인; LLM/provider/broker 호출 없음
-python -m investment_agent.trading.decision.portfolio_shadow --ticker AAPL --dry-run
+python -m investment_agent.trading.decision.analysis --ticker AAPL --dry-run
 
-# 현재 주 TradingAgents Shadow 경로
-python -m investment_agent.trading.decision.portfolio_shadow --ticker AAPL --limit 1
+# 논지 분석(비중을 정하지 않음)
+python -m investment_agent.trading.decision.analysis --ticker AAPL --limit 1
+
+# System Portfolio 평가·목표 갱신 / 성과 요약
+python -m investment_agent.operations.commands.system_portfolio
+python -m investment_agent.operations.commands.system_portfolio --summary
 ```
 
 live candidate entry에 오래된 `--as-of`를 억지로 넣어 historical replay처럼 사용하지 않는다.

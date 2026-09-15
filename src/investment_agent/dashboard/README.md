@@ -219,7 +219,7 @@ Toss Blue를 기본 시각 언어로 쓰고, 금융 값의 상승·하락에만 
 - Supabase 접근은 `db.py`의 명시적 SELECT 함수만 사용한다. `insert`, `upsert`,
   `update`, `delete`, 상태 변경 RPC는 대시보드 코드에서 금지한다.
 - “읽기 전용 분석 프리뷰”는 현재 조회한 데이터로 계산해 `st.session_state`에만 둔다.
-  `investment_agent.trading.decision.portfolio_shadow`를 비롯한 저장 실행 경로를 호출하지 않는다.
+  `investment_agent.trading.decision.analysis`를 비롯한 저장 실행 경로를 호출하지 않는다.
 - 룰 재현 백테스트는 `investment_agent.research.strategies.catalog`의 순수 계산 함수와
   `market.prices_daily`에서 읽은 일봉을 월말 기준으로 정규화한 저장 데이터만 쓴다.
   `investment_agent.research.strategies.etl`과 `investment_agent.research.strategies.db`(upsert 경로)는 import하지 않는다.

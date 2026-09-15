@@ -69,43 +69,46 @@ class TightenTest(unittest.TestCase):
         self.assertEqual(tighten_for_macro(base, None), base)
 
 
-class RiskPolicyForTest(unittest.TestCase):
-    def test_construction_paths_share_regime_and_macro_tightening(self):
+class RiskBudgetTest(unittest.TestCase):
+    """System 목표가 쓰는 위험 예산 하나가 가격 시장 상태와 거시 노출 규칙을 함께 반영한다."""
+
+    class Repository:
+        def __init__(self, macro):
+            self.macro = macro
+
+        def market_prices(self, ticker, as_of_at, limit=260):
+            return []
+
+        def macro_histories(self, series_ids, *, as_of_at, lookback_days=120):
+            if isinstance(self.macro, Exception):
+                raise self.macro
+            return self.macro
+
+    def _budget(self, macro):
         from unittest import mock
-        from investment_agent.trading.portfolio import construct
+        from investment_agent.trading.decision.regime import build_market_regime
+        from investment_agent.trading.risk import budget
 
-        class Repository:
-            def macro_histories(self, series_ids, *, as_of_at, lookback_days=120):
-                return _calm(VIX=_flat(35.0))
+        with mock.patch.object(budget, "regime_from_benchmark_prices", return_value=build_market_regime(AS_OF)):
+            return budget.risk_budget(self.Repository(macro), as_of_at=AS_OF)
 
-        with mock.patch.object(construct, "_market_regime", return_value=None):
-            policy, metadata = construct.risk_policy_for(Repository(), as_of_at=AS_OF, stage="shadow")
+    def test_macro_stress_tightens_the_shared_policy(self):
+        policy, metadata = self._budget(_calm(VIX=_flat(35.0)))
         self.assertAlmostEqual(policy.min_cash_weight, 0.25)
         self.assertEqual(metadata["macro_exposure"]["stress"], ["volatility"])
+        self.assertEqual(metadata["market_regime"]["risk_state"], "NORMAL")
 
     def test_macro_reader_failure_does_not_stop_the_decision(self):
-        from unittest import mock
-        from investment_agent.trading.portfolio import construct
-
-        class Repository:
-            def macro_histories(self, series_ids, *, as_of_at, lookback_days=120):
-                raise TimeoutError("macro down")
-
-        with mock.patch.object(construct, "_market_regime", return_value=None):
-            policy, metadata = construct.risk_policy_for(Repository(), as_of_at=AS_OF, stage="live")
+        policy, metadata = self._budget(TimeoutError("macro down"))
         self.assertEqual(policy, PortfolioRiskPolicy())
         self.assertIsNone(metadata["macro_exposure"])
 
-    def test_every_construction_path_uses_the_shared_policy(self):
-        import ast
-        import inspect
-        from investment_agent.trading.portfolio import construct, factor_portfolio
+    def test_missing_benchmark_history_fails_closed(self):
+        from investment_agent.trading.contracts import ContractError
+        from investment_agent.trading.risk.budget import risk_budget
 
-        for function in (construct.evaluate_portfolio, construct.evaluate_target_weights,
-                         factor_portfolio.evaluate_factor_portfolio):
-            source = ast.unparse(ast.parse(inspect.getsource(function)))
-            self.assertIn("risk_policy_for(", source, function.__name__)
-            self.assertNotIn("tighten_for_regime(", source, function.__name__)
+        with self.assertRaises(ContractError):
+            risk_budget(self.Repository(_calm()), as_of_at=AS_OF)
 
 
 if __name__ == "__main__":

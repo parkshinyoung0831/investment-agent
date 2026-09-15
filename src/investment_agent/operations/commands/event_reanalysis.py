@@ -69,10 +69,10 @@ def main(argv: list[str] | None = None) -> int:
     if not 1 <= args.max_tickers <= 10:
         raise SystemExit("--max-tickers must be between 1 and 10")
     now = parse_datetime(args.as_of) if args.as_of else datetime.now(timezone.utc)
-    from investment_agent.trading.decision import portfolio_shadow
+    from investment_agent.trading.decision import analysis
     from investment_agent.trading.supabase_repository import SupabaseRepository
 
-    result = run_event_reanalysis(now=now, repository=SupabaseRepository(), analyze=portfolio_shadow.main,
+    result = run_event_reanalysis(now=now, repository=SupabaseRepository(), analyze=analysis.main,
                                   max_tickers=args.max_tickers)
     log.info("event reanalysis %s", canonical_json(result))
     return int(result.get("analysis_exit_code") or 0)

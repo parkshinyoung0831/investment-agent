@@ -1,4 +1,4 @@
-"""execution이 저장한 계좌·보유 스냅샷을 표시하는 읽기 전용 포트폴리오 화면."""
+"""System Portfolio(프로그램 판단을 100% 따른 전략)와 My Portfolio(실제 Toss 계좌)를 나란히 보는 읽기 전용 화면."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from investment_agent.dashboard.calculations import (
     covariance_to_correlation,
     rebalance_portfolio,
 )
-from investment_agent.dashboard.db import load_latest_account_snapshot, load_latest_target
+from investment_agent.dashboard.db import load_latest_account_snapshot, load_latest_target, load_system_portfolio_data
 from investment_agent.dashboard.components.theme import dashboard_palette, plotly_layout
 from investment_agent.dashboard.components.ui import (
     SOURCE_CALC,
@@ -98,7 +98,106 @@ def _account_values(account: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+_REASON_LABELS = {
+    "HARD_RISK_LIMIT": "위험 한도 준수",
+    "THESIS_EXIT": "논지 붕괴로 청산",
+    "ALPHA_DECAY": "전망 약화",
+    "REBALANCE": "더 나은 후보로 자금 이동",
+    "ALPHA_OPPORTUNITY": "전망 개선",
+}
+
+
+def _render_system_portfolio(model: dict[str, Any], observed_at: Any) -> None:
+    system = model.get("system") or {}
+    summary = system.get("summary") or {}
+    with st.container(key="portfolio_summary_metrics"):
+        first = st.columns(4, gap="small")
+        for column, (label, value) in zip(first, (
+            ("NAV · 시작 100", f"{summary['nav']:,.2f}" if summary.get("nav") is not None else "—"),
+            ("누적 수익률", display_percent(summary.get("total_return"), signed=True)),
+            ("SPY 대비", display_percent(summary.get("excess_return"), signed=True)),
+            ("최대 낙폭", display_percent(summary.get("max_drawdown"))),
+        )):
+            with column:
+                st.metric(label, value, border=True)
+        second = st.columns(4, gap="small")
+        for column, (label, value) in zip(second, (
+            ("1M · 3M", f"{display_percent(summary.get('return_1M'), signed=True)} · "
+                        f"{display_percent(summary.get('return_3M'), signed=True)}"),
+            ("6M · 1Y", f"{display_percent(summary.get('return_6M'), signed=True)} · "
+                        f"{display_percent(summary.get('return_1Y'), signed=True)}"),
+            ("연 변동성", display_percent(summary.get("annualized_volatility"))),
+            ("연 회전율 · 현금", f"{display_percent(summary.get('annualized_turnover'))} · "
+                              f"{display_percent(summary.get('cash_weight'))}"),
+        )):
+            with column:
+                st.metric(label, value, border=True)
+    st.caption("기간 수익률은 그 기간만큼 기록이 쌓인 뒤 표시해요. 비용은 회전율 × (반스프레드 + 수수료)를 NAV에서 뺀 값이에요.")
+    history = system.get("history") or []
+    if len(history) >= 2:
+        dates = [row["trade_date"] for row in history]
+        figure = go.Figure()
+        figure.add_trace(go.Scatter(x=dates, y=[row["nav"] for row in history], name="System Portfolio",
+                                    line={"color": PRIMARY, "width": 2.5}))
+        figure.add_trace(go.Scatter(x=dates, y=[row["benchmark_nav"] for row in history], name="SPY",
+                                    line={"color": MUTED, "width": 2}))
+        figure.update_layout(**plotly_layout(height=320), title="System Portfolio와 SPY · 시작 100 기준")
+        st.plotly_chart(figure, width="stretch", config={"displaylogo": False})
+    weights = sorted(((symbol, weight) for symbol, weight in (system.get("current_weights") or {}).items()
+                      if symbol != "CASH" and weight > 0), key=lambda item: -item[1])
+    left, right = st.columns(2, gap="medium")
+    with left:
+        st.markdown("**현재 비중**")
+        dataframe([{"종목": symbol, "비중": display_percent(weight)} for symbol, weight in weights],
+                  key="system_portfolio_weights")
+    with right:
+        target = system.get("latest_target") or {}
+        st.markdown(f"**최근 목표 변경 이유** · {str(target.get('decided_at') or '—')[:16]}")
+        reasons = sorted((system.get("trade_reasons") or {}).items(),
+                         key=lambda item: -abs(float(item[1].get("target_weight") or 0) - float(item[1].get("current_weight") or 0)))
+        dataframe([{"종목": symbol, "이전": display_percent(row.get("current_weight")),
+                    "목표": display_percent(row.get("target_weight")),
+                    "이유": _REASON_LABELS.get(str(row.get("code")), str(row.get("code")))}
+                   for symbol, row in reasons], key="system_portfolio_reasons")
+    source_note(SOURCE_DB, observed_at=observed_at, detail="승인·실계좌와 무관한 System 원장")
+
+
+def _render_my_comparison(model: dict[str, Any]) -> None:
+    mine = model.get("my") or {}
+    if not mine.get("available"):
+        st.caption("계좌 스냅샷이 저장되면 System 대비 차이를 표시해요.")
+        return
+    columns = st.columns(3, gap="small")
+    with columns[0]:
+        st.metric("System을 따라간 정도", display_percent(mine.get("follow_ratio")), border=True)
+    with columns[1]:
+        st.metric("실제 수익률", display_percent(mine.get("my_return"), signed=True), border=True)
+    with columns[2]:
+        st.metric("System 대비 성과 차이", display_percent(mine.get("return_gap"), signed=True), border=True)
+    if mine.get("return_since"):
+        st.caption(f"같은 기간({str(mine['return_since'])[:10]} 이후) 비교 · 실제 수익률은 입출금을 뺀 시간가중 수익률이에요.")
+    else:
+        st.caption("입출금 기록이 확인된 시간가중 수익률이 쌓이면 System과의 성과 차이를 계산해요.")
+    rows = sorted(mine.get("differences") or [], key=lambda row: -abs(float(row.get("gap") or 0)))
+    dataframe([{"종목": row["ticker"], "System": display_percent(row["system_weight"]),
+                "My": display_percent(row["my_weight"]), "차이": display_percent(row["gap"], signed=True)}
+               for row in rows], key="my_portfolio_differences")
+
+
 st.title("포트폴리오")
+st.caption("System Portfolio는 프로그램 판단을 100% 따랐다면의 전략이고, My Portfolio는 그 판단을 실제 Toss 계좌가 따라간 결과예요.")
+
+system_result = load_system_portfolio_data()
+system_model = result_payload(system_result, default={}) or {}
+with st.container(border=True):
+    st.subheader(":material/insights: System Portfolio")
+    if result_status(system_result, empty_text="System Portfolio가 아직 첫 목표를 만들지 않았어요"):
+        _render_system_portfolio(system_model, getattr(system_result, "observed_at", None))
+
+st.subheader(":material/account_balance_wallet: My Portfolio")
+if getattr(system_result, "status", "") == "ok":
+    with st.container(border=True):
+        _render_my_comparison(system_model)
 
 account_result = load_latest_account_snapshot()
 account_observed_at = getattr(account_result, "observed_at", None)

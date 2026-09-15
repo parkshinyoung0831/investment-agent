@@ -1,7 +1,8 @@
 # Trading — 근거에서 포트폴리오까지의 판단 계층
 
-`investment_agent.trading`는 구조화된 투자 근거를 분석 신호로 바꾸고, 그 신호를 포트폴리오와 검증 가능한
-위험 결정으로 변환하는 계층입니다. 증권사 credential을 갖거나 주문 API를 호출하지 않습니다.
+`investment_agent.trading`는 구조화된 투자 근거를 종목 기대수익으로 바꾸고, 위험을 고려한 목표비중을
+**System Portfolio**에서 추적한 뒤, 실제 계좌(**My Portfolio**)가 그 목표를 따라갈 주문 계획을 만드는
+계층입니다. 증권사 credential을 갖거나 주문 API를 호출하지 않습니다. System은 실계좌·승인을 모릅니다.
 
 상위 불변 규칙은 [CONSTITUTION.md](CONSTITUTION.md)가 갖습니다.
 
@@ -10,25 +11,21 @@
 ```text
 tracked universe
   ↓
-candidate_ranker                 factor 상위 보유 후보 중 분석할 종목을 정함. 비중은 정하지 않음
+candidate_ranker                 분석할 종목(System 보유·새 정보·factor 상위). 비중은 정하지 않음
   ↓
-ContextBuilder
+ContextBuilder → EvidenceBundle cutoff 시점에 볼 수 있었던 구조화 근거
   ↓
-EvidenceBundle                  cutoff 시점에 볼 수 있었던 구조화 근거
+decision/analysis.py            TradingAgents 논지(+ 채택된 ML 보정) → 신호 배치
   ↓
-FeatureLayer / TradingAgents / ML / RL
+decision/alpha.py               factor 기대수익(IC×σ×z) + 논지 검증 → 기대수익·제약
   ↓
-ExpectedReturnSignal            expected return, confidence, risk, horizon
+system/target.py                risk/budget → RiskAwareOptimizer → no-trade band → DeterministicRiskGate
   ↓
-RiskAwareOptimizer              CVXPY가 전체 목표 비중 계산
+system/engine.py                System 목표 기록, 비중 기반 NAV
+══════ 여기까지 실계좌·Discord 승인과 독립 ══════
+my_portfolio.py                 System 목표 − 새 Toss 스냅샷 = 추종 제안·RiskDecision
   ↓
-PortfolioProposal              CASH 포함 합계 1
-  ↓
-DeterministicRiskGate
-  ↓
-RiskDecision
-  ↓
-ExecutionIntent                이 지점부터 `investment_agent.execution`이 소유
+ExecutionIntent                 이 지점부터 `investment_agent.execution`이 소유
 ```
 
 ## 하지 않는 일
@@ -155,31 +152,17 @@ flowchart TD
 구조화 시장·재무·거시는 Supabase bundle만 사용합니다. News/Social은 live source kind에서만 별도
 provider를 호출하고 sanitize·dedupe·quota·DuckDB cache 경계를 통과합니다.
 
-`SecurityProposal.target_weight`는 입력 계약에 남아 있지만 활성 Shadow 경로에서는 사용하지 않습니다.
-`from_optimized_security_proposals()`는 `expected_excess_return`,
-`confidence`, signal에서 `ExpectedReturnSignal`을 만듭니다.
+`SecurityProposal.target_weight`와 행동 단어(`signal`)는 저장된 의견으로 남습니다. 비중 입력으로 쓰지 않고,
+행동 단어는 ALPHA(`decision/alpha.py`)에서 한 번만 논지 상태(positive·neutral·negative·broken)로 해석합니다.
 
-`from_security_proposals()`는 독립 종목 제안을 단순 합산하는 보조 변환기입니다. active Shadow의
-최종 비중은 `from_optimized_security_proposals()`가 계산하므로 두 경로를 혼동하지 않습니다.
+## 5. System Portfolio와 My Portfolio
 
-## 5. SignalBook과 full portfolio
-
-하루에 일부 종목만 분석한 결과는 `partial_universe`입니다. 분석하지 않은 기존 보유를 자동으로
-0으로 만들 수 없으므로 그 자체로 실행 가능한 전체 포트폴리오가 아닙니다.
-
-`SignalBook`은 batch와 종목별 TTL을 보관합니다.
-
-- 요청한 종목, 성공 종목, 실패 종목을 분리
-- signal 만료시각 기록
-- batch와 model artifact 결박
-- partial/failed 종목을 완료 coverage로 계산하지 않음
-
-`src/investment_agent/trading/portfolio/construct.py`는 완료 batch와 fresh Toss
-`src/investment_agent/execution/snapshots.py`의 `AccountSnapshot`을 결합합니다.
-LLM의 `target_weight`는 이 경로에서 읽지 않습니다. TradingAgents의 expected return·confidence만
-optimizer에 전달하고, 미분석 기존 보유는 snapshot 비중으로 고정합니다. 따라서 tracked universe
-밖 기존 보유는 추가 매수하지 않으면서도 목표 포트폴리오에서 사라지지 않습니다. Paper/Live
-stage에서는 해당 artifact의 수동 승격이 먼저 존재해야 합니다.
+- `system/target.py`는 System 자신의 현재 비중만 입력으로 받아 목표비중을 만듭니다. 계좌 스냅샷 인자가 없습니다.
+- `system/engine.py`는 확정 종가로 NAV를 이어 기록하고, 목표는 판단 다음 정규장 종가에 적용합니다.
+  새 factor 횡단면 + 7일 경과 또는 보유 종목의 논지 붕괴가 있을 때만 목표를 다시 만듭니다.
+- `my_portfolio.py`는 최신 승인 System 목표와 새 Toss 스냅샷의 차이를 live 제안으로 기록합니다. 목표에 없는
+  보유는 0(전량 매도), 차이가 최소 주문금액 미만이면 묻지 않습니다. 같은 목표는 한 번만 묻습니다.
+- `portfolio/signal_book.py`의 `SignalBatch`·`SignalRecord`는 분석 회차의 완전성과 논지 기록 계약입니다.
 
 ## 6. Optimizer와 RiskGate
 
@@ -243,28 +226,19 @@ execution의 5단계 lifecycle과 model artifact의 3단계 저장 stage는 서�
 
 ```text
 src/investment_agent/trading/
-  contracts.py                 Evidence와 판단 계약
-  context.py                   PIT EvidenceBundle 조립
-  feature_layer.py             학습/서빙 공통 feature (컬럼 고정 + 결측 지표)
-  valuation.py                 PIT 밸류에이션 비율 계산 계약
-  valuation_inputs.py          원천 행 -> PIT 입력 조립 (TTM 재구성)
-  src/investment_agent/trading/evidence/dossier/
-                              InvestmentDossier 계약·Builder·LLM renderer
-  candidate_ranker.py          factor 기반 분석 후보 선정(횡단면이 없으면 coverage 순환)
-  universe.py                  tracked universe 검증
-  llm.py                       OpenAI-compatible provider
-  memory.py / evaluator.py     과거 case와 성숙 결과 평가
-  agents/                      TradingAgents와 vendor 경계
-  research/ml_inference.py     ML baseline live 추론
-  rl/                          feature/label, walk-forward, SB3 실험
-  research/backtest/           Native engine와 LumiBot validation
-  portfolio/                   signal book, optimizer, risk, promotion
-  research/commands/           수동/하네스 CLI
-    build_features.py          tracked universe -> FeatureSnapshot 적재
-    build_labels.py            구간 종료 뒤 ForwardReturnLabel 적재
-    build_valuations.py        PIT 밸류에이션 관측값 적재
-    build_training_samples.py  비용 반영 학습 표본 적재
-    export_dataset.py          원장 -> 학습 dataset JSON
+  decision/analysis.py         TradingAgents 논지 분석 진입점(비중을 정하지 않음)
+  decision/alpha.py            factor 기대수익 + 논지 검증 → 기대수익·제약
+  decision/candidate_ranker.py 분석 후보 선정(System 보유·새 정보·factor 상위)
+  decision/universe.py         tracked universe 검증
+  evidence/                    PIT EvidenceBundle 조립·보관
+  portfolio/optimizer.py       CVXPY 목표비중
+  portfolio/market_risk.py     공분산·베타·거래비용·시장위험 재료
+  portfolio/signal_book.py     분석 배치·논지 기록 계약
+  risk/budget.py               시장·거시 입력 → 위험 한도
+  risk/gate.py                 DeterministicRiskGate
+  system/                      System Portfolio(target·accounting·engine·store)
+  my_portfolio.py              System 목표를 따라가는 실계좌 추종 제안
+  performance/                 My Portfolio 성과(입출금 반영 시간가중 수익률)
   repository.py                trading 원장 repository
   supabase_repository.py       trading Supabase reader/writer
 ```
@@ -288,20 +262,17 @@ python -m investment_agent.research.commands.build_training_samples --dry-run
 python -m investment_agent.research.commands.export_dataset --output artifacts/datasets/v2.json
 
 # Evidence만 검증하고 LLM을 호출하지 않음
-python -m investment_agent.trading.decision.portfolio_shadow --ticker AAPL --dry-run
+python -m investment_agent.trading.decision.analysis --ticker AAPL --dry-run
 
-# 현재 tracked universe에서 coverage-first Shadow 분석
-python -m investment_agent.trading.decision.portfolio_shadow --limit 5
+# 현재 tracked universe에서 논지 분석
+python -m investment_agent.trading.decision.analysis --limit 5
 
-# 가상계좌 정산·평가·판단과 성과 요약
-python -m investment_agent.operations.commands.virtual_books
-python -m investment_agent.operations.commands.virtual_books --summary
+# System Portfolio 평가·목표 갱신과 성과 요약
+python -m investment_agent.operations.commands.system_portfolio
+python -m investment_agent.operations.commands.system_portfolio --summary
 
 # 성숙한 case 평가
 python -m investment_agent.research.commands.evaluate --limit 200
-
-# SignalBook + 계좌 snapshot으로 full portfolio 구성
-python -m investment_agent.trading.portfolio.construct --batch-id <BATCH_ID> --stage shadow --dry-run
 
 # 완전한 JSON manifest로 Native backtest
 python -m investment_agent.research.backtest.cli --input <INPUT.json> --output <OUTPUT.json>
@@ -363,29 +334,14 @@ PPO 학습은 겹치지 않는 기간으로 나눈 동일 holdout에서 기존 �
 DB의 수동 승인 실행을 허용합니다. 환경변수의 live·kill 게이트와 정비 보류·lockdown,
 모델 승격, Discord listener는 별도 조건이며 이 명령이 자동 변경하지 않습니다.
 
-### 순환 분석과 진입 시점 재판단
+### 순환 분석
 
 하네스의 기본 분석 주기는 3시간입니다. 보유 후보 판단은 28일간 유효하고 하루 모델 예산은 약
 20종목이라, 회차마다 판단이 오래된 후보만 고르고 없으면 배치 없이 넘깁니다. 실패한 시도도 순서에
-반영하며, LLM 예산이 부족하면 남은 종목은 다음 회차에 이어갑니다. 분석은 장외에도 수행하고 긴 분석
-작업과 진입 감시·성과 보고는 별도로 진행합니다.
+반영하며, LLM 예산이 부족하면 남은 종목은 다음 회차에 이어갑니다. 분석은 장외에도 수행합니다.
 
-`watch_entries`는 유효한 원본 판단에서 가격 범위·무효화 가격·만료 시각을 만들고
-장중 실행 가능 시간에 5분마다 조건을 확인합니다. 기본 LLM 호출 상한은 회차당 2회입니다.
-진입 범위에 도달하면 현재 근거와 최신 뉴스를 다시 읽어 enter/wait/cancel을 기록합니다.
-재판단 뒤 시세를 재조회하고, 최대 5분간 유효한 enter만 단일 종목 파생 배치로 연결합니다.
-원본 종목 판단은 보존하며 최종 비중·위험 한도·주문 권한은 결정론적 실행 경계가 담당합니다.
-축소·청산은 매수 가격 계획을 기다리지 않고 현재 시점의 재판단으로 진행합니다.
-
-승인 카드에는 진입 범위와 재판단 이유·만료가 표시됩니다. 승인 이후에도 현재가와
-실제 지정가가 범위 안인지, 판단이 만료·취소·대체되지 않았는지 주문 직전에 확인합니다.
-한 재판단에서 실행 요청을 만들면 거절·실패 후에도 같은 판단으로 승인을 재요청하지
-않습니다. 새 원본 판단에 따른 재검토가 필요합니다. 일반 이모지 반응 대신 카드의
-서명된 ✅ 승인 버튼을 사용합니다.
-
-계획과 재판단은 로컬 `entry_candidates`·`entry_reviews`에 저장하고 대시보드에서
-감시 상태를 읽습니다. 원본 판단의 학습 성과와 진입 시점 재판단 기록은 분리됩니다.
-진입 재판단 자체의 별도 학습 보상은 현재 자동 학습에 포함하지 않습니다.
+실계좌는 System 목표를 따라가기만 하므로 주문 직전 LLM 진입 재판단을 두지 않습니다. 가격 보호는 실행 단계의
+지정가 band와 승인 만료가 담당합니다. 승인 카드의 서명된 ✅ 버튼으로만 승인합니다.
 
 ### 오프라인 검증
 

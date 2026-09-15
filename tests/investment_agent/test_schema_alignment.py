@@ -176,7 +176,6 @@ def _declared_schema(path: Path) -> str | None:
 # 조건으로 거르지 않고 이름을 적는다 — 조건으로 거르면 SCHEMA를 빠뜨린 Supabase
 # 저장소까지 조용히 빠져나간다.
 LOCAL_STORE_REPOSITORIES = frozenset({
-    "src/investment_agent/trading/entry/repository.py",
     "src/investment_agent/trading/performance/repository.py",
     "src/investment_agent/intelligence/repository.py",
     "src/investment_agent/research/storage/repository.py",

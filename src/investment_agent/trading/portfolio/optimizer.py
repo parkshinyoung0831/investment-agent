@@ -1,4 +1,10 @@
-"""LLM·ML·RL signal을 결정적 convex portfolio 비중으로 변환한다."""
+"""종목 기대수익을 결정적 convex portfolio 비중으로 변환한다.
+
+## 비중은 여기서만 정해진다
+
+ALPHA는 종목마다 기대수익과, 필요할 때만 강제 제약 하나를 넘긴다. 사고팔기(신규·확대·유지·축소)는
+결과 비중과 직전 비중의 차이일 뿐 입력이 아니다 — 입력으로 받으면 판단자가 둘이 된다.
+"""
 from __future__ import annotations
 
 import hashlib
@@ -10,38 +16,16 @@ import numpy as np
 
 from investment_agent.trading.contracts import ContractError, parse_datetime
 from investment_agent.platform.serialization import canonical_json
-from investment_agent.trading.portfolio.contracts import CASH_SYMBOL, SecurityProposal, validated_weights
+from investment_agent.trading.portfolio.contracts import CASH_SYMBOL, validated_weights
 from investment_agent.trading.portfolio.market_risk import TradingCostInputs
 
-# 의견의 강도가 아니라 **방향**을 optimizer에 강제하는 행동들이다.
-# exit는 전량 청산 명령이다 — 기대수익을 0 이하로 낮추는 것만으로는 turnover 벌점이
-# 잔여 비중을 남길 수 있다. reduce·avoid·watch는 비중을 늘리지 못하게만 막고, 얼마나
-# 줄일지는 optimizer에 맡긴다(watch가 보유를 암묵적으로 청산하지 않는 것과 같은 이유).
-# open·increase·hold는 의견일 뿐이라 제약하지 않는다 — 돈은 한정돼 있어 더 나은 종목과
-# 경쟁해 0이 될 수 있어야 한다.
-ACTION_EXIT = "exit"
-NO_INCREASE_ACTIONS = frozenset({"reduce", "avoid", "watch"})
-ALL_ACTIONS = frozenset({"open", "increase", "hold", "reduce", "exit", "avoid", "watch"})
-BUY_ACTIONS = frozenset({"open", "increase"})
-
-
-def coherent_action(action: str, *, expected_excess_return: float, probability_up: float) -> tuple[str, str | None]:
-    """행동 단어와 수치 전망이 서로 반대면 더 약한 행동으로 낮춘다. 수치는 바꾸지 않는다.
-
-    LLM이 `hold`라고 쓰고 기대수익을 음수로 적으면 optimizer는 전량 매도할 수 있고, 카드에는
-    "유지"와 "전량 매도"가 함께 뜬다. `exit`는 비중을 0으로 강제하는 가장 강한 명령이라
-    전망이 하락을 말하지 않는데 청산하게 둘 수 없다. 방향이 엇갈리면 강제력이 약한 쪽을
-    택하고, 그 사실을 조정 사유로 남긴다. 임계값은 두지 않는다 — 부호만 본다.
-    """
-    bearish = expected_excess_return < 0.0 and probability_up < 0.5
-    bullish = expected_excess_return > 0.0 and probability_up > 0.5
-    if action == ACTION_EXIT and not bearish:
-        return "reduce", "exit_without_bearish_outlook"
-    if action in BUY_ACTIONS and not bullish:
-        return "hold", f"{action}_without_bullish_outlook"
-    if action == "hold" and bearish:
-        return "reduce", "hold_with_bearish_outlook"
-    return action, None
+# 기대수익 크기로는 표현할 수 없는 예외만 제약으로 받는다.
+# force_exit는 논지가 깨진 보유의 전량 청산이다 — 기대수익을 0 이하로 낮추는 것만으로는 turnover
+# 한도가 잔여 비중을 남길 수 있다. block_increase는 비중을 늘리지 못하게만 막고 얼마나 줄일지는
+# optimizer에 맡긴다(검증 전 신규·품질 붕괴·하락 논지).
+CONSTRAINT_FORCE_EXIT = "force_exit"
+CONSTRAINT_BLOCK_INCREASE = "block_increase"
+CONSTRAINTS = frozenset({CONSTRAINT_FORCE_EXIT, CONSTRAINT_BLOCK_INCREASE})
 
 
 def mandatory_base_weights(
@@ -91,17 +75,15 @@ class ExpectedReturnSignal:
     timestamp: str
     version: str
     evidence_ids: tuple[str, ...] = ()
-    # 종목 의견의 행동. 기대수익과 달리 비중의 방향을 제약한다(`ACTION_*` 참조).
-    action: str | None = None
-    # 원래 행동이 수치 전망과 엇갈려 낮췄다면 그 사유(`coherent_action`).
-    action_adjustment: str | None = None
+    # 기대수익으로 표현할 수 없는 강제 제약(`CONSTRAINT_*`). 없으면 optimizer가 자유롭게 정한다.
+    constraint: str | None = None
 
     def __post_init__(self) -> None:
         symbol = str(self.symbol).upper().strip()
         if not symbol or symbol == CASH_SYMBOL:
             raise ValueError("signal symbol must be a risky asset")
-        if self.action is not None and self.action not in ALL_ACTIONS:
-            raise ValueError(f"unsupported signal action: {self.action}")
+        if self.constraint is not None and self.constraint not in CONSTRAINTS:
+            raise ValueError(f"unsupported signal constraint: {self.constraint}")
         if self.horizon_days not in {1, 5, 20}:
             raise ValueError("signal horizon must be 1, 5, or 20 trading days")
         for name in ("expected_return", "confidence", "risk_score"):
@@ -114,39 +96,6 @@ class ExpectedReturnSignal:
         if not self.source or not self.version:
             raise ValueError("signal source and version are required")
         object.__setattr__(self, "symbol", symbol)
-
-    @classmethod
-    def from_security_proposal(
-        cls,
-        proposal: SecurityProposal,
-        *,
-        source: str,
-        version: str,
-        horizon_days: int = 5,
-    ) -> "ExpectedReturnSignal":
-        # LLM target_weight는 의도적으로 읽지 않는다.
-        risk_score = 1.0 - proposal.confidence
-        action, adjustment = coherent_action(
-            proposal.signal,
-            expected_excess_return=proposal.expected_excess_return,
-            probability_up=proposal.probability_up,
-        )
-        expected = proposal.expected_excess_return
-        if action in NO_INCREASE_ACTIONS | {ACTION_EXIT}:
-            expected = min(0.0, expected)
-        return cls(
-            symbol=proposal.ticker,
-            expected_return=float(expected),
-            confidence=proposal.confidence,
-            risk_score=risk_score,
-            horizon_days=horizon_days,
-            source=source,
-            timestamp=proposal.as_of_at,
-            version=version,
-            evidence_ids=proposal.evidence_ids,
-            action=action,
-            action_adjustment=adjustment,
-        )
 
 
 @dataclass(frozen=True)
@@ -284,7 +233,7 @@ class RiskAwareOptimizer:
         )
         if changed_fixed:
             raise ContractError(
-                "fixed weights must match the account snapshot: " + ", ".join(changed_fixed)
+                "fixed weights must match the current weights: " + ", ".join(changed_fixed)
             )
         fixed_risky = math.fsum(fixed.values())
         available_risky = 1.0 - self.policy.min_cash_weight - fixed_risky
@@ -319,7 +268,7 @@ class RiskAwareOptimizer:
         expected = bounded_expected * np.array([by_symbol[symbol].confidence for symbol in symbols], dtype=float)
         current_risky = np.array([float(current.get(symbol, 0.0)) for symbol in symbols])
         exit_symbols = frozenset(
-            symbol for symbol in symbols if by_symbol[symbol].action == ACTION_EXIT
+            symbol for symbol in symbols if by_symbol[symbol].constraint == CONSTRAINT_FORCE_EXIT
         )
         base = mandatory_base_weights(
             {symbol: current.get(symbol, 0.0) for symbol in symbols} | fixed,
@@ -376,10 +325,10 @@ class RiskAwareOptimizer:
             if limit.minimum is not None:
                 constraints.append((loadings - limit.minimum) @ weights >= 0.0)
         for index, symbol in enumerate(symbols):
-            action = by_symbol[symbol].action
-            if action == ACTION_EXIT:
+            constraint = by_symbol[symbol].constraint
+            if constraint == CONSTRAINT_FORCE_EXIT:
                 constraints.append(weights[index] == 0.0)
-            elif action in NO_INCREASE_ACTIONS:
+            elif constraint == CONSTRAINT_BLOCK_INCREASE:
                 constraints.append(weights[index] <= float(current_risky[index]))
         sectors = {str(key).upper(): str(value) for key, value in (sector_by_symbol or {}).items()}
         for sector in sorted(set(sectors.values())):
@@ -403,7 +352,7 @@ class RiskAwareOptimizer:
             # solver 허용오차가 남긴 1e-9 수준의 잔량이 1주 매도 누락으로 이어지지 않게 한다.
             if symbol in exit_symbols:
                 raw[index] = 0.0
-            elif by_symbol[symbol].action in NO_INCREASE_ACTIONS or not self.policy.allow_increases:
+            elif by_symbol[symbol].constraint == CONSTRAINT_BLOCK_INCREASE or not self.policy.allow_increases:
                 raw[index] = min(raw[index], float(current_risky[index]))
         result_weights = {
             **fixed,
@@ -519,7 +468,7 @@ class RiskAwareOptimizer:
 
 
 __all__ = [
-    "ACTION_EXIT", "ALL_ACTIONS", "BUY_ACTIONS", "NO_INCREASE_ACTIONS", "coherent_action", "ExpectedReturnSignal",
+    "CONSTRAINTS", "CONSTRAINT_BLOCK_INCREASE", "CONSTRAINT_FORCE_EXIT", "ExpectedReturnSignal",
     "FactorExposureLimit", "OptimizationResult",
     "OptimizerPolicy", "RiskAwareOptimizer", "mandatory_base_weights",
 ]

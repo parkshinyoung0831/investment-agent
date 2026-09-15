@@ -49,7 +49,7 @@ Actions secrets/variables(CI)에 주입하며, 이 파일에는 이름·용도·
 | `ECON_CALENDAR_ICS_BUCKET` | 캘린더 구독 파일을 올릴 Supabase Storage **공개** 버킷(기본 `econ-calendar`). 버킷은 사람이 만든다 — 코드가 공개 버킷을 만들지 않는다 |
 | `OPS_HEARTBEAT_PING_URL` | 외부 dead-man's switch(healthchecks.io 등). 일일 점검 발송 뒤 핑. 비어 있으면 아무 일도 하지 않는다 |
 | `LOG_LEVEL` | 로그 레벨 (기본 INFO) |
-| `AI_INVESTOR_MODE` | LLM 연구 entry 모드. `portfolio_shadow`는 `shadow`만 허용 |
+| `AI_INVESTOR_MODE` | LLM 논지 분석 entry 모드. `trading.decision.analysis`는 `shadow`만 허용 |
 | `AI_INVESTOR_BASE_URL`, `AI_INVESTOR_MODEL` | OpenAI 호환 로컬/원격 LLM 주소와 모델 이름 |
 | `AI_INVESTOR_AZURE_API_KEY`, `AZURE_AI_BASE_URL` | 선택적인 Azure OpenAI 호환 provider credential과 endpoint |
 | `AI_INVESTOR_AZURE_DAILY_REQUESTS` | Azure provider에 적용할 프로젝트별 일일 지출·호출 가드 |

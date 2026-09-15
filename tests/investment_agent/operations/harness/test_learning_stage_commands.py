@@ -59,7 +59,8 @@ class LearningStageCommandTest(unittest.TestCase):
             command_runner=self.runner,
             decision_repository=None,
             approval_repository=None,
-            construct_portfolio=lambda **kwargs: None,
+            system_store=None,
+            follow_target=lambda **kwargs: None,
             create_execution_intent=lambda **kwargs: None,
             now=lambda: NOW,
         )

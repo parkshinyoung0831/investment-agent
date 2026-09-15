@@ -49,8 +49,9 @@ class HarnessEntryBoundaryTest(unittest.TestCase):
 
         adapters = SimpleNamespace(
             analysis=handler,
-            select_signal=handler,
-            portfolio=handler,
+            select_target=handler,
+            follow=handler,
+            run_system_portfolio=handler,
             execution_intent=handler,
             approval_request=handler,
             approval_worker=handler,
@@ -97,10 +98,12 @@ class HarnessEntryBoundaryTest(unittest.TestCase):
                 ("investment_analysis", "analysis"),
                 # 판단 직후에 보고서를 보낸다. 실패해도 분석 결과를 가리지 않는다.
                 ("investment_analysis", "notify_investment"),
+                # 승인·실계좌와 무관하게 System Portfolio는 분석 전용 모드에서도 돈다.
+                ("system_portfolio", "run_system_portfolio"),
                 ("toss_reconciliation", "reconcile"),
             ])
             self.assertEqual(
-                scheduler.state.jobs["investment_pipeline"].pause_reason,
+                scheduler.state.jobs["my_portfolio_follow"].pause_reason,
                 "analysis_only_mode",
             )
             scheduler.tick(now=start + timedelta(seconds=61))
@@ -118,6 +121,7 @@ class HarnessEntryBoundaryTest(unittest.TestCase):
                 ("feature_store", "build_events"),
                 ("investment_analysis", "analysis"),
                 ("investment_analysis", "notify_investment"),
+                ("system_portfolio", "run_system_portfolio"),
                 ("toss_reconciliation", "reconcile"),
                 # 정확 시각 대상은 1분 안에 다시 확인해야 한다.
                 ("earnings_watch", "watch"),

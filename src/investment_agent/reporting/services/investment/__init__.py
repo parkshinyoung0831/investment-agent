@@ -8,6 +8,7 @@ from investment_agent.reporting.services.investment.decision_cases import (
     summarize_role_analyses,
 )
 from investment_agent.reporting.services.investment.market_regime import build_live_regime_read_model
+from investment_agent.reporting.services.investment.system_portfolio import build_system_portfolio_read_model
 from investment_agent.reporting.services.investment.policy_snapshots import (
     build_fusion_policy_read_model,
     build_optimizer_policy_read_model,
@@ -23,6 +24,7 @@ __all__ = [
     "build_optimizer_policy_read_model",
     "build_ranker_policy_read_model",
     "build_risk_policy_read_model",
+    "build_system_portfolio_read_model",
     "normalize_role_analyses",
     "summarize_role_analyses",
 ]

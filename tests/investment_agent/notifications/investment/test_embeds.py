@@ -102,10 +102,12 @@ class PortfolioEmbedTest(unittest.TestCase):
 
         self.assertIn("90.0%", _flatten(embed))
 
-    def test_partial_coverage_and_failures_are_surfaced(self):
+    def test_candidate_scope_and_run_status_are_surfaced(self):
         embed = embeds.portfolio_embed(proposal=_proposal(), risk=_risk(), run=_run())
 
-        self.assertIn("2/3", _flatten(embed))
+        text = _flatten(embed)
+        self.assertIn("후보 **3**종목", text)
+        self.assertIn("`partial`", text)
 
     def test_footer_states_the_engine_without_claiming_reinforcement_learning(self):
         embed = embeds.portfolio_embed(proposal=_proposal(), risk=_risk(), run=_run())
@@ -247,17 +249,17 @@ class DecisionExplanationTest(unittest.TestCase):
 
         embed = portfolio_embed(
             proposal={"weights": {"AAPL": 0.0, "MSFT": 0.08, "CASH": 0.92}, "metadata": {"trade_reasons": {
-                "AAPL": {"code": "REBALANCE", "current_weight": 0.1, "target_weight": 0.0,
-                         "action_adjustment": "hold_with_bearish_outlook", "expected_return_capped": False},
+                "AAPL": {"code": "ALPHA_DECAY", "current_weight": 0.1, "target_weight": 0.0,
+                         "constraint": "block_increase", "expected_return_capped": False},
                 "MSFT": {"code": "ALPHA_OPPORTUNITY", "current_weight": 0.0, "target_weight": 0.08,
-                         "action_adjustment": None, "expected_return_capped": True},
+                         "constraint": None, "expected_return_capped": True},
             }}},
             risk={"is_approved": True, "metrics": {}},
             run={"candidate_tickers": ["AAPL", "MSFT"], "status": "completed"},
         )
         field = next(item for item in embed["fields"] if item["name"] == "🔁 비중 변경 사유")
-        self.assertIn("`AAPL` 10.0% → 0.0% · 더 나은 후보로 자금 이동", field["value"])
-        self.assertIn("수치 전망이 하락", field["value"])
+        self.assertIn("`AAPL` 10.0% → 0.0% · 전망 약화", field["value"])
+        self.assertIn("확대 금지", field["value"])
         self.assertIn("과대 기대수익 상한 적용", field["value"])
 
     def test_portfolio_card_without_reasons_adds_no_empty_field(self):
@@ -273,7 +275,7 @@ class DecisionExplanationTest(unittest.TestCase):
             "signal": "reduce", "target_weight": 0.3, "previous_signal": "increase", "reasoning": ["r"]}})
         signal = embed["fields"][0]["value"]
         self.assertNotIn("목표 비중", signal)
-        self.assertIn("직전 판단 비중 확대 → **방향 변경**", signal)
+        self.assertIn("직전 판단 확대 의견 → **방향 변경**", signal)
 
 
 if __name__ == "__main__":

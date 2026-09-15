@@ -24,10 +24,10 @@ from investment_agent.operations.harness.runtime import HarnessScheduler
 from investment_agent.operations.harness.state import JsonStateStore
 
 _STAGE_ADAPTERS = (
-    "analysis", "select_signal", "portfolio", "execution_intent", "approval_request",
+    "analysis", "select_target", "follow", "execution_intent", "approval_request",
     "approval_worker", "risk_snapshot", "reconcile", "watch", "build_valuations",
     "build_features", "build_labels", "build_training_samples", "build_events",
-    "evaluate_decisions", "notify_investment", "notify_trades", "run_virtual_books",
+    "evaluate_decisions", "notify_investment", "notify_trades", "run_system_portfolio",
     "run_ml_challengers", "reanalyze_events",
 )
 
@@ -77,9 +77,12 @@ class RegistryInjectionTest(unittest.TestCase):
         """아무것도 안 불리는 tick이면 위 검사는 공허하게 통과한다."""
         self.assertIn("analysis", self._tick_with_fakes())
 
-    def test_virtual_books_run_in_analysis_only_mode(self):
-        """가상계좌는 승인 흐름 밖에서 돈다 — 분석 전용 모드에서도 불려야 한다."""
-        self.assertIn("run_virtual_books", self._tick_with_fakes())
+    def test_system_portfolio_runs_in_analysis_only_mode(self):
+        """System Portfolio는 승인 흐름 밖에서 돈다 — 분석 전용 모드에서도 불려야 한다."""
+        called = self._tick_with_fakes()
+        self.assertIn("run_system_portfolio", called)
+        # 같은 tick에서 실계좌 추종 단계는 분석 전용 모드라 멈춘다.
+        self.assertNotIn("follow", called)
 
     def test_ml_challengers_run_outside_the_approval_workflow(self):
         self.assertIn("run_ml_challengers", self._tick_with_fakes())

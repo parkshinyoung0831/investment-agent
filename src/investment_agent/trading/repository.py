@@ -257,26 +257,6 @@ class TradingRepository:
         )
         return str(rows[0]["batch_id"]) if rows else None
 
-    def publish_entry_signal(self, record, *, review: dict) -> str:
-        """재판단은 원본 신호를 바꾸지 않고 해당 종목만 실행 배치로 고정한다."""
-        from investment_agent.platform.serialization import stable_id
-        from investment_agent.trading.portfolio.signal_book import SignalBatch, SignalRecord
-        source = self._db.table(SCHEMA, T_SIGNAL_RUNS).select('*').eq('batch_id',record.batch_id).limit(1).execute().data
-        signals = self._db.table(SCHEMA, T_SIGNALS).select('*').eq('signal_id',record.signal_id).limit(1).execute().data
-        if not source or not signals:
-            raise ValueError('entry source signal missing')
-        batch = SignalBatch(batch_id=stable_id('signal_batch', {'entry_review_id':review['review_id']}),
-            as_of_at=record.proposal.as_of_at, completed_at=review['reviewed_at'],
-            requested_symbols=(record.proposal.ticker,), successful_symbols=(record.proposal.ticker,),
-            model_artifact_id=source[0]['model_artifact_id'])
-        effective = SignalRecord(batch_id=batch.batch_id, proposal=record.proposal,
-            recorded_at=review['reviewed_at'], expires_at=review['expires_at'], case_key=record.case_key)
-        row = {**signals[0], 'signal_id':effective.signal_id,'batch_id':batch.batch_id,
-               'recorded_at':effective.recorded_at,'expires_at':effective.expires_at}
-        row.pop('created_at', None)
-        self.record_signal_batch(batch={**batch.to_dict(), 'run_id':source[0]['run_id'], 'is_complete':True}, signals=[row])
-        return batch.batch_id
-
     def signal_batch_id_for_as_of(self, as_of_at: datetime) -> str:
         rows = (
             self._db.table(SCHEMA, T_SIGNAL_RUNS)
@@ -316,63 +296,15 @@ class TradingRepository:
             order_by="completed_at,batch_id",
         )
 
-    def signal_records(
-        self,
-        *,
-        batch_ids: Sequence[str],
-        as_of_at: datetime,
-    ) -> list[dict[str, Any]]:
-        if not batch_ids:
-            return []
-        point = as_of_at.isoformat()
-        return self._db.select_in_chunks(
-            schema=SCHEMA,
-            table=T_SIGNALS,
-            columns="signal_id,batch_id,case_key,security_id,proposal,recorded_at,expires_at",
-            filter_column="batch_id",
-            values=list(batch_ids),
-            configure=lambda query: query.lte("recorded_at", point).gt("expires_at", point),
+    def signal_rows_recorded_between(self, *, start: datetime, end: datetime) -> list[dict[str, Any]]:
+        """기록 시각이 창 안인 종목 의견 전부(만료 여부와 무관). System 논지는 만료가 아니라 판단 시점으로 유효를 가른다."""
+        return self._db.select_paged(
+            lambda: self._db.table(SCHEMA, T_SIGNALS)
+            .select("signal_id,batch_id,security_id,proposal,recorded_at")
+            .gte("recorded_at", start.isoformat())
+            .lte("recorded_at", end.isoformat()),
             order_by="recorded_at,signal_id",
         )
-
-    def latest_execution_ready_batch_id(self, *, as_of_at: datetime) -> str | None:
-        point = as_of_at.isoformat()
-        batches = (
-            self._db.table(SCHEMA, T_SIGNAL_RUNS)
-            .select("batch_id")
-            .eq("is_complete", True)
-            .lte("completed_at", point)
-            .order("completed_at", desc=True)
-            .order("batch_id", desc=True)
-            .limit(10)
-            .execute()
-            .data
-            or []
-        )
-        for row in batches:
-            signals = (
-                self._db.table(SCHEMA, T_SIGNALS)
-                .select("signal_id")
-                .eq("batch_id", str(row["batch_id"]))
-                .gt("expires_at", point)
-                .limit(1)
-                .execute()
-                .data
-                or []
-            )
-            if signals:
-                return str(row["batch_id"])
-        return None
-
-    def live_proposal_ids_for_batch(self, batch_id: str) -> list[str]:
-        """분석 run과 별개인 구성 제안을 원본 배치 metadata로 연결한다."""
-        rows = self._db.select_paged(
-            lambda: self._db.table(SCHEMA, T_PROPOSALS)
-            .select("proposal_id,metadata").eq("stage", "live"),
-            order_by="proposal_id",
-        )
-        return [str(row["proposal_id"]) for row in rows
-                if (row.get("metadata") or {}).get("active_batch_id") == str(batch_id)]
 
     # ── portfolio proposal → risk → adoption ─────────────────────────────
     def portfolio_proposal(self, proposal_id: str) -> dict[str, Any] | None:

@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from investment_agent.dashboard.components.animated_pipeline import animated_pipeline
-from investment_agent.reporting.readers.dashboard import load_execution_data, load_performance_data, load_entry_data
+from investment_agent.reporting.readers.dashboard import load_execution_data, load_performance_data
 from investment_agent.dashboard.components.execution_view import execution_summary, trace_for_intent
 from investment_agent.dashboard.components.theme import dashboard_palette, plotly_layout
 from investment_agent.dashboard.components.ui import (
@@ -118,20 +118,6 @@ page_header(
 )
 render_source_help()
 st.caption(":material/lock: 읽기 전용 · 시작·정지는 로컬 ATLAS 제어센터")
-
-entry_result=load_entry_data()
-with st.container(border=True):
-    st.subheader('진입 조건 감시')
-    labels={'new':'계획 대기','watching':'조건 감시','ready':'승인 후보','expired':'만료',
-            'cancelled':'취소','superseded':'새 판단으로 대체','consumed':'처리됨'}
-    if entry_result.rows:
-        st.dataframe([{'종목':row['ticker'],'상태':labels.get(row['status'],'확인 필요'),
-            '진입 하한':row.get('plan',{}).get('lower_price'),'진입 상한':row.get('plan',{}).get('upper_price'),
-            '최근 재판단':row.get('review',{}).get('reason','아직 없음'),
-            '판단 유효 시각':row.get('review',{}).get('expires_at',row.get('plan',{}).get('expires_at'))}
-            for row in entry_result.rows],hide_index=True)
-    else:
-        st.caption('분석 결과에서 진입 후보가 만들어지면 가격 조건과 재판단 상태를 표시합니다.')
 
 performance_result = load_performance_data()
 performance_rows = [row for row in performance_result.rows if row.get("report_kind") == "daily"]

@@ -128,13 +128,6 @@ class ApprovalWorkflow:
         if self._discord.guild_id != request.discord_guild_id:
             raise ExecutionSafetyError("Discord client guild does not match approval request")
         payload = build_approval_card(request, handoff, self._signer)
-        if hasattr(self._repository,'entry_guard_for_proposal'):
-            guard=self._repository.entry_guard_for_proposal(request.proposal_id)
-            if isinstance(guard,dict):
-                payload['embeds'][0].setdefault('fields',[]).extend([
-                    {'name':'진입 직전 재판단','value':guard['review']['reason'][:1000]},
-                    {'name':'유효 가격과 시각','value':f"{guard['ticker']} · {guard['plan']['lower_price']:g}–{guard['plan']['upper_price']:g} USD\n{guard['review']['expires_at']}까지 · 벗어나면 주문 중단"},
-                ])
         message = self._discord.post_card(
             channel_id=request.discord_channel_id,
             payload=payload,

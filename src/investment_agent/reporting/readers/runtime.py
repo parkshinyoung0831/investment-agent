@@ -25,15 +25,29 @@ T_PROPOSALS = "portfolio_proposals"
 T_RISK_DECISIONS = "risk_decisions"
 T_JOB_STATE = "local_job_state"
 T_ACCOUNT_SNAPSHOTS = "account_snapshots"
+T_SYSTEM_TARGETS = "system_targets"
+T_SYSTEM_NAV = "system_nav"
 
 _PLAIN_DATASETS = frozenset({
     "decision_runs", "security_decisions", "signal_runs", "signals", "portfolio_proposals",
     "risk_decisions", "model_promotions",
 })
 _PAYLOAD_DATASETS = frozenset({
-    "entry_candidates", "entry_reviews",
     "intents", "approvals", "orders", "fills",
 })
+# System Portfolio 원장. JSON 값을 TEXT 컬럼(`*_json`)에 두므로 이름에서 접미사를 떼고 풀어 준다.
+_SYSTEM_DATASETS = {"system_targets": T_SYSTEM_TARGETS, "system_nav": T_SYSTEM_NAV}
+
+
+def _system_rows(connection, table: str) -> list[dict]:
+    if not connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone():
+        # System 엔진이 한 번도 돌지 않은 원장이다. 읽기 전용 연결은 표를 만들지 않는다.
+        return []
+    output = []
+    for row in _rows(connection, f"SELECT * FROM {table}"):
+        output.append({(key[:-5] if key.endswith("_json") else key): (json.loads(value) if key.endswith("_json") else value)
+                       for key, value in row.items()})
+    return output
 
 
 def _rows(connection, sql, params=()):
@@ -67,7 +81,7 @@ def read_runtime_rows(dataset: str) -> list[dict]:
     검사한다. 이 함수는 읽기 전용 연결만 열며 빈 파일이나 낡은 스키마를 만들거나
     고치지 않는다.
     """
-    allowed = _PLAIN_DATASETS | _PAYLOAD_DATASETS | {
+    allowed = _PLAIN_DATASETS | _PAYLOAD_DATASETS | set(_SYSTEM_DATASETS) | {
         "execution_control", "order_events", "reconciliation_runs",
         "account_snapshots",
     }
@@ -77,9 +91,9 @@ def read_runtime_rows(dataset: str) -> list[dict]:
         if dataset in _PLAIN_DATASETS:
             return _table_rows(connection, dataset)
         if dataset in _PAYLOAD_DATASETS:
-            if dataset in ('entry_candidates','entry_reviews') and not connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",(dataset,)).fetchone():
-                return []
             return _payload_rows(connection, dataset)
+        if dataset in _SYSTEM_DATASETS:
+            return _system_rows(connection, _SYSTEM_DATASETS[dataset])
         if dataset == "execution_control":
             return [json.loads(row[0]) for row in connection.execute(
                 f"SELECT control_value FROM {T_CONTROL} ORDER BY updated_at"

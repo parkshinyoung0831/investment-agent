@@ -16,7 +16,7 @@ from investment_agent.trading.supabase_repository import (
     _guru_candidate_signals,
     _segment_candidate_signals,
 )
-from investment_agent.trading.decision import portfolio_shadow
+from investment_agent.trading.decision import analysis
 
 _AS_OF = datetime(2026, 8, 21, 21, 0, tzinfo=timezone.utc)
 
@@ -217,9 +217,9 @@ class CandidateLiveCutoffTest(unittest.TestCase):
             )
 
     def test_tradingagents_explicit_ticker_cannot_bypass_live_cutoff(self):
-        with mock.patch.object(portfolio_shadow, "SupabaseRepository") as repository:
+        with mock.patch.object(analysis, "SupabaseRepository") as repository:
             with self.assertRaisesRegex(ValueError, "live-only"):
-                portfolio_shadow.main([
+                analysis.main([
                     "--ticker", "AAPL", "--as-of", "2020-01-01T00:00:00+00:00",
                     "--dry-run",
                 ])

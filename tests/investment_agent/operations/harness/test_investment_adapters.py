@@ -12,6 +12,7 @@ from investment_agent.operations.harness_adapters import ProductionInvestmentAda
 UTC = timezone.utc
 OPEN = datetime(2026, 8, 24, 14, 0, tzinfo=UTC)
 BATCH = "signal_batch_" + "a" * 24
+TARGET = "system_target_" + "e" * 24
 RISK = "risk_" + "b" * 24
 INTENT = "intent_" + "c" * 24
 APPROVAL = "approval_" + "d" * 32
@@ -34,21 +35,30 @@ class FakeDecisionRepository:
         self.requested_as_of = as_of_at
         return BATCH
 
-    def latest_signal_batch_id(self, *, as_of_at):
-        return BATCH
-
 
 class FakeApprovalRepository:
     def __init__(self):
         self.approval = None
+        self.followed: set[str] = set()
 
     def approval_for_intent(self, intent_id):
         return self.approval
 
+    def is_system_target_followed(self, target_id):
+        return target_id in self.followed
+
+
+class FakeSystemStore:
+    def __init__(self, target=None):
+        self.target = target
+
+    def latest_target(self, *, approved_only=False):
+        return self.target
+
 
 def context(stage_id: str, completed=None) -> StageContext:
     return StageContext(
-        job_id="investment_pipeline",
+        job_id="my_portfolio_follow",
         run_id="run_123",
         stage_id=stage_id,
         attempt=1,
@@ -65,16 +75,17 @@ class InvestmentAdaptersTest(unittest.TestCase):
         self.runner = FakeRunner()
         self.decision_repository = FakeDecisionRepository()
         self.approval_repository = FakeApprovalRepository()
-        self.construct_calls = []
+        self.follow_calls = []
         self.intent_calls = []
+        self.system_store = FakeSystemStore(SimpleNamespace(target_id=TARGET))
 
-        def construct(**kwargs):
-            self.construct_calls.append(kwargs)
+        def follow(**kwargs):
+            self.follow_calls.append(kwargs)
             return SimpleNamespace(
+                status="planned", reason=None, target_id=kwargs["target_id"],
                 proposal_id="proposal_" + "1" * 24,
                 risk_decision_id=RISK,
                 account_snapshot_id="execution_snapshot_1",
-                is_approved=True,
             )
 
         def create_intent(**kwargs):
@@ -85,7 +96,8 @@ class InvestmentAdaptersTest(unittest.TestCase):
             command_runner=self.runner,
             decision_repository=self.decision_repository,
             approval_repository=self.approval_repository,
-            construct_portfolio=construct,
+            system_store=self.system_store,
+            follow_target=follow,
             create_execution_intent=create_intent,
             now=lambda: OPEN,
         )
@@ -95,15 +107,16 @@ class InvestmentAdaptersTest(unittest.TestCase):
         self.assertEqual(analysis.metadata["batch_id"], BATCH)
         self.assertEqual(self.decision_repository.requested_as_of, OPEN)
 
-        selected = self.adapters.select_signal(context("select_signal"))
-        portfolio = self.adapters.portfolio(context(
-            "portfolio", {"select_signal": selected.metadata},
+        selected = self.adapters.select_target(context("select_target"))
+        self.assertEqual(selected.metadata["target_id"], TARGET)
+        follow = self.adapters.follow(context(
+            "follow", {"select_target": selected.metadata},
         ))
-        self.assertEqual(portfolio.metadata["risk_decision_id"], RISK)
-        self.assertEqual(self.construct_calls[0]["batch_id"], BATCH)
+        self.assertEqual(follow.metadata["risk_decision_id"], RISK)
+        self.assertEqual(self.follow_calls[0]["target_id"], TARGET)
 
         intent = self.adapters.execution_intent(context(
-            "execution_intent", {"portfolio": portfolio.metadata},
+            "execution_intent", {"follow": follow.metadata},
         ))
         self.assertEqual(intent.metadata["intent_id"], INTENT)
         self.assertEqual(self.intent_calls[0]["confirmation"], RISK)
@@ -154,10 +167,23 @@ class InvestmentAdaptersTest(unittest.TestCase):
             ("--approval-id", APPROVAL),
         )
 
-    def test_risk_rejection_skips_every_mutating_stage(self):
-        rejected = {"risk_approved": False, "risk_decision_id": RISK}
+    def test_a_target_that_was_already_asked_is_not_asked_again(self):
+        """거절·만료도 물은 것이다. 같은 System 목표로 다시 승인을 묻지 않는다."""
+        self.approval_repository.followed.add(TARGET)
+        selected = self.adapters.select_target(context("select_target"))
+        self.assertEqual(selected.status, "skipped")
+        self.assertEqual(self.follow_calls, [])
+
+    def test_no_system_target_waits_without_touching_the_account(self):
+        self.system_store.target = None
+        selected = self.adapters.select_target(context("select_target"))
+        self.assertEqual(selected.status, "waiting")
+        self.assertEqual(self.follow_calls, [])
+
+    def test_follow_without_orders_skips_every_mutating_stage(self):
+        skipped = {"status": "skipped", "reason": "already_following", "risk_decision_id": RISK}
         intent = self.adapters.execution_intent(context(
-            "execution_intent", {"portfolio": rejected},
+            "execution_intent", {"follow": skipped},
         ))
         approval = self.adapters.approval_request(context(
             "approval_request", {"execution_intent": intent.metadata},

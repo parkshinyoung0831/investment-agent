@@ -22,7 +22,10 @@ from investment_agent.reporting.models import (
     normalize_observed_at,
     public_exception_message,
 )
-from investment_agent.reporting.services.investment import build_decision_cases_read_model
+from investment_agent.reporting.services.investment import (
+    build_decision_cases_read_model,
+    build_system_portfolio_read_model,
+)
 from investment_agent.reporting.readers.runtime import read_local_rows, read_runtime_rows
 from investment_agent.reporting.readers.research import (
     load_local_features,
@@ -1964,13 +1967,45 @@ def load_strategy_data() -> DataResult:
 
 
 @cache_data(ttl="2m", max_entries=2)
+def load_system_portfolio_data() -> DataResult:
+    """System Portfolio 원장과 최신 계좌·성과 보고서를 비교 read model로 묶는다."""
+    source = "로컬 Runtime · system_nav/system_targets"
+    if os.environ.get("DASHBOARD_OFFLINE", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return DataResult.offline(source=source)
+    from investment_agent.reporting.notifications.investment.performance import performance_reports
+    try:
+        nav_rows = read_runtime_rows("system_nav")
+        target_rows = read_runtime_rows("system_targets")
+        accounts = read_runtime_rows("account_snapshots")
+        account = max(accounts, key=lambda row: str(row.get("captured_at") or "")) if accounts else None
+        model = build_system_portfolio_read_model(
+            nav_rows=nav_rows, target_rows=target_rows, proposals=read_runtime_rows("portfolio_proposals"),
+            account=account, performance_reports=performance_reports(),
+        )
+    except Exception as error:
+        return DataResult.error(source=source, message=public_exception_message("System Portfolio 조회에 실패했습니다.", error))
+    if not nav_rows and not target_rows:
+        return DataResult.empty(source=source, value=model, message="System Portfolio가 아직 첫 목표를 만들지 않았어요.")
+    observed = nav_rows and max(str(row["trade_date"]) for row in nav_rows)
+    return DataResult.ok(source=source, value=model, observed_at=observed or None)
+
+
+@cache_data(ttl="2m", max_entries=2)
 def load_latest_target() -> DataResult:
-    """최신 승인 비중과 그 입력 포트폴리오 제안을 함께 읽는다."""
+    """최신 System Portfolio 승인 목표와 그 입력 제안을 함께 읽는다.
+
+    실계좌 추종 결정은 System 판단이 아니라 주문 계획이라 제외한다.
+    """
 
     source = "로컬 Runtime · risk_decisions/portfolio_proposals"
     payload: dict[str, dict[str, Any] | None] = {"risk_decision": None, "proposal": None}
     try:
-        decisions = [row for row in read_runtime_rows("risk_decisions") if row.get("is_approved")]
+        system_proposals = {
+            str(row.get("proposal_id")) for row in read_runtime_rows("portfolio_proposals")
+            if (row.get("metadata") or {}).get("system_policy")
+        }
+        decisions = [row for row in read_runtime_rows("risk_decisions")
+                     if row.get("is_approved") and str(row.get("proposal_id")) in system_proposals]
         decisions.sort(key=lambda row: str(row.get("decided_at") or ""), reverse=True)
         decisions = decisions[:1]
         risk_decision = decisions[0] if decisions else None
@@ -2046,6 +2081,7 @@ __all__ = [
     "load_execution_data",
     "load_guru_data",
     "load_latest_target",
+    "load_system_portfolio_data",
     "load_latest_account_snapshot",
     "load_alpha_lab_data",
     "load_price_history",

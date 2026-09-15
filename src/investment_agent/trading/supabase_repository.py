@@ -23,13 +23,12 @@ from investment_agent.trading.decision.candidate_ranker import (
 )
 from investment_agent.trading.contracts import ContractError, parse_datetime
 from investment_agent.platform.serialization import canonical_json
-from investment_agent.trading.portfolio.contracts import SecurityProposal
 from investment_agent.research.promotion.gate import (
     EvaluationSummary,
     PromotionDecision,
     aggregate_evaluations,
 )
-from investment_agent.trading.portfolio.signal_book import SignalBatch, SignalBook, SignalRecord
+from investment_agent.trading.portfolio.signal_book import SignalBatch, SignalRecord
 from investment_agent.execution.orders.snapshots import AccountSnapshot
 from investment_agent.research.rl.contracts import (
     FeatureSnapshot,
@@ -643,7 +642,7 @@ class SupabaseRepository:
     ) -> tuple[str, dict[str, Any]] | None:
         """최근 온전한 live feature 횡단면의 factor 점수. 없거나 오래됐으면 None.
 
-        후보 선정과 factor 가상계좌가 같은 횡단면을 읽는다 — 둘이 다른 날의 점수를 보면 분석한 종목과
+        후보 선정과 System 목표가 같은 횡단면을 읽는다 — 둘이 다른 날의 점수를 보면 분석한 종목과
         담는 종목이 어긋난다.
         """
         tickers_count = universe_size if universe_size is not None else len(self.current_tracked_tickers())
@@ -669,13 +668,38 @@ class SupabaseRepository:
         return snapshot_as_of, score_cross_section(features, groups=self.sp500_sector_map(list(features)))
 
     def _candidate_held_tickers(self) -> list[str]:
-        """최근 live 계좌 snapshot의 보유종목. 원장이 없으면(분석 전용 환경) 빈 목록이다."""
-        from investment_agent.execution.db import latest_live_position_tickers
+        """System Portfolio가 지금 보유한 종목. 실계좌 보유는 분석 대상 선정에 들어오지 않는다."""
+        from investment_agent.trading.system.store import SystemPortfolioStore
         try:
-            return latest_live_position_tickers()
-        except Exception as exc:  # noqa: BLE001 - 보유 조회 실패가 정기 분석을 멈추게 두지 않는다
-            log.warning("held tickers unavailable for candidate priority: %s", type(exc).__name__)
+            return SystemPortfolioStore().held_tickers()
+        except Exception as exc:  # noqa: BLE001 - 원장이 없어도 정기 분석은 계속한다
+            log.warning("system holdings unavailable for candidate priority: %s", type(exc).__name__)
             return []
+
+    def thesis_views(self, tickers: Sequence[str], *, as_of_at: datetime, valid_days: int) -> dict[str, Any]:
+        """종목별 최신 TradingAgents 논지(채택된 ML 보정 반영). 판단 시점 이전에 기록된 것만 읽는다."""
+        from investment_agent.trading.decision.alpha import ThesisView
+
+        wanted = {normalize_ticker(ticker) for ticker in tickers}
+        repository = self._trading_repository()
+        rows = repository.signal_rows_recorded_between(start=as_of_at - timedelta(days=valid_days), end=as_of_at)
+        if not rows:
+            return {}
+        artifacts = {
+            str(row["batch_id"]): row.get("model_artifact_id")
+            for row in repository.signal_batches(as_of_at=as_of_at, lookback_days=min(365, valid_days + 1))
+        }
+        tickers_by_id = select_tickers_by_security_id([int(row["security_id"]) for row in rows])
+        views: dict[str, Any] = {}
+        for row in rows:
+            ticker = normalize_ticker(tickers_by_id.get(int(row["security_id"])))
+            if ticker not in wanted:
+                continue
+            view = ThesisView.from_proposal({**dict(row["proposal"]), "ticker": ticker},
+                                            model_artifact_id=artifacts.get(str(row["batch_id"])))
+            if view is not None and view.as_of_at <= as_of_at and (ticker not in views or view.as_of_at >= views[ticker].as_of_at):
+                views[ticker] = view
+        return views
 
     def _candidate_event_features(self, as_of_at: datetime) -> list[dict[str, Any]]:
         """최근 7일 사건 요약. 로컬 research 저장소가 없으면 빈 목록이다."""
@@ -711,9 +735,6 @@ class SupabaseRepository:
     def split_history(self, ticker: str) -> list[dict]:
         """market 스키마의 owner에게 위임한다."""
         return market_db.split_history(ticker)
-    def corporate_actions(self, ticker: str, *, since: str) -> list[dict]:
-        """market 스키마의 owner에게 위임한다."""
-        return market_db.corporate_actions(ticker, since=since)
     def technical_snapshot(self, ticker: str, as_of_at: datetime) -> list[dict]:
         """Research DuckDB feature store의 owner에게 위임한다."""
         return features_db.latest_signal_as_of(ticker, as_of_at)
@@ -979,84 +1000,10 @@ class SupabaseRepository:
     def latest_signal_batch_id(self, *, as_of_at: datetime) -> str | None:
         return self._trading_repository().latest_signal_batch_id(as_of_at=as_of_at)
 
-    def latest_execution_ready_batch_id(self, *, as_of_at: datetime) -> str | None:
-        """is_complete=True이고 만료되지 않은 종목 의견이 존재하는 최신 배치만 반환한다."""
-        return self._trading_repository().latest_execution_ready_batch_id(as_of_at=as_of_at)
-
-    def has_live_execution_for_batch(self, batch_id: str) -> bool:
-        """배치의 구성 제안을 실제 실행 원장 상태와 연결한다."""
-        from investment_agent.execution.db import ExecutionRepository
-        proposal_ids = self._trading_repository().live_proposal_ids_for_batch(batch_id)
-        return ExecutionRepository().has_active_execution_for_proposals(proposal_ids, batch_id=batch_id)
-
     def signal_batch_id_for_as_of(self, as_of_at: str | datetime) -> str:
         """Shadow 입력 시각과 정확히 같은 단일 batch만 반환해 완료시각 경합을 없앤다."""
         point = parse_datetime(as_of_at)
         return self._trading_repository().signal_batch_id_for_as_of(point)
-
-    def load_signal_book(
-        self,
-        *,
-        as_of_at: datetime,
-        lookback_days: int = 60,
-    ) -> SignalBook:
-        """결정 시점 이전 배치와 그 시점에 유효한 종목 의견만 복원한다."""
-        batches_rows = self._trading_repository().signal_batches(
-            as_of_at=as_of_at,
-            lookback_days=lookback_days,
-        )
-        batches = tuple(
-            SignalBatch(
-                batch_id=str(row["batch_id"]),
-                as_of_at=str(row["as_of_at"]),
-                completed_at=str(row["completed_at"]),
-                requested_symbols=tuple(row.get("requested_symbols") or ()),
-                successful_symbols=tuple(row.get("successful_symbols") or ()),
-                failed_symbols=tuple(row.get("failed_symbols") or ()),
-                model_artifact_id=(
-                    str(row["model_artifact_id"])
-                    if row.get("model_artifact_id") else None
-                ),
-            )
-            for row in batches_rows
-        )
-        if not batches:
-            return SignalBook()
-        batch_ids = [batch.batch_id for batch in batches]
-        record_rows = self._trading_repository().signal_records(
-            batch_ids=batch_ids,
-            as_of_at=as_of_at,
-        )
-        tickers_by_id = select_tickers_by_security_id(
-            [int(row["security_id"]) for row in record_rows]
-        )
-        records: list[SignalRecord] = []
-        for row in record_rows:
-            value = dict(row["proposal"])
-            value["ticker"] = tickers_by_id[int(row["security_id"])]
-            proposal = SecurityProposal(
-                ticker=str(value["ticker"]),
-                as_of_at=str(value["as_of_at"]),
-                signal=str(value["signal"]),
-                probability_up=float(value["probability_up"]),
-                confidence=float(value["confidence"]),
-                expected_excess_return=float(value["expected_excess_return"]),
-                target_weight=float(value["target_weight"]),
-                reasoning=tuple(value["reasoning"]),
-                evidence_ids=tuple(value["evidence_ids"]),
-                missing_data=tuple(value.get("missing_data") or ()),
-            )
-            record = SignalRecord(
-                batch_id=str(row["batch_id"]),
-                proposal=proposal,
-                recorded_at=str(row["recorded_at"]),
-                expires_at=str(row["expires_at"]),
-                case_key=str(row["case_key"]) if row.get("case_key") else None,
-            )
-            if record.signal_id != str(row["signal_id"]):
-                raise RuntimeError("stored signal record hash does not match its payload")
-            records.append(record)
-        return SignalBook(batches=batches, records=tuple(records))
 
     def save_portfolio_proposal(self, row: dict) -> None:
         self._trading_repository().record_proposal(dict(row))

@@ -213,7 +213,7 @@ python scripts/verify_data.py
 
 # 3. GitHub Actions와 Discord #시스템-로그에서 최근 장애를 확인한 뒤,
 #    LLM 없이 단일 ticker evidence와 계약 확인
-python -m investment_agent.trading.decision.portfolio_shadow --ticker AAPL --dry-run
+python -m investment_agent.trading.decision.analysis --ticker AAPL --dry-run
 
 # 4. 하네스와 거래 차단 상태 확인
 python -m investment_agent.operations.commands.harness_switch --status
@@ -227,7 +227,7 @@ python -m investment_agent.operations.commands.harness_switch --status
 
 ```powershell
 # 현재 tracked universe에서 최대 5개 Shadow 후보 분석
-python -m investment_agent.trading.decision.portfolio_shadow --limit 5
+python -m investment_agent.trading.decision.analysis --limit 5
 
 # 성숙한 판단 평가
 python -m investment_agent.research.commands.evaluate --limit 200
@@ -238,11 +238,11 @@ python -m investment_agent.trading.evidence.cleanup
 # JSON manifest 기반 Native backtest
 python -m investment_agent.research.backtest.cli --input <INPUT.json> --output <OUTPUT.json>
 
-# 전체 포트폴리오 구성과 RiskGate dry-run
-python -m investment_agent.trading.portfolio.construct --batch-id <BATCH_ID> --stage shadow --dry-run
+# System Portfolio 평가·목표 갱신과 성과 요약(주문 없음)
+python -m investment_agent.operations.commands.system_portfolio --summary
 ```
 
-`construct_portfolio`, model promotion, execution intent, approval 명령은 ID와 실제 데이터 상태가
+model promotion, execution intent, approval 명령은 ID와 실제 데이터 상태가
 필요합니다. 예제 문자열을 그대로 실행하지 말고 각 주제 문서의 선행 조건을 먼저 확인합니다.
 
 ## 문서
