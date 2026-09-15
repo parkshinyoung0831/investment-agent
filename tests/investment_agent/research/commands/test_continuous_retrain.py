@@ -146,6 +146,17 @@ class ContinuousRetrainTest(unittest.TestCase):
             self.assertEqual(payload["symbols"], list(SYMBOLS))
             self.assertEqual(payload["training"]["holdout_periods"], 4)
 
+    def test_retraining_waits_for_new_matured_periods(self):
+        from investment_agent.research.rl.contracts import RLDataNotReadyError
+
+        with tempfile.TemporaryDirectory() as temp:
+            self._run(temp, _Repository())
+            self.assertTrue((Path(temp) / "last_training.json").exists())
+            with self.assertRaisesRegex(RLDataNotReadyError, "new matured periods"):
+                self._run(temp, _Repository())
+            self.assertEqual(self.trained_on, [])
+            self.assertFalse((Path(temp) / "active_policy.json").exists())
+
     def test_champion_is_re_evaluated_on_the_same_holdout(self):
         from unittest.mock import patch
         from investment_agent.research.rl.bundle import PPOPolicy

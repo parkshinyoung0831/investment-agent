@@ -764,12 +764,6 @@ class ExecutionRepository:
                 return
             connection.execute("INSERT INTO fills(fill_id,broker_order_id,filled_at,quantity,price,payload_json) VALUES(?,?,?,?,?,?)", (fill_id, payload["broker_order_id"], payload["filled_at"], float(payload["quantity"]), float(payload["price"]), self._encode(payload)))
 
-    def save_tca_report(self, report: dict | object) -> None:
-        payload = report.to_dict() if hasattr(report, "to_dict") else dict(report)
-        if not payload.get("tca_id"):
-            raise ExecutionSafetyError("TCA report requires tca_id")
-        self._save_auxiliary("tca_summary", str(payload["tca_id"]), {key: value for key, value in payload.items() if key not in {"raw_response", "raw_broker_response"}})
-
     def save_quote_snapshot(self, quote: MarketQuote, *, purpose: str, source_kind: str = "paper", captured_at: datetime | None = None, metadata: dict | None = None) -> None:
         if not isinstance(quote, MarketQuote):
             raise ExecutionSafetyError("quote snapshot requires MarketQuote")

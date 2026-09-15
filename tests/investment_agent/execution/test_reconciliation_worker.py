@@ -63,7 +63,6 @@ class FakeRepo:
         }
         self.events = [event("outcome_unknown" if unknown else "submitted")]
         self.snapshots = []
-        self.tca_reports = []
         self.intent_status = None
 
     def reconcilable_orders(self, *, account_seq):
@@ -88,8 +87,6 @@ class FakeRepo:
     def save_broker_order_snapshot(self, row):
         self.snapshots.append(row)
 
-    def save_tca_report(self, report):
-        self.tca_reports.append(report)
 
     def update_order_execution(self, client_order_id, **kwargs):
         self.row.update(kwargs)
@@ -118,36 +115,6 @@ class FakeApi:
 
     def get_order(self, *, account_seq, order_id):
         return self.order
-
-
-class TcaRecordingTest(unittest.TestCase):
-    def test_full_fill_records_one_cost_report_against_the_approval_price(self):
-        repo = FakeRepo()
-        repo.row["reference_price"] = 100.0
-        worker = TossReconciliationWorker(repository=repo, api=FakeApi(remote(status="FILLED", filled="2")), account_seq=7)
-        worker.run_once(now=NOW)
-        self.assertEqual(len(repo.tca_reports), 1)
-        report = repo.tca_reports[0]
-        self.assertEqual(report.source_kind, "live")
-        self.assertAlmostEqual(report.fill_price, 100.5)
-        self.assertGreater(report.slippage, 0.0)  # 매수가 기준가보다 비싸게 체결 = 비용
-        # 이미 filled로 기록된 주문을 다시 대사해도 두 번 쓰지 않는다.
-        worker.run_once(now=NOW)
-        self.assertEqual(len(repo.tca_reports), 1)
-
-    def test_partial_fill_does_not_record_a_final_cost_report(self):
-        repo = FakeRepo()
-        repo.row["reference_price"] = 100.0
-        TossReconciliationWorker(repository=repo, api=FakeApi(remote(status="PARTIAL", filled="1")), account_seq=7).run_once(now=NOW)
-        self.assertEqual(repo.tca_reports, [])
-
-    def test_missing_reference_price_alerts_instead_of_inventing_a_cost(self):
-        repo = FakeRepo()
-        alerts = []
-        TossReconciliationWorker(repository=repo, api=FakeApi(remote(status="FILLED", filled="2")), account_seq=7,
-                                 alert=lambda event, details: alerts.append(event)).run_once(now=NOW)
-        self.assertEqual(repo.tca_reports, [])
-        self.assertIn("tca_inputs_missing", alerts)
 
 
 class ReconciliationWorkerTest(unittest.TestCase):

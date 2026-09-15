@@ -28,6 +28,7 @@ from investment_agent.operations.harness.pipeline import (
     ml_challengers_job,
     my_portfolio_follow_job,
     scheduled_analysis_job,
+    local_mirror_job,
     system_portfolio_job,
     toss_reconciliation_job,
 )
@@ -78,6 +79,9 @@ def build_registry(
         watch=selected.watch,
         interval_seconds=earnings_watch_interval_seconds,
     ))
+    # Supabase 원본의 로컬 사본. 판단·연구가 종목마다 원격 표를 읽지 않게 한다.
+    if hasattr(selected, "sync_local_mirror"):
+        registry.register(local_mirror_job(sync_local_mirror=selected.sync_local_mirror))
     # 학습 dataset의 원천이라 거래 kill switch·모드와 무관하게 항상 돈다. 하루 거른
     # 날의 PIT snapshot은 원천에 시점 이력이 없어 나중에 되살릴 수 없다.
     registry.register(feature_store_job(
@@ -106,10 +110,8 @@ def build_registry(
     if hasattr(selected, "continuous_learning"):
         if hasattr(selected, "build_decision_experiences"):
             registry.register(decision_experience_job(build_decision_experiences=selected.build_decision_experiences))
-        registry.register(continuous_learning_job(
-            retrain=selected.continuous_learning,
-            interval_seconds=feature_store_interval_seconds,
-        ))
+        # 학습 자체는 새 성숙 구간이 쌓였을 때만 한다(`continuous_retrain`). 주 1회 확인이면 충분하다.
+        registry.register(continuous_learning_job(retrain=selected.continuous_learning))
     if hasattr(selected, "update_performance") and hasattr(selected, "notify_reports"):
         registry.register(investment_reporting_job(update_performance=selected.update_performance, notify_reports=selected.notify_reports))
     if hasattr(selected, "reanalyze_events"):

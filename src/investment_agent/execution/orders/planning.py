@@ -93,17 +93,14 @@ def client_order_id(
     symbol: str,
     side: str,
     quantity: float,
-    slice_index: int = 0,
 ) -> str:
     """주문 하나의 멱등키.
 
     입력에서 계산하므로 같은 계획은 같은 id를 낳는다. 무작위 id를 쓰면 재시도가
-    새 주문이 되고, 그 사실은 체결이 두 번 난 뒤에야 드러난다. 나눈 매도는 자식마다
-    수량이 같을 수 있어 순번을 키에 넣는다(나누지 않은 주문의 키는 그대로다).
+    새 주문이 되고, 그 사실은 체결이 두 번 난 뒤에야 드러난다.
     """
-    suffix = f"|slice{slice_index}" if slice_index else ""
     digest = hashlib.sha256(
-        f"{intent_id}|{symbol}|{side}|{quantity:.6f}{suffix}".encode("utf-8")
+        f"{intent_id}|{symbol}|{side}|{quantity:.6f}".encode("utf-8")
     ).hexdigest()[:20]
     return f"aix_{digest}"
 
@@ -177,25 +174,24 @@ class TargetWeightOrderPlanner:
                 # 수수료가 이득보다 큰 주문이다. 건너뛰는 것이 정상 동작이다.
                 continue
             side = "buy" if delta > 0.0 else "sell"
+            # 매수만 1건 한도로 막는다. 계좌가 수천 달러라 매도를 나눌 일이 없고, 위험을 줄이는 매도를
+            # 한도로 막으면 청산이 막힌다. 전체 한도는 아래에서 함께 본다.
             if notional > self.limits.max_order_notional + EPSILON and side == "buy":
                 raise ExecutionSafetyError(
                     f"{symbol} order notional {notional:.2f} exceeds "
                     f"{self.limits.max_order_notional:.2f}"
                 )
-            for index, child_quantity in enumerate(self._sell_slices(symbol, quantity, price)
-                                                   if side == "sell" else (quantity,)):
-                plans.append(OrderPlan(
-                    intent_id=intent.intent_id,
-                    client_order_id=client_order_id(
-                        intent_id=intent.intent_id, symbol=symbol, side=side,
-                        quantity=child_quantity, slice_index=index,
-                    ),
-                    symbol=symbol,
-                    side=side,
-                    quantity=child_quantity,
-                    reference_price=price,
-                    notional=child_quantity * price,
-                ))
+            plans.append(OrderPlan(
+                intent_id=intent.intent_id,
+                client_order_id=client_order_id(
+                    intent_id=intent.intent_id, symbol=symbol, side=side, quantity=quantity,
+                ),
+                symbol=symbol,
+                side=side,
+                quantity=quantity,
+                reference_price=price,
+                notional=notional,
+            ))
 
         total = math.fsum(plan.notional for plan in plans)
         if total > self.limits.max_total_notional + EPSILON:
@@ -204,27 +200,6 @@ class TargetWeightOrderPlanner:
                 f"{self.limits.max_total_notional:.2f}"
             )
         return tuple(sorted(plans, key=lambda plan: (plan.side != "sell", plan.symbol)))
-
-    def _sell_slices(self, symbol: str, quantity: float, price: float) -> tuple[float, ...]:
-        """매도 수량을 주문 한도 이하 자식으로 나눈다. 반올림은 계획 수량 자리수에 맞춰 0 방향이다."""
-        if quantity * price <= self.limits.max_order_notional + EPSILON:
-            return (quantity,)
-        scale = 10 ** self.limits.quantity_decimals
-        per_child = math.floor(self.limits.max_order_notional / price * scale + 1e-12) / scale
-        if per_child <= 0.0:
-            raise ExecutionSafetyError(
-                f"{symbol} price {price:.2f} exceeds the per-order limit even for the smallest quantity"
-            )
-        slices: list[float] = []
-        remaining = quantity
-        while remaining > 1e-12:
-            child = min(per_child, remaining)
-            child = math.floor(child * scale + 1e-12) / scale
-            if child <= 0.0:
-                break
-            slices.append(child)
-            remaining = round(remaining - child, self.limits.quantity_decimals)
-        return tuple(slices)
 
 
 FUNDING_PHASE_FULL = "full"

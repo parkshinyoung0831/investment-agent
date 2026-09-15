@@ -2,12 +2,17 @@
 
 성숙 label이 없으면 skipped, dry-run 입력 검증은 ready, 실제 후보 학습은 trained다.
 연구 게이트 통과는 채택 자격이며 활성 정책은 --adopt-candidate로만 변경한다.
+
+RL은 Research Lab의 도구다. System Portfolio·실계좌 비중을 바꾸지 않고, 현재 비중 결정(결정론적 optimizer)보다
+나은 정책이 있는지 같은 데이터·비용으로 비교할 후보만 만든다. 마지막 학습 뒤 새로 성숙한 비중첩 구간이
+`min_new_periods`보다 적으면 학습하지 않는다 — 같은 데이터로 매일 다시 학습하면 우연히 좋은 후보만 늘어난다.
 """
 from __future__ import annotations
 
 import argparse
 from dataclasses import asdict, replace
 from datetime import datetime, timedelta, timezone
+import json
 from pathlib import Path
 from typing import Any, Callable
 
@@ -29,6 +34,9 @@ log = get_logger(__name__)
 
 _POLICY_DIR = default_active_policy_path().parent
 _ACTIVE_POLICY_NAME = "active_policy.json"
+# 마지막으로 후보를 학습한 데이터 구간. 새 성숙 구간이 쌓였는지 판단하는 기준이다.
+_LAST_TRAINING_NAME = "last_training.json"
+DEFAULT_MIN_NEW_PERIODS = 2
 
 # 원장 label은 미래 구간이 끝나야 확정된다. 그 지연만큼 feature 창을 앞당겨야
 # "label이 아직 없는 최신 구간"이 통째로 버려지지 않는다.
@@ -51,6 +59,24 @@ def _train_with_stable_baselines(dataset: FeatureDataset, *, timesteps: int) -> 
     trainer = FinRLTrainer(make_gym_environment(dataset))
     log.info("training PPO policy on %d point-in-time periods", len(dataset.as_of_values))
     return trainer.train("ppo", total_timesteps=timesteps, seed=42)
+
+
+def _last_trained_period(directory: Path) -> str | None:
+    path = directory / _LAST_TRAINING_NAME
+    if not path.exists():
+        return None
+    try:
+        return str(json.loads(path.read_text(encoding="utf-8"))["latest_period"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def _record_training(directory: Path, *, latest_period: str, periods: int, as_of: datetime) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    temporary = directory / "last_training.pending.json"
+    temporary.write_text(canonical_json({"latest_period": latest_period, "periods": periods,
+                                         "trained_at": as_of.isoformat()}) + "\n", encoding="utf-8")
+    temporary.replace(directory / _LAST_TRAINING_NAME)
 
 
 def _training_set(
@@ -94,6 +120,7 @@ def run_continuous_retrain(
     min_evaluation_periods: int = 20,
     min_sharpe_improvement: float = 0.02,
     min_dsr_probability: float = 0.90,
+    min_new_periods: int = DEFAULT_MIN_NEW_PERIODS,
     dry_run: bool = False,
     repository: Any | None = None,
     spec: FeatureSpec | None = None,
@@ -128,6 +155,13 @@ def run_continuous_retrain(
     dataset = nonoverlapping_dataset(training_set.dataset, training_set.forward_end_values)
     if len(dataset.as_of_values) < 2:
         raise RLDataNotReadyError("need at least two nonoverlapping decision periods")
+    last_trained = _last_trained_period(directory)
+    if last_trained is not None:
+        fresh = [value for value in dataset.as_of_values if parse_datetime(value) > parse_datetime(last_trained)]
+        if len(fresh) < min_new_periods:
+            raise RLDataNotReadyError(
+                f"only {len(fresh)} new matured periods since the last training (need {min_new_periods})"
+            )
     train_dataset, holdout_dataset = split_dataset(dataset, holdout_fraction=holdout_fraction)
     log.info(
         "training window: symbols=%d train_periods=%d holdout_periods=%d data_hash=%s",
@@ -180,6 +214,8 @@ def run_continuous_retrain(
             "eligible_for_adoption": decision.is_promoted,
             "learning_objective": "counterfactual_market_policy",
         })
+    _record_training(directory, latest_period=str(dataset.as_of_values[-1]),
+                     periods=len(dataset.as_of_values), as_of=as_of)
     return replace(decision, candidate_path=str(candidate_path))
 
 

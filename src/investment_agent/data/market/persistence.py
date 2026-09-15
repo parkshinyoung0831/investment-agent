@@ -166,6 +166,30 @@ def split_keys(security_ids: Sequence[int]) -> set[tuple[int, str]]:
     }
 
 
+def bars_for_securities(security_ids: Sequence[int], *, start: date, end: date) -> list[dict]:
+    """security_id 목록의 구간 봉. 로컬 사본 동기화가 쓴다."""
+    if not security_ids:
+        return []
+    return [bar.as_row() for bar in MarketRepository(_db()).bars(list(security_ids), start=start, end=end)]
+
+
+def actions_for_securities(security_ids: Sequence[int]) -> list[dict]:
+    """security_id 목록의 전체 배당·분할을 (종목, 날짜) 한 행으로. 로컬 사본 동기화가 쓴다."""
+    if not security_ids:
+        return []
+    repo = MarketRepository(_db())
+    merged: dict[tuple[int, str], dict] = {}
+    for event in repo.dividends(list(security_ids)):
+        key = (event.security_id, event.ex_date.isoformat())
+        merged.setdefault(key, {"security_id": key[0], "action_date": key[1], "split_ratio": None,
+                                "dividend_amount": None})["dividend_amount"] = event.div_amount
+    for event in repo.splits(list(security_ids)):
+        key = (event.security_id, event.action_date.isoformat())
+        merged.setdefault(key, {"security_id": key[0], "action_date": key[1], "split_ratio": None,
+                                "dividend_amount": None})["split_ratio"] = event.split_ratio
+    return [merged[key] for key in sorted(merged)]
+
+
 def split_history(ticker: str) -> list[dict]:
     """종목의 전체 분할 이력. 저장 종가가 따르는 분할 기준을 되짚을 때 쓴다."""
     security_id = _ticker_id(ticker)

@@ -1,13 +1,47 @@
-"""공통 시장 환경을 계산하는 결정론적 regime 모듈."""
+"""공통 시장 환경을 계산하는 결정론적 regime 모듈.
+
+경계값(낙폭 8%·20%, 변동성 30%·50% 등)은 자연법칙이 아니라 정책값이다. `RegimeThresholds`에 버전과 함께
+두어 연구(`research.ablation`)에서 과거 재현으로 다른 값과 비교할 수 있게 한다.
+"""
 from __future__ import annotations
 
 import math
 from collections.abc import Iterable
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any
 
 from investment_agent.trading.contracts import parse_datetime
 from investment_agent.trading.decision.contracts import MarketRegime
+
+
+@dataclass(frozen=True)
+class RegimeThresholds:
+    """regime 판정 경계. 값을 바꾸면 버전도 바꾼다 — 원장의 판단이 어떤 경계로 나왔는지 재현하기 위해서다."""
+
+    version: str = "native-regime-v1"
+    trend_up: float = 0.02
+    trend_down: float = -0.02
+    volatility_crisis: float = 0.50
+    volatility_high: float = 0.30
+    volatility_low: float = 0.12
+    drawdown_crisis: float = 0.20
+    drawdown_risk_off: float = 0.08
+    breadth_risk_off: float = 0.35
+    breadth_risk_on: float = 0.55
+    event_risk_off: float = 0.85
+
+    def __post_init__(self) -> None:
+        if not 0 < self.drawdown_risk_off < self.drawdown_crisis < 1:
+            raise ValueError("drawdown thresholds must satisfy 0 < risk_off < crisis < 1")
+        if not 0 < self.volatility_low < self.volatility_high < self.volatility_crisis:
+            raise ValueError("volatility thresholds must satisfy 0 < low < high < crisis")
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+DEFAULT_THRESHOLDS = RegimeThresholds()
 
 
 def _number(value: Any) -> float | None:
@@ -45,8 +79,10 @@ def build_market_regime(
     dispersion: float | None = None,
     available_at: str | datetime | None = None,
     source_ids: Iterable[str] = (),
+    thresholds: RegimeThresholds = DEFAULT_THRESHOLDS,
 ) -> MarketRegime:
     """SPY·breadth·변동성·금리·macro·유동성 입력을 하나의 regime으로 압축한다."""
+    limits = thresholds
     as_of = parse_datetime(as_of_at).astimezone(timezone.utc)
     available = parse_datetime(available_at or as_of).astimezone(timezone.utc)
     if available > as_of:
@@ -69,14 +105,14 @@ def build_market_regime(
         values["macro_score"] = max(-1.0, min(1.0, values["macro_score"]))
 
     benchmark = values["benchmark_return"]
-    trend = "up" if benchmark is not None and benchmark > 0.02 else (
-        "down" if benchmark is not None and benchmark < -0.02 else "sideways"
+    trend = "up" if benchmark is not None and benchmark > limits.trend_up else (
+        "down" if benchmark is not None and benchmark < limits.trend_down else "sideways"
     )
     volatility_value = values["volatility"]
     volatility_state = (
-        "crisis" if volatility_value is not None and volatility_value >= 0.50
-        else "high" if volatility_value is not None and volatility_value >= 0.30
-        else "low" if volatility_value is not None and volatility_value <= 0.12
+        "crisis" if volatility_value is not None and volatility_value >= limits.volatility_crisis
+        else "high" if volatility_value is not None and volatility_value >= limits.volatility_high
+        else "low" if volatility_value is not None and volatility_value <= limits.volatility_low
         else "normal"
     )
     liquidity_value = values["liquidity"]
@@ -96,21 +132,21 @@ def build_market_regime(
     drawdown_value = values["drawdown"] or 0.0
     event_value = values["event_risk"] or 0.0
     crisis = (
-        drawdown_value >= 0.20
+        drawdown_value >= limits.drawdown_crisis
         or volatility_state == "crisis"
         or liquidity_state == "stressed"
     )
     risk_off = (
-        drawdown_value >= 0.08
+        drawdown_value >= limits.drawdown_risk_off
         or volatility_state == "high"
-        or (breadth_value is not None and breadth_value < 0.35)
-        or event_value >= 0.85
+        or (breadth_value is not None and breadth_value < limits.breadth_risk_off)
+        or event_value >= limits.event_risk_off
         or macro_state == "adverse"
     )
     risk_on = (
         not risk_off
         and trend == "up"
-        and (breadth_value is None or breadth_value >= 0.55)
+        and (breadth_value is None or breadth_value >= limits.breadth_risk_on)
         and volatility_state in {"low", "normal"}
         and liquidity_state in {"deep", "normal"}
     )
@@ -121,7 +157,8 @@ def build_market_regime(
         confidence *= 0.9
     metadata = {
         "inputs": values,
-        "calculation": "native-regime-v1",
+        "calculation": limits.version,
+        "thresholds": limits.to_dict(),
         "dispersion_warning": bool(values["dispersion"] is not None and values["dispersion"] > 0.75),
     }
     return MarketRegime(
@@ -148,4 +185,4 @@ class MarketRegimeCalculator:
         return build_market_regime(as_of_at, **inputs)
 
 
-__all__ = ["MarketRegimeCalculator", "build_market_regime"]
+__all__ = ["DEFAULT_THRESHOLDS", "MarketRegimeCalculator", "RegimeThresholds", "build_market_regime"]

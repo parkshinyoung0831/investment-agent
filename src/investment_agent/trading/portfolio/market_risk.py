@@ -228,18 +228,20 @@ def calculate_market_covariance(
 
 @dataclass(frozen=True)
 class TradingCostInputs:
-    """optimizer가 거래 **전에** 비용을 뺄 수 있도록 종목별로 추정한 거래 비용 재료."""
+    """optimizer가 거래 **전에** 비용을 뺄 수 있도록 종목별로 추정한 편도 반스프레드.
+
+    따라가는 실계좌가 수천 달러 규모라 주문이 시장 거래대금에 비해 무시할 만큼 작다. 그래서 시장충격·거래대금
+    참여 한도는 두지 않고, 거래대금은 반스프레드 구간을 고르는 데만 쓴다.
+    """
 
     symbol: str
     half_spread: float
-    daily_volatility: float
     adv_usd: float
-    method: str = "adv_bucket_half_spread_v1"
+    method: str = "adv_bucket_half_spread_v2"
 
     def to_metadata(self) -> dict[str, object]:
         return {
             "half_spread": self.half_spread,
-            "daily_volatility": self.daily_volatility,
             "adv_usd": self.adv_usd,
             "method": self.method,
         }
@@ -255,9 +257,8 @@ def estimate_trading_costs(
     *,
     symbols: Sequence[str],
     adv_window: int = 20,
-    volatility_window: int = 60,
 ) -> dict[str, TradingCostInputs]:
-    """point-in-time 일봉만으로 ADV·일간 변동성·반스프레드를 추정한다."""
+    """point-in-time 일봉만으로 20일 평균 거래대금과 반스프레드를 추정한다."""
     result: dict[str, TradingCostInputs] = {}
     for raw_symbol in symbols:
         symbol = str(raw_symbol).upper().strip()
@@ -275,15 +276,10 @@ def estimate_trading_costs(
             raise ContractError(f"{symbol} has insufficient history for trading cost estimates")
         dollar_volume = [close * volume for _, close, volume in ordered[-adv_window:]]
         adv_usd = float(np.mean(dollar_volume))
-        closes = np.asarray([close for _, close, _ in ordered[-(volatility_window + 1):]], dtype=float)
-        if not np.isfinite(closes).all() or (closes <= 0).any():
-            raise ContractError(f"{symbol} closes must be positive and finite")
-        returns = closes[1:] / closes[:-1] - 1.0
-        daily_volatility = float(np.std(returns, ddof=1))
-        if not math.isfinite(adv_usd) or adv_usd <= 0.0 or not math.isfinite(daily_volatility):
-            raise ContractError(f"{symbol} has no usable dollar volume or volatility")
+        if not math.isfinite(adv_usd) or adv_usd <= 0.0:
+            raise ContractError(f"{symbol} has no usable dollar volume")
         half_spread = next(spread for floor, spread in _HALF_SPREAD_BY_ADV if adv_usd >= floor)
-        result[symbol] = TradingCostInputs(symbol, half_spread, daily_volatility, adv_usd)
+        result[symbol] = TradingCostInputs(symbol, half_spread, adv_usd)
     return result
 
 

@@ -1,7 +1,7 @@
 """ALPHA 분석: 선정된 종목을 TradingAgents로 분석해 논지(기대초과수익·확신·근거)를 신호 배치로 남긴다.
 
 비중을 정하지 않는다. System Portfolio가 이 논지를 factor 기대수익의 검증·소폭 조정으로 읽는다
-(`trading.decision.alpha`). 채택된 ML 모델이 있으면 수치 예측을 합친 뒤 저장한다.
+(`trading.decision.alpha`). 수치 ML 예측은 여기서 섞지 않는다 — ALPHA가 factor와 따로 합친다.
 """
 from __future__ import annotations
 
@@ -38,7 +38,6 @@ from investment_agent.trading.decision.model_pool import (
 )
 from investment_agent.platform.serialization import stable_id
 from investment_agent.trading.portfolio.signal_book import SignalBatch, SignalRecord
-from investment_agent.research.ml_serving import compute_ml_fusion, default_active_model_path
 from investment_agent.trading.decision.universe import NoCandidatesDue, select_tracked_tickers
 from investment_agent.platform.logging import get_logger
 
@@ -46,36 +45,6 @@ log = get_logger(__name__)
 
 AGENT_POLICY_KEY = "tradingagents-supabase"
 AGENT_POLICY_VERSION = 1
-
-
-def _ml_fused_proposals(repository, proposals, *, as_of: datetime, model_artifact_id: str):
-    """채택된 ML 모델의 수치 예측을 TradingAgents 의견과 합친다.
-
-    반영되면 신호의 출처가 달라지므로 LLM·ML 조합을 새 artifact로 기록한다. paper/live는
-    이 조합 artifact가 사람에게 승격돼야만 실행된다.
-    """
-    fused, outcome = compute_ml_fusion(
-        repository, proposals, as_of_at=as_of, model_path=default_active_model_path(),
-    )
-    log.info("ML fusion comparison: %s", outcome.log_payload())
-    if not outcome.applied:
-        return list(proposals), model_artifact_id
-    identity = {
-        "upstream_artifact_id": model_artifact_id,
-        "ml_artifact_id": outcome.model_artifact_id,
-        "fusion_version": "ml-tradingagents-fusion-v2",
-    }
-    artifact_id = stable_id("artifact", identity)
-    repository.save_model_artifact({
-        "artifact_id": artifact_id, "algorithm": "rule", "feature_version": "ml-tradingagents-fusion-v2",
-        "train_start": None, "train_end": None, "seed": None,
-        "artifact_uri": str(default_active_model_path()),
-        "sha256": hashlib.sha256(canonical_json(identity).encode()).hexdigest(),
-        "params": {**identity, "model_confidence": outcome.model_confidence,
-                   "feature_as_of_at": outcome.feature_as_of_at},
-        "code_commit": os.environ.get("GITHUB_SHA"),
-    })
-    return fused, artifact_id
 
 
 def _case_key(ticker: str, as_of_at: datetime) -> str:
@@ -431,9 +400,6 @@ def main(argv: list[str] | None = None) -> int:
     if not attempted:
         repository.finish_decision_run(run_id, status="failed", failure_reason="model budget ran out before any ticker")
         return 0
-    proposals, model_artifact_id = _ml_fused_proposals(
-        repository, proposals, as_of=as_of, model_artifact_id=model_artifact_id,
-    )
     completed_at = datetime.now(timezone.utc)
     batch = SignalBatch(
         batch_id=stable_id("signal_batch", {"run_id": run_id, "as_of_at": as_of.isoformat()}),

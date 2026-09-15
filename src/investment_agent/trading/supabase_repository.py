@@ -357,6 +357,19 @@ class SupabaseRepository:
             state["values"][key] = (value, now + self._MEMO_SECONDS)
         return value
 
+    def _mirror(self, as_of_at: datetime | None = None):
+        """로컬 사본이 이 조회를 답할 수 있으면 그 사본. 없거나 오래됐으면 None — Supabase로 읽는다.
+
+        사본은 Supabase 원본의 계산용 복사다(`data.market.local_mirror`). 판단마다 종목별로 원격 표를 읽지 않게 한다.
+        """
+        from investment_agent.data.market.local_mirror.store import LocalMirror
+
+        mirror = self.__dict__.get("_local_mirror")
+        if mirror is None:
+            mirror = self.__dict__.setdefault("_local_mirror", LocalMirror())
+        moment = as_of_at or datetime.now(timezone.utc)
+        return mirror if mirror.covers(moment) else None
+
     @staticmethod
     def _trading_repository():
         """v1 trading 원장의 domain owner를 지연 생성한다."""
@@ -366,6 +379,9 @@ class SupabaseRepository:
 
     def current_tracked_tickers(self) -> list[str]:
         """범용 수집 게이트 universe.securities.is_tracked의 현재 종목을 반환한다."""
+        mirror = self._mirror()
+        if mirror is not None:
+            return mirror.tracked_tickers()
         return sorted({str(ticker).upper() for ticker in select_tracked_tickers()})
     def historical_sp500_membership(
         self,
@@ -373,7 +389,10 @@ class SupabaseRepository:
         start_date: date,
         end_date: date,
     ) -> list[dict[str, Any]]:
-        """universe 스키마의 owner에게 위임한다."""
+        """universe 스키마의 owner에게 위임한다. 로컬 사본이 그 기간을 덮으면 사본의 같은 규칙으로 답한다."""
+        mirror = self._mirror(datetime.combine(end_date, datetime.min.time(), tzinfo=timezone.utc))
+        if mirror is not None:
+            return mirror.membership_snapshots(start_date=start_date, end_date=end_date)
         return select_sp500_membership_snapshots(start_date=start_date, end_date=end_date)
     def _candidate_last_analyzed(
         self,
@@ -746,6 +765,9 @@ class SupabaseRepository:
         symbols = sorted({str(ticker).upper() for ticker in tickers})
         if not symbols:
             return {}
+        mirror = self._mirror()
+        if mirror is not None:
+            return mirror.sector_map(symbols)
         rows = select_security_profiles(symbols, tracked_only=True)
         return {
             str(row["ticker"]).upper(): str(row["sic_division"])
@@ -757,6 +779,9 @@ class SupabaseRepository:
 
         기억한 결과는 행 사본으로 돌려준다. 부르는 쪽이 행을 고쳐도 다음 호출이 오염되지 않는다.
         """
+        mirror = self._mirror(as_of_at)
+        if mirror is not None:
+            return mirror.price_history_as_of(ticker, as_of_at, limit=limit)
         rows = self._memo(
             ("market_prices", str(ticker).upper(), as_of_at.isoformat(), int(limit)),
             lambda: market_db.price_history_as_of(ticker, as_of_at, limit=limit),

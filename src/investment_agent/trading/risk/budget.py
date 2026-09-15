@@ -10,6 +10,7 @@ SPY 가격 → 시장 상태(RISK_ON·NORMAL·RISK_OFF·CRISIS) ┐
   목표를 만들면 조이기만 하는 위험 예산이 가장 필요한 순간에 꺼진다.
 - 거시 재료는 없으면 조이지 않는다. 웹 수집 series 하루 장애로 목표 갱신을 세우면 위험을 줄여야 할 날에도
   줄이지 못한다. 그 사실은 metadata에 남는다.
+- 경계·배율은 `MarketRiskPolicy`(버전 있음)가 갖는다. `use_market_risk=False`는 연구의 Ablation 전용이다.
 """
 from __future__ import annotations
 
@@ -20,7 +21,8 @@ from investment_agent.platform.logging import get_logger
 from investment_agent.trading.risk.gate import PortfolioRiskPolicy
 from investment_agent.trading.risk.macro_exposure import MACRO_SERIES, assess_macro_exposure, tighten_for_macro
 from investment_agent.trading.risk.regime_budget import (
-    REGIME_BUDGET_VERSION,
+    DEFAULT_MARKET_RISK_POLICY,
+    MarketRiskPolicy,
     regime_from_benchmark_prices,
     tighten_for_regime,
 )
@@ -39,13 +41,24 @@ def _macro_exposure(repository: Any, *, as_of_at: datetime):
     return assess_macro_exposure(histories, as_of_at=as_of_at)
 
 
-def risk_budget(repository: Any, *, as_of_at: datetime) -> tuple[PortfolioRiskPolicy, dict[str, Any]]:
+def risk_budget(
+    repository: Any,
+    *,
+    as_of_at: datetime,
+    base_policy: PortfolioRiskPolicy | None = None,
+    market_policy: MarketRiskPolicy = DEFAULT_MARKET_RISK_POLICY,
+    use_market_risk: bool = True,
+) -> tuple[PortfolioRiskPolicy, dict[str, Any]]:
     """가격 시장 상태와 거시 노출 규칙을 모두 반영한 위험 정책과 그 근거 metadata."""
+    base = base_policy or PortfolioRiskPolicy()
+    if not use_market_risk:
+        return base, {"market_regime": None, "market_risk_policy": None, "macro_exposure": None}
     regime = regime_from_benchmark_prices(
-        repository.market_prices(BENCHMARK_SYMBOL, as_of_at, limit=260), as_of_at=as_of_at,
+        repository.market_prices(BENCHMARK_SYMBOL, as_of_at, limit=max(260, market_policy.drawdown_window + 1)),
+        as_of_at=as_of_at, policy=market_policy,
     )
     macro = _macro_exposure(repository, as_of_at=as_of_at)
-    policy = tighten_for_macro(tighten_for_regime(PortfolioRiskPolicy(), regime), macro)
+    policy = tighten_for_macro(tighten_for_regime(base, regime, market_policy), macro)
     metadata = {
         "market_regime": {
             "risk_state": regime.risk_state,
@@ -54,7 +67,8 @@ def risk_budget(repository: Any, *, as_of_at: datetime) -> tuple[PortfolioRiskPo
             "volatility_state": regime.volatility_state,
             "inputs": dict(regime.metadata.get("inputs", {})),
         },
-        "regime_budget_version": REGIME_BUDGET_VERSION,
+        "regime_budget_version": market_policy.version,
+        "market_risk_policy": market_policy.to_dict(),
         "macro_exposure": macro.to_metadata() if macro is not None else None,
     }
     return policy, metadata

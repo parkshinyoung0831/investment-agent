@@ -19,6 +19,7 @@ def _payload(**alpha) -> dict:
         "model_state": {"coefficients": [0.1], "intercept": 0.0},
         "feature_names": ["f"],
         "out_of_sample_alpha": values,
+        "dataset_manifest": {"label_definition": "excess_return_20d"},
     }
 
 
@@ -32,6 +33,14 @@ class AdoptMlModelTest(unittest.TestCase):
         check = check_adoptable(payload)
         self.assertFalse(check.is_adoptable)
         self.assertTrue(any("horizon" in reason for reason in check.reasons))
+
+    def test_model_trained_on_raw_returns_is_not_adoptable(self):
+        """원수익률 label 모델의 예측을 기대초과수익으로 쓰면 시장 전체 상승을 종목 능력으로 착각한다."""
+        payload = _payload()
+        payload["dataset_manifest"]["label_definition"] = "forward_return_20d"
+        check = check_adoptable(payload)
+        self.assertFalse(check.is_adoptable)
+        self.assertTrue(any("excess-return" in reason for reason in check.reasons), check.reasons)
 
     def test_each_evidence_gap_blocks_adoption(self):
         for overrides, fragment in (

@@ -48,6 +48,26 @@ class ThesisStateTest(unittest.TestCase):
     def test_hold_with_a_bearish_outlook_is_negative(self):
         self.assertEqual(_view("A", "hold", -0.03, 0.4).thesis_state, THESIS_NEGATIVE)
 
+    def test_explicit_thesis_fields_win_over_the_legacy_action_word(self):
+        def explicit(thesis, hard_constraint="none", *, expected=0.02, probability=0.6):
+            return ThesisView("A", AS_OF, "watch", expected, probability, 0.7, None, thesis, hard_constraint)
+
+        self.assertEqual(explicit("positive").thesis_state, THESIS_POSITIVE)
+        self.assertEqual(explicit("positive", expected=-0.01, probability=0.4).thesis_state, THESIS_NEUTRAL)
+        self.assertEqual(explicit("negative").thesis_state, THESIS_NEGATIVE)
+        self.assertEqual(explicit("neutral", "block_new_buy").thesis_state, THESIS_NEGATIVE)
+        # 극단 상황의 hard constraint는 수치와 무관하게 논지 붕괴다.
+        self.assertEqual(explicit("positive", "force_exit").thesis_state, THESIS_BROKEN)
+        self.assertEqual(explicit("neutral", "exclude").thesis_state, THESIS_BROKEN)
+
+    def test_views_outside_the_thesis_contract_are_ignored(self):
+        base = {"ticker": "A", "as_of_at": AS_OF.isoformat(), "signal": "open",
+                "expected_excess_return": 0.02, "probability_up": 0.6, "confidence": 0.7}
+        self.assertIsNone(ThesisView.from_proposal({**base, "thesis": "bullish"}))
+        self.assertIsNone(ThesisView.from_proposal({**base, "hard_constraint": "sell_now"}))
+        view = ThesisView.from_proposal({**base, "thesis": "negative", "hard_constraint": "none", "key_risks": ["fraud probe"]})
+        self.assertEqual((view.thesis_state, view.key_risks), (THESIS_NEGATIVE, ("fraud probe",)))
+
     def test_incomplete_rows_are_not_views(self):
         self.assertIsNone(ThesisView.from_proposal({"ticker": "A", "as_of_at": AS_OF.isoformat(), "signal": "open"}))
         view = ThesisView.from_proposal({"ticker": "a", "as_of_at": AS_OF.isoformat(), "signal": "open",
@@ -120,6 +140,50 @@ class ExpectedReturnSignalsTest(unittest.TestCase):
         held = _by_symbol(plan)["HELD"]
         self.assertEqual(held.constraint, CONSTRAINT_BLOCK_INCREASE)
         self.assertLessEqual(held.expected_return, 0.0)
+
+    def test_champion_ml_moves_the_factor_prior_by_its_oos_confidence(self):
+        policy = AlphaPolicy(candidate_count=5, llm_tilt_weight=0.0, require_verified_entry=False)
+        plain = _by_symbol(self._plan(views={}, policy=policy))
+        blended = expected_return_signals(
+            self.scores, sigma_by_symbol=self.sigma, held_symbols=[], views={}, as_of_at=AS_OF, policy=policy,
+            ml_expected_returns={"LOW": 0.05, "TOP": 0.50}, ml_confidence=0.3,
+        )
+        signals = _by_symbol(blended)
+        # LOW의 factor 사전값은 0(가운데 순위), ML +5%의 30%가 반영된다.
+        self.assertAlmostEqual(signals["LOW"].expected_return, 0.3 * 0.05, places=9)
+        # ML 예측도 ±1σ(8%)로 잘린다.
+        self.assertAlmostEqual(signals["TOP"].expected_return, 0.7 * plain["TOP"].expected_return + 0.3 * 0.08, places=9)
+        self.assertEqual(blended.reasons["LOW"], "FACTOR_ML_BASE")
+        self.assertAlmostEqual(blended.detail["LOW"]["ml_share"], 0.3)
+        # 예측이 없는 종목은 factor 사전값 그대로다.
+        self.assertAlmostEqual(signals["MID"].expected_return, plain["MID"].expected_return)
+
+    def test_ml_switched_off_for_ablation_leaves_the_factor_prior(self):
+        policy = AlphaPolicy(candidate_count=5, llm_tilt_weight=0.0, require_verified_entry=False, use_ml=False)
+        plain = _by_symbol(self._plan(views={}, policy=policy))
+        blended = _by_symbol(expected_return_signals(
+            self.scores, sigma_by_symbol=self.sigma, held_symbols=[], views={}, as_of_at=AS_OF, policy=policy,
+            ml_expected_returns={"LOW": 0.05}, ml_confidence=0.8,
+        ))
+        self.assertEqual(blended["LOW"].expected_return, plain["LOW"].expected_return)
+
+    def test_confidence_is_the_agreement_of_the_sources_not_the_llm_self_report(self):
+        policy = AlphaPolicy(candidate_count=5, llm_tilt_weight=0.0, require_verified_entry=False)
+        plan = expected_return_signals(
+            self.scores, sigma_by_symbol=self.sigma, held_symbols=[], as_of_at=AS_OF, policy=policy,
+            views={"TOP": _view("TOP", "open", 0.02, 0.6, confidence=0.1)},
+            ml_expected_returns={"TOP": 0.02, "MID": -0.20}, ml_confidence=0.1,
+        )
+        signals = _by_symbol(plan)
+        # TOP: factor·ML·논지 모두 상승 → 1.0 (LLM이 적은 0.1은 쓰지 않는다)
+        self.assertEqual(signals["TOP"].confidence, 1.0)
+        # MID: factor는 상승, ML은 하락. 최종값과 같은 방향은 둘 중 하나다.
+        self.assertEqual(signals["MID"].confidence, 0.5)
+
+    def test_thesis_switched_off_for_ablation_does_not_block_unverified_entries(self):
+        plan = self._plan(views={}, policy=AlphaPolicy(candidate_count=3, use_thesis=False))
+        self.assertIsNone(_by_symbol(plan)["TOP"].constraint)
+        self.assertEqual(plan.reasons["TOP"], "FACTOR_BASE")
 
     def test_held_name_without_inputs_is_fixed_not_sold(self):
         plan = self._plan(held=["UNKNOWN"], views={})

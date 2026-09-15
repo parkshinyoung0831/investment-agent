@@ -54,6 +54,8 @@ def check_adoptable(payload: Mapping[str, Any]) -> AdoptionCheck:
         reasons.append("top-minus-bottom quantile spread must be positive")
     if model.confidence <= 0.0:
         reasons.append("model confidence resolves to zero")
+    if not model.predicts_excess_return:
+        reasons.append(f"model must be trained on a benchmark excess-return label (got {model.label_definition or 'unknown'})")
     if model.horizon_days != SIGNAL_HORIZON_DAYS:
         reasons.append(f"model horizon must be {SIGNAL_HORIZON_DAYS}d to be fused (got {model.horizon_days}d)")
     return AdoptionCheck(not reasons, tuple(reasons))

@@ -239,7 +239,7 @@ def load_performance_data() -> DataResult:
 @cache_data(ttl="2m", max_entries=2)
 def load_execution_data() -> DataResult:
     """Execution 관측 원장은 reporting view로만 Dashboard에 공개한다."""
-    payload: dict[str, list[dict[str, Any]]] = {key: [] for key in ("control_state", "intents", "approvals", "orders", "order_events", "fills", "tca_reports", "reconciliations")}
+    payload: dict[str, list[dict[str, Any]]] = {key: [] for key in ("control_state", "intents", "approvals", "orders", "order_events", "fills", "reconciliations")}
     for key, view in (("control_state", "execution_control_state"), ("intents", "execution_intents"), ("approvals", "execution_approvals"), ("orders", "execution_orders"), ("fills", "execution_fills")):
         result = _read(view)
         if result.status not in {"ok", "empty"}:

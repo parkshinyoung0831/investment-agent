@@ -39,11 +39,18 @@ def _period_for_indexes(dataset: ResearchDataset, indexes: tuple[int, ...]) -> t
     return start.isoformat(), end.isoformat()
 
 
+EXCESS_LABEL_PREFIX = "excess_return_"
+
+
 def label_horizon_days(label_definition: str) -> int:
-    """`forward_return_20d`(또는 `forward_20d`) 같은 label 정의에서 거래일 수를 읽는다."""
-    match = re.fullmatch(r"forward(?:_return)?_(\d+)d", str(label_definition).strip())
+    """`excess_return_20d` label 정의에서 거래일 수를 읽는다.
+
+    ML 출력은 판단 경로에서 기대**초과**수익으로 쓰인다. 원수익률(`forward_return_*`)로 학습한 모델은
+    시장 전체가 오른 구간을 종목 능력으로 배우므로 여기서 거부한다 — 거래비용은 optimizer가 따로 뺀다.
+    """
+    match = re.fullmatch(rf"{EXCESS_LABEL_PREFIX}(\d+)d", str(label_definition).strip())
     if match is None:
-        raise ValueError(f"label definition does not state a horizon: {label_definition!r}")
+        raise ValueError(f"label must be a benchmark excess return with a horizon: {label_definition!r}")
     return int(match.group(1))
 
 
@@ -61,7 +68,7 @@ def train_baseline_dataset(
 ) -> BaselineTrainingResult:
     """호출자가 정한 시간 split을 섞지 않고 기존 baseline trainer를 실행한다.
 
-    horizon은 dataset의 label 정의(`forward_return_20d`)가 정한다. 호출자가 따로 넘긴 값과
+    horizon은 dataset의 label 정의(`excess_return_20d`)가 정한다. 호출자가 따로 넘긴 값과
     다르면 실패한다 — 20일 label로 학습한 모델에 5일이라고 적으면 serving이 엉뚱한 기간과 합친다.
     """
     label_horizon = label_horizon_days(dataset.manifest.label_definition)

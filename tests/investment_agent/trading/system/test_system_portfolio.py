@@ -5,6 +5,7 @@ import ast
 import json
 import math
 import random
+import re
 import tempfile
 import unittest
 from datetime import date, datetime, timedelta, timezone
@@ -223,6 +224,27 @@ class EngineTest(unittest.TestCase):
         self.assertIn(("finish_decision_run", {"status": "failed", "failure_reason": "inputs unavailable: covariance history is insufficient"}),
                       self.repository.saved)
 
+    def test_only_the_adopted_champion_forecast_reaches_the_target_and_its_identity(self):
+        from investment_agent.research.ml_serving import ChampionForecast, champion_forecast, default_active_model_path
+        import inspect
+
+        # 기본 예측기는 채택 파일 하나만 읽는다. challenger 후보 폴더는 인자에 없다.
+        self.assertIs(inspect.signature(run_system).parameters["forecast"].default, champion_forecast)
+        self.assertEqual(default_active_model_path().name, "active_ml_model.json")
+        seen = []
+
+        def build(repository, **kwargs):
+            seen.append(kwargs["ml_forecast"])
+            return self.build(repository, **kwargs)
+
+        adopted = ChampionForecast(model_artifact_id="model_champion", confidence=0.3,
+                                   expected_excess_returns={"AAA": 0.02})
+        run_system(self.store, self.repository, now=_after_close("2026-09-08"), build_target=build,
+                   forecast=lambda repository, tickers, *, as_of_at: adopted)
+        self.assertEqual(seen, [adopted])
+        artifacts = [row for name, row in self.repository.saved if name == "save_model_artifact"]
+        self.assertEqual(artifacts[-1]["params"]["champion_ml_artifact_id"], "model_champion")
+
     def test_rejections_account_changes_and_manual_orders_do_not_change_the_system(self):
         """사람이 무엇을 골랐든 System 비중·NAV는 같다 — 실행 원장을 채운 원장과 빈 원장을 비교한다."""
         clean = SystemPortfolioStore(Path(self.tmp.name) / "clean.sqlite3")
@@ -246,13 +268,14 @@ class EngineTest(unittest.TestCase):
 
 
 class BoundaryTest(unittest.TestCase):
-    """System과 ALPHA는 실계좌·승인·주문 코드를 import하지 않는다."""
+    """System과 ALPHA는 실계좌·승인·주문 코드도, 연구 후보(ML challenger·RL) 코드도 import하지 않는다."""
 
     GUARDED = (
         "src/investment_agent/trading/system",
         "src/investment_agent/trading/decision/alpha.py",
         "src/investment_agent/trading/decision/analysis.py",
         "src/investment_agent/trading/risk/budget.py",
+        "src/investment_agent/research/ml_serving.py",
     )
     FORBIDDEN = (
         "investment_agent.execution.brokers",
@@ -262,6 +285,17 @@ class BoundaryTest(unittest.TestCase):
         "investment_agent.execution.orders.toss_snapshot",
         "investment_agent.notifications",
         "investment_agent.trading.my_portfolio",
+        # 연구 후보는 사람이 채택하기 전에는 System에 닿지 않는다(champion ML은 채택 파일로만 들어온다).
+        "investment_agent.research.commands",
+        "investment_agent.research.training",
+        "investment_agent.research.ablation",
+        "investment_agent.research.promotion",
+        "investment_agent.research.evaluation.challenger",
+        "investment_agent.research.rl.continuous_learner",
+        "investment_agent.research.rl.serving",
+        "investment_agent.research.rl.bundle",
+        "investment_agent.research.rl.trainer",
+        "investment_agent.research.rl.environment",
     )
 
     @staticmethod
@@ -292,6 +326,30 @@ class BoundaryTest(unittest.TestCase):
                      if name.startswith(self.FORBIDDEN)]
         self.assertEqual([], offenders)
 
+    def test_runtime_never_loads_an_rl_policy(self):
+        """RL은 Research다. 운영 경로(trading·execution·operations)가 RL 정책을 읽어 비중을 바꾸지 않는다."""
+        runtime = [ROOT / "src/investment_agent" / name for name in ("trading", "execution", "operations")]
+        rl_policy = ("investment_agent.research.rl.serving", "investment_agent.research.rl.bundle",
+                     "investment_agent.research.rl.trainer")
+        files = [path for root in runtime for path in sorted(root.rglob("*.py"))]
+        self.assertGreater(len(files), 50)
+        offenders = [f"{path.relative_to(ROOT)} -> {name}" for path in files for name in self._imports(path)
+                     if name.startswith(rl_policy)]
+        self.assertEqual([], offenders)
+
+    def test_one_portfolio_engine_decides_the_canonical_target_weights(self):
+        """optimizer와 RiskGate 판정은 System 목표 생성 한 곳에서만 부른다 — 두 번째 비중 결정자가 없다."""
+        sources = {path.relative_to(ROOT).as_posix(): path.read_text(encoding="utf-8")
+                   for path in (ROOT / "src/investment_agent").rglob("*.py")}
+        optimizers = sorted(name for name, text in sources.items() if "RiskAwareOptimizer(" in text)
+        gates = sorted(name for name, text in sources.items() if re.search(r"DeterministicRiskGate\([^)]*\)\.evaluate\(", text))
+        self.assertEqual(optimizers, ["src/investment_agent/trading/system/target.py"])
+        self.assertEqual(gates, ["src/investment_agent/trading/system/target.py"])
+        # 목표비중을 담는 원장도 System 목표 하나다.
+        declared = {path.name for path in (ROOT / "db/sqlite/runtime/v1").glob("*.sql")
+                    if re.search(r"CREATE TABLE IF NOT EXISTS \w*target", path.read_text(encoding="utf-8"))}
+        self.assertEqual(declared, {"47_system_portfolio.sql"})
+
     def test_candidate_and_event_priorities_read_system_holdings(self):
         source = (ROOT / "src/investment_agent/trading/supabase_repository.py").read_text(encoding="utf-8")
         self.assertNotIn("latest_live_position_tickers", source)
@@ -316,6 +374,20 @@ class SchedulerTest(unittest.TestCase):
         self.assertFalse(job_ids & {"virtual_books", "entry_watch", "investment_pipeline"})
         stages = {stage.stage_id for definition in registry.definitions() for stage in definition.stages}
         self.assertFalse(stages & {"run_books", "select_signal", "portfolio"})
+
+    def test_local_mirror_and_weekly_rl_research_are_scheduled(self):
+        from types import SimpleNamespace
+        from investment_agent.operations.commands.investment_harness import build_registry
+
+        handler = lambda context: None  # noqa: E731
+        names = ("analysis", "select_target", "follow", "execution_intent", "approval_request", "approval_worker",
+                 "risk_snapshot", "reconcile", "watch", "build_valuations", "build_features", "build_labels",
+                 "build_training_samples", "build_events", "evaluate_decisions", "notify_investment", "notify_trades",
+                 "run_system_portfolio", "sync_local_mirror", "continuous_learning")
+        registry = build_registry(adapters=SimpleNamespace(**{name: handler for name in names}))
+        definitions = {definition.job_id: definition for definition in registry.definitions()}
+        self.assertEqual(definitions["local_mirror"].interval_seconds, 2 * 60 * 60)
+        self.assertEqual(definitions["continuous_learning"].interval_seconds, 7 * 24 * 60 * 60)
 
 
 # ---------------------------------------------------------------- 실제 optimizer·RiskGate
@@ -367,6 +439,8 @@ class BuildSystemTargetTest(unittest.TestCase):
         )
         weights = target.risk.approved_weights
         self.assertTrue(target.risk.is_approved, target.risk.violations)
+        self.assertIn("tail_risk", target.proposal.metadata)
+        self.assertFalse(target.proposal.metadata["ml_forecast"]["is_available"])
         self.assertEqual(target.plan.reasons["FFF"], "THESIS_BROKEN")
         self.assertAlmostEqual(weights.get("FFF", 0.0), 0.0)            # 논지가 깨진 보유는 청산
         self.assertAlmostEqual(weights.get("CCC", 0.0), 0.0)            # 검증 안 된 신규는 못 산다
@@ -375,6 +449,30 @@ class BuildSystemTargetTest(unittest.TestCase):
         self.assertTrue(math.isclose(sum(weights.values()), 1.0, abs_tol=1e-9))
         self.assertEqual(target.proposal.metadata["forced_exits"], ["FFF"])
         self.assertEqual(target.proposal.metadata["trade_reasons"]["FFF"]["code"], "THESIS_EXIT")
+
+    def test_tail_risk_above_the_limit_scales_risky_assets_into_cash_instead_of_rejecting(self):
+        import random
+        from investment_agent.trading.system.target import fit_tail_risk
+
+        rng = random.Random(3)
+        history = {}
+        for name, vol in (("AAA", 0.04), ("BBB", 0.035), ("SPY", 0.01)):
+            price, rows = 100.0, []
+            for offset in range(260):
+                price *= 1 + rng.gauss(0, vol)
+                rows.append({"trade_date": (date(2025, 1, 1) + timedelta(days=offset)).isoformat(), "close": price})
+            history[name] = rows
+        weights = {"AAA": 0.45, "BBB": 0.45, "CASH": 0.10}
+        fitted, detail = fit_tail_risk(weights, history, max_volatility=0.30, max_cvar_95_5d=0.05)
+        self.assertLess(detail["scale"], 1.0)
+        self.assertLessEqual(detail["cvar_95_5d_after"], 0.05 + 1e-9)
+        self.assertLessEqual(detail["volatility_after"], 0.30 + 1e-9)
+        # 종목 사이 비율은 그대로, 줄어든 만큼 현금이 늘어난다.
+        self.assertAlmostEqual(fitted["AAA"] / fitted["BBB"], 1.0)
+        self.assertAlmostEqual(sum(fitted.values()), 1.0)
+        self.assertGreater(fitted["CASH"], weights["CASH"])
+        calm, calm_detail = fit_tail_risk(weights, history, max_volatility=5.0, max_cvar_95_5d=1.0)
+        self.assertEqual((calm, calm_detail["scale"]), (weights, 1.0))
 
     def test_target_signature_has_no_account_input(self):
         import inspect

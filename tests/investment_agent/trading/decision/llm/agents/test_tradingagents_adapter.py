@@ -43,11 +43,12 @@ class _Client:
         return {
             "ticker": payload["ticker"],
             "as_of_at": payload["as_of_at"],
-            "signal": "hold",
+            "thesis": "positive",
+            "hard_constraint": "none",
+            "key_risks": ["guidance risk"],
             "probability_up": 0.55,
             "confidence": 0.6,
             "expected_excess_return": 0.01,
-            "target_weight": 0.1,
             "reasoning": ["verified market evidence only"],
             "evidence_ids": ["EV-MARKET-123"],
             "missing_data": payload["bundle_missing_data"],
@@ -78,11 +79,12 @@ class _ExternalClient:
         return {
             "ticker": payload["ticker"],
             "as_of_at": payload["as_of_at"],
-            "signal": "hold",
+            "thesis": "positive",
+            "hard_constraint": "none",
+            "key_risks": ["guidance risk"],
             "probability_up": 0.55,
             "confidence": 0.6,
             "expected_excess_return": 0.01,
-            "target_weight": 0.1,
             "reasoning": ["news manifest and structured evidence"],
             "evidence_ids": ["EXT-NEWS-ABC"],
             "missing_data": [],
@@ -100,8 +102,9 @@ class _RepairClient:
         self.calls.append(kwargs)
         payload = json.loads(kwargs["user"].split("\n\n이전 출력이")[0])
         return {
-            "ticker": payload["ticker"], "as_of_at": payload["as_of_at"], "signal": "hold",
-            "probability_up": 0.55, "confidence": 0.6, "expected_excess_return": 0.01, "target_weight": 0.1,
+            "ticker": payload["ticker"], "as_of_at": payload["as_of_at"], "thesis": "neutral",
+            "hard_constraint": "none", "key_risks": [],
+            "probability_up": 0.55, "confidence": 0.6, "expected_excess_return": 0.01,
             "reasoning": ["r"], "evidence_ids": [self.citations[len(self.calls) - 1]], "missing_data": [],
         }
 

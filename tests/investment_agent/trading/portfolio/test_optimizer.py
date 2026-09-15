@@ -175,26 +175,24 @@ class TradeReasonTest(unittest.TestCase):
         self.assertTrue(reasons["NEW"]["expected_return_capped"])
 
 
-def _cost(symbol: str, *, adv: float, spread: float = 0.0001, vol: float = 0.02) -> TradingCostInputs:
-    return TradingCostInputs(symbol, spread, vol, adv)
+def _cost(symbol: str, *, adv: float, spread: float = 0.0001) -> TradingCostInputs:
+    return TradingCostInputs(symbol, spread, adv)
 
 
 class TradingCostTest(unittest.TestCase):
     policy = OptimizerPolicy(
         max_turnover=1.0, turnover_penalty=0.0, risk_aversion=5.0, max_symbol_weight=0.5, min_cash_weight=0.0,
-        # ADV 한도를 풀어 비용 항만으로 차이가 나는지 본다.
-        max_adv_participation=1.0,
     )
 
     def test_expensive_to_trade_names_get_less_capital_than_their_raw_alpha_suggests(self):
         signals = (_signal("LIQD", 0.020), _signal("THIN", 0.022))
         # 두 종목 모두 상한(0.5)에 닿지 않도록 분산을 잡아, 차이가 비용에서만 나오게 한다.
         cov = ((0.01, 0.0), (0.0, 0.01))
-        costs = {"LIQD": _cost("LIQD", adv=5e9), "THIN": _cost("THIN", adv=2e6, spread=0.004, vol=0.04)}
+        costs = {"LIQD": _cost("LIQD", adv=5e9), "THIN": _cost("THIN", adv=2e6, spread=0.004)}
         free = RiskAwareOptimizer(self.policy).optimize(signals, current_weights={"CASH": 1.0}, covariance=cov)
         costly = RiskAwareOptimizer(self.policy).optimize(
             signals, current_weights={"CASH": 1.0}, covariance=cov,
-            trading_costs=costs, portfolio_value=1_000_000.0,
+            trading_costs=costs,
         )
         self.assertGreater(free.weights["THIN"], free.weights["LIQD"])
         self.assertLess(costly.weights.get("THIN", 0.0), costly.weights["LIQD"])
@@ -205,30 +203,28 @@ class TradingCostTest(unittest.TestCase):
             - costly.turnover_penalty - costly.transaction_cost,
         )
 
-    def test_buys_are_capped_by_adv_participation_but_exits_are_not(self):
-        policy = OptimizerPolicy(
-            max_turnover=1.0, turnover_penalty=0.0, risk_aversion=0.01,
-            max_symbol_weight=0.5, min_cash_weight=0.0, max_adv_participation=0.05, impact_coefficient=0.0,
-        )
-        nav = 10_000_000.0
+    def test_cost_is_linear_half_spread_without_market_impact_or_adv_caps(self):
+        """개인 계좌 규모라 거래대금 대비 주문 크기를 따지지 않는다. 비용은 반스프레드 × 거래 비중뿐이다."""
+        policy = OptimizerPolicy(max_turnover=1.0, turnover_penalty=0.0, risk_aversion=0.01,
+                                 max_symbol_weight=0.5, min_cash_weight=0.0)
         result = RiskAwareOptimizer(policy).optimize(
             (_signal("THIN", 0.10), _signal("OLD", -0.01, CONSTRAINT_FORCE_EXIT)),
             current_weights={"OLD": 0.40, "CASH": 0.60},
             covariance=((0.001, 0.0), (0.0, 0.001)),
-            trading_costs={"THIN": _cost("THIN", adv=4_000_000.0), "OLD": _cost("OLD", adv=1_000_000.0)},
-            portfolio_value=nav,
+            trading_costs={"THIN": _cost("THIN", adv=4_000.0, spread=0.001), "OLD": _cost("OLD", adv=1_000.0, spread=0.001)},
         )
-        # 20일 평균 거래대금 $4M의 5% = $200k = NAV의 2%.
-        self.assertLessEqual(result.weights["THIN"], 0.02 + 1e-6)
-        # $4M 청산은 OLD 거래대금의 4배지만 위험 축소라 막히지 않는다.
+        self.assertAlmostEqual(result.weights["THIN"], 0.5, places=5)
         self.assertEqual(result.weights.get("OLD", 0.0), 0.0)
+        self.assertAlmostEqual(result.transaction_cost, 0.001 * (0.5 + 0.40), places=6)
+        self.assertFalse(hasattr(policy, "impact_coefficient"))
+        self.assertFalse(hasattr(policy, "max_adv_participation"))
 
     def test_partial_cost_inputs_are_rejected(self):
         with self.assertRaisesRegex(Exception, "trading cost inputs are missing"):
             RiskAwareOptimizer(self.policy).optimize(
                 (_signal("AAPL", 0.01), _signal("MSFT", 0.01)),
                 current_weights={"CASH": 1.0},
-                trading_costs={"AAPL": _cost("AAPL", adv=1e9)}, portfolio_value=1e6,
+                trading_costs={"AAPL": _cost("AAPL", adv=1e9)},
             )
 
 
@@ -248,7 +244,7 @@ class TradingCostEstimateTest(unittest.TestCase):
         )
         self.assertLess(costs["BIG"].half_spread, costs["MID"].half_spread)
         self.assertLess(costs["MID"].half_spread, costs["TINY"].half_spread)
-        self.assertGreater(costs["BIG"].daily_volatility, 0.0)
+        self.assertGreater(costs["BIG"].adv_usd, costs["TINY"].adv_usd)
 
     def test_missing_volume_fails_closed(self):
         with self.assertRaisesRegex(Exception, "no usable dollar volume"):

@@ -12,6 +12,7 @@ RESEARCH_ROOT_ENV = "INVESTMENT_AGENT_RESEARCH_ROOT"
 RUNTIME_DATABASE_PATH_ENV = "AI_INVESTOR_RUNTIME_DB_PATH"
 EVIDENCE_CACHE_PATH_ENV = "AI_INVESTOR_NEWS_CACHE_PATH"
 MARKET_CHANGE_MANIFEST_PATH_ENV = "AI_INVESTOR_MARKET_CHANGE_MANIFEST_PATH"
+LOCAL_MIRROR_ROOT_ENV = "AI_INVESTOR_LOCAL_MIRROR_ROOT"
 
 DEFAULT_LOCAL_DATA_ROOT = Path("data/local")
 DEFAULT_LOCAL_ARTIFACT_ROOT_NAME = "artifacts"
@@ -41,6 +42,11 @@ def _configured_path(name: str) -> Path | None:
 
 def local_data_root() -> Path:
     return _configured_path(LOCAL_DATA_ROOT_ENV) or DEFAULT_LOCAL_DATA_ROOT
+
+
+def local_mirror_root() -> Path:
+    """Supabase 원본의 로컬 계산용 사본(`data.market.local_mirror`)."""
+    return _configured_path(LOCAL_MIRROR_ROOT_ENV) or local_data_root() / "mirror"
 
 
 def local_artifact_root() -> Path:

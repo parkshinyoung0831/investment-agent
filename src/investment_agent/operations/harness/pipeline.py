@@ -272,10 +272,10 @@ def continuous_learning_job(
     *,
     retrain: StageHandler,
     job_id: str = "continuous_learning",
-    interval_seconds: float = 24 * 60 * 60,
-    stale_after_seconds: float = 4 * 60 * 60,
+    interval_seconds: float = 7 * 24 * 60 * 60,
+    stale_after_seconds: float = 8 * 24 * 60 * 60,
 ) -> JobDefinition:
-    """누적된 판단 경험으로 검증 후보를 만들며 실제 채택은 별도로 수행한다."""
+    """RL 연구 후보를 만든다. 새 성숙 구간이 모자라면 학습하지 않고, 채택은 사람이 별도로 한다."""
     return JobDefinition(
         job_id=job_id,
         interval_seconds=interval_seconds,
@@ -297,6 +297,16 @@ def investment_reporting_job(*, update_performance: StageHandler, notify_reports
     return JobDefinition(job_id="investment_reporting", interval_seconds=300, stale_after_seconds=1800,
         stages=(StageDefinition("update_performance", update_performance, approval_workflow_only=False, max_attempts=2),
                 StageDefinition("notify_reports", notify_reports, approval_workflow_only=False, max_attempts=2)))
+
+
+def local_mirror_job(*, sync_local_mirror: StageHandler, interval_seconds: float = 2 * 60 * 60) -> JobDefinition:
+    """Supabase 원본 창고 → 로컬 계산용 사본 증분 동기화. 주문이 아니라 데이터 복사라 거래 kill switch와 무관하다.
+
+    사본이 오래되면 판단 경로가 스스로 Supabase로 돌아가므로, 실패해도 판단은 멈추지 않고 느려질 뿐이다.
+    """
+    return JobDefinition(job_id="local_mirror", interval_seconds=interval_seconds, stale_after_seconds=30 * 60 * 60,
+        stages=(StageDefinition("sync_local_mirror", sync_local_mirror, approval_workflow_only=False,
+                                max_attempts=2, retry_delay_seconds=10 * 60),))
 
 
 def system_portfolio_job(*, run_system_portfolio: StageHandler, interval_seconds: float = 60 * 60) -> JobDefinition:

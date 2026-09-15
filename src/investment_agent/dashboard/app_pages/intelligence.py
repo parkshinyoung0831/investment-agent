@@ -313,7 +313,6 @@ def _trace_steps(trace: Mapping[str, Any], ticker: str) -> list[dict[str, str]]:
     intent = _mapping(trace.get("intent"))
     orders = _list(trace.get("orders"))
     fills = _list(trace.get("fills"))
-    tca = _list(trace.get("tca_reports"))
     evaluation = _mapping(trace.get("evaluation"))
     return [
         {"title": "후보 선별", "value": f"#{candidate.get('rank_position')} · {display_percent(candidate.get('rank_score'))}" if candidate else "기록 없음", "detail": f"{candidate.get('domain_count') or 0}개 근거 영역" if candidate else "후보 선별 결과가 없어요.", "status": str(candidate.get("feature_version") or "미생성")},
@@ -323,7 +322,7 @@ def _trace_steps(trace: Mapping[str, Any], ticker: str) -> list[dict[str, str]]:
         {"title": "위험 심사", "value": "통과" if risk.get("is_approved") is True else "차단" if risk else "기록 없음", "detail": f"조정 {len(_list(risk.get('adjustments')))}건 · 위반 {len(_list(risk.get('violations')))}건" if risk else "위험 심사 기록이 없어요.", "status": str(risk.get("policy_key") or "미심사")},
         {"title": "실행 Intent", "value": str(intent.get("status") or "생성 없음"), "detail": f"{intent.get('intent_id') or 'ID 없음'} · {intent.get('execution_mode') or '모드 미정'}" if intent else "RiskGate 이후 실행 의도가 생성되지 않았어요.", "status": "읽기 전용"},
         {"title": "사람 승인 · 주문", "value": f"승인 {approval.get('status') or '요청 없음'}", "detail": f"주문 {len(orders)}건 · 결정 {approval.get('decision') or '—'}" if approval else "승인 없이는 주문 경계로 이동하지 않아요.", "status": "읽기 전용"},
-        {"title": "체결 · 결과", "value": f"체결 {len(fills)}건", "detail": f"TCA {len(tca)}건 · 평가 {evaluation.get('evaluated_at') or '기록 없음'}" if (tca or evaluation) else "체결·TCA·평가 기록이 아직 없어요.", "status": "관측 전용"},
+        {"title": "체결 · 결과", "value": f"체결 {len(fills)}건", "detail": f"평가 {evaluation.get('evaluated_at') or '기록 없음'}" if evaluation else "체결·평가 기록이 아직 없어요.", "status": "관측 전용"},
     ]
 
 
@@ -334,7 +333,7 @@ def _merge_execution_payload(
     """Alpha Lab 사실에 실행 원장 배열을 덧붙여 한 번의 추적에서 연결한다."""
 
     merged = dict(payload)
-    for key in ("intents", "approvals", "orders", "fills", "tca_reports", "reconciliations"):
+    for key in ("intents", "approvals", "orders", "fills", "reconciliations"):
         merged[key] = list(execution_payload.get(key) or [])
     return merged
 
@@ -353,7 +352,7 @@ def _render_trace(payload: Mapping[str, Any], observed_at: Any) -> None:
         preview=False,
     )
     execution_rows = []
-    for key, label in (("intent", "Intent"), ("approval", "승인"), ("orders", "주문"), ("fills", "체결"), ("tca_reports", "TCA")):
+    for key, label in (("intent", "Intent"), ("approval", "승인"), ("orders", "주문"), ("fills", "체결")):
         value = trace.get(key)
         count = len(value) if isinstance(value, (list, tuple)) else int(bool(value))
         execution_rows.append({"실행 관측": label, "건수": count})

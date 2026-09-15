@@ -14,6 +14,24 @@ from investment_agent.platform.serialization import (
 CASH_SYMBOL = "CASH"
 _TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.-]{0,14}$")
 _SIGNALS = {"avoid", "watch", "open", "increase", "hold", "reduce", "exit"}
+# TradingAgents 논지 계약. 사고팔기 행동은 목표비중 변화에서 파생되므로 LLM이 정하지 않는다.
+THESES = ("positive", "neutral", "negative")
+# 숫자로 표현할 수 없는 극단 상황(회계부정·논지 붕괴)에만 쓰는 강제 제약.
+HARD_CONSTRAINT_NONE = "none"
+HARD_CONSTRAINT_BLOCK_NEW_BUY = "block_new_buy"
+HARD_CONSTRAINT_FORCE_EXIT = "force_exit"
+HARD_CONSTRAINT_EXCLUDE = "exclude"
+HARD_CONSTRAINTS = (HARD_CONSTRAINT_NONE, HARD_CONSTRAINT_BLOCK_NEW_BUY, HARD_CONSTRAINT_FORCE_EXIT,
+                    HARD_CONSTRAINT_EXCLUDE)
+
+
+def legacy_signal(thesis: str, hard_constraint: str) -> str:
+    """저장·화면이 읽는 옛 의견 단어. 판단 입력이 아니라 논지를 한 단어로 보여 주는 표시다."""
+    if hard_constraint in {HARD_CONSTRAINT_FORCE_EXIT, HARD_CONSTRAINT_EXCLUDE}:
+        return "exit"
+    if hard_constraint == HARD_CONSTRAINT_BLOCK_NEW_BUY:
+        return "avoid"
+    return {"positive": "open", "negative": "reduce"}.get(thesis, "watch")
 _SOURCES = {"llm", "ml", "rl", "rule", "optimizer"}
 _STAGES = {"shadow", "backtest", "out_of_sample", "walk_forward", "paper", "live"}
 
@@ -74,6 +92,10 @@ class SecurityProposal:
     reasoning: tuple[str, ...]
     evidence_ids: tuple[str, ...]
     missing_data: tuple[str, ...] = ()
+    # 명시 논지 필드. 옛 기록에는 없어서 None이고, 그때만 ALPHA가 `signal` 단어를 해석한다.
+    thesis: str | None = None
+    hard_constraint: str = HARD_CONSTRAINT_NONE
+    key_risks: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         ticker = self.ticker.upper()
@@ -81,6 +103,10 @@ class SecurityProposal:
             raise ContractError(f"invalid ticker: {ticker}")
         if self.signal not in _SIGNALS:
             raise ContractError(f"invalid signal: {self.signal}")
+        if self.thesis is not None and self.thesis not in THESES:
+            raise ContractError(f"invalid thesis: {self.thesis}")
+        if self.hard_constraint not in HARD_CONSTRAINTS:
+            raise ContractError(f"invalid hard_constraint: {self.hard_constraint}")
         parse_datetime(self.as_of_at)
         _probability(self.probability_up, "probability_up")
         _probability(self.confidence, "confidence")
@@ -101,8 +127,8 @@ class SecurityProposal:
         allowed_evidence_ids: set[str],
     ) -> "SecurityProposal":
         fields = {
-            "ticker", "as_of_at", "signal", "probability_up", "confidence", "expected_excess_return",
-            "target_weight", "reasoning", "evidence_ids", "missing_data",
+            "ticker", "as_of_at", "thesis", "hard_constraint", "key_risks", "probability_up", "confidence",
+            "expected_excess_return", "reasoning", "evidence_ids", "missing_data",
         }
         missing = fields - set(data)
         extra = set(data) - fields
@@ -121,17 +147,23 @@ class SecurityProposal:
         expected = data["expected_excess_return"]
         if isinstance(expected, bool) or not isinstance(expected, (int, float)):
             raise ContractError("expected_excess_return must be numeric")
+        thesis = str(data["thesis"]).strip().lower()
+        hard_constraint = str(data["hard_constraint"]).strip().lower()
         return cls(
             ticker=ticker,
             as_of_at=parse_datetime(as_of_at).isoformat(),
-            signal=str(data["signal"]),
+            signal=legacy_signal(thesis, hard_constraint),
             probability_up=_probability(data["probability_up"], "probability_up"),
             confidence=_probability(data["confidence"], "confidence"),
             expected_excess_return=float(expected),
-            target_weight=_probability(data["target_weight"], "target_weight"),
+            # 비중은 PORTFOLIO가 정한다. LLM에게 받지 않는다.
+            target_weight=0.0,
             reasoning=_strings(data["reasoning"], "reasoning", required=True),
             evidence_ids=evidence_ids,
             missing_data=_strings(data["missing_data"], "missing_data"),
+            thesis=thesis,
+            hard_constraint=hard_constraint,
+            key_risks=_strings(data["key_risks"], "key_risks"),
         )
 
     def to_dict(self) -> dict[str, Any]:

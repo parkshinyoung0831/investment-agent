@@ -30,14 +30,14 @@ def _dataset(*, days: int = 140, names: int = 10, signal: float = 0.02):
                              "source_ids": [], "provenance": {}})
             labels.append({"ticker": f"T{index}", "as_of_at": as_of, "forward_end_at": end,
                            "label_available_at": end, "feature_version": "pit-test",
-                           "label_definition": "forward_return_20d",
+                           "label_definition": "excess_return_20d",
                            "label": signal * value + float(rng.normal(0, 0.01)), "benchmark_label": 0.0})
     return features, labels
 
 
 def _build(features, labels):
     return build_research_dataset(features, labels, feature_version="pit-test",
-                                  label_definition="forward_return_20d", label_cutoff_at=CUTOFF.isoformat(),
+                                  label_definition="excess_return_20d", label_cutoff_at=CUTOFF.isoformat(),
                                   feature_names=["x"])
 
 
@@ -70,7 +70,7 @@ class RunChallengersTest(unittest.TestCase):
 
         def export(*, output, **kwargs):
             output.write_text(json.dumps({
-                "feature_version": "pit-test", "label_definition": "forward_return_20d",
+                "feature_version": "pit-test", "label_definition": "excess_return_20d",
                 "label_cutoff_at": CUTOFF.isoformat(), "feature_names": ["x"],
                 "feature_rows": features, "label_rows": labels,
             }), encoding="utf-8")

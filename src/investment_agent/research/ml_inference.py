@@ -41,6 +41,12 @@ class LoadedModel:
     oos_alpha: Mapping[str, Any] | None = None
     # 부스팅 계열의 복원된 booster. 선형·상수 모델은 None.
     booster: Any = None
+    # 학습 dataset의 label 정의. 서빙은 초과수익(`excess_return_*`) 모델만 쓴다.
+    label_definition: str = ""
+
+    @property
+    def predicts_excess_return(self) -> bool:
+        return self.label_definition.startswith("excess_return_")
 
     def predict(self, matrix: np.ndarray) -> np.ndarray:
         values = np.asarray(matrix, dtype=np.float64)
@@ -125,6 +131,7 @@ def load_model(payload: Mapping[str, Any]) -> LoadedModel:
         feature_names=feature_names,
         horizon_days=horizon,
         artifact_id=str(artifact.get("artifact_id") or "unknown"),
+        label_definition=str((payload.get("dataset_manifest") or {}).get("label_definition") or ""),
         coefficients=coefficients,
         intercept=intercept,
         mean=mean,

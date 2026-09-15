@@ -7,7 +7,6 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 
 from investment_agent.trading.contracts import EvidenceBundle, EvidenceItem
-from investment_agent.execution.orders.tca import build_tca_report
 from investment_agent.trading.performance import build_attribution_report, make_trade_outcome
 from investment_agent.execution.orders.market_state import MarketState
 from investment_agent.trading.decision.contracts import Event, ExpectedReturnSignal
@@ -165,14 +164,14 @@ class NativeCoreTests(unittest.TestCase):
                 forward_end_at=end.isoformat(),
                 label_available_at=end.isoformat(),
                 feature_version="test-features-v1",
-                label_definition="forward_5d",
+                label_definition="excess_return_5d",
                 label=float(index) / 10.0,
             ))
         dataset = build_research_dataset(
             features,
             labels,
             feature_version="test-features-v1",
-            label_definition="forward_5d",
+            label_definition="excess_return_5d",
             label_cutoff_at="2026-08-20T00:00:00+00:00",
         )
         self.assertEqual(len(dataset.rows), 6)
@@ -188,16 +187,7 @@ class NativeCoreTests(unittest.TestCase):
         self.assertEqual(result.artifact.model_kind, "ridge")
         self.assertEqual(result.artifact.out_of_sample.sample_count, 2)
 
-    def test_tca_attribution_and_challenger_are_safe_contracts(self) -> None:
-        tca = build_tca_report(
-            ticker="AAPL", side="buy", decision_price=100.0,
-            arrival_price=100.1, fill_price=100.2, quantity=10.0,
-            bid=99.9, ask=100.1, mid=100.0, fees=1.0,
-            submitted_at="2026-08-27T09:00:00+00:00",
-            filled_at="2026-08-27T09:00:02+00:00",
-        )
-        self.assertAlmostEqual(tca.time_to_fill, 2.0)
-        self.assertAlmostEqual(tca.implementation_shortfall, tca.slippage + tca.delay_cost + tca.fees)
+    def test_attribution_and_challenger_are_safe_contracts(self) -> None:
         outcome = make_trade_outcome(
             ticker="AAPL", side="buy", entry_at=AS_OF,
             exit_at="2026-08-30T09:00:00+00:00", quantity=2.0,

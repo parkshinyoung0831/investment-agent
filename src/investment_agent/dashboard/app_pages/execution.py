@@ -1,17 +1,15 @@
-"""승인 이후 주문·체결·TCA·정산 상태를 읽기 전용으로 관측한다."""
+"""승인 이후 주문·체결·정산 상태를 읽기 전용으로 관측한다."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any
 
-import plotly.graph_objects as go
 import streamlit as st
 
 from investment_agent.dashboard.components.animated_pipeline import animated_pipeline
 from investment_agent.reporting.readers.dashboard import load_execution_data, load_performance_data
 from investment_agent.dashboard.components.execution_view import execution_summary, trace_for_intent
-from investment_agent.dashboard.components.theme import dashboard_palette, plotly_layout
 from investment_agent.dashboard.components.ui import (
     SOURCE_CALC,
     SOURCE_DB,
@@ -69,7 +67,6 @@ def _pipeline_steps(payload: Mapping[str, Any]) -> list[dict[str, str]]:
     approvals = _rows(payload, "approvals")
     orders = _rows(payload, "orders")
     fills = _rows(payload, "fills")
-    tca_rows = _rows(payload, "tca_reports")
     reconciliations = _rows(payload, "reconciliations")
     return [
         {
@@ -95,12 +92,6 @@ def _pipeline_steps(payload: Mapping[str, Any]) -> list[dict[str, str]]:
             "value": f"{len(fills)}건",
             "detail": "브로커가 확인한 체결만 별도 사실로 보존해요.",
             "status": "체결 있음" if fills else "체결 없음",
-        },
-        {
-            "title": "TCA",
-            "value": f"{len(tca_rows)}건",
-            "detail": "결정가·도착가·체결가의 비용을 같은 cost convention으로 계산해요.",
-            "status": "계산됨" if tca_rows else "미계산",
         },
         {
             "title": "Reconciliation",
@@ -174,7 +165,7 @@ with st.container(border=True):
 
 view = view_selector(
     "실행 관제 보기",
-    ("실행 흐름", "주문·체결", "TCA", "정산"),
+    ("실행 흐름", "주문·체결", "정산"),
     key="execution_adaptive_view",
     default="실행 흐름",
 )
@@ -237,13 +228,9 @@ if view == "실행 흐름":
                     ) or "—",
                 },
                 {
-                    "단계": "체결·TCA",
-                    "상태": f"체결 {len(trace['fills'])}건 · TCA {len(trace['tca_reports'])}건",
-                    "시각": format_time(
-                        trace["tca_reports"][0].get("created_at")
-                        if trace["tca_reports"]
-                        else trace["fills"][0].get("filled_at") if trace["fills"] else None
-                    ),
+                    "단계": "체결",
+                    "상태": f"체결 {len(trace['fills'])}건",
+                    "시각": format_time(trace["fills"][0].get("filled_at") if trace["fills"] else None),
                     "식별자": "—",
                 },
             ],
@@ -297,67 +284,6 @@ elif view == "주문·체결":
             ],
             key="execution_fills",
         )
-
-elif view == "TCA":
-    tca_rows = _rows(payload, "tca_reports")
-    with st.container(horizontal=True):
-        st.metric("TCA 보고서", f"{summary['tca_count']}건", border=True)
-        st.metric(
-            "총 Implementation shortfall",
-            display_money(summary["implementation_shortfall"]),
-            border=True,
-        )
-        st.metric(
-            "거래대금 대비 비용",
-            display_number(summary["implementation_shortfall_bps"], suffix=" bps"),
-            border=True,
-        )
-    if tca_rows:
-        colors = dashboard_palette()
-        figure = go.Figure(
-            go.Bar(
-                x=[str(row.get("ticker") or "—") for row in tca_rows],
-                y=[row.get("implementation_shortfall") for row in tca_rows],
-                marker_color=colors.primary,
-                customdata=[
-                    [
-                        row.get("source_kind") or "—",
-                        row.get("client_order_id") or "—",
-                    ]
-                    for row in tca_rows
-                ],
-                hovertemplate=(
-                    "%{x}<br>shortfall $%{y:,.2f}<br>%{customdata[0]} · "
-                    "%{customdata[1]}<extra></extra>"
-                ),
-            )
-        )
-        layout = plotly_layout(height=340)
-        layout["yaxis_title"] = "비용 (USD, 양수 cost convention)"
-        figure.update_layout(**layout)
-        st.plotly_chart(figure, width="stretch", config={"displaylogo": False})
-        dataframe(
-            [
-                {
-                    "종목": row.get("ticker"),
-                    "방향": "매수" if row.get("side") == "buy" else "매도",
-                    "결정가": row.get("decision_price"),
-                    "도착가": row.get("arrival_price"),
-                    "체결가": row.get("fill_price"),
-                    "스프레드 비용": row.get("spread_cost"),
-                    "Slippage": row.get("slippage"),
-                    "지연 비용": row.get("delay_cost"),
-                    "수수료": row.get("fees"),
-                    "총 Shortfall": row.get("implementation_shortfall"),
-                    "체결 시간": display_number(row.get("time_to_fill"), suffix="초"),
-                    "소스": row.get("source_kind"),
-                }
-                for row in tca_rows
-            ],
-            key="execution_tca",
-        )
-    else:
-        st.info("체결에 연결된 TCA 보고서가 아직 없어요.")
 
 else:
     reconciliations = _rows(payload, "reconciliations")

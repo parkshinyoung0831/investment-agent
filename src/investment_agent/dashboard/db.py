@@ -1116,7 +1116,6 @@ def load_execution_data() -> DataResult:
         "orders": [],
         "order_events": [],
         "fills": [],
-        "tca_reports": [],
         "reconciliations": [],
     }
     queries = {
@@ -1144,7 +1143,6 @@ def load_execution_data() -> DataResult:
             (payload["orders"], ("updated_at", "submitted_at")),
             (payload["order_events"], ("occurred_at",)),
             (payload["fills"], ("filled_at", "created_at")),
-            (payload["tca_reports"], ("created_at",)),
             (payload["reconciliations"], ("completed_at", "started_at")),
         )
     )
@@ -1981,6 +1979,7 @@ def load_system_portfolio_data() -> DataResult:
         model = build_system_portfolio_read_model(
             nav_rows=nav_rows, target_rows=target_rows, proposals=read_runtime_rows("portfolio_proposals"),
             account=account, performance_reports=performance_reports(),
+            approvals=read_runtime_rows("approvals"), orders=read_runtime_rows("orders"),
         )
     except Exception as error:
         return DataResult.error(source=source, message=public_exception_message("System Portfolio 조회에 실패했습니다.", error))

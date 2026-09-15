@@ -54,6 +54,8 @@ _ID_PATTERNS = {
     "approval_id": re.compile(r"^approval_[0-9a-f]{32}$"),
 }
 _MODULES = frozenset({
+    # Supabase 원본의 로컬 계산용 사본. 읽기만 하고 Supabase에 쓰지 않는다.
+    "investment_agent.data.market.commands.sync_local_mirror",
     # System Portfolio. 실계좌·승인 원장과 표가 다르고 주문을 내지 않는다.
     "investment_agent.operations.commands.system_portfolio",
     # 사건 기반 즉시 재분석. 결과는 보통의 signal batch이고 주문은 내지 않는다.
@@ -662,6 +664,15 @@ class ProductionInvestmentAdapters:
             self.timeouts.get("build_decision_experiences", 60 * 60),
         ), stop_event=context.stop_event)
         return StageOutcome.succeeded({"experiences_built_at": self.now().isoformat()})
+
+    def sync_local_mirror(self, context: StageContext) -> StageOutcome:
+        """Supabase 원본을 로컬 사본으로 증분 동기화한다. 7일마다 전체를 다시 받는다."""
+        self.command_runner.run(PythonModuleCommand(
+            "investment_agent.data.market.commands.sync_local_mirror",
+            (),
+            self.timeouts.get("sync_local_mirror", 60 * 60),
+        ), stop_event=context.stop_event)
+        return StageOutcome.succeeded({"local_mirror_synced_at": self.now().isoformat()})
 
     def run_system_portfolio(self, context: StageContext) -> StageOutcome:
         """승인 여부와 무관하게 System Portfolio를 평가하고 필요하면 목표비중을 다시 만든다."""

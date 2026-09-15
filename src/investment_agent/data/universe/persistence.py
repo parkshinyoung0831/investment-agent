@@ -19,8 +19,6 @@ SEC 거래소 목록은 "지금 무엇이 상장돼 있나"만 말한다. 그것
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
-import hashlib
-import json
 from collections import defaultdict
 from zoneinfo import ZoneInfo
 
@@ -35,6 +33,7 @@ from investment_agent.data.universe.repository import (
     UniverseRepository,
 )
 from investment_agent.platform.db.postgres import Database
+from investment_agent.data.universe.domain.memberships import membership_snapshots
 from investment_agent.data.universe.domain.models import MembershipSnapshot, Security
 
 log = get_logger(__name__)
@@ -81,6 +80,11 @@ def _security_to_row(security: Security) -> dict:
         "is_identity_verified": security.is_identity_verified,
         "is_tracked": security.is_tracked,
     }
+
+
+def select_all_security_rows() -> list[dict]:
+    """추적 여부와 무관한 전체 증권 행. 로컬 사본이 ticker 해석 규칙을 그대로 재현하는 데 쓴다."""
+    return _security_rows()
 
 
 def select_tracked_tickers() -> list[str]:
@@ -540,36 +544,27 @@ def apply_entity_results(results: list[dict]) -> int:
     return db.upsert(schema=SCHEMA, table=T_ENTITIES, rows=payload, on_conflict="cik")
 
 
-def select_sp500_membership_snapshots(*, start_date: date, end_date: date) -> list[dict]:
-    if end_date < start_date:
-        raise ValueError("historical membership end_date must not precede start_date")
+def select_sp500_membership_rows() -> list[dict]:
+    """S&P 500 멤버십 구간 행 전체. 로컬 사본이 같은 규칙으로 스냅샷을 만들 수 있게 ticker를 펼쳐 둔다."""
     db = _db()
     rows = db.select_paged(
         lambda: db.table(SCHEMA, T_MEMBERSHIPS).select(
             "security_id,valid_from,valid_to,source,source_hash,securities(ticker)"
-        ).eq("index_code", INDEX_SP500).lte("valid_from", end_date.isoformat()),
+        ).eq("index_code", INDEX_SP500),
         order_by="valid_from,security_id",
     )
-    boundaries = {start_date.isoformat()}
-    boundaries.update(str(value) for row in rows for value in (row["valid_from"], row.get("valid_to"))
-                      if value and start_date.isoformat() < str(value) <= end_date.isoformat())
-    result = []
-    for boundary in sorted(boundaries):
-        active = [row for row in rows if str(row["valid_from"]) <= boundary and (not row.get("valid_to") or boundary < str(row["valid_to"]))]
-        ids = sorted(int(row["security_id"]) for row in active)
-        tickers = sorted({str((row.get(T_SECURITIES) or {}).get("ticker") or "").upper() for row in active})
-        if "" in tickers or len(ids) != len(set(ids)) or len(tickers) != len(ids) or not 450 <= len(ids) <= 520:
-            raise RuntimeError("point-in-time S&P 500 membership is unavailable or inconsistent")
-        digest = hashlib.sha256(json.dumps({"date": boundary, "security_ids": ids}, sort_keys=True).encode()).hexdigest()
-        result.append({
-            "effective_date": boundary,
-            "symbols": tickers,
-            "security_ids": ids,
-            "member_count": len(tickers),
-            "source": "universe.index_memberships",
-            "source_hash": digest,
-        })
-    return result
+    return [
+        {"security_id": int(row["security_id"]), "valid_from": str(row["valid_from"]),
+         "valid_to": str(row["valid_to"]) if row.get("valid_to") else None,
+         "ticker": str((row.get(T_SECURITIES) or {}).get("ticker") or "").upper()}
+        for row in rows
+    ]
+
+
+def select_sp500_membership_snapshots(*, start_date: date, end_date: date) -> list[dict]:
+    if end_date < start_date:
+        raise ValueError("historical membership end_date must not precede start_date")
+    return membership_snapshots(select_sp500_membership_rows(), start_date=start_date, end_date=end_date)
 
 
 __all__ = [

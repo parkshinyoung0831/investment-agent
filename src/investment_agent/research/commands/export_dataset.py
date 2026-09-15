@@ -28,6 +28,7 @@ from investment_agent.research.features.layer import (
 from investment_agent.research.rl.contracts import FeatureSnapshot
 from investment_agent.research.datasets import build_research_dataset
 from investment_agent.research.datasets.universe import members_over_window
+from investment_agent.research.training.baseline import EXCESS_LABEL_PREFIX
 
 log = get_logger(__name__)
 
@@ -127,7 +128,8 @@ def export_dataset(
                 "provenance": dict(snapshot.provenance),
             })
 
-    definition = f"forward_return_{horizon_days}d"
+    # 학습 target은 SPY 대비 초과수익이다. 서빙이 예측을 기대초과수익으로 쓰므로 원수익률을 넣지 않는다.
+    definition = f"{EXCESS_LABEL_PREFIX}{horizon_days}d"
     kept = {(row["as_of_at"], row["ticker"]) for row in feature_payload}
     label_payload = [
         {
@@ -137,7 +139,7 @@ def export_dataset(
             "label_available_at": str(row["label_available_at"]),
             "feature_version": str(row["feature_version"]),
             "label_definition": definition,
-            "label": float(row["forward_return"]),
+            "label": float(row["forward_return"]) - float(row["benchmark_forward_return"]),
             "benchmark_label": float(row["benchmark_forward_return"]),
         }
         for row in label_rows

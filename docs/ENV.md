@@ -38,6 +38,7 @@ Actions secrets/variables(CI)에 주입하며, 이 파일에는 이름·용도·
 | `AI_INVESTOR_LOCAL_ARTIFACT_ROOT` | 모델·evidence·broker·report artifact 루트. 기본 `data/local/artifacts` |
 | `INVESTMENT_AGENT_RESEARCH_ROOT` | Research DuckDB·Parquet 루트. 기본 `data/local/research` |
 | `AI_INVESTOR_RUNTIME_DB_PATH` | Runtime SQLite 경로. 기본 `data/local/runtime/runtime.sqlite3` |
+| `AI_INVESTOR_LOCAL_MIRROR_ROOT` | Supabase 원본의 로컬 계산용 사본(`data/market/local_mirror`) 루트. 기본 `data/local/mirror`; 사본이 없거나 오래되면 판단 경로가 Supabase로 돌아간다 |
 | `AI_INVESTOR_MARKET_CHANGE_MANIFEST_PATH` | Market 변경 manifest 경로. 기본 `data/local/artifacts/market_change_manifest.json` |
 | `INVESTMENT_AGENT_MARKET_ARCHIVE_DIR` | Yahoo 원본 daily Parquet archive의 **영속** 루트. 기본 `artifacts/market_history`; CI에서는 runner 밖의 영속 볼륨을 지정한다 |
 | `GURUS_SHADOW_PARSER` | `on`이면 edgartools로 13F를 다시 파싱해 직접 파서 결과와 사후 대조한다. 불일치는 JSON 로그와 Discord 시스템 로그로 진단하며, 기본 off·운영 적재는 항상 직접 파서다 |
@@ -70,7 +71,6 @@ Actions secrets/variables(CI)에 주입하며, 이 파일에는 이름·용도·
 | `AI_INVESTOR_INTELLIGENCE_PARQUET_ROOT` | Intelligence 뉴스·소셜 본문 Parquet 루트 (기본 `data/local/intelligence/parquet`) |
 | `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` / `REDDIT_USER_AGENT` | Reddit 수집 자격증명. 없으면 소셜 수집을 건너뛴다 |
 | `AI_INVESTOR_ARTIFACT_DIR` | TradingAgents cache/report와 선택적 raw 저장 루트 |
-| `AI_INVESTOR_ML_FUSION_ENABLED` | 채택된 ML 모델(`adopt_ml_model`로 올린 `active_ml_model.json`)의 예측을 TradingAgents 의견과 **실제로 합칠지**. 미설정은 켜짐 — 채택 파일을 두는 것이 사람의 결정이고, OOS IC가 유의하지 않으면 스스로 합치지 않는다. `false`면 비교만 로그로 남긴다 |
 | `LIVE_ENABLED` | broker-independent live opt-in. DB durable control/permit와 AND 결합, 기본 `false` |
 | `TOSS_CLIENT_ID`, `TOSS_CLIENT_SECRET`, `TOSS_ACCOUNT_SEQ` | 허용 IP가 등록된 execution 전용 장비. 분석·학습 환경에는 주입 금지 |
 | `TOSS_LIVE_ENABLED` | Toss 주문 생성 전역 opt-in. 기본 `false`; 모델 승격이나 서비스 설치가 자동으로 바꾸지 않음 |

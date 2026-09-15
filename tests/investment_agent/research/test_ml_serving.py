@@ -9,14 +9,14 @@ from pathlib import Path
 import numpy as np
 
 from investment_agent.research.ml_inference import load_model
-from investment_agent.research.ml_serving import compute_ml_fusion, latest_cross_section
-from investment_agent.trading.portfolio.contracts import SecurityProposal
+from investment_agent.research.ml_serving import champion_forecast, latest_cross_section
 
 AS_OF = datetime(2026, 9, 14, 14, 0, tzinfo=timezone.utc)
 FEATURE_DAY = AS_OF - timedelta(hours=20)
 
 
-def _artifact(*, mean_ic: float, t_stat: float, coefficient: float = 0.01, horizon: int = 20) -> dict:
+def _artifact(*, mean_ic: float, t_stat: float, coefficient: float = 0.01, horizon: int = 20,
+              label: str = "excess_return_20d") -> dict:
     return {
         "artifact": {
             "artifact_id": "model_test", "model_kind": "ridge", "feature_version": "pit-test",
@@ -25,14 +25,8 @@ def _artifact(*, mean_ic: float, t_stat: float, coefficient: float = 0.01, horiz
         "model_state": {"coefficients": [coefficient], "intercept": 0.0},
         "feature_names": ["evidence_domain_count"],
         "out_of_sample_alpha": {"mean_ic": mean_ic, "ic_t_stat": t_stat},
+        "dataset_manifest": {"label_definition": label},
     }
-
-
-def _proposal(ticker: str, signal: str, expected: float) -> SecurityProposal:
-    return SecurityProposal(
-        ticker=ticker, as_of_at=AS_OF.isoformat(), signal=signal, probability_up=0.55, confidence=0.6,
-        expected_excess_return=expected, target_weight=0.0, reasoning=("llm",), evidence_ids=("EV-1",),
-    )
 
 
 class FakeRepository:
@@ -55,7 +49,7 @@ def _row(ticker: str, value: float, *, as_of: datetime = FEATURE_DAY, available:
     }
 
 
-class MlServingTest(unittest.TestCase):
+class ChampionForecastTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -65,70 +59,41 @@ class MlServingTest(unittest.TestCase):
     def write(self, payload):
         self.path.write_text(json.dumps(payload), encoding="utf-8")
 
-    def test_without_an_adopted_model_the_proposals_are_unchanged(self):
-        proposals = [_proposal("AAPL", "open", 0.01)]
-        fused, outcome = compute_ml_fusion(self.repository, proposals, as_of_at=AS_OF, model_path=self.path)
-        self.assertEqual(fused, proposals)
-        self.assertFalse(outcome.applied)
+    def forecast(self, tickers=("AAPL", "MSFT")):
+        return champion_forecast(self.repository, tickers, as_of_at=AS_OF, model_path=self.path)
+
+    def test_without_an_adopted_model_there_is_no_forecast(self):
+        outcome = self.forecast()
+        self.assertFalse(outcome.is_available)
         self.assertIn("no adopted", outcome.reason)
 
-    def test_insignificant_ic_is_never_fused(self):
+    def test_insignificant_ic_is_never_used(self):
         self.write(_artifact(mean_ic=0.04, t_stat=1.2))
-        proposals = [_proposal("AAPL", "open", 0.01)]
-        fused, outcome = compute_ml_fusion(self.repository, proposals, as_of_at=AS_OF, model_path=self.path)
-        self.assertEqual(fused, proposals)
+        outcome = self.forecast()
+        self.assertFalse(outcome.is_available)
         self.assertIn("significant", outcome.reason)
 
-    def test_significant_model_moves_expected_return_but_keeps_the_action(self):
-        self.write(_artifact(mean_ic=0.05, t_stat=3.0))
-        proposals = [_proposal("AAPL", "open", 0.0), _proposal("MSFT", "exit", 0.0)]
-        fused, outcome = compute_ml_fusion(
-            self.repository, proposals, as_of_at=AS_OF, model_path=self.path, enabled=True,
-        )
-        self.assertTrue(outcome.applied)
-        by_ticker = {item.ticker: item for item in fused}
-        # ML은 AAPL +8% (0.01×8), MSFT -8%를 예측한다.
-        self.assertGreater(by_ticker["AAPL"].expected_excess_return, 0.0)
-        self.assertLess(by_ticker["MSFT"].expected_excess_return, 0.0)
-        self.assertEqual(by_ticker["MSFT"].signal, "exit")
-        self.assertEqual(set(outcome.contributions["AAPL"]), {"numeric", "tradingagents"})
-
-    def test_ml_share_is_the_oos_confidence_not_a_fixed_constant(self):
-        """IC 0.03(신뢰도 0.3)이면 ML 몫 30%, TradingAgents 몫 70%다."""
+    def test_significant_model_predicts_excess_returns_with_its_oos_confidence(self):
         self.write(_artifact(mean_ic=0.03, t_stat=3.0))
-        fused, outcome = compute_ml_fusion(
-            self.repository, [_proposal("AAPL", "open", 0.02)], as_of_at=AS_OF, model_path=self.path, enabled=True,
-        )
-        # ML 예측 = 0.01 × 8 = 0.08
-        self.assertAlmostEqual(fused[0].expected_excess_return, 0.7 * 0.02 + 0.3 * 0.08)
-        self.assertAlmostEqual(outcome.contributions["AAPL"]["numeric"], 0.3)
+        outcome = self.forecast()
+        self.assertTrue(outcome.is_available)
+        self.assertAlmostEqual(outcome.confidence, 0.3)
+        # 계수 0.01 × feature 8 = +8%, -8%
+        self.assertAlmostEqual(outcome.expected_excess_returns["AAPL"], 0.08)
+        self.assertAlmostEqual(outcome.expected_excess_returns["MSFT"], -0.08)
+        self.assertEqual(outcome.model_artifact_id, "model_test")
+
+    def test_model_trained_on_raw_returns_is_refused(self):
+        self.write(_artifact(mean_ic=0.05, t_stat=3.0, label="forward_return_20d"))
+        outcome = self.forecast()
+        self.assertFalse(outcome.is_available)
+        self.assertIn("excess return", outcome.reason)
 
     def test_model_trained_on_another_horizon_is_not_scaled_into_the_signal(self):
-        self.write(_artifact(mean_ic=0.05, t_stat=3.0, horizon=5))
-        proposals = [_proposal("AAPL", "open", 0.01)]
-        fused, outcome = compute_ml_fusion(
-            self.repository, proposals, as_of_at=AS_OF, model_path=self.path, enabled=True,
-        )
-        self.assertEqual(fused, proposals)
+        self.write(_artifact(mean_ic=0.05, t_stat=3.0, horizon=5, label="excess_return_5d"))
+        outcome = self.forecast()
+        self.assertFalse(outcome.is_available)
         self.assertIn("horizon", outcome.reason)
-
-    def test_ml_cannot_lift_a_negative_opinion_above_zero(self):
-        self.write(_artifact(mean_ic=0.08, t_stat=4.0))
-        fused, _ = compute_ml_fusion(
-            self.repository, [_proposal("AAPL", "exit", -0.01)], as_of_at=AS_OF, model_path=self.path, enabled=True,
-        )
-        self.assertLessEqual(fused[0].expected_excess_return, 0.0)
-
-    def test_disabled_flag_records_the_comparison_without_applying(self):
-        self.write(_artifact(mean_ic=0.05, t_stat=3.0))
-        proposals = [_proposal("AAPL", "open", 0.0)]
-        fused, outcome = compute_ml_fusion(
-            self.repository, proposals, as_of_at=AS_OF, model_path=self.path, enabled=False,
-        )
-        self.assertEqual(fused, proposals)
-        self.assertTrue(outcome.available)
-        self.assertFalse(outcome.applied)
-        self.assertNotEqual(outcome.fused_expected_returns["AAPL"], 0.0)
 
     def test_cross_section_uses_one_date_and_ignores_unpublished_rows(self):
         rows = [
@@ -157,12 +122,21 @@ class SignalHorizonContractTest(unittest.TestCase):
         for field in ("expected_excess_return", "probability_up"):
             self.assertIn(f"{SIGNAL_HORIZON_DAYS} trading days", SECURITY_PROPOSAL_SCHEMA[field])
 
-    def test_training_refuses_a_horizon_that_contradicts_the_labels(self):
+    def test_llm_schema_asks_for_a_thesis_not_a_trade(self):
+        from investment_agent.trading.decision.llm.agents.tradingagents_adapter import SECURITY_PROPOSAL_SCHEMA
+
+        self.assertNotIn("signal", SECURITY_PROPOSAL_SCHEMA)
+        self.assertNotIn("target_weight", SECURITY_PROPOSAL_SCHEMA)
+        for field in ("thesis", "hard_constraint", "key_risks"):
+            self.assertIn(field, SECURITY_PROPOSAL_SCHEMA)
+
+    def test_training_refuses_labels_that_are_not_excess_returns(self):
         from investment_agent.research.training.baseline import label_horizon_days
 
-        self.assertEqual(label_horizon_days("forward_return_20d"), 20)
-        with self.assertRaises(ValueError):
-            label_horizon_days("excess_return")
+        self.assertEqual(label_horizon_days("excess_return_20d"), 20)
+        for invalid in ("excess_return", "forward_return_20d"):
+            with self.assertRaises(ValueError):
+                label_horizon_days(invalid)
 
 
 class TrainingRecordsAlphaTest(unittest.TestCase):
@@ -186,11 +160,11 @@ class TrainingRecordsAlphaTest(unittest.TestCase):
                     "ticker": ticker, "as_of_at": as_of,
                     "forward_end_at": (start + timedelta(days=day + 7)).isoformat(),
                     "label_available_at": (start + timedelta(days=day + 7)).isoformat(),
-                    "feature_version": "pit-test", "label_definition": "forward_return_20d",
+                    "feature_version": "pit-test", "label_definition": "excess_return_20d",
                     "label": 0.02 * signal + float(rng.normal(0, 0.01)), "benchmark_label": 0.0,
                 })
         dataset = build_research_dataset(
-            features, labels, feature_version="pit-test", label_definition="forward_return_20d",
+            features, labels, feature_version="pit-test", label_definition="excess_return_20d",
             label_cutoff_at=(start + timedelta(days=60)).isoformat(), feature_names=["x"],
         )
         rows = len(dataset.rows)

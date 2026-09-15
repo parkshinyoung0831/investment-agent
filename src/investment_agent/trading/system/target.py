@@ -5,9 +5,13 @@ System의 목표비중은 같아야 System 성과가 "프로그램을 100% 따�
 
 ```
 현재 System 비중 ┐
-factor 횡단면     ├→ ALPHA(기대수익·제약) → 위험예산 → optimizer → no-trade band → RiskGate → 목표비중
-최신 논지          ┘
+factor 횡단면     │
+champion ML 예측  ├→ ALPHA(기대초과수익·confidence·제약) → 위험예산 → optimizer → no-trade band
+최신 논지          ┘                                        → 꼬리위험 축소 → RiskGate → 목표비중
 ```
+
+- 꼬리위험(5일 CVaR95)·변동성이 한도를 넘으면 목표를 버리지 않고 위험자산 전체를 같은 비율로 줄여 현금을
+  늘린다. 어떤 종목을 담을지는 바꾸지 않는다.
 
 - 공분산·비용·베타·스트레스 재료가 없으면 `ContractError`다. 모르는 채 기본값으로 목표를 만들면 실계좌가
   할 수 없는 판단이 System 성과에 섞인다. 엔진은 그날 목표를 갱신하지 않고 이전 목표를 유지한다.
@@ -22,6 +26,7 @@ from typing import Any, Mapping, Sequence
 
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.serialization import stable_id
+from investment_agent.research.ml_serving import NO_FORECAST, ChampionForecast
 from investment_agent.trading.contracts import ContractError
 from investment_agent.trading.decision.alpha import AlphaPlan, AlphaPolicy, alpha_universe, expected_return_signals
 from investment_agent.trading.decision.constants import SIGNAL_HORIZON_DAYS
@@ -43,11 +48,12 @@ from investment_agent.trading.portfolio.optimizer import (
 )
 from investment_agent.trading.risk.budget import BENCHMARK_SYMBOL, risk_budget
 from investment_agent.trading.risk.gate import DeterministicRiskGate, PortfolioRiskPolicy
+from investment_agent.trading.risk.regime_budget import DEFAULT_MARKET_RISK_POLICY, MarketRiskPolicy
 from investment_agent.trading.risk.stress import STRESS_PROXIES, scenario_sensitivities
 
 log = get_logger(__name__)
 
-SYSTEM_TARGET_VERSION = "system-target-v1"
+SYSTEM_TARGET_VERSION = "system-target-v2"
 _PRICE_ROWS = 260
 _WEIGHT_EPSILON = 1e-6
 
@@ -65,17 +71,21 @@ class SystemPortfolioPolicy:
     min_quality_exposure: float = 0.55
     max_momentum_exposure: float = 0.80
     max_value_exposure: float = 0.80
-    # 시장충격·ADV 참여 한도를 계산할 기준 규모(USD). 따라가는 실계좌 규모에 맞춘다.
-    reference_portfolio_value: float = 5_000.0
+    # 5거래일 역사적 CVaR95 상한. 넘으면 위험자산 전체를 줄인다. 연구에서 0.05~0.12를 비교할 정책값이다.
+    max_cvar_95_5d: float = 0.08
+    market_risk_policy: MarketRiskPolicy = DEFAULT_MARKET_RISK_POLICY
+    # Ablation 스위치. 운영 기본값은 둘 다 켜짐이다.
+    use_tail_risk: bool = True
+    use_market_risk: bool = True
 
     def __post_init__(self) -> None:
         if not 0 <= self.no_trade_band < 0.2 or self.rebalance_days < 1:
             raise ValueError("no_trade_band must be in [0, 0.2) and rebalance_days positive")
-        if not math.isfinite(self.reference_portfolio_value) or self.reference_portfolio_value <= 0:
-            raise ValueError("reference_portfolio_value must be positive")
+        if not 0 < self.max_cvar_95_5d <= 1:
+            raise ValueError("max_cvar_95_5d must be in (0, 1]")
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        return {**asdict(self), "market_risk_policy": self.market_risk_policy.to_dict()}
 
     def exposure_limits(self, scores: Mapping[str, Any]) -> dict[str, FactorExposureLimit]:
         def loadings(category: str) -> dict[str, float]:
@@ -190,6 +200,62 @@ def _price_rows(repository: Any, symbols: Sequence[str], as_of_at: datetime) -> 
     return {symbol: repository.market_prices(symbol, as_of_at, limit=_PRICE_ROWS) for symbol in symbols}
 
 
+# 한도에 딱 맞추면 부동소수 오차로 게이트가 다시 거절한다. 조금 더 줄인다.
+_TAIL_SCALE_MARGIN = 0.99
+_TAIL_FIT_ITERATIONS = 3
+
+
+def scale_risky_weights(weights: Mapping[str, float], scale: float) -> dict[str, float]:
+    """위험자산 비중을 같은 비율로 줄이고 나머지를 현금으로 둔다."""
+    scaled = {symbol: float(weight) * scale for symbol, weight in weights.items() if symbol != CASH_SYMBOL and weight > 0}
+    scaled[CASH_SYMBOL] = max(0.0, 1.0 - math.fsum(scaled.values()))
+    return scaled
+
+
+def fit_tail_risk(
+    weights: Mapping[str, float],
+    rows: Mapping[str, list[dict]],
+    *,
+    max_volatility: float,
+    max_cvar_95_5d: float,
+) -> tuple[dict[str, float], dict[str, Any]]:
+    """변동성·5일 CVaR95가 한도 안에 들 때까지 위험자산 전체 비중을 줄인다.
+
+    종목 선택과 종목 사이 비율은 그대로 두고 현금만 늘린다. 두 지표 모두 위험자산 비중에 거의 비례하므로
+    몇 번이면 수렴한다. 한도를 넘는 판단을 통째로 버리면 위험을 줄여야 할 날 목표가 갱신되지 않는다.
+    """
+    current = dict(weights)
+    symbols = sorted(symbol for symbol, weight in current.items() if symbol != CASH_SYMBOL and weight > 0)
+    if not symbols:
+        return current, {"scale": 1.0}
+    subset = {symbol: rows[symbol] for symbol in (*symbols, BENCHMARK_SYMBOL)}
+    before = calculate_market_risk(subset, target_weights=current)
+    total_scale = 1.0
+    metrics = before
+    for _ in range(_TAIL_FIT_ITERATIONS):
+        ratios = [1.0]
+        if metrics.portfolio_volatility > max_volatility > 0:
+            ratios.append(max_volatility / metrics.portfolio_volatility)
+        if metrics.historical_cvar_95_5d is not None and metrics.historical_cvar_95_5d > max_cvar_95_5d:
+            ratios.append(max_cvar_95_5d / metrics.historical_cvar_95_5d)
+        scale = min(ratios)
+        if scale >= 1.0:
+            break
+        scale *= _TAIL_SCALE_MARGIN
+        current = scale_risky_weights(current, scale)
+        total_scale *= scale
+        metrics = calculate_market_risk(subset, target_weights=current)
+    return current, {
+        "scale": round(total_scale, 6),
+        "volatility_before": before.portfolio_volatility,
+        "cvar_95_5d_before": before.historical_cvar_95_5d,
+        "volatility_after": metrics.portfolio_volatility,
+        "cvar_95_5d_after": metrics.historical_cvar_95_5d,
+        "max_volatility": max_volatility,
+        "max_cvar_95_5d": max_cvar_95_5d,
+    }
+
+
 def _optimizer_policy_for(risk_policy: PortfolioRiskPolicy, *, fixed_weight: float) -> OptimizerPolicy:
     """optimizer에 같은 한도를 넘긴다. 최소 현금은 고정된 보유가 허용하는 만큼만 요구한다.
 
@@ -255,6 +321,7 @@ def build_system_target(
     views: Mapping[str, Any],
     alpha_policy: AlphaPolicy | None = None,
     policy: SystemPortfolioPolicy | None = None,
+    ml_forecast: ChampionForecast = NO_FORECAST,
 ) -> SystemTarget:
     """System 현재 비중 하나에 대해 목표비중과 RiskDecision을 만든다. 아무것도 저장하지 않는다."""
     alpha = alpha_policy or AlphaPolicy()
@@ -269,22 +336,28 @@ def build_system_target(
     sigma = {symbol: math.sqrt(max(0.0, covariance.matrix[index][index]))
              for index, symbol in enumerate(covariance.symbols)}
     plan = expected_return_signals(scores, sigma_by_symbol=sigma, held_symbols=held, views=views,
-                                   as_of_at=as_of_at, policy=alpha)
+                                   as_of_at=as_of_at, policy=alpha,
+                                   ml_expected_returns=ml_forecast.expected_excess_returns,
+                                   ml_confidence=ml_forecast.confidence if ml_forecast.is_available else 0.0)
     if not plan.signals:
         raise ContractError("system target has no alpha signals")
     signal_symbols = tuple(signal.symbol for signal in plan.signals)
     index = {symbol: position for position, symbol in enumerate(covariance.symbols)}
     matrix = [[covariance.matrix[index[row]][index[column]] for column in signal_symbols] for row in signal_symbols]
     trading_costs = estimate_trading_costs({symbol: rows[symbol] for symbol in signal_symbols}, symbols=signal_symbols)
-    risk_policy, regime_metadata = risk_budget(repository, as_of_at=as_of_at)
+    # 꼬리위험 스위치가 꺼진 연구 재현에서는 CVaR 한도를 사실상 두지 않는다.
+    base_risk_policy = replace(PortfolioRiskPolicy(), max_cvar_95_5d=selected.max_cvar_95_5d if selected.use_tail_risk else 1.0)
+    risk_policy, regime_metadata = risk_budget(
+        repository, as_of_at=as_of_at, base_policy=base_risk_policy,
+        market_policy=selected.market_risk_policy, use_market_risk=selected.use_market_risk,
+    )
     fixed = {symbol: current[symbol] for symbol in plan.fixed_symbols}
     optimizer_policy = _optimizer_policy_for(risk_policy, fixed_weight=math.fsum(fixed.values()))
     betas = estimate_betas({symbol: rows[symbol] for symbol in (*signal_symbols, *fixed, BENCHMARK_SYMBOL)},
                            symbols=tuple(sorted({*signal_symbols, *fixed})))
     optimizer_inputs = dict(
         current_weights=current, covariance=matrix, sector_by_symbol=repository.sp500_sector_map(list(universe)),
-        fixed_weights=fixed, trading_costs=trading_costs, portfolio_value=selected.reference_portfolio_value,
-        betas=betas,
+        fixed_weights=fixed, trading_costs=trading_costs, betas=betas,
     )
     exposure_limits_relaxed = None
     try:
@@ -298,12 +371,20 @@ def build_system_target(
         exposure_limits_relaxed = str(exc)
         result = RiskAwareOptimizer(optimizer_policy).optimize(plan.signals, **optimizer_inputs)
     weights, banded = apply_no_trade_band(result.weights, current, band=selected.no_trade_band)
+    tail_risk: dict[str, Any] = {"scale": 1.0, "enabled": selected.use_tail_risk}
+    if selected.use_tail_risk:
+        missing = sorted(symbol for symbol, weight in weights.items()
+                         if symbol != CASH_SYMBOL and weight > 0 and symbol not in rows)
+        weights, fitted = fit_tail_risk(weights, {**rows, **_price_rows(repository, missing, as_of_at)},
+                                        max_volatility=risk_policy.max_portfolio_volatility,
+                                        max_cvar_95_5d=risk_policy.cvar_95_5d_limit)
+        tail_risk.update(fitted)
     proposal = PortfolioProposal.create(
         run_id=run_id, source_type="optimizer", source_version=selected.version, stage="shadow",
         as_of_at=as_of_at.isoformat(), weights=weights, confidence=1.0,
         reasoning=(
-            "factor 종합 점수로 기대수익(IC×σ×z)을 만들고 TradingAgents 논지는 거부권·소폭 조정으로만 반영",
-            "cvxpy optimizer가 비중을 정하고 no-trade band 안의 조정은 생략",
+            "factor 사전값(IC×σ×z)과 champion ML 예측으로 기대초과수익을 만들고 TradingAgents 논지는 거부권·소폭 조정으로만 반영",
+            "cvxpy optimizer가 비중을 정하고 no-trade band 안의 조정은 생략, 꼬리위험 초과분은 현금으로",
         ),
         model_artifact_id=model_artifact_id,
         metadata={
@@ -320,6 +401,8 @@ def build_system_target(
                 capped_expected_returns=result.capped_expected_returns or {},
             ),
             "no_trade_band_kept": banded,
+            "tail_risk": tail_risk,
+            "ml_forecast": ml_forecast.to_metadata(),
             "exposure_limits_relaxed": exposure_limits_relaxed,
             "optimizer": {
                 "policy_hash": optimizer_policy.hash, "input_hash": result.input_hash,
@@ -337,13 +420,14 @@ def build_system_target(
 
 
 def system_model_artifact(*, alpha_policy: AlphaPolicy, policy: SystemPortfolioPolicy,
-                          view_artifact_ids: Sequence[str]) -> dict[str, Any]:
+                          view_artifact_ids: Sequence[str], ml_artifact_id: str | None = None) -> dict[str, Any]:
     """System 목표를 만든 조합의 정체성. 모델·규칙이 바뀌면 새 artifact가 되고, 실계좌 추종은 그 승격을 요구한다."""
     params = {
         "system_version": policy.version,
         "alpha_policy": alpha_policy.to_dict(),
         "system_policy": policy.to_dict(),
         "thesis_model_artifact_ids": sorted(set(view_artifact_ids)),
+        "champion_ml_artifact_id": ml_artifact_id,
     }
     return {"artifact_id": stable_id("artifact", params), "params": params}
 
@@ -359,7 +443,9 @@ __all__ = [
     "SystemTarget",
     "apply_no_trade_band",
     "build_system_target",
+    "fit_tail_risk",
     "gate_target",
+    "scale_risky_weights",
     "system_model_artifact",
     "trade_reasons",
 ]

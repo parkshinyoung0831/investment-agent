@@ -98,6 +98,12 @@ def _account_values(account: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+_TRIGGER_LABELS = {
+    "initial": "첫 목표",
+    "scheduled": "새 factor 횡단면 · 재조정 주기 도래",
+    "broken_thesis": "보유 종목 논지 붕괴(주기를 기다리지 않음)",
+}
+
 _REASON_LABELS = {
     "HARD_RISK_LIMIT": "위험 한도 준수",
     "THESIS_EXIT": "논지 붕괴로 청산",
@@ -143,16 +149,20 @@ def _render_system_portfolio(model: dict[str, Any], observed_at: Any) -> None:
                                     line={"color": MUTED, "width": 2}))
         figure.update_layout(**plotly_layout(height=320), title="System Portfolio와 SPY · 시작 100 기준")
         st.plotly_chart(figure, width="stretch", config={"displaylogo": False})
-    weights = sorted(((symbol, weight) for symbol, weight in (system.get("current_weights") or {}).items()
-                      if symbol != "CASH" and weight > 0), key=lambda item: -item[1])
+    rows = sorted(system.get("weights_table") or [],
+                  key=lambda row: (row["ticker"] == "CASH", -max(row["target_weight"], row["current_weight"])))
     left, right = st.columns(2, gap="medium")
     with left:
-        st.markdown("**현재 비중**")
-        dataframe([{"종목": symbol, "비중": display_percent(weight)} for symbol, weight in weights],
+        st.markdown("**목표비중 · 현재비중**")
+        dataframe([{"종목": "현금" if row["ticker"] == "CASH" else row["ticker"],
+                    "목표": display_percent(row["target_weight"]),
+                    "현재(가격 drift 반영)": display_percent(row["current_weight"])}
+                   for row in rows if row["target_weight"] > 0 or row["current_weight"] > 0],
                   key="system_portfolio_weights")
     with right:
         target = system.get("latest_target") or {}
-        st.markdown(f"**최근 목표 변경 이유** · {str(target.get('decided_at') or '—')[:16]}")
+        trigger = _TRIGGER_LABELS.get(str(system.get("rebalance_trigger")), "기록 없음")
+        st.markdown(f"**최근 리밸런싱** · {str(target.get('decided_at') or '—')[:16]} · {trigger}")
         reasons = sorted((system.get("trade_reasons") or {}).items(),
                          key=lambda item: -abs(float(item[1].get("target_weight") or 0) - float(item[1].get("current_weight") or 0)))
         dataframe([{"종목": symbol, "이전": display_percent(row.get("current_weight")),
@@ -164,12 +174,17 @@ def _render_system_portfolio(model: dict[str, Any], observed_at: Any) -> None:
 
 def _render_my_comparison(model: dict[str, Any]) -> None:
     mine = model.get("my") or {}
+    state = st.columns(2, gap="small")
+    with state[0]:
+        st.metric("승인 대기", f"{int(mine.get('pending_approval_count') or 0)}건", border=True)
+    with state[1]:
+        st.metric("미체결 주문", f"{int(mine.get('open_order_count') or 0)}건", border=True)
     if not mine.get("available"):
-        st.caption("계좌 스냅샷이 저장되면 System 대비 차이를 표시해요.")
+        st.caption("계좌 스냅샷이 저장되면 System 목표 대비 차이를 표시해요.")
         return
     columns = st.columns(3, gap="small")
     with columns[0]:
-        st.metric("System을 따라간 정도", display_percent(mine.get("follow_ratio")), border=True)
+        st.metric("System 목표를 따라간 정도", display_percent(mine.get("follow_ratio")), border=True)
     with columns[1]:
         st.metric("실제 수익률", display_percent(mine.get("my_return"), signed=True), border=True)
     with columns[2]:
@@ -179,8 +194,8 @@ def _render_my_comparison(model: dict[str, Any]) -> None:
     else:
         st.caption("입출금 기록이 확인된 시간가중 수익률이 쌓이면 System과의 성과 차이를 계산해요.")
     rows = sorted(mine.get("differences") or [], key=lambda row: -abs(float(row.get("gap") or 0)))
-    dataframe([{"종목": row["ticker"], "System": display_percent(row["system_weight"]),
-                "My": display_percent(row["my_weight"]), "차이": display_percent(row["gap"], signed=True)}
+    dataframe([{"종목": row["ticker"], "System 목표": display_percent(row["system_weight"]),
+                "실제": display_percent(row["my_weight"]), "차이": display_percent(row["gap"], signed=True)}
                for row in rows], key="my_portfolio_differences")
 
 

@@ -75,19 +75,23 @@ def render_dsr_gauge(probability: float) -> go.Figure:
 def show() -> None:
     """대시보드 페이지 렌더링."""
     st.title("AI & 강화학습(RL) 자율진화 관제 센터")
-    st.caption("하네스 7대 전자동 잡의 실제 가동 상태와 PPO 자율 재학습 엔진의 실제 승격 결과를 모니터링합니다.")
+    st.caption("하네스 잡의 실제 가동 상태와 PPO 연구 후보의 검증 결과를 봅니다. RL은 연구 후보이며 System·실계좌 비중을 바꾸지 않습니다.")
 
-    # 1. 하네스 7대 전자동 잡 실제 관제판
-    st.subheader("1. 하네스 7대 전자동 잡 파이프라인")
+    # 1. 하네스 잡 관제판
+    st.subheader("1. 하네스 잡 파이프라인")
     harness_res = read_harness_state()
     harness_state = result_payload(harness_res, default={}) or {}
     jobs = harness_state.get("jobs", {})
 
     job_specs = [
-        ("scheduled_analysis", "종목 발굴 및 AI 분석", "24시간"),
-        ("autonomous_investment", "CVXPY 최적화 및 주문", "1분"),
+        ("local_mirror", "Supabase 원본 로컬 사본 동기화", "2시간"),
         ("feature_store", "피처 및 학습 데이터 생성", "24시간"),
-        ("continuous_learning", "PPO 자율 재학습 및 승격", "24시간"),
+        ("investment_analysis", "TradingAgents 논지 분석", "3시간"),
+        ("event_reanalysis", "사건 기반 재분석", "10분"),
+        ("system_portfolio", "System Portfolio 평가·목표", "1시간"),
+        ("my_portfolio_follow", "My Portfolio 추종 승인·주문", "승인 모드"),
+        ("ml_challengers", "ML 후보 학습·비교", "7일"),
+        ("continuous_learning", "PPO 연구 후보(새 성숙 구간 있을 때만)", "7일"),
         ("account_risk_snapshot", "계좌 잔고 리스크 스냅샷", "5분"),
         ("earnings_watch", "SEC 실시간 공시 감시", "1분"),
         ("toss_reconciliation", "체결 내역 및 잔고 대사", "1분"),

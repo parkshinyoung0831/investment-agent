@@ -25,6 +25,7 @@ from investment_agent.data.market.domain.calendar import bar_available_at
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.serialization import canonical_json, parse_datetime, stable_id
 from investment_agent.research.evaluation.costs import TransactionCostModel
+from investment_agent.research.ml_serving import NO_FORECAST, ChampionForecast, champion_forecast
 from investment_agent.trading.contracts import ContractError
 from investment_agent.trading.decision.alpha import THESIS_BROKEN, AlphaPolicy, alpha_universe, is_valid_view
 from investment_agent.trading.portfolio.contracts import CASH_SYMBOL
@@ -154,8 +155,12 @@ def run_system(
     alpha_policy: AlphaPolicy | None = None,
     policy: SystemPortfolioPolicy | None = None,
     build_target: Callable[..., Any] = build_system_target,
+    forecast: Callable[..., ChampionForecast] = champion_forecast,
 ) -> SystemRunResult:
-    """평가 → (필요하면) 목표 생성. 실계좌·승인 원장에는 닿지 않는다."""
+    """평가 → (필요하면) 목표 생성. 실계좌·승인 원장에는 닿지 않는다.
+
+    champion ML은 채택 파일(`active_ml_model.json`)만 읽는다. challenger 학습 결과는 이 경로에 들어오지 않는다.
+    """
     alpha = alpha_policy or AlphaPolicy()
     selected = policy or SystemPortfolioPolicy()
     marks, deferred = mark_sessions(store, repository, now=now)
@@ -182,9 +187,13 @@ def run_system(
     skip = rebalance_skip_reason(latest, snapshot_as_of=snapshot_as_of, now=now, policy=selected, broken=broken)
     if skip is not None:
         return SystemRunResult(**base, skipped_reason=skip)
+    ml = forecast(repository, universe, as_of_at=now) if alpha.use_ml else NO_FORECAST
+    if not ml.is_available:
+        log.info("champion ML not applied: %s", ml.reason)
     artifact = system_model_artifact(
         alpha_policy=alpha, policy=selected,
         view_artifact_ids=[view.model_artifact_id for view in views.values() if view and view.model_artifact_id],
+        ml_artifact_id=ml.model_artifact_id if ml.is_available else None,
     )
     repository.save_model_artifact({
         "artifact_id": artifact["artifact_id"], "algorithm": "rule", "feature_version": selected.version,
@@ -203,6 +212,7 @@ def run_system(
         target = build_target(
             repository, current_weights=current, as_of_at=now, scores=scores, snapshot_as_of=snapshot_as_of,
             run_id=run_id, model_artifact_id=artifact["artifact_id"], views=views, alpha_policy=alpha, policy=selected,
+            ml_forecast=ml,
         )
     except ContractError as exc:
         repository.finish_decision_run(run_id, status="failed", failure_reason=f"inputs unavailable: {exc}"[:2000])
@@ -233,7 +243,8 @@ def run_system(
         model_artifact_id=artifact["artifact_id"], is_approved=risk.is_approved,
         weights=dict(risk.approved_weights or {}),
         detail={"violations": list(risk.violations), "adjustments": list(risk.adjustments),
-                "forced_exits": list(target.plan.forced_exits), "broken_thesis_trigger": broken},
+                "forced_exits": list(target.plan.forced_exits), "broken_thesis_trigger": broken,
+                "rebalance_trigger": "broken_thesis" if broken else ("initial" if latest is None else "scheduled")},
     )
     log.info("system target recorded id=%s approved=%s snapshot=%s", target_id, risk.is_approved, snapshot_as_of)
     return SystemRunResult(**base, target_id=target_id, is_target_approved=risk.is_approved)

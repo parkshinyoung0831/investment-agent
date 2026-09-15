@@ -254,11 +254,6 @@ def trace_for_ticker(payload: Mapping[str, Any], ticker: str) -> dict[str, Any]:
         row for row in _rows(payload, "fills")
         if str(row.get("client_order_id") or "") in order_ids
     ]
-    tca_reports = [
-        row for row in _rows(payload, "tca_reports")
-        if (intent_id and str(row.get("intent_id") or "") == intent_id)
-        or str(row.get("client_order_id") or "") in order_ids
-    ]
     evaluations = [
         row for row in _rows(payload, "portfolio_evaluations")
         if proposal_id and str(row.get("proposal_id") or "") == proposal_id
@@ -273,7 +268,6 @@ def trace_for_ticker(payload: Mapping[str, Any], ticker: str) -> dict[str, Any]:
         "approval": approvals[0] if approvals else {},
         "orders": orders,
         "fills": fills,
-        "tca_reports": tca_reports,
         "evaluation": evaluations[0] if evaluations else {},
     }
 
