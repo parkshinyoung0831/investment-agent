@@ -11,7 +11,7 @@ Toss execution ledger/reconciliation은 canonical package와 `db/postgres/v1/` �
 `src/investment_agent/data/macro/releases`, `src/investment_agent/data/institutional`이 각각의
 Supabase source schema에 기록한다. `src/investment_agent/research/features`는 저장된
 market 원장으로 feature를 계산해 ResearchStore에 기록한다. `src/investment_agent/trading`은 현재 EvidenceBundle,
-TradingAgents 선택 adapter, portfolio/risk, Native Backtest, RL 연구를 소유하며
+TradingAgents 선택 adapter와 portfolio/risk를 소유하며
 `src/investment_agent/execution`은 승인된 ExecutionIntent 이후의 broker 경계를 소유한다.
 
 주요 공개 경계는 다음 package가 소유한다.
@@ -32,12 +32,12 @@ src/investment_agent/trading/decision/
   ├─ regime.py              # 공통 MarketRegime
   ├─ candidate_ranker.py    # LLM 없는 deep-analysis priority
   ├─ event_impact.py        # 글로벌 사건 → 테마 → 대표 ETF → 민감한 보유 종목 재분석
-  ├─ analysis.py            # TradingAgents 논지 → ML 융합 → SignalBatch (비중을 정하지 않음)
-  ├─ alpha.py               # factor 기대수익 + 논지 검증 → 기대수익·제약
-  └─ fusion.py              # 수치 예측 계약(보고용 policy snapshot이 참조)
+  ├─ analysis.py            # TradingAgents 논지 → SignalBatch (비중을 정하지 않음)
+  ├─ alpha.py               # factor 사전값 + 채택 champion ML + 논지 검증 → 기대초과수익·제약
+  └─ alpha.py               # Factor·champion ML·TradingAgents 논지 → 기대초과수익
 
 src/investment_agent/trading/system/   # System Portfolio — 실계좌·승인을 모른다
-  ├─ target.py              # 위험예산 → optimizer → no-trade band → RiskGate → 목표비중
+  ├─ target.py              # 시장위험·CVaR → 위험예산 → optimizer → RiskGate → 목표비중
   ├─ accounting.py          # 비중 기반 NAV·배당·분할·비용
   ├─ engine.py              # 평가 → 재조정 필요 판단 → 목표 기록
   └─ store.py               # runtime SQLite system_* 원장
@@ -65,7 +65,6 @@ src/investment_agent/research/backtest/      # fill/slippage/fee 가정과 walk-
 src/investment_agent/trading/performance/    # TradeOutcome/Attribution
 src/investment_agent/research/               # TrainingSample/Dataset/Challenger/Promotion
 src/investment_agent/execution/orders/market_state.py # single-node RAM quote cache + snapshot row
-src/investment_agent/execution/orders/tca.py          # execution-level transaction-cost analysis
 ```
 
 ## 학습 표본과 승격
@@ -80,15 +79,15 @@ src/investment_agent/execution/orders/tca.py          # execution-level transact
 - 승격된 `active_policy.json`은 어떤 표본으로 학습했는지(`training.data_hash`,
   `membership_hash`, 구간 수, 종목)를 함께 남긴다. 없으면 그 점수를 재현할 수 없다.
 
-**RL은 신호를 고치지 않는다**: 승격된 정책의 목표비중은 `research/rl/serving.compute_rl_target_weights`가
-challenger 후보로만 계산해 기록한다. 비중을 기대수익으로 되돌려 TradingAgents·ML 신호에 섞지
-않는다 — 비중은 이미 위험·비용을 풀고 난 결과라 다시 섞으면 같은 위험을 두 번 센다. 성과 비교는
-같은 기간·같은 비용 가정의 Shadow 포트폴리오로 한다.
+**RL은 신호나 운영 목표비중을 고치지 않는다**: continuous_retrain은 Research 후보를 같은
+holdout·비용 가정으로 평가하고, 명시적으로 채택한 artifact도 연구 재현 기준으로만 보관한다.
+System·실계좌 경로에는 RL 추론 진입점이 없다. 비중을 기대수익으로 되돌려 TradingAgents·ML
+신호에 섞으면 이미 푼 위험·비용을 두 번 세기 때문이다.
 
 ## 저장 경계
 
-- Supabase는 일봉, 재무, SEC, macro, model metadata, signal, proposal, risk,
-  order/fill, reconciliation, TCA, attribution의 durable source of truth다.
+- Supabase는 일봉·재무·SEC·macro와 알림 원장의 여러 기계가 공유하는 원본 창고다.
+  실행·승인·판단·체결은 로컬 runtime SQLite가 소유한다.
 - ResearchStore는 재계산 가능한 feature/label·training sample·event 파생물의 local
   source of truth다. 이 데이터에는 별도 Production Supabase schema를 만들지 않는다.
 - DuckDB `src/investment_agent/trading/evidence/cache.py`는 뉴스·Reddit·StockTwits 등
@@ -140,7 +139,7 @@ risk limit 변경 권한을 갖지 않는다 — 위 박스를 벗어나는 순�
 - research artifact store: `candidate_ranks` · `training_samples`
 - runtime SQLite `decision_runs` · `signal_runs` · `signals`
 - runtime SQLite `portfolio_proposals` · `risk_decisions` · `portfolio_decisions`
-- runtime SQLite `runtime_records`(`tca_summary` — 완전 체결 시 대사가 기록 · `quote_snapshot`)
+- runtime SQLite `runtime_records`(`quote_snapshot` 등 짧은 관측값)
 - runtime SQLite `system_targets` · `system_nav` — System Portfolio(`docs/STORAGE_MAP.md`)
 
 runtime SQLite는 local filesystem 경계와 `runtime_connection()`의 읽기 전용 연결을 사용한다.
@@ -150,12 +149,12 @@ runtime SQLite는 local filesystem 경계와 `runtime_connection()`의 읽기 �
 
 | Phase | 범위 | 상태 |
 |---|---|---|
-| 1 | contracts, Event Intelligence, MarketRegime, CandidateRanker·우선 레인·글로벌 사건 영향, TradingAgents 판단과 ML 융합 | 구현됨 |
+| 1 | contracts, Event Intelligence, MarketRegime, CandidateRanker·우선 레인·글로벌 사건 영향, TradingAgents 논지와 채택 champion ML의 ALPHA 보정 | 구현됨 |
 | 2 | feature/label/dataset manifest, baseline model façade, 실제 Ridge 등 baseline 학습 CLI, purged walk-forward와 challenger 비교 경계 | 구현됨 |
 | 3 | Selection/Allocation/Timing 분리, PPO allocation/timing 명세 (PPO는 broker API를 호출하지 않는다) | 구현됨 |
 | 4 | RAM MarketState, quote snapshot, Reality Model 및 Native Backtest 변환 경계 | 구현됨 |
-| 5 | TCA, PnL/Attribution, TrainingSample 누적 경계 | 구현됨 |
-| 6 | System Portfolio(비중 기반 NAV)·My Portfolio 추종·TCA 기록·ML 후보 자동 비교 | 구현됨 |
+| 5 | PnL/Attribution, TrainingSample 누적 경계 | 구현됨 |
+| 6 | System Portfolio(비중 기반 NAV)·My Portfolio 추종·ML 후보 자동 비교 | 구현됨 |
 | 7 | System 성과 축적, 충분한 walk-forward/OOS 증거, 사람의 promotion 승인, Live 전환 | 운영 작업 |
 
 Phase 6은 서로 다른 두 게이트를 통과해야 한다 — 모델 artifact의 단계 승격

@@ -4,7 +4,6 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from investment_agent.trading.run_context import shadow_context
 from investment_agent.trading.repository import (
     SCHEMA,
     T_ATTRIBUTION_REPORTS,
@@ -29,13 +28,6 @@ class RunLifecycleTest(unittest.TestCase):
     def setUp(self) -> None:
         self.db = FakeDatabase()
         self.repo = TradingRepository(self.db)
-
-    def test_a_new_run_is_open(self) -> None:
-        self.repo.start_run(run_id="r1", as_of_at=NOW, context=shadow_context(),
-                            candidate_tickers=["AAPL"])
-        (_key, rows, _conflict) = self.db.upserts[0]
-        self.assertEqual("running", rows[0]["status"])
-        self.assertNotIn("finished_at", rows[0])
 
     def test_a_failed_run_must_say_why(self) -> None:
         with self.assertRaises(ValueError):
@@ -202,22 +194,6 @@ class DecisionTest(unittest.TestCase):
         self.assertEqual("case_key", conflict)
 
 
-class SignalExpiryTest(unittest.TestCase):
-    def test_expired_signals_are_not_returned(self) -> None:
-        """어제 신호가 오늘 판단에 섞이면 예외 없이 틀린다."""
-        db = FakeDatabase()
-        db.put(SCHEMA, T_SIGNALS, [
-            {"signal_id": "s1", "batch_id": "b1", "case_key": None, "security_id": 1,
-             "proposal": {}, "recorded_at": (NOW - timedelta(days=2)).isoformat(),
-             "expires_at": (NOW - timedelta(days=1)).isoformat()},
-            {"signal_id": "s2", "batch_id": "b1", "case_key": None, "security_id": 2,
-             "proposal": {}, "recorded_at": NOW.isoformat(),
-             "expires_at": (NOW + timedelta(days=1)).isoformat()},
-        ])
-        live = TradingRepository(db).live_signals(now=NOW)
-        self.assertEqual(["s2"], [row["signal_id"] for row in live])
-
-
 class RiskDecisionTest(unittest.TestCase):
     def setUp(self) -> None:
         self.db = FakeDatabase()
@@ -244,37 +220,6 @@ class RiskDecisionTest(unittest.TestCase):
             "approved_weights": {"AAPL": 0.1},
         })
         self.assertEqual(1, len(self.db.upserts))
-
-
-class AdoptedWeightsTest(unittest.TestCase):
-    def _db(self, *, approved: dict | None, status: str = "approved") -> FakeDatabase:
-        db = FakeDatabase()
-        db.put(SCHEMA, T_RUNS, [
-            {"run_id": "r1", "stage": "shadow", "as_of_at": NOW.isoformat()},
-        ])
-        db.put(SCHEMA, T_PORTFOLIO_DECISIONS, [
-            {"decision_id": "d1", "run_id": "r1", "created_at": NOW.isoformat(),
-             "status": status, T_RISK_DECISIONS: {"approved_weights": approved}},
-        ])
-        return db
-
-    def test_the_latest_approved_weights_are_returned(self) -> None:
-        repo = TradingRepository(self._db(approved={"AAPL": 0.1}))
-        self.assertEqual({"AAPL": 0.1}, repo.latest_adopted_weights(stage="shadow"))
-
-    def test_never_adopted_is_none_not_empty(self) -> None:
-        """`{}`(빈 포트폴리오)와 `None`(채택된 적 없음)은 위험 엔진에서 다르게 다뤄진다."""
-        db = FakeDatabase()
-        db.put(SCHEMA, T_RUNS, [])
-        self.assertIsNone(TradingRepository(db).latest_adopted_weights(stage="shadow"))
-
-    def test_an_empty_adopted_portfolio_is_an_empty_dict(self) -> None:
-        repo = TradingRepository(self._db(approved={}))
-        self.assertEqual({}, repo.latest_adopted_weights(stage="shadow"))
-
-    def test_rejected_portfolios_are_not_adopted(self) -> None:
-        repo = TradingRepository(self._db(approved={"AAPL": 0.1}, status="rejected"))
-        self.assertIsNone(repo.latest_adopted_weights(stage="shadow"))
 
 
 if __name__ == "__main__":

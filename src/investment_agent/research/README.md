@@ -30,6 +30,7 @@ market·fundamentals·macro (Supabase)
 | `backtest/` | 목표 비중을 가격 이벤트 위에서 재생하는 결정론적 백테스트 |
 | `rl/` | PIT feature snapshot을 쓰는 RL·정책 학습 |
 | `promotion/` | challenger 승격 판정 |
+| `ablation.py` | 동일 운영 엔진으로 factor·ML·논지·시장위험·CVaR 기여를 과거 구간에서 비교 |
 | `valuation/` | PIT 밸류에이션 계약과 입력 조립 |
 | `strategies/` | 팩터/룰 기반 자산배분 6종 → [README](strategies/README.md) |
 | `storage/` | 로컬 DuckDB·Parquet 경계(`ResearchStore`) |
@@ -57,8 +58,12 @@ python -m investment_agent.research.commands.build_training_samples
 python -m investment_agent.research.commands.train_baseline
 python -m investment_agent.research.commands.evaluate
 python -m investment_agent.research.commands.export_dataset
+python -m investment_agent.research.commands.system_ablation --start 2025-01-01 --end 2025-12-31
 python -m investment_agent.research.strategies.etl            # 월간 전략 배분
 ```
+
+RL 후보 재학습은 하네스 `continuous_learning`이 7일마다 점검한다. 새 성숙 비중첩
+구간이 2개 미만이면 학습하지 않고, 후보의 System 채택은 사람이 별도로 결정한다.
 
 무거운 의존성(`lightgbm`, `stable-baselines3`, `pyqlib`)은 **호출 시점에 지연 import**한다.
 `research`를 import하는 것만으로 그것들이 설치돼 있어야 하면 안 된다.

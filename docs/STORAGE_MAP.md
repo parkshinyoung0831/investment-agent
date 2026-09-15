@@ -15,6 +15,11 @@
 | **로컬 DuckDB (research)** | 연구 lineage와 전략 배분 | 언제든 다시 만들 수 있다. 남길 것은 "무엇으로 만들었나" | `db/duckdb/research/v1/*.sql` |
 | **로컬 DuckDB (intelligence)** | 뉴스·소셜 색인과 언급 | 원문은 Parquet, 여기는 작은 metadata만 | `db/duckdb/intelligence/v1/*.sql` |
 
+`data/local/mirror/`의 `securities.parquet`·`memberships.parquet`·`prices.parquet`·
+`actions.parquet`는 Supabase 사실의 **계산용 사본**이다. 다섯 번째 원장이 아니며,
+로컬에서 먼저 읽되 없거나 오래되면 원본 Supabase로 돌아간다. `sync_local_mirror`가
+2시간마다 증분 복사하고, 원본 DB에는 쓰지 않는다.
+
 대용량 본문·feature 행은 어느 DB에도 넣지 않고 **날짜 파티션 Parquet**가 소유한다. DB는
 그 뿌리가 어디고 얼마나 최신인지만 안다.
 

@@ -64,6 +64,10 @@ flowchart TD
 | **`TRADING_KILL_SWITCH=on` 시** | 분석 정상 유지 | 포트폴리오~주문 일시중지, 감시만 읽기 전용 유지 |
 | **실적 속보 수집(`earnings_watch`)** | ✅ 정상 주기 실행 | ✅ 정상 주기 실행 |
 
+`local_mirror`는 2시간마다 Supabase 원본의 계산용 Parquet 사본을 증분 동기화한다.
+사본이 없거나 오래되면 판단은 원본 Supabase로 읽는다. `continuous_learning`은 7일마다
+RL 연구 후보를 점검하고 새 성숙 비중첩 구간이 2개 미만이면 학습하지 않는다.
+
 `earnings_watch`는 주문이 아니라 공시 수집이라 모드·거래 kill switch 어느 쪽으로도
 멈추지 않습니다. 창 판정은 진입점(`--session auto`)이 ET 기준으로 직접 하고, 창 밖이면
 대상 0건으로 즉시 끝나 SEC를 때리지 않습니다. 노트북이 꺼져 있을 때는 Actions의
@@ -103,6 +107,7 @@ stateDiagram-v2
 | `HARNESS_JOB_INVESTMENT_ANALYSIS_KILL_SWITCH` | TradingAgents 일일 분석 잡 차단 | `off` |
 | `HARNESS_JOB_MY_PORTFOLIO_FOLLOW_KILL_SWITCH` | My Portfolio 추종(승인 요청·실주문) 잡 차단 | `off` |
 | `HARNESS_JOB_SYSTEM_PORTFOLIO_KILL_SWITCH` | System Portfolio 평가·목표 갱신 잡 차단 | `off` |
+| `HARNESS_JOB_LOCAL_MIRROR_KILL_SWITCH` | Supabase → 로컬 사본 동기화 잡 차단 | `off` |
 | `HARNESS_JOB_ACCOUNT_RISK_SNAPSHOT_KILL_SWITCH` | 계좌 위험 스냅샷 수집 잡 차단 | `off` |
 | `HARNESS_JOB_TOSS_RECONCILIATION_KILL_SWITCH` | 브로커 체결 상태 동기화 잡 차단 | `off` |
 
@@ -111,6 +116,13 @@ stateDiagram-v2
 ## 5. 실행 및 서비스 등록 가이드
 
 ### 안전한 CLI 실행
+
+로컬 사본의 수동 증분 동기화는
+`python -m investment_agent.data.market.commands.sync_local_mirror`로 한다.
+Research 구성 요소 비교는
+`python -m investment_agent.research.commands.system_ablation --start 2025-01-01 --end 2025-12-31`로 한다.
+
+
 
 ```bash
 # 1. 종합 보안 및 안전성 감사 (Preflight Security Check)

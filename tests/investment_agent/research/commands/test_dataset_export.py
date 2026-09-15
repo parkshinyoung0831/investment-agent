@@ -111,6 +111,8 @@ class ExportDatasetTest(unittest.TestCase):
             dataset = load_dataset_json(path)
             self.assertEqual(dataset.features.shape, (36, len(FEATURE_COLUMNS)))
             self.assertEqual(dataset.manifest.feature_version, FEATURE_VERSION)
+            self.assertEqual(dataset.manifest.label_definition, "excess_return_5d")
+            self.assertAlmostEqual(dataset.labels[0].label, -0.0005)
 
     def test_missing_values_are_imputed_within_the_same_period_only(self):
         with tempfile.TemporaryDirectory() as temp:

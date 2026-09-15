@@ -6,16 +6,15 @@ from typing import Any
 
 from investment_agent.trading.portfolio.optimizer import OptimizerPolicy
 from investment_agent.trading.risk.gate import PortfolioRiskPolicy
-from investment_agent.trading.decision.fusion import DEFAULT_COMPONENT_WEIGHTS
+from investment_agent.trading.decision.alpha import AlphaPolicy
 
 
-def build_fusion_policy_read_model() -> dict[str, Any]:
-    """현재 signal fusion 정책을 변경 없이 직렬화한다."""
+def build_alpha_policy_read_model() -> dict[str, Any]:
+    """현재 ALPHA 기대초과수익 정책을 변경 없이 직렬화한다."""
 
     return {
-        "version": "signal-fusion-v1",
-        "component_weights": dict(DEFAULT_COMPONENT_WEIGHTS),
-        "rule": "확신도로 가중하고 모델 간 방향 차이는 불확실성으로 보존",
+        **AlphaPolicy().to_dict(),
+        "rule": "factor 사전값에 champion ML을 OOS 신뢰도만큼 결합하고 TradingAgents는 거부권·소폭 조정만 적용",
     }
 
 
@@ -32,7 +31,7 @@ def build_risk_policy_read_model() -> dict[str, Any]:
 
 
 __all__ = [
-    "build_fusion_policy_read_model",
+    "build_alpha_policy_read_model",
     "build_optimizer_policy_read_model",
     "build_risk_policy_read_model",
 ]

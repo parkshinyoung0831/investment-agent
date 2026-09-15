@@ -171,10 +171,10 @@ def _render_engine(
         with st.container(horizontal=True):
             st.badge("현재 운영 경로", icon=":material/account_tree:", color="blue")
             st.badge("승인 전 주문 차단", icon=":material/lock:", color="gray")
-        st.subheader("TradingAgents가 판단하고 Shadow에서 먼저 검증해요")
+        st.subheader("ALPHA가 기대초과수익을 만들고 Shadow에서 먼저 검증해요")
         st.caption(
-            "ML·RL·Native Fusion은 연구·확장 경로예요. 현재 정기 분석과 같은 경로로 "
-            "표시하지 않으며, 실주문은 별도의 위험 심사와 사람 승인이 있어야 이동해요."
+            "Factor와 채택된 champion ML이 숫자를 만들고 TradingAgents는 논지를 검증해요. "
+            "RL 후보는 Research에만 머물며, 실주문은 별도의 위험 심사와 사람 승인이 있어야 이동해요."
         )
         with st.container(horizontal=True):
             st.metric("최근 분석", snapshot["analysis"], border=True)
@@ -262,27 +262,19 @@ def _render_models(payload: Mapping[str, Any], observed_at: Any) -> None:
         st.subheader("표본 외 · 워크포워드 검증")
         dataframe(evaluations, key="alpha_evaluation_table", column_config={name: st.column_config.NumberColumn(format="percent") for name in ("총수익률", "벤치마크", "초과수익률", "최대 낙폭", "연환산 변동성", "회전율")})
 
-    st.subheader("연구·확장 모델 구조")
-    st.caption("아래 Native Fusion은 구현된 연구 경로이며, 현재 정기 TradingAgents 분석과 동일한 운영 경로는 아니에요.")
-    fusion = policies["fusion"]
+    st.subheader("현재 ALPHA·포트폴리오 정책")
+    st.caption("아래 값은 현재 System 목표 생성에 실제 적용되는 Python 정책이에요.")
+    alpha = policies["alpha"]
     optimizer = policies["optimizer"]
     risk = policies["risk"]
     with st.container(border=True):
-        st.markdown("**신호 융합**")
-        fusion_labels = {
-            "numeric": "수치 모델",
-            "market": "시장",
-            "fundamental": "펀더멘털",
-            "macro": "매크로",
-            "event": "이벤트",
-            "debate": "모델 토론",
-        }
-        fusion_rows = [
-            {"입력": fusion_labels.get(name, name), "기본 비중": weight}
-            for name, weight in fusion["component_weights"].items()
-        ]
-        st.bar_chart(pd.DataFrame(fusion_rows), x="입력", y="기본 비중", color=dashboard_palette().primary)
-        st.caption(str(fusion["rule"]))
+        st.markdown("**ALPHA 기대초과수익**")
+        with st.container(horizontal=True):
+            st.metric("Factor IC", f"{alpha['information_coefficient']:.3f}", border=True)
+            st.metric("Champion ML", "사용" if alpha["use_ml"] else "미사용", border=True)
+            st.metric("논지 조정 상한", display_percent(alpha["llm_tilt_weight"]), border=True)
+            st.metric("신규 편입 검증", "필수" if alpha["require_verified_entry"] else "선택", border=True)
+        st.caption(str(alpha["rule"]))
 
     with st.container(horizontal=True):
         st.metric("종목당 최대", display_percent(risk["max_symbol_weight"]), border=True)

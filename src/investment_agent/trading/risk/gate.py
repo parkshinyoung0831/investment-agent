@@ -5,7 +5,7 @@ import hashlib
 import math
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Mapping
+from typing import Callable, Mapping
 
 from investment_agent.trading.contracts import ContractError, parse_datetime
 from investment_agent.trading.portfolio.contracts import (
@@ -15,6 +15,7 @@ from investment_agent.trading.portfolio.contracts import (
     validated_weights,
 )
 from investment_agent.trading.portfolio.optimizer import mandatory_base_weights
+from investment_agent.trading.portfolio.market_risk import MarketRiskMetrics
 from investment_agent.trading.risk.stress import scenario_losses
 from investment_agent.execution.orders.intents import ExecutionIntent
 from investment_agent.platform.serialization import canonical_json, stable_id
@@ -133,6 +134,7 @@ class DeterministicRiskGate:
         historical_cvar_95_5d: float | None = None,
         stress_sensitivities: Mapping[str, Mapping[str, float]] | None = None,
         market_risk_metadata: Mapping[str, object] | None = None,
+        market_risk_for_weights: Callable[[Mapping[str, float]], MarketRiskMetrics] | None = None,
     ) -> RiskDecision:
         """잘못된 입력은 거부하고, 한도 초과 비중만 결정적으로 현금화한다."""
         now = (decided_at or datetime.now(timezone.utc)).astimezone(timezone.utc)
@@ -171,6 +173,7 @@ class DeterministicRiskGate:
                 missing_risk.append("stress_sensitivities")
             if missing_risk:
                 violations.append("missing execution market-risk inputs: " + ", ".join(missing_risk))
+        proposal_risk_inputs = dict(risk_inputs)
         for name, value in risk_inputs.items():
             if value is not None and (isinstance(value, bool) or not math.isfinite(float(value))):
                 violations.append(f"{name} must be finite")
@@ -320,6 +323,50 @@ class DeterministicRiskGate:
                     )
                     stress_losses = scenario_losses(weights, stress_sensitivities)
 
+        # turnover가 이미 줄인 목표를 mandatory base 쪽으로 당겨 꼬리위험을 복원할 수 있다.
+        # 최종 비중을 같은 가격 이력으로 다시 측정하고, 위험 현금화는 turnover 한도로 되돌리지 않는다.
+        if not violations and market_risk_for_weights is not None:
+            try:
+                final_risk = market_risk_for_weights(weights)
+                for _ in range(3):
+                    ratios = [1.0]
+                    if final_risk.portfolio_volatility > self.policy.max_portfolio_volatility > 0:
+                        ratios.append(self.policy.max_portfolio_volatility / final_risk.portfolio_volatility)
+                    if (final_risk.historical_cvar_95_5d is not None
+                            and final_risk.historical_cvar_95_5d > self.policy.cvar_95_5d_limit):
+                        ratios.append(self.policy.cvar_95_5d_limit / final_risk.historical_cvar_95_5d)
+                    scale = min(ratios)
+                    if scale >= 1.0:
+                        break
+                    scale *= 0.99  # 부동소수 경계에서 한도를 다시 넘지 않게 한다.
+                    weights = {symbol: weight * scale for symbol, weight in weights.items()
+                               if symbol != CASH_SYMBOL and weight > 0}
+                    weights[CASH_SYMBOL] = max(0.0, 1.0 - math.fsum(weights.values()))
+                    adjustments.append(f"post-turnover tail risk scaled risky exposure by {scale:.6f}")
+                    final_risk = market_risk_for_weights(weights)
+                risk_inputs.update({
+                    "portfolio_volatility": final_risk.portfolio_volatility,
+                    "portfolio_beta": final_risk.portfolio_beta,
+                    "max_pairwise_correlation": final_risk.max_pairwise_correlation,
+                    "drawdown_fraction": final_risk.drawdown_fraction,
+                    "historical_cvar_95_5d": final_risk.historical_cvar_95_5d,
+                })
+                market_risk_metadata = {**dict(market_risk_metadata or {}),
+                                        "final_approved_weights": final_risk.to_metadata()}
+                if final_risk.portfolio_volatility > self.policy.max_portfolio_volatility + 1e-9:
+                    violations.append("final portfolio volatility exceeds the absolute limit")
+                if (final_risk.historical_cvar_95_5d is not None
+                        and final_risk.historical_cvar_95_5d > self.policy.cvar_95_5d_limit + 1e-9):
+                    violations.append("final 5-day historical CVaR95 exceeds the tail-loss limit")
+                if abs(final_risk.portfolio_beta) > self.policy.max_abs_beta:
+                    violations.append("final portfolio beta exceeds the absolute limit")
+                if final_risk.max_pairwise_correlation > self.policy.max_pairwise_correlation:
+                    violations.append("final pairwise correlation exceeds the absolute limit")
+                if stress_sensitivities is not None:
+                    stress_losses = scenario_losses(weights, stress_sensitivities)
+            except ContractError as exc:
+                violations.append(f"final market-risk inputs are invalid: {exc}")
+
         concentration_hhi = math.fsum(
             weight * weight for symbol, weight in weights.items() if symbol != CASH_SYMBOL
         )
@@ -334,7 +381,8 @@ class DeterministicRiskGate:
             "current_weights": current,
             "tradable_symbols": sorted(s.upper() for s in tradable_symbols),
             "sector_by_symbol": sectors,
-            "market_risk": risk_inputs,
+            "market_risk": proposal_risk_inputs,
+            "final_market_risk": risk_inputs if market_risk_for_weights is not None else None,
             "stress_sensitivities": {name: dict(values) for name, values in (stress_sensitivities or {}).items()},
             "market_risk_metadata": dict(market_risk_metadata or {}),
             "policy": self.policy.to_config(),

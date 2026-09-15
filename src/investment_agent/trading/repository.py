@@ -199,19 +199,6 @@ class TradingRepository:
             on_conflict="run_id",
         )
 
-    def attach_account_snapshot(self, run_id: str, account_snapshot_id: str) -> None:
-        rows = (
-            self._db.table(SCHEMA, T_RUNS)
-            .update({"account_snapshot_id": str(account_snapshot_id)})
-            .eq("run_id", str(run_id))
-            .eq("status", "running")
-            .execute()
-            .data
-            or []
-        )
-        if len(rows) != 1:
-            raise RuntimeError("account snapshot could not be attached to a running decision run")
-
     def decision_exists(self, case_key: str) -> bool:
         rows = (
             self._db.table(SCHEMA, T_SECURITY_DECISIONS)
@@ -496,34 +483,6 @@ class TradingRepository:
         return dict(rows[0]) if rows else None
 
     # ── 회차 ──────────────────────────────────────────────────────────────
-    def start_run(
-        self,
-        *,
-        run_id: str,
-        as_of_at: datetime,
-        context: RunContext,
-        candidate_tickers: Sequence[str],
-        account_snapshot_id: str | None = None,
-        code_commit: str | None = None,
-    ) -> int:
-        """회차를 연다. 아직 끝나지 않았으므로 `finished_at`은 비운다."""
-        return self._db.upsert(
-            schema=SCHEMA,
-            table=T_RUNS,
-            rows=[{
-                "run_id": run_id,
-                "as_of_at": as_of_at.isoformat(),
-                "stage": context.stage,
-                "status": "running",
-                "candidate_tickers": list(candidate_tickers),
-                # execution에 FK를 걸지 않는다. 걸면 trading이 execution에 의존해
-                # 방향이 뒤집힌다.
-                "account_snapshot_id": account_snapshot_id,
-                "code_commit": code_commit,
-            }],
-            on_conflict="run_id",
-        )
-
     def finish_run(
         self,
         run_id: str,
@@ -574,42 +533,7 @@ class TradingRepository:
             on_conflict="case_key,evidence_kind",
         )
 
-    def decisions_for_run(self, run_id: str) -> list[dict[str, Any]]:
-        return self._db.select_paged(
-            lambda: self._db.table(SCHEMA, T_SECURITY_DECISIONS)
-            .select(_DECISION_COLUMNS)
-            .eq("run_id", run_id),
-            order_by="case_key",
-        )
-
-    def latest_decision(self, security_id: int, *, policy_key: str) -> dict[str, Any] | None:
-        rows = (
-            self._db.table(SCHEMA, T_SECURITY_DECISIONS)
-            .select(_DECISION_COLUMNS)
-            .eq("security_id", security_id)
-            .eq("policy_key", policy_key)
-            .order("as_of_at", desc=True)
-            .limit(1)
-            .execute()
-            .data
-        )
-        return rows[0] if rows else None
-
     # ── 신호 ──────────────────────────────────────────────────────────────
-    def live_signals(self, *, now: datetime | None = None) -> list[dict[str, Any]]:
-        """아직 만료되지 않은 신호만.
-
-        만료를 안 보면 어제 신호가 오늘 판단에 섞인다. 그것은 예외를 던지지 않으므로
-        누구도 알아채지 못한다.
-        """
-        moment = (now or utc_now()).isoformat()
-        return self._db.select_paged(
-            lambda: self._db.table(SCHEMA, T_SIGNALS)
-            .select("signal_id, batch_id, case_key, security_id, proposal, recorded_at, expires_at")
-            .gte("expires_at", moment),
-            order_by="security_id, recorded_at",
-        )
-
     # ── 제안 → 판정 → 채택 ────────────────────────────────────────────────
     def record_proposal(self, row: dict[str, Any]) -> int:
         return self._db.upsert(
@@ -632,39 +556,6 @@ class TradingRepository:
         return self._db.upsert(
             schema=SCHEMA, table=T_PORTFOLIO_DECISIONS, rows=[row], on_conflict="decision_id"
         )
-
-    def latest_adopted_weights(self, *, stage: str) -> dict[str, float] | None:
-        """가장 최근에 채택된 승인 비중. 없으면 `None`.
-
-        `{}`(빈 포트폴리오)와 `None`(채택된 적 없음)을 구분한다 — 위험 엔진이 둘을
-        다르게 다루므로 여기서 뭉개면 안 된다.
-        """
-        runs = (
-            self._db.table(SCHEMA, T_RUNS)
-            .select("run_id")
-            .eq("stage", stage)
-            .order("as_of_at", desc=True)
-            .limit(20)
-            .execute()
-            .data
-        )
-        if not runs:
-            return None
-        adopted = self._db.select_in_chunks(
-            schema=SCHEMA,
-            table=T_PORTFOLIO_DECISIONS,
-            columns=f"decision_id, run_id, created_at, status, {T_RISK_DECISIONS}(approved_weights)",
-            filter_column="run_id",
-            values=[row["run_id"] for row in runs],
-            configure=lambda query: query.eq("status", "approved"),
-            order_by="created_at",
-        )
-        if not adopted:
-            return None
-        newest = max(adopted, key=lambda row: str(row["created_at"]))
-        weights = (newest.get(T_RISK_DECISIONS) or {}).get("approved_weights")
-        return dict(weights) if weights is not None else None
-
 
 __all__ = [
     "RUN_STATUSES",

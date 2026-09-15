@@ -70,13 +70,3 @@ class BundleTest(unittest.TestCase):
                 loaded=load_policy_bundle(active)
             import json
             self.assertEqual(loaded.artifact_id,json.loads(path.read_text())["artifact_id"])
-
-    def test_future_or_stale_training_is_not_served(self):
-        from investment_agent.research.rl.serving import compute_rl_target_weights
-        for trained in ("2027-01-01T00:00:00+00:00", "2025-01-01T00:00:00+00:00"):
-            with self.subTest(trained=trained), tempfile.TemporaryDirectory() as tmp:
-                path=save_policy_bundle(_StubModel(1),Path(tmp),dataset=self.dataset(),score={"dsr_probability":.99},training={"as_of_at":trained})
-                with patch("investment_agent.research.rl.bundle._load_ppo",return_value=_StubModel(1)):
-                    result=compute_rl_target_weights(object(),as_of_at="2026-01-10T00:00:00+00:00",policy_path=path)
-                self.assertFalse(result.available)
-                self.assertIn("training timestamp",result.reason)

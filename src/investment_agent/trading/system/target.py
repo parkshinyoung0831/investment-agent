@@ -285,20 +285,28 @@ def gate_target(
 ) -> RiskDecision:
     """절대 한도 검사. 시장위험·스트레스 재료는 모두 필요하다(없으면 `ContractError`)."""
     target_symbols = sorted(symbol for symbol, weight in proposal.weights.items() if symbol != CASH_SYMBOL and weight > 0)
-    rows = _price_rows(repository, (*target_symbols, BENCHMARK_SYMBOL, *STRESS_PROXIES), decided_at)
+    held_symbols = {symbol for symbol, weight in current_weights.items() if symbol != CASH_SYMBOL and weight > 0}
+    final_symbols = tuple(sorted(set(target_symbols) | held_symbols))
+    rows = _price_rows(repository, (*final_symbols, BENCHMARK_SYMBOL, *STRESS_PROXIES), decided_at)
     market_risk = calculate_market_risk(
         {symbol: rows[symbol] for symbol in (*target_symbols, BENCHMARK_SYMBOL)} if target_symbols else {},
         target_weights=proposal.weights,
     )
-    stress = scenario_sensitivities(rows, symbols=tuple(target_symbols))
-    held = {symbol for symbol, weight in current_weights.items() if symbol != CASH_SYMBOL and weight > 0}
+    stress = scenario_sensitivities(rows, symbols=final_symbols)
+    held = held_symbols
+    def final_market_risk(weights: Mapping[str, float]):
+        symbols = tuple(sorted(symbol for symbol, weight in weights.items()
+                               if symbol != CASH_SYMBOL and weight > 0))
+        subset = {symbol: rows[symbol] for symbol in (*symbols, BENCHMARK_SYMBOL)} if symbols else {}
+        return calculate_market_risk(subset, target_weights=weights)
+
     return DeterministicRiskGate(risk_policy).evaluate(
         proposal,
         current_weights=current_weights,
         # 추적에서 빠진 보유도 팔 수는 있어야 한다.
         tradable_symbols=set(repository.current_tracked_tickers()) | held,
         decided_at=decided_at,
-        sector_by_symbol=repository.sp500_sector_map(target_symbols),
+        sector_by_symbol=repository.sp500_sector_map(final_symbols),
         portfolio_volatility=market_risk.portfolio_volatility,
         portfolio_beta=market_risk.portfolio_beta,
         max_pairwise_correlation=market_risk.max_pairwise_correlation,
@@ -306,6 +314,7 @@ def gate_target(
         historical_cvar_95_5d=market_risk.historical_cvar_95_5d,
         stress_sensitivities=stress,
         market_risk_metadata={**market_risk.to_metadata(), **dict(regime_metadata)},
+        market_risk_for_weights=final_market_risk,
     )
 
 

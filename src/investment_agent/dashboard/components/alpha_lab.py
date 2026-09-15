@@ -8,7 +8,7 @@ from typing import Any, Iterable, Mapping
 
 from investment_agent.platform.serialization import parse_datetime
 from investment_agent.reporting.services.investment import (
-    build_fusion_policy_read_model,
+    build_alpha_policy_read_model,
     build_live_regime_read_model,
     build_optimizer_policy_read_model,
     build_risk_policy_read_model,
@@ -276,7 +276,7 @@ def policy_snapshot() -> dict[str, Any]:
     """DB가 비어 있어도 현재 코드가 실제 적용하는 결정 규칙을 반환한다."""
 
     return {
-        "fusion": build_fusion_policy_read_model(),
+        "alpha": build_alpha_policy_read_model(),
         "optimizer": build_optimizer_policy_read_model(),
         "risk": build_risk_policy_read_model(),
         "promotion": {

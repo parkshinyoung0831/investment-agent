@@ -15,9 +15,9 @@ candidate_ranker                 분석할 종목(System 보유·새 정보·fac
   ↓
 ContextBuilder → EvidenceBundle cutoff 시점에 볼 수 있었던 구조화 근거
   ↓
-decision/analysis.py            TradingAgents 논지(+ 채택된 ML 보정) → 신호 배치
+decision/analysis.py            TradingAgents 논지 → 신호 배치
   ↓
-decision/alpha.py               factor 기대수익(IC×σ×z) + 논지 검증 → 기대수익·제약
+decision/alpha.py               factor 사전값(IC×σ×z) + champion ML + 논지 검증 → 기대초과수익·제약
   ↓
 system/target.py                risk/budget → RiskAwareOptimizer → no-trade band → DeterministicRiskGate
   ↓
@@ -46,9 +46,9 @@ ExecutionIntent                 이 지점부터 `investment_agent.execution`이
 | `FeatureBundle` | `feature_layer.py` | 학습과 inference가 공유하는 feature version/hash |
 | `FeatureSnapshot` | `rl/contracts.py` | 저장 가능한 종목×시점 feature row |
 | `SecurityProposal` | `portfolio/contracts.py` | LLM의 종목별 정성 판단. 주문 권한 없음 |
-| `ExpectedReturnSignal` | `portfolio/optimizer.py` | ML/RL/LLM 공통 수익·신뢰·위험 신호 |
+| `ExpectedReturnSignal` | `portfolio/optimizer.py` | ALPHA의 기대초과수익·근거 일치도·제약을 optimizer에 전달 |
 | `SignalBatch` | `portfolio/signal_book.py` | 요청·성공·실패 종목과 artifact가 고정된 분석 batch |
-| `PortfolioProposal` | `portfolio/contracts.py` | optimizer 또는 전략이 만든 CASH 포함 목표 비중 |
+| `PortfolioProposal` | `portfolio/contracts.py` | System의 단일 optimizer가 만든 CASH 포함 목표 비중 |
 | `RiskDecision` | 같은 파일 | policy/input hash와 승인 또는 위반 결과 |
 | `ExecutionIntent` | `src/investment_agent/execution/intents.py` | paper/live 실행 계층으로 넘길 수 있는 유일한 의도 |
 
@@ -152,12 +152,14 @@ flowchart TD
 구조화 시장·재무·거시는 Supabase bundle만 사용합니다. News/Social은 live source kind에서만 별도
 provider를 호출하고 sanitize·dedupe·quota·DuckDB cache 경계를 통과합니다.
 
-`SecurityProposal.target_weight`와 행동 단어(`signal`)는 저장된 의견으로 남습니다. 비중 입력으로 쓰지 않고,
-행동 단어는 ALPHA(`decision/alpha.py`)에서 한 번만 논지 상태(positive·neutral·negative·broken)로 해석합니다.
+`SecurityProposal`의 새 입력 계약은 `thesis`·`hard_constraint`·`key_risks`를 요구합니다.
+저장용 `signal`은 이 필드에서 파생하고 `target_weight`는 0이다. ALPHA는 명시 논지와
+강제 제약을 먼저 읽고, 옛 기록에만 행동 단어를 해석한다.
 
 ## 5. System Portfolio와 My Portfolio
 
 - `system/target.py`는 System 자신의 현재 비중만 입력으로 받아 목표비중을 만듭니다. 계좌 스냅샷 인자가 없습니다.
+  시장위험·5일 CVaR95 한도는 optimizer의 내부 입력이며 초과 시 위험자산을 현금으로 축소합니다.
 - `system/engine.py`는 확정 종가로 NAV를 이어 기록하고, 목표는 판단 다음 정규장 종가에 적용합니다.
   새 factor 횡단면 + 7일 경과 또는 보유 종목의 논지 붕괴가 있을 때만 목표를 다시 만듭니다.
 - `my_portfolio.py`는 최신 승인 System 목표와 새 Toss 스냅샷의 차이를 live 제안으로 기록합니다. 목표에 없는
@@ -227,7 +229,7 @@ execution의 5단계 lifecycle과 model artifact의 3단계 저장 stage는 서�
 ```text
 src/investment_agent/trading/
   decision/analysis.py         TradingAgents 논지 분석 진입점(비중을 정하지 않음)
-  decision/alpha.py            factor 기대수익 + 논지 검증 → 기대수익·제약
+  decision/alpha.py            factor 사전값 + champion ML + 논지 검증 → 기대초과수익·제약
   decision/candidate_ranker.py 분석 후보 선정(System 보유·새 정보·factor 상위)
   decision/universe.py         tracked universe 검증
   evidence/                    PIT EvidenceBundle 조립·보관
@@ -252,7 +254,7 @@ python -m investment_agent.research.commands.build_valuations --limit 5 --dry-ru
 # PIT feature snapshot 적재 (ML/RL 학습 dataset의 원천, LLM 미호출)
 python -m investment_agent.research.commands.build_features --limit 5 --dry-run
 
-# 미래 구간이 끝난 snapshot에만 forward return label 부착
+# 미래 구간이 끝난 snapshot에만 초과수익 label 부착
 python -m investment_agent.research.commands.build_labels --horizon 5 --dry-run
 
 # 확정 label을 비용 반영 학습 표본으로 (왕복 수수료·슬리피지 적용)
@@ -270,6 +272,9 @@ python -m investment_agent.trading.decision.analysis --limit 5
 # System Portfolio 평가·목표 갱신과 성과 요약
 python -m investment_agent.operations.commands.system_portfolio
 python -m investment_agent.operations.commands.system_portfolio --summary
+
+# 운영 엔진 그대로 과거 구간에서 구성 요소 ablation 비교
+python -m investment_agent.research.commands.system_ablation --start 2025-01-01 --end 2025-12-31
 
 # 성숙한 case 평가
 python -m investment_agent.research.commands.evaluate --limit 200
@@ -324,9 +329,8 @@ PPO 학습은 겹치지 않는 기간으로 나눈 동일 holdout에서 기존 �
 기본적으로 독립 평가 기간 20개 이상이 필요하며 부족하면 대기합니다. `--dry-run`은
 자료 준비 상태만 확인합니다. 실제 학습은 해시·종목 순서·특징 버전을 포함한 후보를
 저장하고 활성 정책을 자동으로 교체하지 않습니다. 검증된 후보의 명시적 채택은
-`continuous_retrain --adopt-candidate <CANDIDATE_JSON>`으로 수행합니다. 융합을 켜면
-저장된 실행 신호에도 같은 결과가 반영되며, LLM+RL 조합은 별도 artifact로 등록되어
-기존 LLM의 live 승격을 물려받지 않습니다.
+`continuous_retrain --adopt-candidate <CANDIDATE_JSON>`으로 수행합니다. RL 후보와 채택은
+Research에 남고, System 목표는 채택 champion ML과 결정론적 포트폴리오 엔진만 사용합니다.
 
 최초 실행 제어 원장은 `execution_controls --initialize`로 비활성 상태로 만듭니다.
 이후 `execution_controls`로 버전을 확인하고, 운영자가 `--manual on --expected-version

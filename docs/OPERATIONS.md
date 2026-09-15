@@ -235,6 +235,16 @@ python scripts/migrate_local_storage.py apply --confirm-local-storage
 
 이 명령은 Supabase나 다른 원격 DB에 연결하지 않는다.
 
+로컬 계산용 Parquet 사본은 기본 `data/local/mirror/`에 둔다. `sync_local_mirror`는
+Supabase 원본을 읽기 전용으로 복사하고, 사본이 없거나 30시간 이상 오래되면 판단 경로가
+원본 조회로 돌아간다. 최초 전체 동기화는 모든 가격 이력을 받으므로 시간이 오래 걸린다.
+
+```powershell
+python -m investment_agent.data.market.commands.sync_local_mirror
+python -m investment_agent.data.market.commands.sync_local_mirror --full
+python -m investment_agent.research.commands.system_ablation --start 2025-01-01 --end 2025-12-31
+```
+
 ## 로컬 실행 스크립트
 
 루트에는 **`run.bat` 하나**만 둡니다(대화형 메뉴 = `launcher.py`). 나머지는 목적별로 나눕니다.
@@ -442,6 +452,10 @@ GitHub Actions = GitHub 서버의 자동 시간표
 하네스는 자식 프로세스마다 비밀값 범위를 정한다. 주문·대사·계좌·시세 조회 모듈
 (`harness_adapters.EXECUTION_MODULES`)만 broker·승인 비밀을 받고, LLM 판단·학습·보고 모듈은
 판단 범위로 떠서 `.env`를 다시 읽어도 그 비밀이 지워진다. System Portfolio는 계좌·시세 비밀이 필요 없다.
+
+`local_mirror` job은 2시간마다 원본 사본을 증분 동기화한다. `continuous_learning`은
+7일마다 RL 연구 후보를 점검하고 새 성숙 비중첩 구간이 2개 미만이면 학습하지 않는다.
+각 잡은 `HARNESS_JOB_LOCAL_MIRROR_KILL_SWITCH` 등 job ID 기반 킬스위치로 별도 차단한다.
 
 하네스는 다음을 관리한다.
 

@@ -36,7 +36,12 @@ daily와 backfill은 `application/price_collection.py`의 같은 절차를 쓰�
 python -m investment_agent.data.market.commands.market_daily
 python -m investment_agent.data.market.commands.market_backfill
 python -m investment_agent.data.market.commands.market_backfill --scope all-current
+python -m investment_agent.data.market.commands.sync_local_mirror
 ```
+
+로컬 계산은 `local_mirror/`의 Parquet 사본을 먼저 읽는다. `sync_local_mirror`는
+Supabase의 securities·S&P 500 멤버십·일봉·배당·분할을 읽기 전용으로 복사하며,
+사본이 없거나 오래되면 원본 조회로 돌아간다.
 
 분할 이벤트가 새로 발견되면 daily entrypoint가 그 종목의 장기 가격을 같은 계획으로 다시
 받아 같은 key로 멱등 저장한다. `persistence.py`는

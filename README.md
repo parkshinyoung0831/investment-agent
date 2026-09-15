@@ -154,7 +154,7 @@ src/investment_agent/
   data/                    universe · market · fundamentals · macro · institutional · news
   research/                features · datasets · models · backtest · RL
   trading/                 evidence · decision · portfolio · risk · performance
-  execution/               승인 · broker · 주문 · fill · reconciliation · TCA
+  execution/               승인 · broker · 주문 · fill · reconciliation
   reporting/               v1 read model과 reporting view consumer
   notifications/           engine(원장) · Discord 카드 · 채널 · discord_admin
   operations/              운영 관측 · Actions · heartbeat · 운영 CLI · 로컬 하네스

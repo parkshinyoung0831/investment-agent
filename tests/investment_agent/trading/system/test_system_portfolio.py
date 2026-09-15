@@ -474,6 +474,57 @@ class BuildSystemTargetTest(unittest.TestCase):
         calm, calm_detail = fit_tail_risk(weights, history, max_volatility=5.0, max_cvar_95_5d=1.0)
         self.assertEqual((calm, calm_detail["scale"]), (weights, 1.0))
 
+    def test_turnover_must_not_restore_tail_risk_after_the_tail_fit(self):
+        from investment_agent.trading.portfolio.market_risk import calculate_market_risk
+        from investment_agent.trading.risk.stress import STRESS_PROXIES
+        from investment_agent.trading.system.target import fit_tail_risk, gate_target
+
+        rng = random.Random(3)
+        history = {}
+        for name, vol in (("AAA", 0.04), ("BBB", 0.035), ("SPY", 0.01)):
+            price, rows = 100.0, []
+            for offset in range(260):
+                price *= 1 + rng.gauss(0, vol)
+                rows.append({"trade_date": (date(2025, 1, 1) + timedelta(days=offset)).isoformat(), "close": price})
+            history[name] = rows
+        for proxy in STRESS_PROXIES:
+            history.setdefault(proxy, history["SPY"])
+
+        current = {"AAA": 0.45, "BBB": 0.45, "CASH": 0.10}
+        fitted, _ = fit_tail_risk(current, history, max_volatility=0.30, max_cvar_95_5d=0.05)
+        self.assertLessEqual(calculate_market_risk(history, target_weights=fitted).historical_cvar_95_5d, 0.05)
+        self.assertGreater(calculate_market_risk(history, target_weights=current).historical_cvar_95_5d, 0.05)
+        now = datetime(2025, 1, 1, tzinfo=UTC) + timedelta(days=259, hours=23)
+
+        class Repository:
+            def market_prices(self, ticker, as_of_at, limit=260):
+                return history[ticker][-limit:]
+
+            def current_tracked_tickers(self):
+                return ["AAA", "BBB"]
+
+            def sp500_sector_map(self, tickers):
+                return {ticker: "tech" for ticker in tickers}
+
+        proposal = PortfolioProposal.create(
+            run_id="turnover-tail-risk", source_type="optimizer", source_version="test", stage="shadow",
+            as_of_at=now.isoformat(), weights=fitted, confidence=1.0, reasoning=("tail fitted",),
+        )
+        policy = PortfolioRiskPolicy(
+            max_symbol_weight=1.0, max_sector_weight=1.0, max_turnover=0.01, min_cash_weight=0.0,
+            max_portfolio_volatility=0.30, max_abs_beta=100.0, max_pairwise_correlation=1.0,
+            max_concentration_hhi=1.0, max_cvar_95_5d=0.05, max_stress_loss=1.0,
+        )
+        decision = gate_target(
+            Repository(), proposal=proposal, current_weights=current, decided_at=now,
+            risk_policy=policy, regime_metadata={},
+        )
+        self.assertTrue(decision.is_approved, decision.violations)
+        actual = calculate_market_risk(history, target_weights=decision.approved_weights)
+        self.assertLessEqual(actual.historical_cvar_95_5d, policy.cvar_95_5d_limit + 1e-9)
+        self.assertLessEqual(actual.portfolio_volatility, policy.max_portfolio_volatility + 1e-9)
+        self.assertAlmostEqual(decision.metrics["historical_cvar_95_5d"], actual.historical_cvar_95_5d)
+
     def test_target_signature_has_no_account_input(self):
         import inspect
         from investment_agent.trading.system.target import build_system_target

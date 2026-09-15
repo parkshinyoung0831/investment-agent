@@ -14,11 +14,11 @@ System Portfolio를 돌리는 **계산 작업장**이다. 계산할 때마다 �
 | `actions.parquet` | `market.actions_daily` | 배당·분할 |
 | `manifest.json` | — | 동기화 시각·가격 최신일·마지막 전체 동기화 시각 |
 
-기본 경로는 `data/local/mirror/`(`AI_INVESTOR_LOCAL_DATA_ROOT` 아래)이고 커밋하지 않는다.
+기본 경로는 `data/local/mirror/`이고 `AI_INVESTOR_LOCAL_MIRROR_ROOT`로 바꿀 수 있다. 커밋하지 않는다.
 
 ## 규칙
 
-- **읽기 결과는 Supabase 경로와 같은 모양이다.** `trading.supabase_repository`가 사본을 먼저 읽고, 사본이 없거나
+- **읽기 결과는 Supabase 경로와 같은 모양이다.** `trading/supabase_repository.py`가 사본을 먼저 읽고, 사본이 없거나
   오래됐으면 Supabase로 돌아간다. 동등성은 테스트가 강제한다.
 - **오래된 사본으로 "지금"을 판단하지 않는다.** 판단 시각이 동기화 뒤이고 사본이 30시간보다 오래됐으면 쓰지 않는다.
   과거 시점 조회(재현·연구)는 동기화 시각 이전이라 언제나 사본으로 답한다.
