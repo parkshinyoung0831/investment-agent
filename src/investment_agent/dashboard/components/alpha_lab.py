@@ -11,7 +11,6 @@ from investment_agent.reporting.services.investment import (
     build_fusion_policy_read_model,
     build_live_regime_read_model,
     build_optimizer_policy_read_model,
-    build_ranker_policy_read_model,
     build_risk_policy_read_model,
 )
 
@@ -116,7 +115,7 @@ def alpha_summary(payload: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def candidate_rows(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
-    """최신 Fast Ranker snapshot을 비교 가능한 행으로 만든다."""
+    """최신 후보 순위 snapshot을 비교 가능한 행으로 만든다."""
 
     candidates = latest_rows(_rows(payload, "candidate_ranks"), "as_of_at")
     candidates.sort(key=lambda row: int(row.get("rank_position") or 10**9))
@@ -283,7 +282,6 @@ def policy_snapshot() -> dict[str, Any]:
     """DB가 비어 있어도 현재 코드가 실제 적용하는 결정 규칙을 반환한다."""
 
     return {
-        "ranker": build_ranker_policy_read_model(),
         "fusion": build_fusion_policy_read_model(),
         "optimizer": build_optimizer_policy_read_model(),
         "risk": build_risk_policy_read_model(),
