@@ -22,6 +22,7 @@ from investment_agent.research.features.layer import FEATURE_VERSION, impute_cro
 from investment_agent.research.rl.contracts import FeatureSnapshot
 from investment_agent.research.evaluation.shadow_fill import round_trip_cost_rate, simulate_shadow_trade
 from investment_agent.research.datasets.contracts import TrainingSample
+from investment_agent.research.datasets.universe import members_over_window
 
 log = get_logger(__name__)
 
@@ -83,7 +84,11 @@ def build_training_samples(
         )
     window_start = (as_of_at - timedelta(days=lookback_days)).isoformat()
     window_end = as_of_at.isoformat()
-    symbols = tuple(selected.current_tracked_tickers())
+    symbols = members_over_window(
+        selected,
+        start=(as_of_at - timedelta(days=lookback_days)).date(),
+        end=as_of_at.date(),
+    )
     if not symbols:
         raise RuntimeError("no tracked ticker is available for training samples")
 

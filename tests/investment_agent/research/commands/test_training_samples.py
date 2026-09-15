@@ -150,6 +150,29 @@ class BuildTrainingSamplesTest(unittest.TestCase):
         self.assertEqual(repository.saved[0].label_definition, LABEL_DEFINITION)
         self.assertEqual(repository.saved[0].feature_version, FEATURE_VERSION)
 
+    def test_window_includes_former_members_not_only_current_tracked_names(self):
+        """과거 편출 종목 BBB를 조회 범위에서 빼면 학습 표본이 조용히 사라진다."""
+        class FormerMemberRepository(_Repository):
+            def current_tracked_tickers(self):
+                return ["AAA"]
+
+            def historical_sp500_membership(self, *, start_date, end_date):
+                return [{"symbols": ["AAA", "BBB"]}]
+
+            def rl_feature_snapshot_rows(self, symbols, **kwargs):
+                self.feature_symbols = symbols
+                return super().rl_feature_snapshot_rows(symbols, **kwargs)
+
+            def rl_training_label_rows(self, symbols, **kwargs):
+                self.label_symbols = symbols
+                return super().rl_training_label_rows(symbols, **kwargs)
+
+        repository = FormerMemberRepository(periods=1)
+        payload = self._run(repository)
+        self.assertIn("BBB", repository.feature_symbols)
+        self.assertIn("BBB", repository.label_symbols)
+        self.assertEqual(payload["detail"]["samples"], 2)
+
     def test_sample_carries_both_gross_and_net_labels(self):
         repository = _Repository()
         self._run(repository)
