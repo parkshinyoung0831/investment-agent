@@ -335,6 +335,29 @@ def _nearest_rows(
 class SupabaseRepository:
     """LLM에는 노출하지 않는 제한된 읽기 도구와 판단 저장소."""
 
+    # 같은 판단 시각의 같은 조회를 한 실행 안에서 다시 보내지 않는다. 판단 하나가 비용·베타·스트레스·시장위험마다
+    # 같은 종목 가격을 읽고, 13F 유효 보유 상태는 종목과 무관한데 종목마다 다시 만든다. 키에 판단 시각이 들어가
+    # 시점 규칙은 그대로다. 장시간 프로세스가 늦게 적재된 값을 놓치지 않게 짧게만 기억한다.
+    _MEMO_SECONDS = 600.0
+    _MEMO_MAX_ENTRIES = 4096
+
+    def _memo(self, key: tuple, read):
+        import threading
+        import time
+
+        state = self.__dict__.setdefault("_memo_state", {"lock": threading.Lock(), "values": {}})
+        now = time.monotonic()
+        with state["lock"]:
+            cached = state["values"].get(key)
+            if cached is not None and cached[1] > now:
+                return cached[0]
+        value = read()
+        with state["lock"]:
+            if len(state["values"]) >= self._MEMO_MAX_ENTRIES:
+                state["values"].clear()
+            state["values"][key] = (value, now + self._MEMO_SECONDS)
+        return value
+
     @staticmethod
     def _trading_repository():
         """v1 trading 원장의 domain owner를 지연 생성한다."""
@@ -478,8 +501,14 @@ class SupabaseRepository:
         self,
         as_of_at: datetime,
     ) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]], list[dict[str, Any]]]:
-        """institutional 스키마의 owner에게 위임한다 — 유효 신고 선택 규칙은 그쪽 domain 지식이다."""
-        return institutional_persistence.effective_portfolio_state(as_of_at)
+        """institutional 스키마의 owner에게 위임한다 — 유효 신고 선택 규칙은 그쪽 domain 지식이다.
+
+        종목과 무관한 전체 13F 상태라 판단 시각마다 한 번만 만든다. 부르는 쪽은 읽기만 한다.
+        """
+        return self._memo(
+            ("effective_guru_state", as_of_at.isoformat()),
+            lambda: institutional_persistence.effective_portfolio_state(as_of_at),
+        )
     def candidate_tickers(
         self,
         limit: int = 50,
@@ -700,8 +729,15 @@ class SupabaseRepository:
         }
 
     def market_prices(self, ticker: str, as_of_at: datetime, limit: int = 260) -> list[dict]:
-        """market 스키마의 owner에게 위임한다 — 조회 규칙을 두 곳에 두지 않는다."""
-        return market_db.price_history_as_of(ticker, as_of_at, limit=limit)
+        """market 스키마의 owner에게 위임한다 — 조회 규칙을 두 곳에 두지 않는다.
+
+        기억한 결과는 행 사본으로 돌려준다. 부르는 쪽이 행을 고쳐도 다음 호출이 오염되지 않는다.
+        """
+        rows = self._memo(
+            ("market_prices", str(ticker).upper(), as_of_at.isoformat(), int(limit)),
+            lambda: market_db.price_history_as_of(ticker, as_of_at, limit=limit),
+        )
+        return [dict(row) for row in rows]
     def closes_on_date(self, tickers: Sequence[str], trade_date: date) -> dict[str, float]:
         """연구 전용 횡단면 종가 — evidence/feature 경로에서 부르지 않는다(미래 가격일 수 있다)."""
         return market_db.closes_on_date(tickers, trade_date)
@@ -715,8 +751,19 @@ class SupabaseRepository:
         """market 스키마의 owner에게 위임한다."""
         return market_db.corporate_actions(ticker, since=since)
     def technical_snapshot(self, ticker: str, as_of_at: datetime) -> list[dict]:
-        """Research DuckDB feature store의 owner에게 위임한다."""
-        return features_db.latest_signal_as_of(ticker, as_of_at)
+        """Research DuckDB feature store의 owner에게 위임한다.
+
+        종목마다 DuckDB 파일을 새로 열면 종목당 약 0.3초가 든다. 같은 판단 시각이면 전 종목의 최신 행을 한 번에
+        읽어 두고 나눠 준다(조건은 종목별 조회와 같다: 거래일 ≤ 판단일, 적재 시각 ≤ 판단 시각).
+        """
+        if as_of_at.tzinfo is None:
+            raise ValueError("as_of_at must include timezone")
+        latest = self._memo(
+            ("technical_snapshot", as_of_at.isoformat()),
+            lambda: features_db.latest_signals_as_of(as_of_at),
+        )
+        row = latest.get(str(ticker))
+        return [dict(row)] if row is not None else []
     def fundamentals(self, ticker: str, as_of_at: datetime, limit: int = 12) -> list[dict]:
         """fundamentals 스키마의 owner에게 위임한다."""
         return fundamentals_expectations.security_fundamentals_as_of(ticker, as_of_at, limit=limit)

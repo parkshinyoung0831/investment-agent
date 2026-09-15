@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import threading
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
@@ -86,11 +87,14 @@ class ContextBuilder:
         # 거시·경제 일정은 종목과 무관하고 같은 시각이면 같은 값이다. 종목마다 다시 읽으면 503종목
         # feature 적재 시간의 2/3(종목당 약 4초)를 같은 조회가 차지한다. 빌더 수명 동안만 기억한다.
         self._shared: dict[tuple, Any] = {}
+        # 여러 종목을 스레드로 동시에 만들 때 같은 공유 조회가 한 번만 나가게 한다.
+        self._shared_lock = threading.Lock()
 
     def _once(self, key: tuple, read):
-        if key not in self._shared:
-            self._shared[key] = read()
-        return self._shared[key]
+        with self._shared_lock:
+            if key not in self._shared:
+                self._shared[key] = read()
+            return self._shared[key]
 
     def build(
         self,

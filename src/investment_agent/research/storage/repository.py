@@ -404,6 +404,32 @@ class ResearchStore:
             row["ingested_at"] = _iso(row["ingested_at"])
         return rows
 
+    def latest_features_as_of_all(self, *, trade_date: date, as_of_at: datetime) -> dict[str, dict[str, Any]]:
+        """`latest_feature_as_of`와 같은 조건으로 전 종목의 최신 행을 한 번에 읽는다(ticker → 행)."""
+        self._ensure_bulk_migrated()
+        if not self._feature_files():
+            return {}
+        with self._connect() as connection:
+            connection.execute(
+                """
+                SELECT ticker, trade_date, rsi14, macd, macd_signal, ingested_at
+                FROM (
+                    SELECT *, row_number() OVER (PARTITION BY ticker ORDER BY trade_date DESC) AS rank
+                    FROM read_parquet(?, union_by_name=true)
+                    WHERE trade_date <= ? AND ingested_at <= ?
+                ) ranked
+                WHERE rank = 1
+                """,
+                [self._parquet_pattern(self._feature_root), trade_date.isoformat(), as_of_at],
+            )
+            rows = self._rows(connection)
+        output: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            row["trade_date"] = str(row["trade_date"])
+            row["ingested_at"] = _iso(row["ingested_at"])
+            output[str(row["ticker"])] = row
+        return output
+
     # ── 전략 배분 ───────────────────────────────────────────────────────
     def allocation_strategy_ids(self, apply_date: date) -> set[str]:
         with self._connect() as connection:
