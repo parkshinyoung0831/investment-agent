@@ -7,7 +7,9 @@
 from __future__ import annotations
 
 import argparse
+import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 from investment_agent.operations.runtime import run_log_payload
@@ -25,6 +27,23 @@ WORKFLOW = "ai_investor_build_features"
 _UPSERT_CHUNK = 100
 # 밸류에이션 관측값을 찾을 창. 공시가 없는 날에도 직전 값을 쓴다.
 _VALUATION_LOOKBACK_DAYS = 7
+
+
+# 동시에 기다릴 종목 수. Supabase(PostgREST) 요청 한도와 8초 statement timeout을 넘기지 않게 보수적으로 둔다.
+DEFAULT_WORKERS = 4
+_MAX_WORKERS = 16
+WORKERS_ENV = "FEATURE_BUILD_WORKERS"
+
+
+def default_workers() -> int:
+    """환경변수가 없거나 잘못되면 기본값. 상한을 넘기면 상한으로 자른다."""
+    raw = os.environ.get(WORKERS_ENV)
+    try:
+        value = int(raw) if raw else DEFAULT_WORKERS
+    except ValueError:
+        log.warning("%s is not an integer: %r; using %d", WORKERS_ENV, raw, DEFAULT_WORKERS)
+        return DEFAULT_WORKERS
+    return max(1, min(value, _MAX_WORKERS))
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -79,8 +98,12 @@ def build_features(
     source_kind: str = "live_shadow",
     dry_run: bool = False,
     repository: SupabaseRepository | None = None,
+    workers: int | None = None,
 ) -> dict[str, object]:
     """종목별 EvidenceBundle을 고정 스키마 FeatureSnapshot으로 바꿔 저장한다."""
+    workers = default_workers() if workers is None else workers
+    if workers < 1:
+        raise ValueError("workers must be positive")
     started = time.monotonic()
     started_at = datetime.now(timezone.utc).isoformat()
     selected = repository or SupabaseRepository()
@@ -103,24 +126,33 @@ def build_features(
         selected.save_rl_feature_snapshots(pending)
         return len(pending)
 
-    built = 0
-    for ticker in tickers:
+    def compute(ticker: str):
         try:
             bundle = builder.build(ticker, as_of_at, source_kind=source_kind)
-            snapshot = layer.build(bundle, valuation=valuations.get(ticker)).snapshot
+            return ticker, layer.build(bundle, valuation=valuations.get(ticker)).snapshot, None
         except Exception as exc:  # 한 종목 실패가 그날 전체 수집을 막지 않는다.
-            log.warning("feature build failed ticker=%s: %s", ticker, exc)
-            failures.append(ticker)
-            continue
-        if not snapshot.is_available:
-            # 근거가 하나도 없으면 저장해도 학습에 쓸 수 없다. 결측 사유는 로그로만 남긴다.
-            unavailable += 1
-            continue
-        rows.append(snapshot.to_storage_row())
-        built += 1
-        if len(rows) >= _UPSERT_CHUNK:
-            saved += flush(rows)
-            rows = []
+            return ticker, None, exc
+
+    built = 0
+    selected_workers = max(1, min(int(workers), len(tickers) or 1))
+    with ThreadPoolExecutor(max_workers=selected_workers, thread_name_prefix="feature-build") as executor:
+        # 시간의 대부분이 Supabase 응답 대기라 스레드로 동시에 기다린다. 결과는 입력 순서대로 받아
+        # 저장 묶음·로그·실패 목록이 순차 실행과 같은 순서를 유지한다.
+        results = executor.map(compute, tickers)
+        for ticker, snapshot, exc in results:
+            if exc is not None:
+                log.warning("feature build failed ticker=%s: %s", ticker, exc)
+                failures.append(ticker)
+                continue
+            if not snapshot.is_available:
+                # 근거가 하나도 없으면 저장해도 학습에 쓸 수 없다. 결측 사유는 로그로만 남긴다.
+                unavailable += 1
+                continue
+            rows.append(snapshot.to_storage_row())
+            built += 1
+            if len(rows) >= _UPSERT_CHUNK:
+                saved += flush(rows)
+                rows = []
     saved += flush(rows)
 
     payload = run_log_payload(
@@ -141,6 +173,7 @@ def build_features(
             "failed": failures[:20],
             "failed_count": len(failures),
             "dry_run": dry_run,
+            "workers": selected_workers,
         },
     )
     log.info("feature snapshots %s", payload)

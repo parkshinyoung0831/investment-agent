@@ -170,7 +170,17 @@ def latest_signal_as_of(ticker: str, as_of_at: datetime) -> list[dict]:
     )
 
 
+def latest_signals_as_of(as_of_at: datetime) -> dict[str, dict]:
+    """as_of 시점에 확정돼 있던 종목별 최신 로컬 기술지표. `latest_signal_as_of`를 전 종목에 한 번에."""
+    if as_of_at.tzinfo is None:
+        raise ValueError("as_of_at must include timezone")
+    return _read_store().latest_features_as_of_all(
+        trade_date=as_of_at.date(), as_of_at=as_of_at.astimezone(timezone.utc)
+    )
+
+
 __all__ = [
+    "latest_signals_as_of",
     "SCHEMA_MARKET", "SCHEMA_UNIVERSE", "T_PRICES_DAILY", "T_SECURITIES",
     "changed_indicators", "delete_before", "earliest_market_change_since",
     "existing_indicators_since", "latest_indicator_date", "latest_indicator_write_at",

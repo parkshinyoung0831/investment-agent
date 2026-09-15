@@ -5,8 +5,10 @@
 """
 from __future__ import annotations
 
+import threading
+import time
 from collections.abc import Sequence
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 from dateutil.relativedelta import relativedelta
@@ -45,8 +47,41 @@ def _universe() -> UniverseRepository:
     return UniverseRepository(_db())
 
 
+# ticker → security_id 기억 시간. 한 실행 안에서 같은 종목을 가격·배당·분할마다 다시 풀면 종목당 왕복이
+# 두세 번 늘어난다. 신원 교체(상장 전환)는 드물고 하루 단위라, 짧게만 기억해 교체 뒤 오래 틀리지 않게 한다.
+_ID_CACHE_SECONDS = 600.0
+_id_cache: dict[str, tuple[int, float]] = {}
+_id_cache_lock = threading.Lock()
+
+
 def _ids(tickers: list[str]) -> dict[str, int]:
-    return _universe().security_ids(tickers)
+    """못 찾은 종목은 기억하지 않는다 — 곧 적재될 종목이 계속 없는 것으로 남지 않게.
+
+    `configure`로 다른 DB를 주입한 경우(테스트·검증 도구)는 기억하지 않는다. 기억은 DB마다 다르다.
+    """
+    if _database is not None:
+        return _universe().security_ids(tickers)
+    now = time.monotonic()
+    wanted = [str(ticker).upper() for ticker in tickers]
+    found: dict[str, int] = {}
+    with _id_cache_lock:
+        for ticker in wanted:
+            cached = _id_cache.get(ticker)
+            if cached is not None and cached[1] > now:
+                found[ticker] = cached[0]
+    missing = sorted({ticker for ticker in wanted if ticker not in found})
+    if missing:
+        fetched = _universe().security_ids(missing)
+        with _id_cache_lock:
+            for ticker, security_id in fetched.items():
+                _id_cache[str(ticker).upper()] = (int(security_id), now + _ID_CACHE_SECONDS)
+        found.update({str(ticker).upper(): int(security_id) for ticker, security_id in fetched.items()})
+    return found
+
+
+def clear_id_cache() -> None:
+    with _id_cache_lock:
+        _id_cache.clear()
 
 
 def universe_company_tickers() -> list[str]:
@@ -146,8 +181,9 @@ def _ticker_id(ticker: str) -> int | None:
     return _ids([ticker]).get(str(ticker).upper())
 
 
-def _price_rows(ticker: str, *, start: date, end: date, known_at: datetime | None = None) -> list[dict]:
-    security_id = _ticker_id(ticker)
+def _price_rows(ticker: str, *, start: date, end: date, known_at: datetime | None = None,
+                security_id: int | None = None) -> list[dict]:
+    security_id = security_id if security_id is not None else _ticker_id(ticker)
     if security_id is None:
         return []
     bars = MarketRepository(_db()).bars([security_id], start=start, end=end, known_at=known_at)
@@ -157,16 +193,35 @@ def _price_rows(ticker: str, *, start: date, end: date, known_at: datetime | Non
     ]
 
 
+_EARLIEST_BAR = date(1900, 1, 1)
+
+
+def _history_window_start(end: date, limit: int) -> date:
+    """`limit` 거래일을 넉넉히 덮는 달력 시작일. 거래일은 주 5일, 휴장은 연 10일 안팎이다."""
+    return end - timedelta(days=int(limit * 1.5) + 30)
+
+
 def price_history_as_of(ticker: str, as_of_at: datetime, *, limit: int = 260) -> list[dict]:
+    """판단 시점까지의 마지막 `limit`개 봉과 그 구간의 배당·분할.
+
+    전체 이력을 읽고 뒤를 자르는 대신 창만 읽는다. 창 안의 봉이 `limit`보다 적으면(상장이 짧거나 긴 거래정지)
+    전체 이력으로 다시 읽어, 결과는 전체를 읽고 자른 것과 항상 같다.
+    """
     if as_of_at.tzinfo is None:
         raise ValueError("as_of_at must include timezone")
-    rows = _price_rows(ticker, start=date(1900, 1, 1), end=as_of_at.date(), known_at=as_of_at)
+    security_id = _ticker_id(ticker)
+    if security_id is None:
+        return []
+    end = as_of_at.date()
+    rows = _price_rows(ticker, start=_history_window_start(end, limit), end=end, known_at=as_of_at,
+                       security_id=security_id)
+    if len(rows) < limit:
+        rows = _price_rows(ticker, start=_EARLIEST_BAR, end=end, known_at=as_of_at, security_id=security_id)
     rows = rows[-limit:]
     if not rows:
         return []
     first = date.fromisoformat(str(rows[0]["trade_date"]))
     last = date.fromisoformat(str(rows[-1]["trade_date"]))
-    security_id = _ticker_id(ticker)
     repo = MarketRepository(_db())
     dividends = [event.as_row() for event in repo.dividends([security_id], since=first) if event.ex_date <= last]
     splits = [event.as_row() for event in repo.splits([security_id], since=first) if event.action_date <= last]
