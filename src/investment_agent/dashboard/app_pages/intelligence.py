@@ -263,13 +263,11 @@ def _render_models(payload: Mapping[str, Any], observed_at: Any) -> None:
         dataframe(evaluations, key="alpha_evaluation_table", column_config={name: st.column_config.NumberColumn(format="percent") for name in ("총수익률", "벤치마크", "초과수익률", "최대 낙폭", "연환산 변동성", "회전율")})
 
     st.subheader("연구·확장 모델 구조")
-    st.caption("아래 Fast Ranker와 Native Fusion은 구현된 연구 경로이며, 현재 정기 TradingAgents 분석과 동일한 운영 경로는 아니에요.")
+    st.caption("아래 Native Fusion은 구현된 연구 경로이며, 현재 정기 TradingAgents 분석과 동일한 운영 경로는 아니에요.")
     fusion = policies["fusion"]
-    ranker = policies["ranker"]
     optimizer = policies["optimizer"]
     risk = policies["risk"]
-    left, right = st.columns(2)
-    with left.container(border=True):
+    with st.container(border=True):
         st.markdown("**신호 융합**")
         fusion_labels = {
             "numeric": "수치 모델",
@@ -285,11 +283,6 @@ def _render_models(payload: Mapping[str, Any], observed_at: Any) -> None:
         ]
         st.bar_chart(pd.DataFrame(fusion_rows), x="입력", y="기본 비중", color=dashboard_palette().primary)
         st.caption(str(fusion["rule"]))
-    with right.container(border=True):
-        st.markdown("**Fast Ranker**")
-        st.write(f"기존 정량 점수 **{ranker['baseline_weight']:.0%}** + 11개 영역 점수 **{ranker['numeric_weight']:.0%}**로 최대 **{ranker['max_candidates']}종목**을 골라요.")
-        rank_rows = sorted(({"영역": DOMAIN_LABELS.get(name, name), "가중치": weight} for name, weight in ranker["domain_weights"].items()), key=lambda row: row["가중치"], reverse=True)
-        dataframe(rank_rows, key="alpha_ranker_weights", column_config={"가중치": st.column_config.ProgressColumn(min_value=0.0, max_value=0.15, format="percent")})
 
     with st.container(horizontal=True):
         st.metric("종목당 최대", display_percent(risk["max_symbol_weight"]), border=True)
@@ -323,7 +316,7 @@ def _trace_steps(trace: Mapping[str, Any], ticker: str) -> list[dict[str, str]]:
     tca = _list(trace.get("tca_reports"))
     evaluation = _mapping(trace.get("evaluation"))
     return [
-        {"title": "후보 선별", "value": f"#{candidate.get('rank_position')} · {display_percent(candidate.get('rank_score'))}" if candidate else "기록 없음", "detail": f"{candidate.get('domain_count') or 0}개 근거 영역" if candidate else "Fast Ranker 결과가 없어요.", "status": str(candidate.get("feature_version") or "미생성")},
+        {"title": "후보 선별", "value": f"#{candidate.get('rank_position')} · {display_percent(candidate.get('rank_score'))}" if candidate else "기록 없음", "detail": f"{candidate.get('domain_count') or 0}개 근거 영역" if candidate else "후보 선별 결과가 없어요.", "status": str(candidate.get("feature_version") or "미생성")},
         {"title": "이벤트 Feature", "value": f"중요도 {display_percent(feature.get('event_importance'))}" if feature else "기록 없음", "detail": f"이벤트 {feature.get('event_count') or 0}건 · 고영향 {feature.get('high_impact_event_count') or 0}건" if feature else "이벤트 snapshot이 없어요.", "status": str(feature.get("feature_version") or "미생성")},
         {"title": "종목 신호", "value": str(signal_body.get("signal") or signal_body.get("action") or "기록 없음"), "detail": f"기대 초과수익 {display_percent(signal_body.get('expected_excess_return'))} · 확신 {display_percent(signal_body.get('confidence'))}" if signal else "융합 신호가 없어요.", "status": "유효" if signal else "미생성"},
         {"title": "목표 비중", "value": display_percent(weights.get(ticker)) if proposal else "기록 없음", "detail": f"출처 {proposal.get('source_type') or '—'} · 확신 {display_percent(proposal.get('confidence'))}" if proposal else "포트폴리오 제안이 없어요.", "status": str(proposal.get("stage") or "미생성")},

@@ -17,7 +17,6 @@ from investment_agent.research.features.event_intelligence import (
     normalize_contents,
     summarize_event_features,
 )
-from investment_agent.trading.decision.fast_ranker import FastRankFeatures, rank_fast_candidates
 from investment_agent.trading.decision.regime import build_market_regime
 from investment_agent.research.evaluation.challenger import ChallengerPolicy, compare_challenger
 from investment_agent.research.contracts import FeatureRecord, LabelRecord
@@ -113,7 +112,7 @@ class NativeCoreTests(unittest.TestCase):
         self.assertEqual(features.event_count, 1)
         self.assertGreater(features.news_velocity, 0.0)
 
-    def test_market_regime_and_fast_ranker_are_deterministic_numeric_layers(self) -> None:
+    def test_market_regime_is_deterministic_numeric_layer(self) -> None:
         regime = build_market_regime(
             AS_OF,
             benchmark_return=-0.05,
@@ -124,15 +123,6 @@ class NativeCoreTests(unittest.TestCase):
             event_risk=0.90,
         )
         self.assertEqual(regime.risk_state, "CRISIS")
-        features = (
-            FastRankFeatures("AAPL", last_analyzed_at=AS_OF, momentum=0.20, news_velocity=1.0),
-            FastRankFeatures("MSFT", last_analyzed_at=AS_OF, momentum=0.05),
-            FastRankFeatures("NVDA", last_analyzed_at=AS_OF, momentum=0.30, volume_anomaly=2.0),
-        )
-        ranks = rank_fast_candidates(features, as_of_at=AS_OF, limit=2)
-        self.assertEqual(len(ranks), 2)
-        self.assertEqual(ranks[0].score_purpose, "deep_analysis_priority")
-        self.assertGreaterEqual(ranks[0].score, ranks[1].score)
 
     def test_market_state_is_ram_only_latest_and_freshness_checked(self) -> None:
         state = MarketState()
