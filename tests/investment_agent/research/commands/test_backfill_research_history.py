@@ -1,0 +1,63 @@
+"""과거 재현 backfill: 평일 판단 시각, 이미 있는 시점 건너뛰기, 밸류에이션 → feature 순서."""
+from __future__ import annotations
+
+import unittest
+from datetime import date, datetime, timezone
+
+from investment_agent.research.commands.backfill_research_history import backfill, replay_dates
+
+
+class ReplayDatesTest(unittest.TestCase):
+    def test_dates_are_weekdays_after_the_daily_bar_is_final(self):
+        dates = replay_dates(start=date(2025, 6, 7), end=date(2025, 6, 30), every_days=7)  # 6/7 토요일
+        self.assertEqual([moment.date().isoformat() for moment in dates],
+                         ["2025-06-06", "2025-06-13", "2025-06-20", "2025-06-27"])
+        self.assertTrue(all(moment.weekday() < 5 and moment.hour == 23 for moment in dates))
+
+    def test_invalid_ranges_are_rejected(self):
+        with self.assertRaises(ValueError):
+            replay_dates(start=date(2025, 6, 1), end=date(2025, 5, 1), every_days=7)
+        with self.assertRaises(ValueError):
+            replay_dates(start=date(2025, 6, 1), end=date(2025, 7, 1), every_days=0)
+
+
+class BackfillTest(unittest.TestCase):
+    def setUp(self):
+        self.calls: list[tuple[str, str]] = []
+        self.dates = [datetime(2025, 6, day, 23, 30, tzinfo=timezone.utc) for day in (6, 13, 20)]
+
+    def _build(self, name):
+        def run(**kwargs):
+            self.calls.append((name, kwargs["as_of_at"].date().isoformat()))
+            assert kwargs["source_kind"] == "historical_replay"
+            return {"rows_upserted": len(kwargs["tickers"]), "status": "success"}
+        return run
+
+    def test_existing_dates_are_skipped_and_valuations_come_before_features(self):
+        results = backfill(
+            dates=self.dates, universe=lambda as_of: ["AAA", "BBB"],
+            has_snapshots=lambda as_of: as_of.day == 13,
+            build_valuations=self._build("valuations"), build_features=self._build("features"),
+        )
+        self.assertEqual([row["status"] for row in results], ["built", "skipped_existing", "built"])
+        self.assertEqual(self.calls, [("valuations", "2025-06-06"), ("features", "2025-06-06"),
+                                      ("valuations", "2025-06-20"), ("features", "2025-06-20")])
+
+    def test_max_dates_limits_only_new_work(self):
+        results = backfill(
+            dates=self.dates, universe=lambda as_of: ["AAA"], has_snapshots=lambda as_of: as_of.day == 6,
+            build_valuations=self._build("valuations"), build_features=self._build("features"), max_dates=1,
+        )
+        self.assertEqual([row["status"] for row in results], ["skipped_existing", "built"])
+
+    def test_a_date_without_membership_builds_nothing(self):
+        results = backfill(
+            dates=self.dates[:1], universe=lambda as_of: [], has_snapshots=lambda as_of: False,
+            build_valuations=self._build("valuations"), build_features=self._build("features"),
+        )
+        self.assertEqual(results[0]["status"], "no_membership")
+        self.assertEqual(self.calls, [])
+
+
+if __name__ == "__main__":
+    unittest.main()

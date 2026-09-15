@@ -162,23 +162,45 @@ def settle_pending_orders(
     return session
 
 
+def apply_corporate_actions(store: VirtualBookStore, book: VirtualBook, repository: Any, *,
+                            session: str, now: datetime) -> list[dict[str, Any]]:
+    """평가 전에 확정 거래일까지의 분할·배당을 가상 보유에 반영한다."""
+    if not hasattr(repository, "corporate_actions"):
+        return []
+    created = datetime.fromisoformat(book.created_at).date().isoformat()
+    tickers = set(store.state(book.book_id).positions) | store.traded_tickers_since(book.book_id, created)
+    actions = [
+        action for ticker in sorted(tickers)
+        for action in repository.corporate_actions(ticker, since=created)
+        if created < str(action["action_date"]) <= session
+    ]
+    applied = store.apply_corporate_actions(book_id=book.book_id, actions=actions, applied_at=now)
+    if applied:
+        log.info("virtual book corporate actions book=%s applied=%d", book.book_id, len(applied))
+    return applied
+
+
 def mark_book(store: VirtualBookStore, book: VirtualBook, repository: Any, *, now: datetime) -> tuple[str, float] | None:
     """가장 최근 확정 거래일 종가로 가상계좌 가치를 기록한다."""
     calendar = _finalized_rows(repository, CALENDAR_SYMBOL, now)
     if not calendar:
         return None
     session = str(calendar[-1]["trade_date"])
+    apply_corporate_actions(store, book, repository, session=session, now=now)
     state = store.state(book.book_id)
     closes: dict[str, float] = {}
+    stale: list[str] = []
     for ticker in state.positions:
         rows = [row for row in _finalized_rows(repository, ticker, now) if str(row["trade_date"]) <= session]
         if not rows:
             raise ContractError(f"no finalized close to value {ticker} in book {book.book_id}")
         closes[ticker] = float(rows[-1]["close"])
+        if str(rows[-1]["trade_date"]) < session:
+            stale.append(ticker)
     nav = state.nav(closes)
     exposure = sum(quantity * closes[ticker] for ticker, quantity in state.positions.items())
     store.record_nav(book_id=book.book_id, trade_date=session, nav=nav, cash=state.cash,
-                     gross_exposure=exposure / nav if nav > 0 else 0.0)
+                     gross_exposure=exposure / nav if nav > 0 else 0.0, stale_price_tickers=stale)
     return session, nav
 
 
@@ -215,7 +237,8 @@ def _optimizer_targets(repository: Any, book: VirtualBook, snapshot: AccountSnap
     return (dict(risk.approved_weights) if risk.is_approved else None), reasons, detail
 
 
-def _rl_targets(repository: Any, book: VirtualBook, snapshot: AccountSnapshot, batch_id: str) -> tuple[dict[str, float] | None, dict[str, str], dict[str, Any]]:
+def _rl_targets(repository: Any, book: VirtualBook, snapshot: AccountSnapshot, batch_id: str,
+                evaluate_weights: Callable[..., Any] | None = None) -> tuple[dict[str, float] | None, dict[str, str], dict[str, Any]]:
     from investment_agent.research.rl.serving import compute_rl_target_weights, default_active_policy_path
 
     signal_book = repository.load_signal_book(as_of_at=datetime.fromisoformat(snapshot.captured_at))
@@ -231,7 +254,102 @@ def _rl_targets(repository: Any, book: VirtualBook, snapshot: AccountSnapshot, b
     limits = PortfolioRiskPolicy()
     weights = cap_target_weights(outcome.weights, max_symbol_weight=limits.max_symbol_weight,
                                  min_cash_weight=limits.min_cash_weight)
-    return weights, {}, detail
+    if evaluate_weights is None:
+        from investment_agent.trading.portfolio.construct import evaluate_target_weights as evaluate_weights
+    # optimizer 계좌와 같은 regime·섹터·회전율·CVaR·스트레스 한도를 거쳐야 두 계좌 성과를 비교할 수 있다.
+    evaluation = evaluate_weights(
+        repository, weights=weights, source_type="rl", source_version=str(outcome.policy_artifact_id or "rl"),
+        snapshot=snapshot, stage=book.stage, metadata={"active_batch_id": batch_id},
+    )
+    risk = evaluation.risk
+    detail = {
+        **detail,
+        "proposal_id": evaluation.proposal.proposal_id,
+        "risk_decision_id": risk.risk_decision_id,
+        "violations": list(risk.violations),
+        "adjustments": list(risk.adjustments),
+    }
+    return (dict(risk.approved_weights) if risk.is_approved else None), {}, detail
+
+
+FACTOR_EXPECTED_RETURNS = "factor"
+
+
+def _run_factor_book(store: VirtualBookStore, repository: Any, book: VirtualBook, *, now: datetime,
+                     policy: SimulationPolicy, base: dict[str, Any],
+                     evaluate_factor: Callable[..., Any] | None) -> BookRunResult:
+    """LLM 배치가 아니라 factor 횡단면과 재조정 주기로 판단한다.
+
+    배치마다 판단하면 매일 20종목 분석이 끝날 때마다 전체를 다시 사고판다. 중장기 보유 계좌는 새 횡단면이
+    있고 마지막 판단에서 `rebalance_days`가 지났을 때만 다시 본다.
+    """
+    from investment_agent.trading.portfolio.factor_portfolio import FactorBookPolicy, rebalance_due
+
+    if evaluate_factor is None:
+        from investment_agent.trading.portfolio.factor_portfolio import evaluate_factor_portfolio as evaluate_factor
+    factor_policy = FactorBookPolicy(**dict(book.config.get("factor_policy") or {}))
+    section = repository.factor_cross_section(now)
+    if section is None:
+        return BookRunResult(**base, skipped_reason="no_factor_cross_section")
+    snapshot_as_of, scores = section
+    skip = rebalance_due(last_decided_at=book.last_decided_at, last_batch_id=book.last_batch_id,
+                         snapshot_as_of=snapshot_as_of, now=now, policy=factor_policy)
+    if skip is not None:
+        return BookRunResult(**base, skipped_reason=skip)
+    state = store.state(book.book_id)
+    eligible = sorted((score for score in scores.values() if score.passes_quality_gate and score.composite is not None),
+                      key=lambda score: (-float(score.composite), score.ticker))
+    wanted = set(state.positions) | {score.ticker for score in eligible[:factor_policy.shortlist_size]}
+    prices = _latest_closes(repository, wanted, now)
+    missing = sorted(set(state.positions) - set(prices))
+    if missing:
+        return BookRunResult(**base, skipped_reason=f"held_positions_without_price:{','.join(missing)}")
+    snapshot = _virtual_snapshot(book, state, prices, now)
+    batch_id = f"factor:{snapshot_as_of}"
+    evaluation, plan = evaluate_factor(repository, snapshot=snapshot, stage=book.stage, scores=scores,
+                                       snapshot_as_of=snapshot_as_of, policy=factor_policy)
+    risk = evaluation.risk
+    targets = dict(risk.approved_weights) if risk.is_approved else None
+    detail: dict[str, Any] = {
+        "proposal_id": evaluation.proposal.proposal_id,
+        "risk_decision_id": risk.risk_decision_id,
+        "violations": list(risk.violations),
+        "adjustments": list(risk.adjustments),
+        "factor_signals": dict(plan.detail),
+        "no_trade_band_kept": list(evaluation.proposal.metadata.get("no_trade_band_kept") or []),
+    }
+    reasons = {symbol: reason for symbol, reason in plan.reasons.items()
+               if reason in {"LLM_VETO", "FACTOR_BREAKDOWN"}}
+    return _record_targets(store, book, batch_id=batch_id, now=now, state=state, prices=prices, targets=targets,
+                           reasons=reasons, detail=detail, policy=policy, base=base)
+
+
+def _record_targets(store: VirtualBookStore, book: VirtualBook, *, batch_id: str, now: datetime, state: BookState,
+                    prices: Mapping[str, float], targets: dict[str, float] | None, reasons: Mapping[str, str],
+                    detail: dict[str, Any], policy: SimulationPolicy, base: dict[str, Any]) -> BookRunResult:
+    nav = state.nav(prices)
+    decision_id = stable_id("virtual_decision", {"book_id": book.book_id, "batch_id": batch_id})
+    planned: list[PlannedOrder] = []
+    if targets is not None:
+        tradable = {ticker: weight for ticker, weight in targets.items() if ticker == CASH_SYMBOL or ticker in prices}
+        dropped = sorted(set(targets) - set(tradable))
+        if dropped:
+            detail = {**detail, "targets_without_price": dropped}
+        planned = plan_rebalance(state, prices=prices, target_weights=tradable, policy=policy,
+                                 reason_codes=dict(reasons))
+    store.record_decision(
+        book_id=book.book_id, decision_id=decision_id, batch_id=batch_id, decided_at=now,
+        proposal_id=detail.get("proposal_id"), risk_decision_id=detail.get("risk_decision_id"),
+        is_approved=targets is not None, nav=nav, target_weights=targets or {}, detail=detail,
+        orders=[
+            {"order_id": stable_id("virtual_order", {"decision_id": decision_id, "ticker": order.ticker, "side": order.side}),
+             "ticker": order.ticker, "side": order.side, "quantity": order.quantity, "reason_code": order.reason_code}
+            for order in planned
+        ],
+    )
+    log.info("virtual book decided book=%s batch=%s approved=%s orders=%d",
+             book.book_id, batch_id, targets is not None, len(planned))
+    return BookRunResult(**base, decision_id=decision_id, orders_planned=len(planned))
 
 
 def run_book(
@@ -242,18 +360,27 @@ def run_book(
     now: datetime,
     policy: SimulationPolicy | None = None,
     evaluate: Callable[..., Any] | None = None,
+    evaluate_weights: Callable[..., Any] | None = None,
+    evaluate_factor: Callable[..., Any] | None = None,
 ) -> BookRunResult:
     """정산 → 평가 → (새 배치가 있으면) 판단과 주문 계획. 실주문·실계좌 원장에는 닿지 않는다."""
     if evaluate is None:
         from investment_agent.trading.portfolio.construct import evaluate_portfolio as evaluate
     selected_policy = policy or default_simulation_policy()
     book = store.book(book_id)
+    calendar = _finalized_rows(repository, CALENDAR_SYMBOL, now)
+    if calendar:
+        # 체결 정산보다 먼저 한다. 분할 뒤 가격으로 분할 전 수량을 체결하면 수량 단위가 섞인다.
+        apply_corporate_actions(store, book, repository, session=str(calendar[-1]["trade_date"]), now=now)
     settled = settle_pending_orders(store, book, repository, now=now, policy=selected_policy)
     marked = mark_book(store, book, repository, now=now)
     base = {"book_id": book_id, "settled_session": settled,
             "marked_session": marked[0] if marked else None, "nav": marked[1] if marked else None}
     if store.pending_orders(book_id):
         return BookRunResult(**base, skipped_reason="orders_pending_fill")
+    if book.config.get("expected_returns") == FACTOR_EXPECTED_RETURNS:
+        return _run_factor_book(store, repository, book, now=now, policy=selected_policy, base=base,
+                                evaluate_factor=evaluate_factor)
     # 실계좌 경로와 같은 배치 선택: 완전하고 만료되지 않은 배치만. 일부 종목이 실패한 배치로
     # 판단하면 실계좌가 할 수 없는 판단을 가상계좌만 해 성과 비교가 어긋난다.
     batch_id = repository.latest_execution_ready_batch_id(as_of_at=now)
@@ -272,30 +399,10 @@ def run_book(
     if book.policy_kind == "optimizer":
         targets, reasons, detail = _optimizer_targets(repository, book, snapshot, batch_id, evaluate)
     else:
-        targets, reasons, detail = _rl_targets(repository, book, snapshot, batch_id)
-    nav = state.nav(prices)
-    decision_id = stable_id("virtual_decision", {"book_id": book_id, "batch_id": batch_id})
-    planned: list[PlannedOrder] = []
-    if targets is not None:
-        tradable = {ticker: weight for ticker, weight in targets.items() if ticker == CASH_SYMBOL or ticker in prices}
-        dropped = sorted(set(targets) - set(tradable))
-        if dropped:
-            detail = {**detail, "targets_without_price": dropped}
-        planned = plan_rebalance(state, prices=prices, target_weights=tradable, policy=selected_policy,
-                                 reason_codes=reasons)
-    store.record_decision(
-        book_id=book_id, decision_id=decision_id, batch_id=batch_id, decided_at=now,
-        proposal_id=detail.get("proposal_id"), risk_decision_id=detail.get("risk_decision_id"),
-        is_approved=targets is not None, nav=nav, target_weights=targets or {}, detail=detail,
-        orders=[
-            {"order_id": stable_id("virtual_order", {"decision_id": decision_id, "ticker": order.ticker, "side": order.side}),
-             "ticker": order.ticker, "side": order.side, "quantity": order.quantity, "reason_code": order.reason_code}
-            for order in planned
-        ],
-    )
-    log.info("virtual book decided book=%s batch=%s approved=%s orders=%d",
-             book_id, batch_id, targets is not None, len(planned))
-    return BookRunResult(**base, decision_id=decision_id, orders_planned=len(planned))
+        targets, reasons, detail = _rl_targets(repository, book, snapshot, batch_id, evaluate_weights)
+    return _record_targets(store, book, batch_id=batch_id, now=now, state=state, prices=prices, targets=targets,
+                           reasons=reasons, detail=detail, policy=selected_policy, base=base)
 
 
-__all__ = ["BookRunResult", "default_simulation_policy", "mark_book", "run_book", "settle_pending_orders"]
+__all__ = ["BookRunResult", "FACTOR_EXPECTED_RETURNS", "apply_corporate_actions", "default_simulation_policy", "mark_book", "run_book",
+           "settle_pending_orders"]

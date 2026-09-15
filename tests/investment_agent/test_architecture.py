@@ -25,6 +25,8 @@ PLATFORM_MODULES = {
     "external_usage",
     "logging",
     "retry",
+    # 프로세스별 비밀값 범위. bootstrap·config·실행 경계가 함께 쓰는 기술 규칙이라 여기 둔다.
+    "secret_scope",
     "serialization",
     "storage_paths",
 }

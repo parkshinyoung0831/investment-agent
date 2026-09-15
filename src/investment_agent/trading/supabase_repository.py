@@ -12,6 +12,8 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from investment_agent.trading.decision.candidate_ranker import (
+    FACTOR_SNAPSHOT_MAX_AGE_DAYS,
+    select_factor_candidates,
     PriorityCandidate,
     assemble_candidate_features,
     merge_priority_lane,
@@ -484,13 +486,49 @@ class SupabaseRepository:
         *,
         as_of_at: datetime,
     ) -> list[str]:
-        """tracked 전체를 coverage 우선·다중 도메인 신호 순으로 결정론적 정렬한다."""
+        """분석할 종목: 새 정보가 생긴 종목 먼저, 그다음 factor 상위 보유 후보.
+
+        factor 횡단면이 없으면(feature 적재 전·중단) 예전 다중 도메인 순환 랭커로 고른다. 분석 대상 선정은
+        주문이 아니므로 fail-open이고, 어느 경로로 골랐는지 로그에 남긴다.
+        """
         as_of_at = validate_live_candidate_as_of(as_of_at)
         tickers = self.current_tracked_tickers()
         if not tickers:
             return []
         last_analyzed = self._last_attempted(tickers, as_of_at=as_of_at)
         fundamental_rows = self._candidate_fundamental_rows(tickers, as_of_at)
+        latest_filed: dict[str, str] = {}
+        for row in fundamental_rows:
+            ticker = normalize_ticker(row.get("ticker"))
+            filed = str(row.get("filed_at") or "")
+            if ticker and filed > latest_filed.get(ticker, ""):
+                latest_filed[ticker] = filed
+        held = self._candidate_held_tickers()
+        priority = priority_candidates(
+            tickers=tickers,
+            held_tickers=held,
+            last_analyzed_at=last_analyzed,
+            latest_filed_at=latest_filed,
+            event_features=self._candidate_event_features(as_of_at),
+            as_of_at=as_of_at,
+        )
+        factor_scores = self._candidate_factor_scores(tickers, as_of_at)
+        if factor_scores is not None:
+            snapshot_as_of, scores = factor_scores
+            factor_ranked = select_factor_candidates(
+                {ticker: score for ticker, score in scores.items() if ticker in set(tickers)},
+                held_tickers=held, last_analyzed_at=last_analyzed, as_of_at=as_of_at,
+            )
+            selected = merge_priority_lane(priority, [row.ticker for row in factor_ranked], limit=limit)
+            log.info(
+                "ai investor candidate ranking path=factor as_of=%s snapshot=%s universe=%d selected=%s "
+                "priority=%s factor=%s",
+                as_of_at.isoformat(), snapshot_as_of, len(tickers), selected,
+                {item.ticker: item.reason for item in priority},
+                {row.ticker: [row.reason, None if row.composite is None else round(row.composite, 4)]
+                 for row in factor_ranked if row.ticker in selected},
+            )
+            return selected
         features = assemble_candidate_features(
             tickers,
             last_analyzed_at=last_analyzed,
@@ -500,24 +538,11 @@ class SupabaseRepository:
             segment_signals=self._candidate_segment_signals(tickers, as_of_at),
             guru_signals=self._candidate_guru_signals(tickers, as_of_at),
         )
-        latest_filed: dict[str, str] = {}
-        for row in fundamental_rows:
-            ticker = normalize_ticker(row.get("ticker"))
-            filed = str(row.get("filed_at") or "")
-            if ticker and filed > latest_filed.get(ticker, ""):
-                latest_filed[ticker] = filed
-        priority = priority_candidates(
-            tickers=tickers,
-            held_tickers=self._candidate_held_tickers(),
-            last_analyzed_at=last_analyzed,
-            latest_filed_at=latest_filed,
-            event_features=self._candidate_event_features(as_of_at),
-            as_of_at=as_of_at,
-        )
         ranking = rank_candidate_features(features, as_of_at=as_of_at, limit=limit + len(priority))
         selected = merge_priority_lane(priority, [row.ticker for row in ranking], limit=limit)
-        log.info(
-            "ai investor candidate ranking as_of=%s universe=%d selected=%s priority=%s scores=%s",
+        log.warning(
+            "ai investor candidate ranking path=legacy_rotation (factor cross-section unavailable) "
+            "as_of=%s universe=%d selected=%s priority=%s scores=%s",
             as_of_at.isoformat(),
             len(tickers),
             selected,
@@ -608,6 +633,41 @@ class SupabaseRepository:
             and floor <= parse_datetime(str(row["available_at"])) <= as_of_at
         ]
 
+    def _candidate_factor_scores(
+        self, tickers: Sequence[str], as_of_at: datetime,
+    ) -> tuple[str, dict[str, Any]] | None:
+        return self.factor_cross_section(as_of_at, universe_size=len(tickers))
+
+    def factor_cross_section(
+        self, as_of_at: datetime, *, universe_size: int | None = None,
+    ) -> tuple[str, dict[str, Any]] | None:
+        """최근 온전한 live feature 횡단면의 factor 점수. 없거나 오래됐으면 None.
+
+        후보 선정과 factor 가상계좌가 같은 횡단면을 읽는다 — 둘이 다른 날의 점수를 보면 분석한 종목과
+        담는 종목이 어긋난다.
+        """
+        tickers_count = universe_size if universe_size is not None else len(self.current_tracked_tickers())
+        from investment_agent.research.features.factors import latest_cross_section, score_cross_section
+        from investment_agent.research.features.layer import FEATURE_VERSION
+        try:
+            rows = ResearchStore(read_only=True).records(
+                "rl_feature_snapshots",
+                start_as_of=(as_of_at - timedelta(days=FACTOR_SNAPSHOT_MAX_AGE_DAYS)).isoformat(),
+                end_as_of=as_of_at.isoformat(),
+            )
+        except Exception as exc:  # noqa: BLE001 - feature 저장소 부재가 정기 분석을 멈추게 두지 않는다
+            log.warning("factor snapshots unavailable for candidate selection: %s", type(exc).__name__)
+            return None
+        # 과거 재현 행은 판단 시각이 과거라 이 창에 거의 없지만, 섞이지 않게 live 행만 쓴다.
+        live_rows = [row for row in rows if (row.get("provenance") or {}).get("source_kind") != "historical_replay"]
+        section = latest_cross_section(
+            live_rows, feature_version=FEATURE_VERSION, min_coverage=max(1, tickers_count // 2),
+        )
+        if section is None:
+            return None
+        snapshot_as_of, features = section
+        return snapshot_as_of, score_cross_section(features, groups=self.sp500_sector_map(list(features)))
+
     def _candidate_held_tickers(self) -> list[str]:
         """최근 live 계좌 snapshot의 보유종목. 원장이 없으면(분석 전용 환경) 빈 목록이다."""
         from investment_agent.execution.db import latest_live_position_tickers
@@ -642,9 +702,18 @@ class SupabaseRepository:
     def market_prices(self, ticker: str, as_of_at: datetime, limit: int = 260) -> list[dict]:
         """market 스키마의 owner에게 위임한다 — 조회 규칙을 두 곳에 두지 않는다."""
         return market_db.price_history_as_of(ticker, as_of_at, limit=limit)
+    def closes_on_date(self, tickers: Sequence[str], trade_date: date) -> dict[str, float]:
+        """연구 전용 횡단면 종가 — evidence/feature 경로에서 부르지 않는다(미래 가격일 수 있다)."""
+        return market_db.closes_on_date(tickers, trade_date)
+    def trading_dates(self, reference_ticker: str, *, start: date, end: date) -> list[date]:
+        """market 스키마의 owner에게 위임한다."""
+        return market_db.trading_dates(reference_ticker, start=start, end=end)
     def split_history(self, ticker: str) -> list[dict]:
         """market 스키마의 owner에게 위임한다."""
         return market_db.split_history(ticker)
+    def corporate_actions(self, ticker: str, *, since: str) -> list[dict]:
+        """market 스키마의 owner에게 위임한다."""
+        return market_db.corporate_actions(ticker, since=since)
     def technical_snapshot(self, ticker: str, as_of_at: datetime) -> list[dict]:
         """Research DuckDB feature store의 owner에게 위임한다."""
         return features_db.latest_signal_as_of(ticker, as_of_at)
@@ -665,6 +734,18 @@ class SupabaseRepository:
     def macro_snapshot(self, as_of_at: datetime) -> dict[str, Any]:
         """macro 스키마의 owner에게 위임한다."""
         return MacroRepository(Database(sb)).observation_snapshot_as_of(as_of_at)
+    def macro_histories(
+        self, series_ids: Sequence[str], *, as_of_at: datetime, lookback_days: int = 120,
+    ) -> dict[str, list[tuple[date, float]]]:
+        """series별 판단 시점까지 알려진 (관측일, 값) 이력. 노출 규칙이 수준과 변화폭을 함께 본다."""
+        observed = MacroRepository(Database(sb)).observations(
+            list(series_ids), since=as_of_at.date() - timedelta(days=lookback_days),
+        )
+        output: dict[str, list[tuple[date, float]]] = {}
+        for item in observed:
+            if item.known_at(as_of_at) and item.value is not None:
+                output.setdefault(item.series_id, []).append((item.ref_period, float(item.value)))
+        return output
     def segment_snapshot(self, ticker: str, as_of_at: datetime) -> dict[str, Any]:
         """fundamentals 스키마의 owner에게 위임한다."""
         return fundamentals_segments.segment_snapshot_as_of(ticker, as_of_at)
@@ -1334,6 +1415,10 @@ class SupabaseRepository:
         return market_db.price_path_from(ticker, start_date, limit=limit)
     def save_evaluation(self, row: dict) -> None:
         self._trading_repository().record_evaluation(row)
+
+    def previous_decision(self, ticker: str, *, as_of_at: datetime) -> dict | None:
+        """같은 종목의 직전 판단. 다음 판단이 무엇이 바뀌었는지 설명하게 하는 기준이다."""
+        return self._trading_repository().previous_decision_row(security_id=_security_id(ticker), as_of_at=as_of_at)
 
     def evaluated_memories(
         self,

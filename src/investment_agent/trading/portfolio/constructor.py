@@ -185,7 +185,8 @@ class PortfolioConstructor:
             "active_batch_symbols": list(active_batch.requested_symbols),
             "signal_ids": [records[ticker].signal_id for ticker in sorted(records)],
             "signal_model_artifact_ids": signal_artifacts,
-            "signal_actions": {ticker: records[ticker].proposal.signal for ticker in sorted(records)},
+            # optimizer가 실제로 쓴 행동. LLM 원문 행동은 signal_contracts의 조정 사유로 남는다.
+            "signal_actions": dict(optimized.metadata["signal_actions"]),
             "preserved_unanalyzed_symbols": sorted(current_positions - analyzed),
             "tracked_universe_count": len(tracked_tuple),
             "tracked_universe_hash": tracked_hash,

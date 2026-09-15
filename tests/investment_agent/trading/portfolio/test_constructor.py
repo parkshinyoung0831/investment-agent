@@ -113,6 +113,17 @@ class PortfolioConstructorTest(unittest.TestCase):
         self.assertAlmostEqual(low.weights["AAPL"], 0.4)
         self.assertAlmostEqual(low.weights["OLD"], 0.2)
 
+    def test_risk_gate_sees_the_action_the_optimizer_actually_used(self):
+        # 기대수익 +3%·상승확률 70%인데 exit라고 쓴 의견은 reduce로 낮아진다. RiskGate가 원문 exit를
+        # 보면 "청산 명령을 어겼다"며 정상 제안을 거부한다.
+        proposal = PortfolioConstructor().construct_optimized(
+            run_id="run-1", source_version="ta-v1", stage="live", as_of_at=DECISION_AT,
+            active_batch_id="batch-active", signal_book=book_for(security("AAPL", "exit", 0.0)),
+            snapshot=snapshot(), expected_account_id="7", tracked_symbols={"AAPL", "MSFT"},
+        )
+        self.assertEqual(proposal.metadata["signal_actions"], {"AAPL": "reduce"})
+        self.assertEqual(proposal.metadata["action_adjustments"], {"AAPL": "exit_without_bearish_outlook"})
+
     def test_preserves_unanalyzed_holdings_and_opens_only_tracked_symbol(self):
         result = construct(book_for(security("MSFT", "open", 0.1)))
         self.assertEqual(result.metadata["coverage"], "full_portfolio")

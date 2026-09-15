@@ -34,6 +34,31 @@ uv sync --group rl
 uv sync --group research
 ```
 
+### TradingAgents는 lock 밖에 있다
+
+판단 엔진 TradingAgents는 git 의존이라 `uv.lock`에 넣지 않는다(CI가 그 저장소 가용성에 묶이지
+않게). 그래서 **`uv sync`는 설치된 TradingAgents를 지운다.** 동기화 뒤 다시 설치하고, `openai`는
+2.x로 고정한다. `openai` 3.x의 새 전송 계층은 Windows에서 `pip-system-certs`가 바꿔 끼운 SSL
+클래스와 무한 재귀해 모든 LLM 호출이 `APIConnectionError`로 끝난다.
+
+```powershell
+uv sync --group dev --inexact
+uv pip install "tradingagents @ git+https://github.com/TauricResearch/TradingAgents.git@a33fd4c0f134485a43553a2c23a63cb14adbd88f" "openai>=2.45,<3"
+```
+
+`portfolio_shadow`는 첫 종목 전에 요금 없는 모델 목록 조회로 이 경로를 확인하고, 실패하면 종목
+실패를 원장에 쌓지 않고 회차를 시작하지 않는다.
+
+한 회차가 고르는 종목 수는 `AI_INVESTOR_DAILY_LIMIT`와 **오늘 남은 모델 예산**(하루 요청 한도 ÷ 종목당
+추정 호출) 중 작은 쪽이다. 하네스는 분석 timeout의 85%를 `--max-runtime-seconds`로 넘기고, 가장 오래
+걸린 종목만큼 한 번 더 걸려도 끝날 때만 다음 종목을 시작한다. 예산이 떨어져 시작하지 못한 종목은 실패로
+적지 않고 배치 요청에서도 빼 다음 회차 후보로 남긴다 — 실패로 적으면 배치가 불완전해져 실행 가능한 신호가
+생기지 않는다. 예산이 없어 배치 없이 끝난 회차는 하네스가 `skipped`로 적는다.
+
+마지막 구조화 호출이 계약(없는 근거 ID 인용 등)을 어기면 역할 토론을 버리지 않고 구조화만 한 번 다시
+요청한다. 두 번째도 어기면 그 종목은 실패다. 실측으로 LLM이 근거 ID 마지막 글자를 틀리게 옮긴 사례가 있었다. Git Bash의 `uv`는 `.venv` 디렉터리 삭제가 막히는
+경우가 있어 설치는 PowerShell에서 한다.
+
 처음부터 모든 연구 library와 broker key를 넣지 않는다.
 
 ```text
@@ -414,6 +439,11 @@ GitHub Actions = GitHub 서버의 자동 시간표
 로컬 하네스    = 노트북의 자동 시간표와 안전한 재시작 관리자
 ```
 
+하네스는 자식 프로세스마다 비밀값 범위를 정한다. 주문·대사·계좌·시세 조회 모듈
+(`harness_adapters.EXECUTION_MODULES`)만 broker·승인 비밀을 받고, LLM 판단·학습·보고 모듈은
+판단 범위로 떠서 `.env`를 다시 읽어도 그 비밀이 지워진다. 진입 재검토처럼 시세가 필요한 LLM 작업은
+`capture_toss_quotes`가 실행 범위에서 시세 파일을 만들어 넘긴다.
+
 하네스는 다음을 관리한다.
 
 - process lock으로 이중 실행 차단
@@ -535,12 +565,24 @@ Paper/Live에는 volatility, beta, correlation 같은 market-risk 입력이 필�
 TTL, approver allowlist, guild/channel/message, intent/manifest hash, 이미 소비된 승인과 listener/
 publisher의 HMAC secret 일치를 확인한다. manifest가 바뀌면 새 승인을 요청한다.
 
+### 계좌 위험 snapshot이 `quote is stale or future-dated`로 실패
+
+토스 시세 시각은 로컬 시계보다 몇백 ms 앞서 오기도 해 5초까지의 미래 시각은 허용한다. 위험 기준선
+snapshot은 보유 가치 기록이라 마지막 체결 1시간까지 받는다(장 마감 뒤 16:30까지 감시하고, 거래가 드문
+종목은 120초보다 오래되는 게 정상). 주문 직전 재검증은 120초를 그대로 쓴다.
+
 ### Toss 주문이 `outcome_unknown`
 
 같은 client order ID를 재전송하지 않는다. broker status, open orders와 fills를 조회하고
 reconciliation으로 해결한다.
 
 ### Reconciliation mismatch
+
+대사는 주문 상태와 함께 **보유수량**을 본다. 직전에 설명된 보유 + 그 뒤 우리 주문의 체결량이 토스
+보유와 다르면(앱에서 직접 매매, 분할) `unexplained_position_change`를, 우리 원장에 없는 미체결이
+있으면 `external_toss_open_orders`를 알리고 **EXECUTION_LOCKDOWN을 건다.** 신규 주문만 막히고
+기존 주문 대사는 계속된다. 원인을 확인한 뒤 공식 rearm으로 푼다. 결과가 불확실한 우리 주문이 있으면
+보유 대사는 `deferred`로 미룬다. 현금은 배당·입출금·환전으로 정상적으로도 움직여 대사하지 않는다.
 
 broker orders/fills/positions/cash를 먼저 확인한다. account/client ID/hash가 정확히 일치하는 안전한
 누락만 repair하고 충돌·external order는 lockdown과 CRITICAL alert로 남긴다.

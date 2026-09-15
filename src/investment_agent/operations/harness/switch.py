@@ -177,8 +177,9 @@ def get_harness_status(
         env_map.update(environ)
 
     pid = state.process_id
-    recorded_alive = _is_pid_alive(pid) if pid is not None else False
     os_pids = _find_running_harness_pids()
+    # 기록된 PID가 살아 있다는 것만으로는 하네스가 아니다. 재부팅 뒤 같은 번호를 다른 프로그램이 받는다.
+    recorded_alive = pid is not None and pid in os_pids
     is_running = recorded_alive or bool(os_pids)
     effective_pid = pid if recorded_alive else (os_pids[0] if os_pids else None)
 
@@ -359,12 +360,13 @@ def stop_harness_service(
     state = store.load()
     target_pids: set[int] = set()
 
-    if state.process_id is not None:
-        target_pids.add(state.process_id)
-
-    # OS 프로세스 검색으로 추가 수집
-    for pid in _find_running_harness_pids():
-        target_pids.add(pid)
+    # 명령줄로 하네스임을 확인한 프로세스만 끈다. 상태 파일의 PID는 재부팅 뒤 다른 프로그램의 번호일 수
+    # 있어서, 그 번호에 `taskkill /T`를 보내면 무관한 프로그램과 그 자식까지 강제 종료한다.
+    harness_pids = set(_find_running_harness_pids())
+    target_pids = set(harness_pids)
+    stale_recorded_pid = (
+        state.process_id if state.process_id is not None and state.process_id not in harness_pids else None
+    )
 
     killed_pids: list[int] = []
     failed_pids: list[int] = []
@@ -403,6 +405,7 @@ def stop_harness_service(
         "killed_pids": sorted(killed_pids),
         "failed_pids": sorted(failed_pids),
         "lock_removed": lock_removed,
+        "stale_recorded_pid": stale_recorded_pid,
         "state_updated": True,
         "timestamp": now_iso,
         "message": "하네스가 안전하게 완전 정지되었습니다." if success else "일부 프로세스 정지에 실패했습니다.",

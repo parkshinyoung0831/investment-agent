@@ -32,6 +32,7 @@ src/investment_agent/platform/
 ├── external_usage.py # 외부 provider 호출량의 원자적 로컬 원장
 ├── logging.py        # stdout JSON 구조화 로거
 ├── retry.py          # 네트워크 재시도 정책과 데코레이터
+├── secret_scope.py   # 판단·학습 프로세스에서 broker·승인 비밀을 지우는 범위 규칙
 ├── serialization.py  # 안정적 JSON 직렬화와 콘텐츠 해시
 ├── storage_paths.py  # 로컬 저장소의 canonical 경로와 저장소 루트
 └── __init__.py       # 패키지 마커

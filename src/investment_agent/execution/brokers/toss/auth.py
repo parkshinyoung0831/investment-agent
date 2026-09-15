@@ -506,6 +506,10 @@ _SHARED_MANAGERS_LOCK = threading.Lock()
 
 def get_token_manager() -> TossTokenManager:
     """현재 환경 자격증명·cache 경로에 대한 프로세스 singleton을 반환한다."""
+    from investment_agent.platform.secret_scope import require_execution_scope
+
+    # 환경변수가 비어도 디스크의 token cache로 인증할 수 있어서 입구에서 범위를 확인한다.
+    require_execution_scope("Toss broker authentication")
     client_id = os.environ.get("TOSS_CLIENT_ID", "").strip()
     client_secret = os.environ.get("TOSS_CLIENT_SECRET", "").strip()
     if not client_id or not client_secret:

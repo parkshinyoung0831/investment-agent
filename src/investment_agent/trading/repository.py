@@ -466,6 +466,22 @@ class TradingRepository:
             on_conflict="period_start,period_end,execution_mode",
         )
 
+    def previous_decision_row(self, *, security_id: int, as_of_at: datetime) -> dict[str, Any] | None:
+        """판단 시점 직전의 완료된 판단 하나. 결과 평가 여부와 무관하다(시점 이전 사실만 읽는다)."""
+        rows = (
+            self._db.table(SCHEMA, T_SECURITY_DECISIONS)
+            .select("case_key,as_of_at,horizon_days,final_decision")
+            .eq("security_id", int(security_id))
+            .in_("status", ["completed", "abstained"])
+            .lt("as_of_at", as_of_at.isoformat())
+            .order("as_of_at", desc=True)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        return dict(rows[0]) if rows else None
+
     def evaluated_memory_rows(
         self,
         *,

@@ -142,6 +142,25 @@ def split_history(ticker: str) -> list[dict]:
     ]
 
 
+def corporate_actions(ticker: str, *, since: str | date) -> list[dict]:
+    """행위일이 `since` 이후인 분할·배당. 가상계좌가 보유 수량과 현금을 맞출 때 쓴다."""
+    security_id = _ticker_id(ticker)
+    if security_id is None:
+        return []
+    start = date.fromisoformat(str(since)[:10])
+    repo = MarketRepository(_db())
+    rows = [
+        {"ticker": ticker.upper(), "action_date": event.action_date.isoformat(), "kind": "split", "value": event.split_ratio}
+        for event in repo.splits([security_id], since=start)
+    ]
+    rows += [
+        {"ticker": ticker.upper(), "action_date": event.ex_date.isoformat(), "kind": "dividend", "value": event.div_amount}
+        for event in repo.dividends([security_id], since=start)
+        if event.div_amount and event.div_amount > 0
+    ]
+    return rows
+
+
 def _ticker_id(ticker: str) -> int | None:
     return _ids([ticker]).get(str(ticker).upper())
 
@@ -206,6 +225,21 @@ def price_window_as_of(
         if int(bar.security_id) in ticker_by_id
     ]
     return sorted(rows, key=lambda row: (row["ticker"], row["trade_date"]))
+
+
+def closes_on_date(tickers: Sequence[str], trade_date: date) -> dict[str, float]:
+    """한 거래일의 여러 종목 종가. 과거 시점들의 횡단면 수익률을 잴 때 창 전체를 읽지 않으려고 둔다."""
+    ids = _ids(sorted({str(value).upper() for value in tickers}))
+    if not ids:
+        return {}
+    ticker_by_id = {int(security_id): ticker for ticker, security_id in ids.items()}
+    closes = MarketRepository(_db()).closes_on(trade_date, sorted(ticker_by_id))
+    return {ticker_by_id[security_id]: close for security_id, close in closes.items() if security_id in ticker_by_id}
+
+
+def trading_dates(reference_ticker: str, *, start: date, end: date) -> list[date]:
+    """기준 종목(보통 SPY)에 봉이 있는 날을 거래일 달력으로 쓴다."""
+    return [date.fromisoformat(str(row["trade_date"])) for row in _price_rows(reference_ticker, start=start, end=end)]
 
 
 def close_history_as_of(ticker: str, as_of_at: datetime, *, max_bars: int = 2100) -> list[dict]:

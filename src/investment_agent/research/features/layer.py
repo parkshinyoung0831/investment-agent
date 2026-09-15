@@ -14,7 +14,7 @@ from investment_agent.research.rl.contracts import FeatureSnapshot, ForwardRetur
 
 # feature 계약 세대. `rl_feature_snapshots`의 identity 구성요소이며, 컬럼 계약이
 # 바뀌면 snapshot과 label이 다른 세대로 분리된다.
-FEATURE_VERSION = "v4"
+FEATURE_VERSION = "v5"
 HORIZONS = (1, 5, 20)
 
 # 20거래일 수익률은 오늘 종가와 20거래일 전 종가가 둘 다 필요하다. ContextBuilder가
@@ -60,14 +60,28 @@ _GURU_FEATURES = tuple(f"guru_{name}" for name in _GURU_FIELDS)
 _VALUATION_RATIOS = ("pe_ttm", "pb", "ps_ttm", "fcf_yield")
 _VALUATION_FEATURES = (
     *(f"valuation_{name}" for name in _VALUATION_RATIOS),
+    "valuation_earnings_yield",
     "valuation_market_cap_log",
 )
 _MACRO_FEATURES = tuple(f"macro_{series.lower()}" for series in MACRO_SERIES)
+
+# 중장기 선별 factor. 가격 모멘텀은 최근 1개월 반전을 빼고 6·12개월 추세를 잰다 — 1·5·20일 수익률은
+# 단기 반전·잡음이 커서 보유형 선별의 근거가 되지 못한다.
+_MOMENTUM_FEATURES = ("momentum_12_1", "momentum_6_1", "price_drawdown_252d", "price_volatility_252d")
+# TTM(최근 4분기 합) 기반 품질·재무건전성·성장. 계산은 trading.evidence.tools가 소유해 LLM 입력과 같다.
+_QUALITY_FIELDS = (
+    "roe_ttm", "roa_ttm", "gross_margin_ttm", "operating_margin_ttm", "fcf_margin_ttm",
+    "interest_coverage_ttm", "accruals_ttm", "operating_margin_volatility", "debt_to_equity",
+)
+_QUALITY_FEATURES = (*(f"quality_{name}" for name in _QUALITY_FIELDS), "growth_revenue_ttm_yoy")
+# 실적 기대의 방향. 관측을 시작한 뒤의 컨센서스만 있어 과거 재현에서는 대부분 결측이다.
+_REVISION_FEATURES = ("revision_breadth_30d", "revision_eps_change", "revision_revenue_change")
 
 # 결측 가능한 feature. 도메인이 통째로 비어도 컬럼은 남고 값만 None이 된다.
 OPTIONAL_FEATURES = (
     *_MARKET_FEATURES, *_TECHNICAL_FEATURES, *_FUNDAMENTAL_FEATURES,
     *_GURU_FEATURES, *_MACRO_FEATURES, *_VALUATION_FEATURES,
+    *_MOMENTUM_FEATURES, *_QUALITY_FEATURES, *_REVISION_FEATURES,
 )
 
 # snapshot에 실제로 들어가는 전체 컬럼. 이 집합은 모든 종목·모든 날짜에서 같다.
@@ -146,6 +160,43 @@ def _fundamental(payload: Mapping[str, Any]) -> dict[str, float | None]:
     }
 
 
+def _momentum(payload: Mapping[str, Any]) -> dict[str, float | None]:
+    """260봉 전체로 계산한 statistics에서 최근 1개월을 뺀 6·12개월 수익률을 만든다."""
+    raw = payload.get("statistics")
+    stats = raw if isinstance(raw, Mapping) else {}
+    recent = _number(stats.get("return_20d"))
+
+    def skip_recent(total: float | None) -> float | None:
+        if total is None or recent is None or recent <= -1.0:
+            return None
+        return (1.0 + total) / (1.0 + recent) - 1.0
+
+    return {
+        "momentum_12_1": skip_recent(_number(stats.get("return_252d"))),
+        "momentum_6_1": skip_recent(_number(stats.get("return_120d"))),
+        "price_drawdown_252d": _number(stats.get("max_drawdown_window")),
+        "price_volatility_252d": _number(stats.get("volatility_252d_annualized")),
+    }
+
+
+def _quality(payload: Mapping[str, Any]) -> dict[str, float | None]:
+    raw = payload.get("statistics")
+    stats = raw if isinstance(raw, Mapping) else {}
+    values = {f"quality_{name}": _number(stats.get(name)) for name in _QUALITY_FIELDS}
+    values["growth_revenue_ttm_yoy"] = _number(stats.get("revenue_growth_ttm_yoy"))
+    return values
+
+
+def _revisions(payload: Mapping[str, Any]) -> dict[str, float | None]:
+    raw = payload.get("consensus_statistics")
+    stats = raw if isinstance(raw, Mapping) else {}
+    return {
+        "revision_breadth_30d": _number(stats.get("revision_breadth_30d")),
+        "revision_eps_change": _number(stats.get("eps_avg_change")),
+        "revision_revenue_change": _number(stats.get("revenue_avg_change")),
+    }
+
+
 def _macro(payload: Mapping[str, Any]) -> dict[str, float | None]:
     """allowlist에 있는 series만 고정 컬럼으로 반환한다."""
     rows = payload.get("latest_observations")
@@ -186,6 +237,9 @@ def _valuation(
     result = dict(empty)
     for name in _VALUATION_RATIOS:
         result[f"valuation_{name}"] = _number(observation.get(name))
+    pe = result["valuation_pe_ttm"]
+    # 순위를 매길 때는 이익수익률이 PER보다 낫다 — PER은 이익이 0 근처에서 발산한다. 적자는 원장에서 PER이 비어 있다.
+    result["valuation_earnings_yield"] = 1.0 / pe if pe is not None and pe > 0 else None
     market_cap = _number(observation.get("market_cap"))
     if market_cap is not None and market_cap > 0:
         result["valuation_market_cap_log"] = math.log(market_cap)
@@ -246,10 +300,15 @@ class FeatureLayer:
             if item.domain == "market":
                 bars = payload.get("latest_bars") if isinstance(payload, Mapping) else None
                 values.update(_close_returns(bars if isinstance(bars, list) else []))
+                if isinstance(payload, Mapping):
+                    values.update(_momentum(payload))
             elif item.domain == "technical" and isinstance(payload, Mapping):
                 values.update(_technical(payload))
             elif item.domain == "fundamentals" and isinstance(payload, Mapping):
                 values.update(_fundamental(payload))
+                values.update(_quality(payload))
+            elif item.domain == "estimates" and isinstance(payload, Mapping):
+                values.update(_revisions(payload))
             elif item.domain == "macro" and isinstance(payload, Mapping):
                 values.update(_macro(payload))
             elif item.domain == "gurus" and isinstance(payload, Mapping):

@@ -83,6 +83,14 @@ FILING_ROWS_IN_PROMPT = 4
 class ContextBuilder:
     def __init__(self, repository: ContextRepository):
         self.repository = repository
+        # 거시·경제 일정은 종목과 무관하고 같은 시각이면 같은 값이다. 종목마다 다시 읽으면 503종목
+        # feature 적재 시간의 2/3(종목당 약 4초)를 같은 조회가 차지한다. 빌더 수명 동안만 기억한다.
+        self._shared: dict[tuple, Any] = {}
+
+    def _once(self, key: tuple, read):
+        if key not in self._shared:
+            self._shared[key] = read()
+        return self._shared[key]
 
     def build(
         self,
@@ -176,7 +184,7 @@ class ContextBuilder:
                 "macro: 시장 상태 관측의 point-in-time 이력이 없어 historical replay에서 제외"
             )
         else:
-            macro = self.repository.macro_snapshot(as_of_at)
+            macro = self._once(("macro", as_of_at.isoformat()), lambda: self.repository.macro_snapshot(as_of_at))
             if macro.get("run") and macro.get("observations"):
                 run = macro["run"]
                 collected = [row.get("created_at") for row in macro["observations"]]
@@ -205,7 +213,7 @@ class ContextBuilder:
             ))
         else:
             capability = (
-                self.repository.segment_capability()
+                self._once(("segment_capability",), self.repository.segment_capability)
                 if hasattr(self.repository, "segment_capability") else {}
             )
             if capability.get("availability") == "unavailable":
@@ -226,7 +234,7 @@ class ContextBuilder:
         else:
             missing.append("gurus: 추적 매니저의 매핑된 보유 근거 없음")
 
-        econ = self.repository.econ_snapshot(as_of_at)
+        econ = self._once(("econ", as_of_at.isoformat()), lambda: self.repository.econ_snapshot(as_of_at))
         econ_rows = econ.get("events", []) + econ.get("results", []) + econ.get("forecasts", [])
         if econ_rows:
             items.append(_item(

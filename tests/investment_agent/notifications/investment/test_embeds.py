@@ -239,5 +239,42 @@ class TradeEmbedTest(unittest.TestCase):
         self.assertIn("approval_1", text)
 
 
+class DecisionExplanationTest(unittest.TestCase):
+    """카드는 '왜 이 비중이 바뀌었나'와 '어제와 무엇이 달라졌나'를 원장 값으로만 설명한다."""
+
+    def test_portfolio_card_explains_each_weight_change(self):
+        from investment_agent.notifications.investment.embeds import portfolio_embed
+
+        embed = portfolio_embed(
+            proposal={"weights": {"AAPL": 0.0, "MSFT": 0.08, "CASH": 0.92}, "metadata": {"trade_reasons": {
+                "AAPL": {"code": "REBALANCE", "current_weight": 0.1, "target_weight": 0.0,
+                         "action_adjustment": "hold_with_bearish_outlook", "expected_return_capped": False},
+                "MSFT": {"code": "ALPHA_OPPORTUNITY", "current_weight": 0.0, "target_weight": 0.08,
+                         "action_adjustment": None, "expected_return_capped": True},
+            }}},
+            risk={"is_approved": True, "metrics": {}},
+            run={"candidate_tickers": ["AAPL", "MSFT"], "status": "completed"},
+        )
+        field = next(item for item in embed["fields"] if item["name"] == "🔁 비중 변경 사유")
+        self.assertIn("`AAPL` 10.0% → 0.0% · 더 나은 후보로 자금 이동", field["value"])
+        self.assertIn("수치 전망이 하락", field["value"])
+        self.assertIn("과대 기대수익 상한 적용", field["value"])
+
+    def test_portfolio_card_without_reasons_adds_no_empty_field(self):
+        from investment_agent.notifications.investment.embeds import portfolio_embed
+
+        embed = portfolio_embed(proposal={"weights": {"CASH": 1.0}}, risk={"is_approved": True}, run={})
+        self.assertNotIn("🔁 비중 변경 사유", [item["name"] for item in embed["fields"]])
+
+    def test_candidate_card_shows_continuity_not_the_unused_llm_weight(self):
+        from investment_agent.notifications.investment.embeds import candidate_embed
+
+        embed = candidate_embed(decision={"ticker": "AAPL", "final_decision": {
+            "signal": "reduce", "target_weight": 0.3, "previous_signal": "increase", "reasoning": ["r"]}})
+        signal = embed["fields"][0]["value"]
+        self.assertNotIn("목표 비중", signal)
+        self.assertIn("직전 판단 비중 확대 → **방향 변경**", signal)
+
+
 if __name__ == "__main__":
     unittest.main()

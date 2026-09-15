@@ -70,5 +70,21 @@ CREATE TABLE IF NOT EXISTS virtual_nav (
  gross_exposure REAL NOT NULL CHECK (gross_exposure >= 0),
  traded_notional REAL NOT NULL CHECK (traded_notional >= 0),
  cost REAL NOT NULL CHECK (cost >= 0),
+ -- 그날 종가가 없어 이전 종가로 잰 종목(거래정지 등). 신선한 평가처럼 보이지 않게 남긴다.
+ stale_price_tickers_json TEXT NOT NULL DEFAULT '[]',
  PRIMARY KEY (book_id, trade_date)
+);
+-- 가상 보유에 반영한 분할·배당. 저장 가격은 분할 기준으로 다시 수집되므로 수량을 맞추지 않으면
+-- NAV가 분할 비율만큼 무너진다. 종가는 배당 조정 전 값이라 배당은 현금으로 넣는다. 한 번만 반영한다.
+CREATE TABLE IF NOT EXISTS virtual_corporate_actions (
+ book_id TEXT NOT NULL REFERENCES virtual_books(book_id),
+ ticker TEXT NOT NULL,
+ action_date TEXT NOT NULL,
+ kind TEXT NOT NULL CHECK (kind IN ('split','dividend')),
+ value REAL NOT NULL CHECK (value > 0),
+ entitled_quantity REAL NOT NULL CHECK (entitled_quantity >= 0),
+ quantity_delta REAL NOT NULL,
+ cash_delta REAL NOT NULL CHECK (cash_delta >= 0),
+ applied_at TEXT NOT NULL,
+ PRIMARY KEY (book_id, ticker, action_date, kind)
 );

@@ -332,9 +332,14 @@ def investment_reporting_job(*, update_performance: StageHandler, notify_reports
                 StageDefinition("notify_reports", notify_reports, approval_workflow_only=False, max_attempts=2)))
 
 
-def entry_watch_job(*, watch: StageHandler) -> JobDefinition:
-    """매수 조건 감시와 LLM 재판단은 원본 분석 주기와 분리한다."""
-    return JobDefinition(job_id='entry_watch',interval_seconds=60,stale_after_seconds=1800,
+def entry_watch_job(*, watch: StageHandler, interval_seconds: float = 5 * 60) -> JobDefinition:
+    """매수 조건 감시와 LLM 재판단은 원본 분석 주기와 분리한다.
+
+    중장기 보유라 진입 가격을 분 단위로 쫓을 이유가 없다. 5분이면 장중 급변에서 계획이 무효가 되는 것은
+    잡고, 매 회차 시세 조회·LLM 재판단 호출은 5분의 1로 준다. 시세는 회차 시작에 새로 받으므로 신선도
+    기준(120초)과 충돌하지 않는다.
+    """
+    return JobDefinition(job_id='entry_watch',interval_seconds=interval_seconds,stale_after_seconds=1800,
         stages=(StageDefinition('watch',watch,approval_workflow_only=False,max_attempts=1),))
 
 

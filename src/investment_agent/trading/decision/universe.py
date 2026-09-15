@@ -14,6 +14,10 @@ class UniverseRepository(Protocol):
     def candidate_tickers(self, limit: int = 50, *, as_of_at: datetime) -> list[str]: ...
 
 
+class NoCandidatesDue(ContractError):
+    """자동 선정에서 지금 다시 판단할 종목이 없다. 오류가 아니라 '이번 회차는 할 일 없음'이다."""
+
+
 @dataclass(frozen=True)
 class UniverseSelection:
     """한 실행에서 검증된 tracked 전체 집합과 실제 분석 대상을 함께 보존한다."""
@@ -106,6 +110,8 @@ def select_tracked_tickers(
             raise ContractError(
                 "candidate selection escaped the current tracked universe: " + ", ".join(outside)
             )
+        if not selected:
+            raise NoCandidatesDue("no tracked tickers are due for analysis")
 
     if not selected:
         raise ContractError("no tracked tickers were selected")

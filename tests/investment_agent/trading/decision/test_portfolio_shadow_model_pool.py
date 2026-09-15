@@ -113,5 +113,210 @@ class SelectAndRunTest(unittest.TestCase):
             self.assertEqual(seen, ["small", "backup"])
 
 
+
+class RuntimePreflightTest(unittest.TestCase):
+    """환경 장애는 종목 실패로 쌓지 않고 회차 시작 전에 멈춘다."""
+
+    def test_first_configured_candidate_that_passes_is_returned(self):
+        import os
+        from unittest import mock
+        from investment_agent.trading.decision.portfolio_shadow import verify_runtime
+
+        pool = (_candidate("no-key", api_key_env="PREFLIGHT_MISSING"), _candidate("ok", api_key_env="PREFLIGHT_KEY"))
+        calls = []
+        with mock.patch.dict(os.environ, {"PREFLIGHT_KEY": "k"}):
+            self.assertEqual(verify_runtime(pool, verify=lambda: calls.append(os.environ["AI_INVESTOR_API_KEY"])), "ok")
+        self.assertEqual(calls, ["k"])
+
+    def test_every_candidate_failing_raises_one_runtime_error(self):
+        import os
+        from unittest import mock
+        from investment_agent.trading.decision.llm.agents.tradingagents_adapter import TradingAgentsRuntimeError
+        from investment_agent.trading.decision.portfolio_shadow import verify_runtime
+
+        def broken():
+            raise TradingAgentsRuntimeError("connection failed")
+
+        with mock.patch.dict(os.environ, {"PREFLIGHT_KEY": "k"}):
+            with self.assertRaisesRegex(TradingAgentsRuntimeError, "connection failed"):
+                verify_runtime((_candidate("ok", api_key_env="PREFLIGHT_KEY"),), verify=broken)
+
+    def test_connection_failure_is_reported_as_a_runtime_error(self):
+        import os
+        from unittest import mock
+        import httpx
+        import openai
+        from investment_agent.trading.decision.llm.agents import tradingagents_adapter as adapter
+
+        request = httpx.Request("GET", "https://example.invalid/models")
+        failure = openai.APIConnectionError(request=request)
+        with mock.patch.dict(os.environ, {"AI_INVESTOR_BASE_URL": "https://example.invalid", "AI_INVESTOR_API_KEY": "k"}), \
+                mock.patch("openai.resources.models.Models.list", side_effect=failure):
+            with self.assertRaises(adapter.TradingAgentsRuntimeError):
+                adapter.verify_tradingagents_runtime()
+
+    def test_rejected_credentials_stop_the_run(self):
+        import os
+        from unittest import mock
+        import httpx
+        import openai
+        from investment_agent.trading.decision.llm.agents import tradingagents_adapter as adapter
+
+        response = httpx.Response(401, request=httpx.Request("GET", "https://example.invalid/models"))
+        with mock.patch.dict(os.environ, {"AI_INVESTOR_BASE_URL": "https://example.invalid", "AI_INVESTOR_API_KEY": "k"}), \
+                mock.patch("openai.resources.models.Models.list",
+                           side_effect=openai.AuthenticationError("bad", response=response, body=None)):
+            with self.assertRaisesRegex(adapter.TradingAgentsRuntimeError, "401"):
+                adapter.verify_tradingagents_runtime()
+
+    def test_main_checks_the_runtime_before_analysing_any_ticker(self):
+        # main()은 Supabase를 읽어 단위 테스트로 돌리기 어렵다. 확인 호출이 종목 루프보다 앞에 있는지 구조로 본다.
+        import ast
+        import inspect
+        from investment_agent.trading.decision import portfolio_shadow
+
+        tree = ast.parse(inspect.getsource(portfolio_shadow.main))
+        calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)]
+        lines = {node.func.id: node.lineno for node in sorted(calls, key=lambda node: node.lineno)
+                 if node.func.id in {"verify_runtime", "_select_and_run"}}
+        self.assertIn("verify_runtime", lines)
+        self.assertLess(lines["verify_runtime"], lines["_select_and_run"])
+
+
+
+class AnalysisBudgetTest(unittest.TestCase):
+    """고르는 종목 수를 남은 모델 예산과 시간에 맞춰, 판단 없이 회차를 붙잡는 종목을 만들지 않는다."""
+
+    def test_limit_is_the_smaller_of_request_and_remaining_budget(self):
+        from investment_agent.trading.decision.portfolio_shadow import analysis_limit
+
+        self.assertEqual(analysis_limit(250, remaining_budget=20), 20)
+        self.assertEqual(analysis_limit(5, remaining_budget=20), 5)
+        self.assertEqual(analysis_limit(250, remaining_budget=0), 0)
+
+    def test_next_ticker_starts_only_if_the_longest_case_still_fits(self):
+        from investment_agent.trading.decision.portfolio_shadow import should_start_next
+
+        self.assertTrue(should_start_next(elapsed_seconds=0, longest_case_seconds=0, max_runtime_seconds=100))
+        self.assertTrue(should_start_next(elapsed_seconds=60, longest_case_seconds=40, max_runtime_seconds=100))
+        self.assertFalse(should_start_next(elapsed_seconds=61, longest_case_seconds=40, max_runtime_seconds=100))
+        self.assertTrue(should_start_next(elapsed_seconds=10_000, longest_case_seconds=500, max_runtime_seconds=None))
+
+    def test_remaining_budget_reads_usage_without_reserving(self):
+        import os
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+        from investment_agent.platform.external_usage import reserve_provider_call
+        from investment_agent.trading.decision.model_pool import remaining_ticker_budget
+
+        pool = (_candidate("m1", api_key_env="BUDGET_KEY", daily_request_limit=150),
+                _candidate("m2", api_key_env="BUDGET_MISSING", daily_request_limit=150))
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, {"BUDGET_KEY": "k"}):
+            ledger = Path(directory) / "usage.sqlite3"
+            self.assertEqual(remaining_ticker_budget(pool, ledger_path=ledger), 10)
+            for _ in range(3):
+                reserve_provider_call(ledger, provider="m1", cap=10)
+            self.assertEqual(remaining_ticker_budget(pool, ledger_path=ledger), 7)
+            self.assertEqual(remaining_ticker_budget(pool, ledger_path=ledger), 7)
+
+    def test_harness_passes_a_runtime_budget_below_its_timeout(self):
+        from datetime import datetime, timezone
+        from threading import Event
+        from investment_agent.operations.harness.commands import CommandResult
+        from investment_agent.operations.harness.contracts import StageContext
+        from investment_agent.operations.harness_adapters import ProductionInvestmentAdapters
+
+        commands = []
+
+        class Runner:
+            def run(self, command, *, stop_event):
+                commands.append(command)
+                return CommandResult(command.module, 0, 0.0)
+
+        class Repo:
+            def signal_batch_id_for_as_of(self, *, as_of_at):
+                return "signal_batch_" + "a" * 24
+
+        adapters = ProductionInvestmentAdapters(
+            command_runner=Runner(), decision_repository=Repo(), approval_repository=None,
+            construct_portfolio=lambda **k: None, create_execution_intent=lambda **k: None,
+            timeouts={"analysis": 1000},
+        )
+        now = datetime(2026, 9, 14, tzinfo=timezone.utc)
+        adapters.analysis(StageContext(job_id="j", run_id="r", stage_id="analysis", attempt=1, idempotency_key="k",
+                                       now=now, stop_event=Event(), prior_metadata={}, completed_metadata={}))
+        arguments = commands[0].arguments
+        runtime = float(arguments[arguments.index("--max-runtime-seconds") + 1])
+        self.assertLess(runtime, commands[0].timeout_seconds)
+
+    def test_main_wires_budget_time_limit_and_attempted_symbols(self):
+        import ast
+        import inspect
+        from investment_agent.trading.decision import portfolio_shadow
+
+        tree = ast.parse(inspect.getsource(portfolio_shadow.main))
+        called = {node.func.id for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)}
+        self.assertTrue({"analysis_limit", "remaining_ticker_budget", "should_start_next"} <= called)
+        batch = next(node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                     and isinstance(node.func, ast.Name) and node.func.id == "SignalBatch")
+        requested = next(keyword.value for keyword in batch.keywords if keyword.arg == "requested_symbols")
+        self.assertEqual(ast.unparse(requested), "tuple(attempted)")
+
+
+class NothingDueTest(unittest.TestCase):
+    def test_no_candidates_due_ends_the_run_without_a_batch(self):
+        import ast
+        import inspect
+        from investment_agent.trading.decision import portfolio_shadow
+
+        tree = ast.parse(inspect.getsource(portfolio_shadow.main))
+        handlers = [node for node in ast.walk(tree) if isinstance(node, ast.ExceptHandler)
+                    and isinstance(node.type, ast.Name) and node.type.id == "NoCandidatesDue"]
+        self.assertEqual(len(handlers), 1)
+        self.assertEqual(ast.unparse(handlers[0].body[-1]), "return 0")
+
+
+class BudgetExhaustionTest(unittest.TestCase):
+    def test_budget_exhaustion_leaves_the_ticker_unattempted_not_failed(self):
+        import ast
+        import inspect
+        from investment_agent.trading.decision import portfolio_shadow
+
+        tree = ast.parse(inspect.getsource(portfolio_shadow.main))
+        handlers = [node for node in ast.walk(tree) if isinstance(node, ast.ExceptHandler)
+                    and isinstance(node.type, ast.Name) and node.type.id == "ModelPoolError"]
+        self.assertEqual(len(handlers), 1)
+        body = ast.unparse(handlers[0])
+        self.assertIn("attempted.pop()", body)
+        self.assertNotIn("save_case", body)
+
+    def test_harness_marks_a_run_without_a_batch_as_skipped(self):
+        from datetime import datetime, timezone
+        from threading import Event
+        from investment_agent.operations.harness.commands import CommandResult
+        from investment_agent.operations.harness.contracts import StageContext
+        from investment_agent.operations.harness_adapters import ProductionInvestmentAdapters
+
+        class Runner:
+            def run(self, command, *, stop_event):
+                return CommandResult(command.module, 0, 0.0)
+
+        class Repo:
+            def signal_batch_id_for_as_of(self, *, as_of_at):
+                raise LookupError("no batch")
+
+        adapters = ProductionInvestmentAdapters(
+            command_runner=Runner(), decision_repository=Repo(), approval_repository=None,
+            construct_portfolio=lambda **k: None, create_execution_intent=lambda **k: None,
+        )
+        now = datetime(2026, 9, 14, tzinfo=timezone.utc)
+        outcome = adapters.analysis(StageContext(job_id="j", run_id="r", stage_id="analysis", attempt=1,
+                                                 idempotency_key="k", now=now, stop_event=Event(),
+                                                 prior_metadata={}, completed_metadata={}))
+        self.assertEqual(outcome.status, "skipped")
+        self.assertEqual(outcome.metadata["reason"], "no_signal_batch")
+
+
 if __name__ == "__main__":
     unittest.main()

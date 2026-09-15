@@ -10,7 +10,7 @@
 ```text
 tracked universe
   ↓
-candidate_ranker                 분석 순서를 정함. 매수 순위가 아님
+candidate_ranker                 factor 상위 보유 후보 중 분석할 종목을 정함. 비중은 정하지 않음
   ↓
 ContextBuilder
   ↓
@@ -67,17 +67,16 @@ ExecutionIntent                이 지점부터 `investment_agent.execution`이 
 
 ```text
 tracked universe
-→ 아직 분석하지 않았거나 가장 오래 분석한 종목 우선
-→ 같은 coverage cohort에서 구조화 데이터 변화 점수
-→ ticker 오름차순 tie-break
-→ 실행 limit
+→ 새 공시·고영향 사건이 생긴 종목(우선 레인)
+→ 보유 중인데 factor 품질 기준에서 떨어진 종목
+→ 품질 기준 통과 factor 종합 상위 60종목 중 판단이 없거나 28일보다 오래된 종목(점수순)
+→ 판단이 오래된 보유 종목
+→ 실행 limit (판단이 유효한 종목은 예산이 남아도 다시 보지 않음)
 ```
 
-시장·기술·재무·세그먼트·13F 값은 단위가 다르므로 cross-sectional percentile로 변환합니다. 결측
-도메인은 0점으로 꾸미지 않고 가중치 분모에서 제외합니다. 현재 segment pipeline이 unavailable이면
-segment 기여가 없는 채로 coverage multiplier가 낮아집니다.
-
-이 점수는 “살 종목 순위”가 아니라 “Bull/Bear 분석을 먼저 받을 종목 순서”입니다. 상세 계산은
+factor 점수는 가장 최근의 온전한 live feature 횡단면에서 `research/features/factors.py`가 계산합니다
+(품질·재무건전성·성장·업종 내 가치·추정치 상향·12-1 모멘텀). 횡단면이 없으면 예전 coverage 우선 순환
+랭커로 고르고 `path=legacy_rotation` 경고를 남깁니다 — 그 계산은
 [CANDIDATE_SELECTION.md](CANDIDATE_SELECTION.md)를 봅니다.
 
 ## 2. Context와 PIT 경계
@@ -251,7 +250,7 @@ src/investment_agent/trading/
   valuation_inputs.py          원천 행 -> PIT 입력 조립 (TTM 재구성)
   src/investment_agent/trading/evidence/dossier/
                               InvestmentDossier 계약·Builder·LLM renderer
-  candidate_ranker.py          coverage-first 분석 후보 선정
+  candidate_ranker.py          factor 기반 분석 후보 선정(횡단면이 없으면 coverage 순환)
   universe.py                  tracked universe 검증
   llm.py                       OpenAI-compatible provider
   memory.py / evaluator.py     과거 case와 성숙 결과 평가
@@ -366,13 +365,13 @@ DB의 수동 승인 실행을 허용합니다. 환경변수의 live·kill 게이
 
 ### 순환 분석과 진입 시점 재판단
 
-하네스의 기본 분석 주기는 30분이며 한 번에 5종목씩 오래된 판단부터 갱신합니다.
-실패한 시도도 순환 순서에 반영하며, LLM 예산이 부족하면 남은 종목은 다음 회차에
-이어갑니다. 분석은 장외에도 수행하고 긴 분석 작업과 진입 감시·성과 보고는 별도로
-진행합니다. 모든 종목을 같은 시각에 분석하거나 매일 500종목을 완료한다고 보장하지 않습니다.
+하네스의 기본 분석 주기는 3시간입니다. 보유 후보 판단은 28일간 유효하고 하루 모델 예산은 약
+20종목이라, 회차마다 판단이 오래된 후보만 고르고 없으면 배치 없이 넘깁니다. 실패한 시도도 순서에
+반영하며, LLM 예산이 부족하면 남은 종목은 다음 회차에 이어갑니다. 분석은 장외에도 수행하고 긴 분석
+작업과 진입 감시·성과 보고는 별도로 진행합니다.
 
 `watch_entries`는 유효한 원본 판단에서 가격 범위·무효화 가격·만료 시각을 만들고
-장중 실행 가능 시간에 1분마다 조건을 확인합니다. 기본 LLM 호출 상한은 회차당 2회입니다.
+장중 실행 가능 시간에 5분마다 조건을 확인합니다. 기본 LLM 호출 상한은 회차당 2회입니다.
 진입 범위에 도달하면 현재 근거와 최신 뉴스를 다시 읽어 enter/wait/cancel을 기록합니다.
 재판단 뒤 시세를 재조회하고, 최대 5분간 유효한 enter만 단일 종목 파생 배치로 연결합니다.
 원본 종목 판단은 보존하며 최종 비중·위험 한도·주문 권한은 결정론적 실행 경계가 담당합니다.

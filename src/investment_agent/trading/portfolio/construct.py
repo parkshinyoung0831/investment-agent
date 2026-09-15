@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from investment_agent.trading.contracts import ContractError, parse_datetime
 from investment_agent.trading.supabase_repository import SupabaseRepository
 from investment_agent.trading.portfolio.constructor import PortfolioConstructor
-from investment_agent.trading.portfolio.contracts import CASH_SYMBOL
+from investment_agent.trading.portfolio.contracts import CASH_SYMBOL, PortfolioProposal
 from investment_agent.platform.serialization import stable_id
 from investment_agent.trading.portfolio.market_risk import (
     MarketCovariance,
@@ -190,6 +190,51 @@ def _market_regime(repository: SupabaseRepository, *, as_of_at: datetime, stage:
         return None
 
 
+def _macro_exposure(repository: SupabaseRepository, *, as_of_at: datetime):
+    """신용·변동성·시장 폭으로 노출 상한을 정한다. 재료를 못 읽으면 조이지 않고 None을 돌려준다.
+
+    가격 regime과 달리 paper/live도 멈추지 않는다 — 웹 수집 series 하루 장애로 실계좌 판단을 세우면
+    위험을 줄여야 할 날에도 줄이는 주문을 못 낸다. 그 사실은 판단 metadata에 남는다.
+    """
+    from investment_agent.trading.risk.macro_exposure import MACRO_SERIES, assess_macro_exposure
+
+    if not hasattr(repository, "macro_histories"):
+        return None
+    try:
+        histories = repository.macro_histories(MACRO_SERIES, as_of_at=as_of_at)
+    except Exception as exc:  # noqa: BLE001 - 거시 재료 장애가 판단을 멈추게 두지 않는다
+        log.warning("macro exposure inputs unavailable: %s", type(exc).__name__)
+        return None
+    return assess_macro_exposure(histories, as_of_at=as_of_at)
+
+
+def risk_policy_for(repository: SupabaseRepository, *, as_of_at: datetime, stage: str):
+    """가격 regime과 거시 노출 규칙을 모두 반영한 위험 정책과 그 근거 metadata.
+
+    실계좌·RL·factor 계좌가 같은 함수를 써야 같은 위험 예산 아래에서 성과를 비교할 수 있다.
+    """
+    from investment_agent.trading.risk.macro_exposure import tighten_for_macro
+
+    regime = _market_regime(repository, as_of_at=as_of_at, stage=stage)
+    macro = _macro_exposure(repository, as_of_at=as_of_at)
+    policy = tighten_for_macro(tighten_for_regime(PortfolioRiskPolicy(), regime), macro)
+    metadata = {
+        "market_regime": (
+            {
+                "risk_state": regime.risk_state,
+                "regime_id": regime.regime_id,
+                "trend": regime.trend,
+                "volatility_state": regime.volatility_state,
+                "inputs": dict(regime.metadata.get("inputs", {})),
+            }
+            if regime is not None else None
+        ),
+        "regime_budget_version": REGIME_BUDGET_VERSION,
+        "macro_exposure": macro.to_metadata() if macro is not None else None,
+    }
+    return policy, metadata
+
+
 def _optimizer_policy_for(risk_policy: PortfolioRiskPolicy, *, unanalyzed_weight: float) -> OptimizerPolicy:
     """optimizer에 같은 한도를 넘긴다. 최소 현금은 고정된 미분석 보유가 허용하는 만큼만 요구한다.
 
@@ -257,25 +302,11 @@ def evaluate_portfolio(
         # Shadow는 공분산·거래비용 적재 전에도 관찰을 이어가되, 원장에 fallback을 남긴다.
         log.warning("optimizer market inputs unavailable: %s", exc)
         optimizer_covariance, trading_costs = None, None
-    regime = _market_regime(repository, as_of_at=decision_at, stage=stage)
-    risk_policy = tighten_for_regime(PortfolioRiskPolicy(), regime)
+    risk_policy, regime_metadata = risk_policy_for(repository, as_of_at=decision_at, stage=stage)
     unanalyzed_weight = sum(
         weight for symbol, weight in snapshot.weights.items()
         if symbol != CASH_SYMBOL and symbol not in active_records
     )
-    regime_metadata = {
-        "market_regime": (
-            {
-                "risk_state": regime.risk_state,
-                "regime_id": regime.regime_id,
-                "trend": regime.trend,
-                "volatility_state": regime.volatility_state,
-                "inputs": dict(regime.metadata.get("inputs", {})),
-            }
-            if regime is not None else None
-        ),
-        "regime_budget_version": REGIME_BUDGET_VERSION,
-    }
     held_unanalyzed = tuple(sorted(
         symbol for symbol in snapshot.weights if symbol != CASH_SYMBOL and symbol not in active_records
     ))
@@ -307,6 +338,33 @@ def evaluate_portfolio(
         extra_metadata=regime_metadata,
         betas=optimizer_betas,
     )
+    risk = _gate_proposal(
+        repository, proposal=proposal, snapshot=snapshot, stage=stage, decision_at=decision_at,
+        risk_policy=risk_policy, tracked=tracked, regime_metadata=regime_metadata,
+    )
+    return PortfolioEvaluation(
+        run_id=run_id,
+        decision_at=decision_at,
+        active_batch_id=active_batch_id,
+        requested_symbols=tuple(active_batch.requested_symbols),
+        proposal=proposal,
+        risk=risk,
+        risk_policy=risk_policy,
+    )
+
+
+def _gate_proposal(
+    repository: SupabaseRepository,
+    *,
+    proposal: PortfolioProposal,
+    snapshot: AccountSnapshot,
+    stage: str,
+    decision_at: datetime,
+    risk_policy: PortfolioRiskPolicy,
+    tracked,
+    regime_metadata: dict,
+):
+    """목표 비중이 어디서 왔든(optimizer·RL) 같은 시장위험·스트레스 재료로 같은 RiskGate를 통과시킨다."""
     target_symbols = sorted(set(proposal.weights) - {CASH_SYMBOL})
     try:
         market_risk = _market_risk_metrics(
@@ -343,11 +401,53 @@ def evaluate_portfolio(
             **regime_metadata,
         },
     )
+    return risk
+
+
+def evaluate_target_weights(
+    repository: SupabaseRepository,
+    *,
+    weights: dict[str, float],
+    source_type: str,
+    source_version: str,
+    snapshot: AccountSnapshot,
+    stage: str,
+    metadata: dict | None = None,
+) -> PortfolioEvaluation:
+    """optimizer를 거치지 않은 목표 비중(RL 정책 등)을 optimizer 계좌와 같은 regime·RiskGate로 평가한다.
+
+    종목 상한·현금 하한만 자르면 섹터·회전율·베타·CVaR·스트레스 한도를 모른 채 성과를 쌓아
+    optimizer 계좌와 같은 조건의 비교가 아니게 된다.
+    """
+    if stage not in {"shadow", "paper", "live"}:
+        raise ValueError("stage must be shadow, paper, or live")
+    decision_at = parse_datetime(snapshot.captured_at)
+    tracked = repository.current_tracked_tickers()
+    risk_policy, regime_metadata = risk_policy_for(repository, as_of_at=decision_at, stage=stage)
+    run_id = stable_id("portfolio_run", {
+        "snapshot_id": snapshot.snapshot_id, "decision_at": decision_at.isoformat(),
+        "source_type": source_type, "source_version": source_version, "stage": stage,
+    })
+    proposal = PortfolioProposal.create(
+        run_id=run_id,
+        source_type=source_type,
+        source_version=source_version,
+        stage=stage,
+        as_of_at=decision_at.isoformat(),
+        weights=weights,
+        confidence=1.0,
+        reasoning=(f"{source_type} 목표 비중을 optimizer 계좌와 같은 RiskGate로 평가",),
+        metadata={"coverage": "full_portfolio", **dict(metadata or {}), **regime_metadata},
+    )
+    risk = _gate_proposal(
+        repository, proposal=proposal, snapshot=snapshot, stage=stage, decision_at=decision_at,
+        risk_policy=risk_policy, tracked=tracked, regime_metadata=regime_metadata,
+    )
     return PortfolioEvaluation(
         run_id=run_id,
         decision_at=decision_at,
-        active_batch_id=active_batch_id,
-        requested_symbols=tuple(active_batch.requested_symbols),
+        active_batch_id="",
+        requested_symbols=tuple(sorted(set(weights) - {CASH_SYMBOL})),
         proposal=proposal,
         risk=risk,
         risk_policy=risk_policy,

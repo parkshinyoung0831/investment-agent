@@ -22,6 +22,26 @@ from investment_agent.trading.portfolio.market_risk import TradingCostInputs
 ACTION_EXIT = "exit"
 NO_INCREASE_ACTIONS = frozenset({"reduce", "avoid", "watch"})
 ALL_ACTIONS = frozenset({"open", "increase", "hold", "reduce", "exit", "avoid", "watch"})
+BUY_ACTIONS = frozenset({"open", "increase"})
+
+
+def coherent_action(action: str, *, expected_excess_return: float, probability_up: float) -> tuple[str, str | None]:
+    """행동 단어와 수치 전망이 서로 반대면 더 약한 행동으로 낮춘다. 수치는 바꾸지 않는다.
+
+    LLM이 `hold`라고 쓰고 기대수익을 음수로 적으면 optimizer는 전량 매도할 수 있고, 카드에는
+    "유지"와 "전량 매도"가 함께 뜬다. `exit`는 비중을 0으로 강제하는 가장 강한 명령이라
+    전망이 하락을 말하지 않는데 청산하게 둘 수 없다. 방향이 엇갈리면 강제력이 약한 쪽을
+    택하고, 그 사실을 조정 사유로 남긴다. 임계값은 두지 않는다 — 부호만 본다.
+    """
+    bearish = expected_excess_return < 0.0 and probability_up < 0.5
+    bullish = expected_excess_return > 0.0 and probability_up > 0.5
+    if action == ACTION_EXIT and not bearish:
+        return "reduce", "exit_without_bearish_outlook"
+    if action in BUY_ACTIONS and not bullish:
+        return "hold", f"{action}_without_bullish_outlook"
+    if action == "hold" and bearish:
+        return "reduce", "hold_with_bearish_outlook"
+    return action, None
 
 
 def mandatory_base_weights(
@@ -73,6 +93,8 @@ class ExpectedReturnSignal:
     evidence_ids: tuple[str, ...] = ()
     # 종목 의견의 행동. 기대수익과 달리 비중의 방향을 제약한다(`ACTION_*` 참조).
     action: str | None = None
+    # 원래 행동이 수치 전망과 엇갈려 낮췄다면 그 사유(`coherent_action`).
+    action_adjustment: str | None = None
 
     def __post_init__(self) -> None:
         symbol = str(self.symbol).upper().strip()
@@ -104,8 +126,13 @@ class ExpectedReturnSignal:
     ) -> "ExpectedReturnSignal":
         # LLM target_weight는 의도적으로 읽지 않는다.
         risk_score = 1.0 - proposal.confidence
+        action, adjustment = coherent_action(
+            proposal.signal,
+            expected_excess_return=proposal.expected_excess_return,
+            probability_up=proposal.probability_up,
+        )
         expected = proposal.expected_excess_return
-        if proposal.signal in {"avoid", "watch", "exit"}:
+        if action in NO_INCREASE_ACTIONS | {ACTION_EXIT}:
             expected = min(0.0, expected)
         return cls(
             symbol=proposal.ticker,
@@ -117,14 +144,15 @@ class ExpectedReturnSignal:
             timestamp=proposal.as_of_at,
             version=version,
             evidence_ids=proposal.evidence_ids,
-            action=proposal.signal,
+            action=action,
+            action_adjustment=adjustment,
         )
 
 
 @dataclass(frozen=True)
 class OptimizerPolicy:
     key: str = "mean-variance-turnover"
-    version: int = 1
+    version: int = 2
     risk_aversion: float = 5.0
     turnover_penalty: float = 0.01
     max_symbol_weight: float = 0.10
@@ -140,6 +168,11 @@ class OptimizerPolicy:
     allow_increases: bool = True
     # 포트폴리오 시장 베타 상한. None이면 제약하지 않는다(베타 재료가 없을 때).
     max_portfolio_beta: float | None = None
+    # 기대초과수익 크기 상한을 그 종목의 신호 기간 수익률 표준편차의 배수로 둔다.
+    # 1σ를 넘는 초과수익 예측은 사실상 확실한 초과성과를 주장하는 것인데, 실제 신호의 순위
+    # 상관(IC)은 그보다 훨씬 작다. 상한이 없으면 +25% 같은 과대 예측 하나가 비중을 독점한다.
+    # 공분산이 없는 관찰용 fallback에서는 종목 변동성을 모르므로 적용하지 않는다.
+    max_expected_return_sigma: float | None = 1.0
 
     def __post_init__(self) -> None:
         if self.version < 1 or self.risk_aversion <= 0 or self.turnover_penalty < 0:
@@ -151,10 +184,41 @@ class OptimizerPolicy:
         for name in ("max_symbol_weight", "max_sector_weight", "max_turnover", "min_cash_weight"):
             if not 0 <= float(getattr(self, name)) <= 1:
                 raise ValueError(f"{name} must be between 0 and 1")
+        if self.max_expected_return_sigma is not None and (
+            not math.isfinite(self.max_expected_return_sigma) or self.max_expected_return_sigma <= 0
+        ):
+            raise ValueError("max_expected_return_sigma must be finite and positive")
 
     @property
     def hash(self) -> str:
         return hashlib.sha256(canonical_json(asdict(self)).encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True)
+class FactorExposureLimit:
+    """신호 종목 비중으로 가중평균한 factor 노출의 범위.
+
+    종합 점수만 최대화하면 점수에 가장 크게 기여하는 한 factor(보통 모멘텀)에 포트폴리오가 쏠린다. 그 factor가
+    꺾이는 날 전 종목이 같이 빠진다. 노출값이 없는 종목은 중립값을 쓴다 — 모른다고 극단으로 두지 않는다.
+    고정 보유는 optimizer가 움직일 수 없어 이 제약에서 뺀다.
+    """
+
+    loadings: Mapping[str, float]
+    minimum: float | None = None
+    maximum: float | None = None
+    neutral: float = 0.5
+
+    def __post_init__(self) -> None:
+        if self.minimum is None and self.maximum is None:
+            raise ValueError("factor exposure limit needs a minimum or a maximum")
+        if self.minimum is not None and self.maximum is not None and self.minimum > self.maximum:
+            raise ValueError("factor exposure minimum must not exceed maximum")
+        for value in (self.minimum, self.maximum, self.neutral, *self.loadings.values()):
+            if value is not None and not math.isfinite(float(value)):
+                raise ValueError("factor exposure values must be finite")
+
+    def loading(self, symbol: str) -> float:
+        return float(self.loadings.get(symbol, self.neutral))
 
 
 @dataclass(frozen=True)
@@ -171,6 +235,8 @@ class OptimizationResult:
     policy_hash: str
     input_hash: str
     transaction_cost: float = 0.0
+    # 상한에 걸려 줄어든 기대수익: {종목: {"raw": 원래 값, "capped": 적용 값}}
+    capped_expected_returns: dict[str, dict[str, float]] | None = None
 
 
 class RiskAwareOptimizer:
@@ -190,6 +256,7 @@ class RiskAwareOptimizer:
         trading_costs: Mapping[str, TradingCostInputs] | None = None,
         portfolio_value: float | None = None,
         betas: Mapping[str, float] | None = None,
+        factor_exposures: Mapping[str, "FactorExposureLimit"] | None = None,
     ) -> OptimizationResult:
         if not signals:
             raise ContractError("optimizer requires at least one signal")
@@ -224,10 +291,7 @@ class RiskAwareOptimizer:
         if available_risky < -1e-8:
             raise ContractError("fixed holdings leave no room for the minimum cash weight")
         available_risky = max(0.0, available_risky)
-        expected = np.array([
-            by_symbol[symbol].expected_return * by_symbol[symbol].confidence
-            for symbol in symbols
-        ], dtype=float)
+        raw_expected = np.array([by_symbol[symbol].expected_return for symbol in symbols], dtype=float)
         if covariance is None:
             diagonal = np.array([
                 max(1e-6, by_symbol[symbol].risk_score ** 2)
@@ -244,6 +308,15 @@ class RiskAwareOptimizer:
             raise ContractError("covariance must be positive semidefinite")
         if minimum_eigenvalue < 0:
             cov += np.eye(len(symbols)) * (-minimum_eigenvalue + 1e-9)
+        capped: dict[str, dict[str, float]] = {}
+        bounded_expected = raw_expected.copy()
+        if covariance is not None and self.policy.max_expected_return_sigma is not None:
+            limits = self.policy.max_expected_return_sigma * np.sqrt(np.maximum(np.diag(cov), 0.0))
+            bounded_expected = np.clip(raw_expected, -limits, limits)
+            for index, symbol in enumerate(symbols):
+                if abs(bounded_expected[index] - raw_expected[index]) > 1e-12:
+                    capped[symbol] = {"raw": float(raw_expected[index]), "capped": float(bounded_expected[index])}
+        expected = bounded_expected * np.array([by_symbol[symbol].confidence for symbol in symbols], dtype=float)
         current_risky = np.array([float(current.get(symbol, 0.0)) for symbol in symbols])
         exit_symbols = frozenset(
             symbol for symbol in symbols if by_symbol[symbol].action == ACTION_EXIT
@@ -295,6 +368,13 @@ class RiskAwareOptimizer:
             constraints.append(signal_betas @ weights <= budget)
         if not self.policy.allow_increases:
             constraints.append(weights <= current_risky)
+        for name, limit in sorted((factor_exposures or {}).items()):
+            loadings = np.array([limit.loading(symbol) for symbol in symbols], dtype=float)
+            # 가중평균 노출 = Σw·x / Σw. 분모를 곱해 선형으로 둔다(Σw=0이면 자명하게 만족한다).
+            if limit.maximum is not None:
+                constraints.append((loadings - limit.maximum) @ weights <= 0.0)
+            if limit.minimum is not None:
+                constraints.append((loadings - limit.minimum) @ weights >= 0.0)
         for index, symbol in enumerate(symbols):
             action = by_symbol[symbol].action
             if action == ACTION_EXIT:
@@ -356,7 +436,15 @@ class RiskAwareOptimizer:
                 if costs is not None and trading_costs is not None else None
             ),
             "portfolio_value": portfolio_value if costs is not None else None,
+            "capped_expected_returns": capped,
         }
+        if factor_exposures:
+            # 노출 제약이 없는 판단의 입력 hash는 제약이 생기기 전과 같게 둔다.
+            inputs["factor_exposures"] = {
+                name: {"min": limit.minimum, "max": limit.maximum,
+                       "loadings": {symbol: limit.loading(symbol) for symbol in symbols}}
+                for name, limit in sorted(factor_exposures.items())
+            }
         return OptimizationResult(
             weights=result_weights,
             expected_return=expected_return_component,
@@ -370,6 +458,7 @@ class RiskAwareOptimizer:
             policy_hash=self.policy.hash,
             input_hash=hashlib.sha256(canonical_json(inputs).encode("utf-8")).hexdigest(),
             transaction_cost=transaction_cost,
+            capped_expected_returns=capped,
         )
 
     def _beta_budget(
@@ -430,6 +519,7 @@ class RiskAwareOptimizer:
 
 
 __all__ = [
-    "ACTION_EXIT", "ALL_ACTIONS", "NO_INCREASE_ACTIONS", "ExpectedReturnSignal", "OptimizationResult",
+    "ACTION_EXIT", "ALL_ACTIONS", "BUY_ACTIONS", "NO_INCREASE_ACTIONS", "coherent_action", "ExpectedReturnSignal",
+    "FactorExposureLimit", "OptimizationResult",
     "OptimizerPolicy", "RiskAwareOptimizer", "mandatory_base_weights",
 ]

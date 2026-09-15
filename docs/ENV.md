@@ -81,6 +81,8 @@ Actions secrets/variables(CI)에 주입하며, 이 파일에는 이름·용도·
 | `DISCORD_CHANNEL_AI_APPROVALS`, `DISCORD_APPROVER_USER_IDS`, `AI_APPROVAL_TTL_MINUTES` | 승인 채널·본인 allowlist·만료시간 |
 | `HARNESS_NY_SESSION_*`, `HARNESS_NY_RISK_*`, `HARNESS_APPROVAL_POLL_SEC` | 뉴욕 현지 신규 판단·계좌 감시 구간과 Discord 승인 polling 간격 |
 | `HARNESS_*_TIMEOUT_SEC`, `HARNESS_JOB_*_KILL_SWITCH` | 로컬 하위 entry 시간 상한과 job별 차단 |
+| `INVESTMENT_AGENT_SECRET_SCOPE` | **직접 설정하지 않는다.** 하네스가 자식 프로세스마다 `execution`/`analysis`로 넣는다. `analysis`면 `.env`를 읽은 직후 `TOSS_CLIENT_*`·`TOSS_ACCOUNT_SEQ`·`TOSS_TOKEN_CACHE_PATH`·`DISCORD_APPROVAL_*` 비밀을 지우고 broker 인증·승인 서명키 로드를 거부한다 |
+| `DUCKDB_OPEN_TIMEOUT_SEC` | 다른 프로세스가 DuckDB 파일을 잡고 있을 때 여는 것을 기다리는 최대 시간(기본 180초) |
 | `GRAPHIFY_NO_BACKUP` | `1`로 설정 시 `graphify update` 실행 시 `graphify-out/YYYY-MM-DD/` 날짜별 과거 백업 폴더 자동 생성을 방지 |
 
 실적 관심종목은 환경변수가 아니라 `universe.entities.watchlist_sources`(관심 기업 컬럼)가 단일 기준이며,

@@ -82,6 +82,7 @@ class TestEmergencyStop(unittest.TestCase):
 
         # process kill is mocked as successful
         with patch("investment_agent.operations.harness.emergency._is_process_alive", return_value=True), \
+             patch("investment_agent.operations.harness.switch._find_running_harness_pids", return_value=[12345]), \
              patch("investment_agent.operations.harness.emergency._terminate_process", return_value=True):
             res = emergency_stop(state_dir=self.state_dir, kill_process=True)
 
@@ -109,6 +110,7 @@ class TestEmergencyStop(unittest.TestCase):
 
         # process kill fails
         with patch("investment_agent.operations.harness.emergency._is_process_alive", return_value=True), \
+             patch("investment_agent.operations.harness.switch._find_running_harness_pids", return_value=[12345]), \
              patch("investment_agent.operations.harness.emergency._terminate_process", return_value=False):
             res = emergency_stop(state_dir=self.state_dir, kill_process=True)
 
@@ -116,6 +118,17 @@ class TestEmergencyStop(unittest.TestCase):
         self.assertFalse(res["process_killed"])
         self.assertTrue(res["durable_lockdown_set"])
         self.assertTrue(is_execution_locked_down(self.state_dir))
+
+    def test_recorded_pid_reused_by_another_program_is_never_killed(self) -> None:
+        # 재부팅 뒤 상태 파일의 PID를 다른 프로그램이 받았다. 살아 있어도 하네스가 아니면 끄지 않는다.
+        self.store.save(HarnessState(process_id=12345, process_started_at=utc_iso(),
+                                     process_heartbeat_at=utc_iso(), stopped_cleanly=False, jobs={}))
+        with patch("investment_agent.operations.harness.emergency._is_process_alive", return_value=True), \
+             patch("investment_agent.operations.harness.switch._find_running_harness_pids", return_value=[]), \
+             patch("investment_agent.operations.harness.emergency._terminate_process") as terminate:
+            res = emergency_stop(state_dir=self.state_dir, kill_process=True)
+        terminate.assert_not_called()
+        self.assertTrue(res["durable_lockdown_set"])
 
     def test_rearm_execution(self) -> None:
         set_execution_lockdown(state_dir=self.state_dir, reason="test")

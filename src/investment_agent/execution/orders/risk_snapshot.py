@@ -31,17 +31,24 @@ def _account_ref(account_seq: int) -> str:
     return hashlib.sha256(f"toss|{account_seq}".encode("utf-8")).hexdigest()
 
 
+# 손익·낙폭 기준선은 보유 가치를 기록할 뿐 주문 가격이 아니다. 정규장 마감 뒤(감시 창은 16:30까지)나
+# 거래가 드문 종목은 마지막 체결이 120초보다 오래되는 게 정상이라, 주문용 신선도로 잡으면 기준선
+# 자체가 비어 일손실 한도가 과거 값을 쓴다. 주문 직전 재검증(live_worker)은 120초를 그대로 쓴다.
+RISK_SNAPSHOT_MAX_QUOTE_AGE_SECONDS = 3600.0
+
+
 def capture_and_store_risk_snapshot(
     *,
     account_seq: int,
     repository: RiskSnapshotRepository,
     captured_at: datetime | None = None,
     capture: Callable[..., AccountSnapshot] = capture_toss_account_snapshot,
+    max_quote_age_seconds: float = RISK_SNAPSHOT_MAX_QUOTE_AGE_SECONDS,
 ) -> StoredRiskSnapshot:
     """브로커 조회만 수행한 뒤 계좌번호를 hash로 바꿔 private DB에 저장한다."""
     if not isinstance(account_seq, int) or isinstance(account_seq, bool) or account_seq <= 0:
         raise ExecutionSafetyError("Toss account_seq must be a positive integer")
-    snapshot = capture(account_seq=account_seq, captured_at=captured_at)
+    snapshot = capture(account_seq=account_seq, captured_at=captured_at, max_quote_age_seconds=max_quote_age_seconds)
     current = parse_datetime(captured_at or datetime.now(timezone.utc))
     if snapshot.broker != "toss" or snapshot.account_id != str(account_seq):
         raise ExecutionSafetyError("Toss risk snapshot account identity does not match")

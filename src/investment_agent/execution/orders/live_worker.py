@@ -9,7 +9,7 @@ import math
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
-from typing import Callable, Protocol
+from typing import Any, Callable, Protocol
 from zoneinfo import ZoneInfo
 
 from investment_agent.platform.serialization import parse_datetime
@@ -38,6 +38,7 @@ from investment_agent.execution.orders.planning import (
     TargetWeightOrderPlanner,
     plan_with_funding,
 )
+from investment_agent.execution.orders.toss_snapshot import MAX_CLOCK_SKEW_SECONDS
 from investment_agent.execution.orders.toss_manual import (
     TossManualHandoff,
     TossManualSnapshot,
@@ -249,7 +250,7 @@ def revalidate_live_handoff(
         if not timestamp:
             raise ExecutionSafetyError(f"Toss {symbol} quote has no timestamp")
         quote_age = (parse_datetime(now) - parse_datetime(timestamp)).total_seconds()
-        if quote_age < 0 or quote_age > policy.max_quote_age_seconds:
+        if quote_age < -MAX_CLOCK_SKEW_SECONDS or quote_age > policy.max_quote_age_seconds:
             raise ExecutionSafetyError(f"Toss {symbol} quote is stale or future-dated")
 
     fresh_plans, fresh_phase = plan_with_funding(
@@ -323,8 +324,12 @@ class TossLiveExecutionWorker:
             [date], toss_read.TossUsRegularSession | None
         ] = toss_read.fetch_us_regular_session,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+        durable_control: Callable[[], Any] | None = None,
     ) -> None:
         self.repository = repository
+        # 운영자가 DB control을 닫으면 이미 시작한 배치의 다음 주문부터 멈춰야 한다.
+        # CLI 입구에서 한 번 읽는 것으로는 앞 주문이 오래 걸리는 동안의 변경을 놓친다.
+        self.durable_control = durable_control
         self.api = api
         self.controls = controls
         self.policy = policy or LiveExecutionPolicy()
@@ -590,6 +595,12 @@ class TossLiveExecutionWorker:
                     raise ExecutionSafetyError(
                         "live intent changed or was cancelled before submission"
                     )
+                if self.durable_control is not None:
+                    try:
+                        control = self.durable_control()
+                    except Exception as exc:  # noqa: BLE001 - control을 읽지 못하면 닫힌 것으로 본다
+                        raise ExecutionSafetyError("durable control could not be read before submission") from exc
+                    control.assert_live_manual_allowed()
                 receipt = self.api.create_order(
                     command,
                     permit=permit,

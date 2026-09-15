@@ -9,7 +9,7 @@ from pathlib import Path
 
 from investment_agent.trading.portfolio.contracts import SecurityProposal
 from investment_agent.trading.portfolio.signal_book import SignalBatch, SignalBook, SignalRecord
-from investment_agent.trading.shadow.engine import default_simulation_policy, run_book
+from investment_agent.trading.shadow.engine import default_simulation_policy, mark_book, run_book
 from investment_agent.trading.shadow.simulator import (
     BookState,
     FillBar,
@@ -227,6 +227,112 @@ class VirtualBookEngineTest(unittest.TestCase):
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM intents").fetchone()[0], 0)
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM account_snapshots").fetchone()[0], 0)
         self.assertIn("virtual_fills", tables)
+
+
+class RlBookRiskGateTest(unittest.TestCase):
+    """RL 계좌도 optimizer 계좌와 같은 RiskGate 결과만 체결한다. 종목 상한만 자르면 비교가 공정하지 않다."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.store = VirtualBookStore(Path(self.tmp.name) / "runtime.sqlite3")
+        self.store.create_book(book_id="shadow-rl", stage="shadow", policy_kind="rl_policy",
+                               initial_nav=100_000.0, created_at=datetime(2026, 9, 1, tzinfo=timezone.utc))
+        prices = {"2026-09-14": (100.0, 200.0), "2026-09-15": (150.0, 160.0)}
+        self.repository = _Repository({"SPY": _rows(prices), "AAA": _rows(prices)})
+        self.gated = []
+
+    def _run(self, risk):
+        from unittest import mock
+        from investment_agent.research.rl.serving import RlPolicyOutcome
+
+        outcome = RlPolicyOutcome(available=True, policy_artifact_id="rl-artifact", weights={"AAA": 0.5, "CASH": 0.5})
+
+        def gate(repository, **kwargs):
+            self.gated.append(kwargs)
+            return _Evaluation(risk, _Proposal())
+
+        with mock.patch("investment_agent.research.rl.serving.compute_rl_target_weights", return_value=outcome):
+            return run_book(self.store, self.repository, "shadow-rl", now=datetime(2026, 9, 14, 23, tzinfo=timezone.utc),
+                            policy=default_simulation_policy(), evaluate=lambda *a, **k: self.fail("optimizer used"),
+                            evaluate_weights=gate)
+
+    def test_rl_targets_are_executed_only_as_the_gate_approved_them(self):
+        result = self._run(_Risk({"AAA": 0.05, "CASH": 0.95}))
+        self.assertEqual(self.gated[0]["source_type"], "rl")
+        self.assertEqual(self.gated[0]["weights"]["AAA"], 0.10)  # 종목 상한을 먼저 적용한 뒤 gate로 간다
+        self.assertEqual(result.orders_planned, 1)
+        with self.store._connect() as connection:
+            quantity = connection.execute("SELECT requested_quantity FROM virtual_orders").fetchone()[0]
+        self.assertLess(quantity * 200.0, 100_000.0 * 0.06)
+
+    def test_gate_rejection_plans_no_orders(self):
+        result = self._run(_Risk({}, is_approved=False, violations=("stress loss exceeds limit",)))
+        self.assertEqual(result.orders_planned, 0)
+
+
+class CorporateActionTest(unittest.TestCase):
+    """분할·배당·정지 종목에서도 가상계좌 가치가 경제적으로 맞아야 성과를 믿을 수 있다."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.store = VirtualBookStore(Path(self.tmp.name) / "runtime.sqlite3")
+        self.store.create_book(book_id="b", stage="shadow", policy_kind="optimizer", initial_nav=10_000.0,
+                               created_at=datetime(2026, 9, 1, tzinfo=timezone.utc))
+        self.store.record_decision(
+            book_id="b", decision_id="d1", batch_id="batch", decided_at=datetime(2026, 9, 1, 23, tzinfo=timezone.utc),
+            proposal_id=None, risk_decision_id=None, is_approved=True, nav=10_000.0, target_weights={}, detail={},
+            orders=[{"order_id": "o1", "ticker": "AAA", "side": "buy", "quantity": 10.0, "reason_code": "REBALANCE"}],
+        )
+        self.store.apply_session(
+            book_id="b", trade_date="2026-09-02", closed_at=datetime(2026, 9, 2, 23, tzinfo=timezone.utc),
+            state=BookState(cash=8_000.0, positions={"AAA": 10.0}),
+            fills=[{"fill_id": "f1", "order_id": "o1", "ticker": "AAA", "side": "buy", "quantity": 10.0,
+                    "reference_price": 200.0, "fill_price": 200.0, "spread_cost": 0.0, "impact_cost": 0.0,
+                    "commission": 0.0}],
+            order_results={"o1": (10.0, "filled")},
+        )
+        self.now = datetime(2026, 9, 10, 23, tzinfo=timezone.utc)
+
+    def test_split_keeps_nav_unchanged_across_the_price_rebase(self):
+        before = self.store.state("b").nav({"AAA": 200.0})
+        self.store.apply_corporate_actions(book_id="b", actions=[
+            {"ticker": "AAA", "action_date": "2026-09-05", "kind": "split", "value": 4.0}], applied_at=self.now)
+        after = self.store.state("b")
+        self.assertEqual(after.positions["AAA"], 40.0)
+        self.assertAlmostEqual(after.nav({"AAA": 50.0}), before)
+
+    def test_dividend_is_paid_once_on_shares_held_before_the_ex_date(self):
+        action = {"ticker": "AAA", "action_date": "2026-09-05", "kind": "dividend", "value": 0.5}
+        first = self.store.apply_corporate_actions(book_id="b", actions=[action], applied_at=self.now)
+        second = self.store.apply_corporate_actions(book_id="b", actions=[action], applied_at=self.now)
+        self.assertEqual(first[0]["cash_delta"], 5.0)
+        self.assertEqual(second, [])
+        self.assertAlmostEqual(self.store.state("b").cash, 8_005.0)
+
+    def test_shares_bought_on_the_ex_date_earn_no_dividend(self):
+        action = {"ticker": "AAA", "action_date": "2026-09-02", "kind": "dividend", "value": 0.5}
+        applied = self.store.apply_corporate_actions(book_id="b", actions=[action], applied_at=self.now)
+        self.assertEqual(applied[0]["entitled_quantity"], 0.0)
+        self.assertAlmostEqual(self.store.state("b").cash, 8_000.0)
+
+    def test_stale_close_is_flagged_in_the_nav_history(self):
+        prices = {"2026-09-14": (100.0, 100.0)}
+        spy = _rows(prices)
+        halted = [row for row in _rows({}) if row["trade_date"] < "2026-09-10"]
+        repository = _Repository({"SPY": spy, "AAA": halted})
+        mark_book(self.store, self.store.book("b"), repository, now=datetime(2026, 9, 14, 23, tzinfo=timezone.utc))
+        self.assertEqual(self.store.nav_history("b")[-1]["stale_price_tickers"], ["AAA"])
+
+    def test_engine_applies_actions_from_the_repository_before_valuing(self):
+        prices = {"2026-09-14": (50.0, 50.0)}
+        repository = _Repository({"SPY": _rows(prices), "AAA": _rows(prices)})
+        repository.corporate_actions = lambda ticker, since: [
+            {"ticker": ticker, "action_date": "2026-09-05", "kind": "split", "value": 4.0}]
+        session, nav = mark_book(self.store, self.store.book("b"), repository,
+                                 now=datetime(2026, 9, 14, 23, tzinfo=timezone.utc))
+        self.assertAlmostEqual(nav, 8_000.0 + 40 * 50.0)
 
 
 if __name__ == "__main__":

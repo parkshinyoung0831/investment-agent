@@ -179,6 +179,12 @@ COLUMN_POLICIES: dict[str, ColumnPolicy] = {
         "PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities": 30,
         "PaymentsToAcquireOtherPropertyPlantAndEquipment": 40,
         "PaymentsToAcquireOtherProductiveAssets": 50,
+        # 업종별 표준 capex 태그. 위 태그를 쓰지 않는 회사만 여기에 닿는다 —
+        # 유틸리티(ED)·E&P(FANG·APA)·자본적 개선(GLW·SNA·IT)·소프트웨어 투자(VEEV).
+        "PaymentsForCapitalImprovements": 60,
+        "PaymentsForConstructionInProcess": 70,
+        "PaymentsToExploreAndDevelopOilAndGasProperties": 80,
+        "PaymentsForSoftware": 90,
     }),
     # 인수 현금유출. 유기적 성장과 인수 성장을 가르고, 진짜 FCF에서 뺀다.
     "acquisitions_net_of_cash": ColumnPolicy({
@@ -562,6 +568,12 @@ CORE_OVERRIDES: dict[str, str] = {
     "OperatingLeaseRightOfUseAsset": "operating_lease_right_of_use_asset",  # 226
     "NetIncomeLossAttributableToNoncontrollingInterest": "minority_interest_income",  # 234
     "ProfitLossAttributableToNoncontrollingInterest": "minority_interest_income",
+    # 사전은 앞의 둘을 투자활동 총계·무형자산 취득으로, 뒤의 둘을 스키마에 없는
+    # column key로 보내 이 태그만 쓰는 회사의 capex가 비었다.
+    "PaymentsForCapitalImprovements": "capital_expenses",
+    "PaymentsForSoftware": "capital_expenses",
+    "PaymentsForConstructionInProcess": "capital_expenses",
+    "PaymentsToExploreAndDevelopOilAndGasProperties": "capital_expenses",
     "PaymentsToAcquireBusinessesNetOfCashAcquired": "acquisitions_net_of_cash",  # 253
     "PaymentsToAcquireBusinessesAndInterestInAffiliatesNetOfCashAcquired": "acquisitions_net_of_cash",
     "PaymentsToAcquireBusinessesGross": "acquisitions_net_of_cash",

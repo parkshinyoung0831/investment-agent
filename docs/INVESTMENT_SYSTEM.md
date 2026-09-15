@@ -45,17 +45,39 @@ RiskGate가 강제한다. AI/ML/RL은 risk policy, broker credential과 durable 
 
 - **판단은 실계좌와 같은 함수다.** optimizer 계좌는 `construct.evaluate_portfolio`에 토스 계좌 대신
   가상계좌 상태를 넣는다. `paper` 계좌는 같은 함수를 `stage="paper"`로 불러 승격 확인과 fail-closed
-  입력 검사를 받는다. RL challenger 계좌는 승격된 정책의 목표비중에 champion과 같은 종목 상한·최소
-  현금만 적용한다.
+  입력 검사를 받는다. RL challenger 계좌는 승격된 정책의 목표비중을 `construct.evaluate_target_weights`로
+  champion과 **같은 regime·섹터·회전율·베타·CVaR·스트레스 RiskGate**에 통과시키고 그 승인 비중만 체결한다.
 - **체결은 판단 뒤 첫 정규장 시가**, 그 봉이 확정된 뒤에만 한다. 가격은 시가 × (1 ± 반스프레드 +
   impact·σ·√(주문액/ADV))로 optimizer의 비용 가정과 같고, 비용 재료는 체결일 **이전** 이력으로만 잰다.
 - 매도 대금이 들어온 뒤의 현금 안에서만 산다. 봉 거래량 × 참여율 상한을 넘는 수량은 부분체결로 남기고
   나머지는 취소한다. 체결 안 된 주문이 남아 있으면 새 판단을 하지 않는다 — 옛 계획을 이어 사지 않는다.
 - 거래정지·데이터 공백으로 체결 봉이 없으면 추정 가격으로 체결하지 않고 취소한다.
 - 매 실행마다 가장 최근 확정 종가로 NAV를 기록한다(`virtual_nav`). 하네스가 여러 거래일 동안 멈춰
-  있었으면 그 사이 날짜는 비어 있으므로 낙폭은 기록된 날짜 기준이다.
-- Discord 승인·거절은 이 원장에 흔적을 남기지 않는다. 기본 계좌는 `shadow-champion`과
-  `shadow-rl-challenger`이고, `--create paper-champion --stage paper`로 Paper 계좌를 더한다.
+  있었으면 그 사이 날짜는 비어 있으므로 낙폭은 기록된 날짜 기준이다. 그날 종가가 없어 이전 종가로 잰
+  종목은 `stale_price_tickers_json`에 남는다.
+- **분할·배당을 반영한다**(`virtual_corporate_actions`). 저장 가격은 분할 기준으로 다시 수집되므로 행위일
+  전날까지 보유한 수량에 분할 비율을 곱하고(미체결 주문 수량도 함께), 종가가 배당 조정 전 값이라 배당은
+  그 수량만큼 현금으로 넣는다. 행위일에 새로 산 주식은 권리가 없다. 한 행위는 한 번만 반영한다.
+- Discord 승인·거절은 이 원장에 흔적을 남기지 않는다. 기본 계좌는 `shadow-champion`,
+  `shadow-rl-challenger`, `shadow-factor-composite`이고(없는 것만 만든다), `--create paper-champion --stage paper`로
+  Paper 계좌를 더한다.
+
+### factor 가상계좌(`shadow-factor-composite`)
+
+중장기 선별 전략을 실계좌 경로와 비교하는 계좌다(`trading/portfolio/factor_portfolio.py`). 실계좌 판단
+경로는 바꾸지 않는다 — 어느 쪽을 실계좌에 쓸지는 두 계좌의 성과를 보고 사람이 정한다.
+
+- **기대수익은 factor가 만든다.** `기대수익 = IC × σ(20일) × z`. z는 종합 factor 점수의 유니버스 내 순위를
+  표준정규 점수로 바꾼 값(백분위 2~98%로 절단), IC는 초기값 0.04이고 `factor_research`로 다시 정한다.
+- **LLM은 논리 검증자다.** 유효한(28일 이내) 판단이 하락이면 비중을 못 늘리고 청산 판단이면 청산한다.
+  factor와 LLM이 둘 다 상승일 때만 LLM 쪽으로 `0.25 × 신뢰도`만큼 옮긴다(LLM 값은 ±1σ로 자른다).
+  보유하지 않은 종목은 유효한 LLM 판단이 있어야 새로 담는다. 품질 기준에서 떨어진 보유는 줄이기만 한다.
+- **대상은 품질 기준 통과 상위 40종목 + 보유 종목**이다. 점수·변동성을 모르는 보유는 고정한다.
+- **짧게 사고팔지 않는다.** L1 turnover 벌점 없이 스프레드·충격 비용만 두고, 비중 차이 1%p 미만은 거래하지
+  않는다(no-trade band, 전량 청산은 예외). 새 factor 횡단면이 있고 마지막 판단에서 7일이 지났을 때만 판단한다.
+- **factor 노출 범위**: 보유 비중 가중평균 품질 점수 ≥ 0.55, 모멘텀·가치 점수 ≤ 0.80. 기존 보유 때문에
+  한 번에 맞출 수 없으면 제약 없이 풀고 `exposure_limits_relaxed`에 남긴다.
+- 위험 한도는 champion과 같은 `construct.risk_policy_for`(가격 regime + 거시 노출)와 RiskGate다.
 
 파일이 존재한다는 이유만으로 예약 실행 경로라고 판단하지 않는다. 실제 호출 여부는
 `src/investment_agent/operations/harness_adapters.py`와 `.github/workflows`에서 확인한다.
@@ -67,7 +89,7 @@ S&P 500 전체를 매일 LLM에 보내지 않는다.
 | 단계 | 주요 코드 | 결과 |
 |---|---|---|
 | Universe 확인 | `universe.py::select_tracked_tickers` | 허용 member와 제외 사유 |
-| 후보 정렬 | `candidate_ranker.py::rank_candidate_features` | coverage와 변화 기반 분석 순서 |
+| 후보 선정 | `candidate_ranker.py::select_factor_candidates` (횡단면이 없으면 `rank_candidate_features`) | 품질 기준 통과 factor 상위 명단 중 판단이 오래된 종목 |
 | 근거 생성 | `context.py::ContextBuilder.build` | PIT `EvidenceBundle`, missing/warnings |
 | Agent 실행 | `TradingAgentsDecisionEngine.run` | role output와 외부 evidence manifest |
 | 계약 검증 | `SecurityProposal.from_dict` | ticker/as-of/range/evidence ID 검증 |
@@ -91,9 +113,32 @@ evidence 대신 `missing_data`에 사유를 남긴다. `news_archive`는 Supabas
 | economic_calendar | `macro.release_events` + release versions | 최신 `collected_at` | "economic_calendar: 시점 기준 관련 발표 일정·관측값 없음" |
 | news_archive | Supabase 시점 저장소 없음 | — | 항상 missing; live 외부 provider 사용 여부는 Agent 정책에 따름 |
 
-### 후보 정렬 점수 계산
+### factor 기반 후보 선정
 
-후보 점수는 매수 점수가 아니라 분석 순서다. 가장 오래 분석되지 않은 종목을 먼저 보고,
+LLM 분석 예산(하루 약 20종목)은 **보유할 만한 종목**에 쓴다. 가장 최근의 온전한 live feature 횡단면
+(tracked의 절반 이상, 4일 이내)으로 `research/features/factors.py`가 점수를 매긴다.
+
+| category | factor (방향) |
+|---|---|
+| quality | ROE·ROA·매출총이익률·FCF 마진(TTM, +), accruals·영업이익률 변동성(−) |
+| balance_sheet | 이자보상배율(+), 부채/자본(−) |
+| growth | TTM 매출 YoY(+), 순이익 성장(+) |
+| value | 이익수익률·FCF 수익률(+), PSR(−) — **업종(SIC division) 안에서** 순위 |
+| revision | 30일 추정치 상향 비율(+), EPS 추정치 변화(+) |
+| momentum | 12-1개월·6-1개월 수익률(+) |
+
+각 factor는 같은 날 백분위로 바꾸고(결측은 0점이 아니라 제외), category에 factor 절반 이상이 있어야 점수를
+준다. 품질 < 0.3 또는 재무건전성 < 0.2 백분위면 후보가 아니다. 종합 점수는 category 동일가중이다.
+
+`select_factor_candidates` 순서: ① 보유 중인데 품질 기준에서 떨어진 종목(5일 간격) ② 종합 상위 60종목 중
+판단이 없거나 28일보다 오래된 종목(점수순) ③ 판단이 오래된 보유 종목. 판단이 아직 유효한 종목은 예산이
+남아도 다시 보지 않는다 — 고를 종목이 없으면 `NoCandidatesDue`로 회차를 넘긴다. 새 공시·고영향 사건 레인은
+여전히 맨 앞이다.
+
+### 예전 후보 정렬 점수(횡단면이 없을 때)
+
+factor 횡단면이 없으면(feature 적재 전·중단) 아래 순환 랭커로 고르고 `path=legacy_rotation` 경고를 남긴다.
+이 점수는 매수 점수가 아니라 분석 순서다. 가장 오래 분석되지 않은 종목을 먼저 보고,
 같은 조건이면 구조화 데이터 변화가 큰 종목을 우선한다. `rank_candidate_features`는 도메인별
 percentile을 가중 평균해 이 우선순위를 계산한다.
 
@@ -166,6 +211,12 @@ model, prompt와 engine version이 달라지면 별도 artifact로 기록하고 
 기억으로 사용한다. 아직 미래 가격이 확정되지 않았거나 benchmark가 없으면 0점으로 만들지 않고
 미평가로 남긴다. 기억은 현재 evidence를 대체하지 않고 주문 권한도 없다.
 
+평가된 사례와 별도로 **직전 판단**(결과 미확인)을 함께 넘긴다. 어제 무엇을 근거로 무엇이라고 했는지를
+모르면 어제 늘리라던 종목을 오늘 설명 없이 줄이라고 할 수 있다. 직전 판단에는 "결과를 모른다"는
+표시와 "방향을 바꾸면 새 근거 ID를 reasoning 첫 줄에 적는다"는 규칙을 붙이고, 결과 수치나 LLM의
+target_weight는 넘기지 않는다. 판단 원장의 `final_decision.previous_case_key`·`previous_signal`로
+방향이 뒤집힌 판단을 사후에 찾을 수 있다.
+
 ## Feature Layer
 
 `FeatureLayer`는 `EvidenceBundle.as_of_at` 이하 evidence만 사용해 version/hash가 있는
@@ -216,6 +267,23 @@ flowchart TD
 과거 재현에서 비는 것도 있다. 뉴스·소셜, 수집 전 애널리스트 추정치(`captured_live` 이전),
 시점 이력이 없는 거시 관측, 적재 시각이 늦은 기술지표는 결측이고, 상장폐지 종목은 가격 원천에
 이력이 없으면 결측으로 남는다. LLM 판단은 모델이 이미 미래를 학습했으므로 과거 재현 대상이 아니다.
+
+과거 시점 snapshot은 `research.commands.backfill_research_history`가 명시적으로 쌓는다(이미 있는 시점은
+건너뛴다). 추정치 revision factor는 수집 전 시점에서 비므로, 과거 IC에서 revision category는 표본이 짧다.
+
+### factor IC 연구
+
+`research.commands.factor_research`가 과거 재현 snapshot마다 factor 점수와 그 뒤 5·20·60·126거래일 수익률의
+Spearman 순위 상관(IC)을 재고, factor·category·종합 점수별 평균 IC·t·양수 비율·상하위 20% 수익 차이를
+`artifacts/research/factor_ic/latest.json`에 쓴다. 기간은 먼저 정하지 않고 IC가 가장 크고 오래 가는 곳으로 고른다.
+
+- 판단 간격보다 기간이 길면 수익률 구간이 겹쳐 t가 부풀려진다 — `t_stat_overlap_adjusted`로 본다.
+- 기간 끝 종가가 없는 종목은 빠진다(생존 편향). 배당을 뺀 가격 수익률이다.
+- 겹침 보정 t ≥ 1.5이고 평균 IC가 양수인 category만 IC 비례 가중치를 **제안**한다. `FactorModel`에 자동 반영하지 않는다.
+
+채택이 승인되면 `load_factor_model_from_ic_report(path, horizon=..., version=...)`로 특정 기간의 제안만
+명시적인 새 버전으로 읽는다. 기간과 버전을 생략할 수 없고 `FactorModel()`의 기본값은 계속
+`factor-v1-equal`이므로, `latest.json`이 갱신됐다는 이유만으로 운영 가중치가 바뀌지 않는다.
 
 ## ML baseline을 먼저 비교한다
 
@@ -372,6 +440,13 @@ ML/RL/TradingAgents output은 다음 계약으로 정규화한다.
 | `source`/`version` | model/engine artifact identity |
 | `timestamp` | timezone-aware 생성시각 |
 | `evidence_ids` | 사용한 stable evidence IDs |
+| `action`/`action_adjustment` | 비중 방향을 제약하는 최종 행동과, LLM 원문 행동을 낮췄다면 그 사유 |
+
+LLM의 행동 단어와 수치 전망이 반대면 강제력이 약한 쪽으로 낮춘다(`coherent_action`, 부호만 본다).
+`exit`인데 하락 전망(기대초과수익 < 0 **그리고** 상승확률 < 0.5)이 아니면 `reduce`, `open`·`increase`인데
+상승 전망이 아니면 `hold`, `hold`인데 하락 전망이면 `reduce`. 카드에 "유지"와 "전량 매도"가 함께 뜨거나,
+전망은 좋은데 LLM 단어 하나로 비중이 0으로 강제되는 일을 막는다. RiskGate의 청산 검사도 낮춘 뒤의
+행동(`signal_actions`)을 본다.
 
 ## Portfolio Optimizer
 
@@ -396,6 +471,17 @@ paper/live는 비용 재료(거래량·변동성)가 없으면 fail-closed한다
 지금보다 늘리지 못한다. 총합 1, long-only, 종목·섹터 최대, 현금 최소와 turnover 최대를 명시적
 constraint로 사용한다. 실전 경로(`construct.py`)는 PIT 가격 260일의 Ledoit-Wolf 수축 공분산을
 넣고, covariance가 없으면 risk score 기반의 보수적 diagonal 근사를 metadata에 표시한다.
+
+기대초과수익은 **그 종목의 신호 기간 수익률 σ의 `max_expected_return_sigma`배(기본 1)** 안으로 자른다.
+1σ를 넘는 초과수익 예측은 사실상 확실한 초과성과를 주장하는 것이고 실제 신호의 순위상관은 그보다 훨씬
+작다. 9/9 실측 판단 20건의 20일 기대초과수익 중앙값이 +10%, 최대 +25%였다. 자른 값은 결과의
+`capped_expected_returns`와 제안 metadata에 원래 값과 함께 남긴다. 공분산이 없는 관찰용 fallback은
+종목 변동성을 몰라 자르지 않는다.
+
+비중이 바뀐 종목마다 주 사유를 결정적 규칙으로 하나 붙인다(`proposals.trade_reasons`):
+`HARD_RISK_LIMIT`(종목 상한·최소 현금까지만 줄임), `THESIS_EXIT`, `ALPHA_DECAY`(reduce·avoid·watch),
+`REBALANCE`(전망은 나쁘지 않으나 위험·비용 대비 더 나은 후보에 자리를 내줌), `ALPHA_OPPORTUNITY`.
+Discord 종합 카드의 "비중 변경 사유"가 이 값을 그대로 보여준다.
 
 종목 의견의 **행동**은 기대수익과 별개로 비중의 방향을 강제한다.
 
@@ -436,6 +522,23 @@ optimizer 결과도 반드시 RiskGate를 통과한다.
 최소 현금도 의무 출발점에 들어가, turnover 축소가 채워 둔 현금을 되돌리지 않는다. optimizer는 움직일
 수 없는 미분석 보유가 허용하는 만큼만 현금을 요구하고, 나머지는 RiskGate가 비례로 현금화한다.
 배율은 초기값이며 쌓이는 stress 지표 분포로 다시 보정한다.
+
+### 거시 노출 상한
+
+가격 regime은 SPY가 이미 떨어진 뒤에 켜진다. `trading/risk/macro_exposure.py`는 가격보다 먼저 움직이는
+경향이 있는 신용·변동성·시장 폭으로 **전체 주식 노출**을 낮춘다. 종목을 더 잘 고르려 하지 않는다.
+
+| 신호 | 경계 | 위험 |
+|---|---|---|
+| HY OAS 수준 | ≥ 4.5% | ≥ 6.0% |
+| HY OAS 63일 확대폭 | ≥ +0.75%p | ≥ +1.5%p |
+| VIX | ≥ 25 | ≥ 32 |
+| 200일선 상회 비율 | < 35% | < 20% |
+
+노출 상한: 경계만 90%, 위험 1개 75%, 2개 이상 55%. 최소 현금으로 바꿔 regime 정책과 `max`로 합친다
+(key `…:macro<상한%>`). 판단일 전날까지의 관측만 쓰고, 10일보다 오래됐거나 읽지 못한 series는 판단하지
+않는다 — 조이지도, 멈추지도 않는다(가격 regime이 hard gate로 남는다). 실계좌·RL·factor 계좌가 모두
+`construct.risk_policy_for` 하나를 거친다.
 
 RiskDecision 원장의 market risk 기록에는 평소 변동성과 따로 꼬리 위험(`stress`)이 남는다 —
 5거래일 historical CVaR95, 최근 창의 최악 5·20거래일 손실, 시장 -10% 충격 시 베타 손실.

@@ -5,7 +5,7 @@ import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Callable, Protocol
+from typing import Callable, Mapping, Protocol
 
 from investment_agent.platform.serialization import canonical_json, parse_datetime
 from investment_agent.execution.brokers.toss.client import from_toss_symbol
@@ -13,6 +13,12 @@ from investment_agent.execution.brokers.toss.orders import TossOrderApi, TossOrd
 from investment_agent.execution.contracts import ExecutionSafetyError
 from investment_agent.execution.orders.ledger import OrderAttemptEvent
 from investment_agent.execution.orders.tca import build_tca_report
+from investment_agent.execution.reconciliation.positions import (
+    OrderFill,
+    PositionBaseline,
+    PositionMismatch,
+    reconcile_positions,
+)
 
 
 class ReconciliationRepository(Protocol):
@@ -51,6 +57,9 @@ class ReconciliationSummary:
     completed_intents: tuple[str, ...]
     failed_intents: tuple[str, ...]
     card_updates: tuple[ReconciliationCardUpdate, ...]
+    # skipped(보유 조회 미연결) · deferred(결과 미확정 주문 존재) · initialized · ok · mismatch
+    position_check: str = "skipped"
+    position_mismatches: tuple[PositionMismatch, ...] = ()
 
 
 def classify_remote_order(order: TossOrderSnapshot) -> str:
@@ -118,13 +127,25 @@ class TossReconciliationWorker:
         api: TossOrderApi,
         account_seq: int,
         alert: Callable[[str, dict], None] | None = None,
+        positions_provider: Callable[[], Mapping[str, float]] | None = None,
+        baseline_store: object | None = None,
+        on_breach: Callable[[str, dict], None] | None = None,
     ) -> None:
+        """`on_breach`는 우리 원장으로 설명되지 않는 계좌 변화에서 신규 주문을 막는 자리다.
+
+        알림만 보내면 사람이 보기 전까지 다음 주문이 틀린 계좌를 기준으로 계산된다.
+        """
         if account_seq <= 0:
             raise ValueError("account_seq must be positive")
+        if (positions_provider is None) != (baseline_store is None):
+            raise ValueError("positions_provider and baseline_store must be configured together")
         self.repository = repository
         self.api = api
         self.account_seq = account_seq
         self.alert = alert or (lambda event, details: None)
+        self.positions_provider = positions_provider
+        self.baseline_store = baseline_store
+        self.on_breach = on_breach or (lambda event, details: None)
 
     def _open_remote_orders(self) -> tuple[TossOrderSnapshot, ...]:
         rows: list[TossOrderSnapshot] = []
@@ -257,6 +278,8 @@ class TossReconciliationWorker:
         ))
         if external:
             self.alert("external_toss_open_orders", {"count": len(external)})
+            self.on_breach("external_toss_open_orders", {"count": len(external)})
+        fills: dict[str, OrderFill] = {}
 
         unresolved: list[str] = []
         updated = 0
@@ -290,6 +313,11 @@ class TossReconciliationWorker:
             if remote.order_id != broker_id:
                 raise ExecutionSafetyError("Toss returned a different broker_order_id")
             _validate_identity(row, remote)
+            fills[client_id] = OrderFill(
+                ticker=str(row["ticker"]),
+                side=str(row["side"]).lower(),
+                filled_quantity=float(remote.filled_quantity),
+            )
             local_status = str(row["status"])
             remote_status = classify_remote_order(remote)
             changed = self._event_status(
@@ -369,6 +397,7 @@ class TossReconciliationWorker:
                 ))
         if unresolved:
             self.alert("toss_order_outcome_unresolved", {"count": len(unresolved)})
+        position_check, mismatches = self._reconcile_positions(fills, unresolved=bool(unresolved), now=current)
         return ReconciliationSummary(
             inspected=len(local),
             updated=updated,
@@ -377,7 +406,35 @@ class TossReconciliationWorker:
             completed_intents=tuple(completed),
             failed_intents=tuple(failed),
             card_updates=tuple(card_updates),
+            position_check=position_check,
+            position_mismatches=mismatches,
         )
+
+    def _reconcile_positions(
+        self, fills: Mapping[str, OrderFill], *, unresolved: bool, now: datetime,
+    ) -> tuple[str, tuple[PositionMismatch, ...]]:
+        if self.positions_provider is None or self.baseline_store is None:
+            return "skipped", ()
+        if unresolved:
+            # 결과를 모르는 우리 주문이 체결됐을 수 있다. 외부 변화로 오판하지 않도록 기준을 옮기지 않는다.
+            return "deferred", ()
+        baseline_raw = self.baseline_store.load_position_baseline(account_seq=self.account_seq)
+        result = reconcile_positions(
+            PositionBaseline.from_dict(baseline_raw) if baseline_raw else None,
+            broker_positions=self.positions_provider(),
+            order_fills=fills,
+            observed_at=now.isoformat(),
+        )
+        if result.mismatches:
+            details = {"mismatches": [item.to_dict() for item in result.mismatches]}
+            self.alert("unexplained_position_change", details)
+            self.on_breach("unexplained_position_change", details)
+        self.baseline_store.save_position_baseline(
+            account_seq=self.account_seq, baseline=result.next_baseline.to_dict(),
+        )
+        if result.is_first_observation:
+            return "initialized", ()
+        return ("mismatch" if result.mismatches else "ok"), result.mismatches
 
 
 __all__ = [

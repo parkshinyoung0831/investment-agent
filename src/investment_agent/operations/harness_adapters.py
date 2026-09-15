@@ -59,6 +59,16 @@ _MODULES = frozenset({
     "investment_agent.operations.commands.execute_toss_live",
     "investment_agent.operations.commands.reconcile_toss",
     "investment_agent.operations.commands.capture_toss_risk_snapshot",
+    "investment_agent.operations.commands.capture_toss_quotes",
+})
+# broker·승인 비밀을 받는 모듈. LLM을 부르지 않는 주문·대사·계좌·시세 조회뿐이다.
+# 여기 없는 모듈은 판단 범위로 떠서 `.env`를 읽어도 그 비밀이 지워진다.
+EXECUTION_MODULES = frozenset({
+    "investment_agent.operations.commands.request_toss_approval",
+    "investment_agent.operations.commands.execute_toss_live",
+    "investment_agent.operations.commands.reconcile_toss",
+    "investment_agent.operations.commands.capture_toss_risk_snapshot",
+    "investment_agent.operations.commands.capture_toss_quotes",
 })
 
 
@@ -253,6 +263,7 @@ class ProductionInvestmentAdapters:
         runner = SubprocessModuleRunner(
             repository_root=repository_root,
             allowed_modules=tuple(sorted(_MODULES)),
+            execution_modules=tuple(sorted(EXECUTION_MODULES)),
             environ=values,
         )
         window = SessionWindow(
@@ -298,14 +309,23 @@ class ProductionInvestmentAdapters:
         self.command_runner.run(
             PythonModuleCommand(
                 "investment_agent.trading.decision.portfolio_shadow",
-                ("--as-of", context.now.isoformat(), "--limit", str(self.analysis_limit)),
+                (
+                    "--as-of", context.now.isoformat(), "--limit", str(self.analysis_limit),
+                    # timeout에 걸려 강제 종료되면 끝낸 종목의 신호까지 잃는다. 여유를 두고 스스로 멈추게 한다.
+                    "--max-runtime-seconds", str(int(self.timeouts.get("analysis", 2 * 60 * 60) * 0.85)),
+                ),
                 self.timeouts.get("analysis", 2 * 60 * 60),
             ),
             stop_event=context.stop_event,
         )
-        batch_id = self.decision_repository.signal_batch_id_for_as_of(
-            as_of_at=context.now,
-        )
+        try:
+            batch_id = self.decision_repository.signal_batch_id_for_as_of(
+                as_of_at=context.now,
+            )
+        except LookupError:
+            # 오늘 모델 예산이 없어 분석이 시작되지 않은 회차다. 실패로 적으면 상태창이 매 30분 실패로 뒤덮인다.
+            # 분석이 돌다 실패하면 명령이 0이 아닌 코드로 끝나 위에서 이미 예외가 난다.
+            return StageOutcome.skipped({"reason": "no_signal_batch", "decision_as_of_at": context.now.isoformat()})
         if batch_id is None or _ID_PATTERNS["batch_id"].fullmatch(batch_id) is None:
             raise RuntimeError("analysis completed without a valid signal batch")
         return StageOutcome.succeeded({
@@ -643,7 +663,15 @@ class ProductionInvestmentAdapters:
         wait=self._session_wait(context)
         if wait is not None:
             return wait
-        self.command_runner.run(PythonModuleCommand('investment_agent.operations.commands.watch_entries',(),600),stop_event=context.stop_event)
+        with TemporaryDirectory() as directory:
+            quotes = str(Path(directory) / "entry-quotes.json")
+            # 시세 조회는 실행 범위, LLM 재검토는 판단 범위로 나눠 broker 자격증명이 LLM 프로세스에 가지 않게 한다.
+            self.command_runner.run(PythonModuleCommand(
+                "investment_agent.operations.commands.capture_toss_quotes", ("--out", quotes), 120,
+            ), stop_event=context.stop_event)
+            self.command_runner.run(PythonModuleCommand(
+                "investment_agent.operations.commands.watch_entries", ("--quotes", quotes), 600,
+            ), stop_event=context.stop_event)
         return StageOutcome.succeeded({'checked_at':self.now().isoformat()})
 
     def run_virtual_books(self, context: StageContext) -> StageOutcome:

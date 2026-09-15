@@ -86,6 +86,30 @@ class TestHarnessSwitch(unittest.TestCase):
         self.assertEqual(status.process_id, 12345)
         self.assertEqual(status.active_jobs_count, 1)
 
+    def test_status_and_stop_ignore_a_recorded_pid_that_is_not_the_harness(self) -> None:
+        from investment_agent.operations.harness.switch import stop_harness_service
+
+        state = self.store.load()
+        state.process_id = 3256
+        self.store.save(state)
+        with patch("investment_agent.operations.harness.switch._is_pid_alive", return_value=True), \
+             patch("investment_agent.operations.harness.switch._find_running_harness_pids", return_value=[]), \
+             patch("investment_agent.operations.harness.switch._terminate_pid") as terminate:
+            status = get_harness_status(state_dir=self.state_dir, root_dir=self.root_dir)
+            result = stop_harness_service(state_dir=self.state_dir)
+        self.assertFalse(status.is_running)
+        terminate.assert_not_called()
+        self.assertEqual(result["stale_recorded_pid"], 3256)
+
+    def test_stop_kills_only_verified_harness_processes(self) -> None:
+        from investment_agent.operations.harness.switch import stop_harness_service
+
+        with patch("investment_agent.operations.harness.switch._find_running_harness_pids", return_value=[777]), \
+             patch("investment_agent.operations.harness.switch._terminate_pid", return_value=True) as terminate:
+            result = stop_harness_service(state_dir=self.state_dir)
+        terminate.assert_called_once_with(777)
+        self.assertEqual(result["killed_pids"], [777])
+
     def test_update_env_variable_and_parse(self) -> None:
         env_file = self.root_dir / ".env"
         env_file.write_text("TRADING_KILL_SWITCH=off\n", encoding="utf-8")

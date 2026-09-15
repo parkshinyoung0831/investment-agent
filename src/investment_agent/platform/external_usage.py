@@ -115,6 +115,31 @@ def provider_daily_cap(provider: str, raw: str | None = None) -> int:
     return caps[normalized]
 
 
+def provider_attempts_today(path: Path | str, *, provider: str, now: datetime | None = None) -> int:
+    """예약하지 않고 오늘(UTC) 쓴 슬롯 수만 읽는다. 원장이 아직 없으면 0이다."""
+    normalized = str(provider).strip().lower()
+    if not _PROVIDER_RE.fullmatch(normalized):
+        raise ExternalUsageError(f"invalid external provider name: {provider!r}")
+    ledger_path = Path(path).expanduser().resolve()
+    if not ledger_path.is_file():
+        return 0
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    try:
+        connection = sqlite3.connect(f"{ledger_path.as_uri()}?mode=ro", uri=True, timeout=10.0)
+    except sqlite3.Error as exc:
+        raise ExternalUsageError("cannot open the external provider usage ledger") from exc
+    try:
+        row = connection.execute(
+            "SELECT attempts FROM provider_daily_usage WHERE usage_date = ? AND provider = ?",
+            (current.date().isoformat(), normalized),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return 0
+    finally:
+        connection.close()
+    return int(row[0]) if row else 0
+
+
 def reserve_provider_call(
     path: Path | str,
     *,

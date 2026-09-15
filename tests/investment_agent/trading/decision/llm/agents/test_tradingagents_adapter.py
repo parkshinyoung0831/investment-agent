@@ -89,6 +89,23 @@ class _ExternalClient:
         }
 
 
+class _RepairClient:
+    """호출마다 정해 둔 인용 ID를 돌려준다. 재요청 본문은 JSON 뒤에 위반 설명이 붙는다."""
+
+    def __init__(self, citations):
+        self.citations = list(citations)
+        self.calls = []
+
+    def complete_json(self, **kwargs):
+        self.calls.append(kwargs)
+        payload = json.loads(kwargs["user"].split("\n\n이전 출력이")[0])
+        return {
+            "ticker": payload["ticker"], "as_of_at": payload["as_of_at"], "signal": "hold",
+            "probability_up": 0.55, "confidence": 0.6, "expected_excess_return": 0.01, "target_weight": 0.1,
+            "reasoning": ["r"], "evidence_ids": [self.citations[len(self.calls) - 1]], "missing_data": [],
+        }
+
+
 class TradingAgentsAdapterTest(unittest.TestCase):
     def setUp(self):
         # provider quota/manifest 단위 테스트는 persistent DuckDB 상태와 독립적이어야 한다.
@@ -155,6 +172,26 @@ class TradingAgentsAdapterTest(unittest.TestCase):
         self.assertEqual(result.proposal.ticker, "AAPL")
         self.assertEqual(result.proposal.evidence_ids, ("EV-MARKET-123",))
         self.assertEqual(result.proposal.missing_data, ("news: unavailable",))
+
+    def test_one_repair_request_fixes_an_invalid_citation_without_rerunning_the_roles(self):
+        client = _RepairClient(["EV-OLD-DAY", "EV-MARKET-123"])
+        result = adapter.TradingAgentsDecisionEngine(client, _Runner()).run(_bundle(), memory_text="m")
+        self.assertEqual(result.proposal.evidence_ids, ("EV-MARKET-123",))
+        self.assertEqual([call["task_name"] for call in client.calls],
+                         ["tradingagents_security_proposal", "tradingagents_security_proposal_repair"])
+        self.assertIn("EV-OLD-DAY", client.calls[1]["user"])
+        self.assertIn("unknown evidence", result.role_outputs["_structuring_repair"]["first_violation"])
+
+    def test_a_second_violation_still_fails_closed(self):
+        client = _RepairClient(["EV-OLD-DAY", "EV-STILL-WRONG"])
+        with self.assertRaises(adapter.ContractError):
+            adapter.TradingAgentsDecisionEngine(client, _Runner()).run(_bundle(), memory_text="m")
+        self.assertEqual(len(client.calls), 2)
+
+    def test_a_valid_first_answer_makes_exactly_one_structuring_call(self):
+        client = _RepairClient(["EV-MARKET-123"])
+        adapter.TradingAgentsDecisionEngine(client, _Runner()).run(_bundle(), memory_text="m")
+        self.assertEqual(len(client.calls), 1)
 
     def test_guru_evidence_is_available_to_fundamental_analyst(self):
         base = _bundle()

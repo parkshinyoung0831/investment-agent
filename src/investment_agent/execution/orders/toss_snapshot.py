@@ -10,6 +10,10 @@ from investment_agent.execution.brokers.toss import client as toss
 from investment_agent.execution.contracts import ExecutionSafetyError
 from investment_agent.execution.orders.toss_manual import _us_holdings
 
+# 토스 시세 시각이 로컬 시계보다 0.1~0.2초 앞서 오는 일이 실측됐다(NTP 오차). 그 정도를 미래 시세로
+# 거부하면 정상 조회가 무작위로 실패한다. 몇 초를 넘는 미래 시각은 여전히 거부한다.
+MAX_CLOCK_SKEW_SECONDS = 5.0
+
 
 def capture_toss_account_snapshot(
     *,
@@ -45,7 +49,7 @@ def capture_toss_account_snapshot(
             raise ExecutionSafetyError(f"Toss {ticker} quote has no timestamp")
         quote_time = parse_datetime(timestamp)
         age = (now - quote_time).total_seconds()
-        if age < 0 or age > max_quote_age_seconds:
+        if age < -MAX_CLOCK_SKEW_SECONDS or age > max_quote_age_seconds:
             raise ExecutionSafetyError(
                 f"Toss {ticker} quote is stale or future-dated: age={age:.3f}s"
             )

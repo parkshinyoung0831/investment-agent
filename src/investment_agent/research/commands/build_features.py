@@ -94,6 +94,16 @@ def build_features(
     rows: list[dict] = []
     failures: list[str] = []
     unavailable = 0
+    saved = 0
+
+    def flush(pending: list[dict]) -> int:
+        # 다 계산한 뒤 한 번에 쓰면 중간 장애(파일 잠금 등)에 그때까지의 계산을 전부 잃는다.
+        if dry_run or not pending:
+            return 0
+        selected.save_rl_feature_snapshots(pending)
+        return len(pending)
+
+    built = 0
     for ticker in tickers:
         try:
             bundle = builder.build(ticker, as_of_at, source_kind=source_kind)
@@ -107,13 +117,11 @@ def build_features(
             unavailable += 1
             continue
         rows.append(snapshot.to_storage_row())
-
-    saved = 0
-    if not dry_run:
-        for start in range(0, len(rows), _UPSERT_CHUNK):
-            chunk = rows[start:start + _UPSERT_CHUNK]
-            selected.save_rl_feature_snapshots(chunk)
-            saved += len(chunk)
+        built += 1
+        if len(rows) >= _UPSERT_CHUNK:
+            saved += flush(rows)
+            rows = []
+    saved += flush(rows)
 
     payload = run_log_payload(
         workflow=WORKFLOW,
@@ -127,7 +135,7 @@ def build_features(
             "definition_hash": layer.definition_hash,
             "as_of_at": as_of_at.isoformat(),
             "source_kind": source_kind,
-            "built": len(rows),
+            "built": built,
             "with_valuation": sum(1 for ticker in tickers if ticker in valuations),
             "unavailable": unavailable,
             "failed": failures[:20],

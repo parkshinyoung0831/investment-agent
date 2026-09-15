@@ -16,13 +16,16 @@ from investment_agent.trading.repository import TradingRepository
 from investment_agent.trading.decision.model_pool import DEFAULT_POOL, select_model_for_ticker, apply_candidate, ModelPoolError
 from investment_agent.trading.decision.llm.client import OpenAICompatibleClient
 from investment_agent.trading.evidence.context import ContextBuilder
-from investment_agent.execution.brokers.toss.client import fetch_prices
+from investment_agent.operations.commands.capture_toss_quotes import entry_symbols, read_quotes
 from investment_agent.intelligence.infrastructure.sources.news.yfinance import fetch_ticker_news
 
 
 def main(argv=None):
     parser=argparse.ArgumentParser()
     parser.add_argument('--max-llm-calls',type=int,default=2)
+    # 하네스는 실행 범위의 capture_toss_quotes가 만든 파일을 넘긴다. 이 프로세스는 LLM을 부르므로
+    # broker 자격증명을 갖지 않는다. 없으면 사람이 직접 띄운 실행이라 여기서 조회한다.
+    parser.add_argument('--quotes')
     args=parser.parse_args(argv)
     if not 1 <= args.max_llm_calls <= 10:
         parser.error('max-llm-calls must be between 1 and 10')
@@ -30,10 +33,22 @@ def main(argv=None):
     repository=SupabaseRepository()
     store=EntryRepository()
     book=repository.load_signal_book(as_of_at=now)
-    symbols={record.proposal.ticker for record in book.records if record.is_valid_at(now) and record.proposal.signal in ('open','increase','reduce','exit')}
+    symbols=entry_symbols(book,now)
     if not symbols:
         return 0
-    prices,timestamps=fetch_prices(symbols)
+    if args.quotes:
+        quotes=read_quotes(Path(args.quotes))
+        def fresh_quote(ticker):
+            # 파일 시세를 다시 쓴다. scan이 판단 완료 시각 기준 120초 신선도를 재검사하므로
+            # 판단이 오래 걸리면 enter 대신 wait로 떨어지고 다음 주기에 새 시세로 다시 본다.
+            return quotes.get(ticker,(None,None))
+    else:
+        from investment_agent.execution.brokers.toss.client import fetch_prices
+        prices,timestamps=fetch_prices(symbols)
+        quotes={ticker:(price,timestamps.get(ticker)) for ticker,price in prices.items()}
+        def fresh_quote(ticker):
+            fresh_prices,fresh_times=fetch_prices({ticker})
+            return fresh_prices.get(ticker),fresh_times.get(ticker)
     now=datetime.now(timezone.utc)
     ledger=Path(os.environ.get('AI_INVESTOR_MODEL_POOL_LEDGER_PATH') or
                 str(Path(os.environ.get('AI_INVESTOR_ARTIFACT_DIR','artifacts/ai_investor/tradingagents'))/'metadata'/'llm-model-usage.sqlite3'))
@@ -56,12 +71,12 @@ def main(argv=None):
         result['evidence_hash']=hashlib.sha256(canonical_json(dict(context=context,news=news,quote=quote)).encode()).hexdigest()
         result['model']=candidate.name
         if task=='review':
-            fresh_prices,fresh_times=fetch_prices({record.proposal.ticker})
-            result['fresh_quote']={'price':fresh_prices.get(record.proposal.ticker),'quoted_at':fresh_times.get(record.proposal.ticker)}
+            price,quoted_at=fresh_quote(record.proposal.ticker)
+            result['fresh_quote']={'price':price,'quoted_at':quoted_at}
         result['evaluated_at']=datetime.now(timezone.utc).isoformat()
         return result
     try:
-        result=scan(book=book,store=store,quotes={ticker:(price,timestamps.get(ticker)) for ticker,price in prices.items()},
+        result=scan(book=book,store=store,quotes=quotes,
             analyze=analyze,publish=TradingRepository().publish_entry_signal,now=now,max_llm_calls=args.max_llm_calls)
     except ModelPoolError:
         get_logger(__name__).info('entry review waiting for model budget')

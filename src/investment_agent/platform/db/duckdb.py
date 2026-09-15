@@ -10,18 +10,58 @@
 
 DuckDB는 파일당 쓰기 프로세스가 하나다. 화면이 쓰기 모드로 열고 있으면 수집 잡이
 그 파일을 열지 못해 죽는다. 그래서 읽는 쪽은 `read_only=True` 외의 경로를 갖지 않는다.
+
+## 왜 여는 순간을 기다리는가
+
+DuckDB는 다른 프로세스가 파일을 잡고 있으면 기다리지 않고 즉시 IOException을 낸다.
+하네스는 feature 적재·ML 후보·가상계좌를 서로 다른 프로세스로 동시에 돌리므로, 한쪽이
+짧게 쓰는 순간 다른 쪽이 34분짜리 적재를 통째로 잃는다. 열기만 제한 시간 동안 재시도한다.
 """
 from __future__ import annotations
 
+import os
+import time
 from pathlib import Path
 from contextlib import contextmanager
 from threading import RLock
-from typing import Any
+from typing import Any, Callable
 
 from investment_agent.platform.logging import get_logger
 
 log = get_logger(__name__)
 _WRITER_LOCKS: dict[str, RLock] = {}
+# 다른 프로세스의 짧은 쓰기 창을 넘길 만큼. 넘으면 잠금이 아니라 장애로 보고 올린다.
+DEFAULT_OPEN_TIMEOUT_SECONDS = 180.0
+_OPEN_RETRY_SECONDS = 1.0
+
+
+def _open_with_retry(
+    open_file: Callable[[], Any],
+    *,
+    target: Path,
+    timeout_seconds: float | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> Any:
+    """파일 잠금으로 여는 데 실패하면 제한 시간 안에서 다시 연다. 다른 오류는 바로 올린다."""
+    import duckdb
+
+    limit = timeout_seconds if timeout_seconds is not None else float(
+        os.environ.get("DUCKDB_OPEN_TIMEOUT_SEC") or DEFAULT_OPEN_TIMEOUT_SECONDS
+    )
+    deadline = monotonic() + max(0.0, limit)
+    attempts = 0
+    while True:
+        try:
+            return open_file()
+        except duckdb.IOException:
+            # 잠금 메시지는 OS 언어로 번역돼 문구로 가를 수 없다. 여는 단계의 IOException만 재시도한다.
+            attempts += 1
+            if monotonic() >= deadline:
+                raise
+            if attempts == 1:
+                log.warning("DuckDB file is busy; waiting file=%s", target.name)
+            sleep(_OPEN_RETRY_SECONDS)
 
 
 class DuckDBStoreError(RuntimeError):
@@ -64,9 +104,9 @@ def connect(
     if read_only:
         if not target.is_file():
             raise DuckDBStoreError(f"DuckDB file is not available: {target.as_posix()}")
-        return duckdb.connect(str(target), read_only=True)
+        return _open_with_retry(lambda: duckdb.connect(str(target), read_only=True), target=target)
     target.parent.mkdir(parents=True, exist_ok=True)
-    connection = duckdb.connect(str(target))
+    connection = _open_with_retry(lambda: duckdb.connect(str(target)), target=target)
     try:
         if ddl_dir is not None:
             for statement in ddl_statements(ddl_dir):

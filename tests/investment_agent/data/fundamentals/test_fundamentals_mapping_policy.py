@@ -272,6 +272,18 @@ class CashFlowConceptChoice(unittest.TestCase):
             )
         )
 
+    def test_industry_capex_tags_reach_capital_expenses_behind_ppe(self):
+        for tag in ("PaymentsForCapitalImprovements", "PaymentsForConstructionInProcess",
+                    "PaymentsToExploreAndDevelopOilAndGasProperties", "PaymentsForSoftware"):
+            self.assertEqual(concepts.to_column_key(tag), "capital_expenses", tag)
+            self.assertTrue(concepts.policy_accepts(tag, "capital_expenses", "USD"), tag)
+            self.assertGreater(
+                concepts.policy_priority(tag, "capital_expenses"),
+                concepts.policy_priority("PaymentsToAcquirePropertyPlantAndEquipment", "capital_expenses"),
+            )
+        # 유정 '인수'는 capex가 아니라 인수 성격이라 받지 않는다.
+        self.assertFalse(concepts.policy_accepts("PaymentsToAcquireOilAndGasProperty", "capital_expenses", "USD"))
+
     def test_buyback_excludes_preferred_and_noncontrolling_repurchases(self):
         self.assertTrue(
             concepts.policy_accepts(

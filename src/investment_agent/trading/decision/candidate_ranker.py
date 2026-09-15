@@ -429,6 +429,83 @@ def priority_candidates(
     return tuple(sorted(result, key=lambda item: (item.tier, -item.importance, item.ticker)))
 
 
+# 보유 후보 명단 크기. 하루 분석 예산(약 20종목)의 몇 배를 두어 20거래일 안에 한 바퀴 돈다.
+FACTOR_SHORTLIST_SIZE = 60
+# 보유 후보를 다시 판단할 주기(달력일). 중장기 보유라 매일 다시 볼 이유가 없다.
+FACTOR_REFRESH_DAYS = 28
+# 품질 기준에서 떨어진 보유 종목을 다시 볼 최소 간격.
+HELD_BREAKDOWN_REVIEW_DAYS = 5
+# 이보다 오래된 factor snapshot으로는 고르지 않는다(주말·휴일 포함 여유).
+FACTOR_SNAPSHOT_MAX_AGE_DAYS = 4
+
+
+@dataclass(frozen=True)
+class FactorCandidate:
+    ticker: str
+    tier: int
+    reason: str
+    composite: float | None
+
+
+def select_factor_candidates(
+    scores: Mapping[str, Any],
+    *,
+    held_tickers: Sequence[str],
+    last_analyzed_at: Mapping[str, datetime],
+    as_of_at: datetime | str,
+    shortlist_size: int = FACTOR_SHORTLIST_SIZE,
+    refresh_days: int = FACTOR_REFRESH_DAYS,
+    breakdown_review_days: int = HELD_BREAKDOWN_REVIEW_DAYS,
+) -> tuple[FactorCandidate, ...]:
+    """중장기 보유 후보를 factor 점수로 고르고, 분석 예산을 쓸 순서를 정한다.
+
+    `scores`는 ticker → `FactorScore`다. 순간 변동폭이 큰 종목이 아니라 품질 기준을 통과한 종목 중
+    종합 점수(품질·건전성·성장·가치·기대·모멘텀) 상위 명단만 LLM 분석에 올린다.
+
+    - tier 0 `held_factor_breakdown`: 보유 중인데 품질 기준에서 떨어졌다. 논지 붕괴 여부가 가장 급하다.
+    - tier 1 `shortlist_due`: 상위 명단인데 판단한 적이 없거나 판단이 `refresh_days`보다 오래됐다. 점수순.
+    - tier 2 `held_due`: 보유 중이고 판단이 오래됐다(명단 밖으로 밀렸어도 보유 이유는 다시 본다).
+
+    판단이 아직 유효한 종목은 예산이 남아도 다시 보지 않는다. 며칠 전 판단을 되풀이하면 비용만 들고,
+    같은 근거에 대한 LLM의 흔들림이 신호 변화처럼 보인다.
+    """
+    as_of = parse_datetime(as_of_at).astimezone(timezone.utc)
+    if shortlist_size < 1 or refresh_days < 1 or breakdown_review_days < 1:
+        raise ValueError("factor candidate windows must be positive")
+    held = {_ticker(value) for value in held_tickers if _ticker(value)}
+    last = {_ticker(key): parse_datetime(value).astimezone(timezone.utc) for key, value in last_analyzed_at.items()}
+
+    def older_than(ticker: str, days: int) -> bool:
+        previous = last.get(ticker)
+        return previous is None or as_of - previous >= timedelta(days=days)
+
+    eligible = sorted(
+        (score for score in scores.values() if score.passes_quality_gate and score.composite is not None),
+        key=lambda score: (-float(score.composite), score.ticker),
+    )
+    shortlist = [score.ticker for score in eligible[:shortlist_size]]
+    composite = {ticker: score.composite for ticker, score in scores.items()}
+    result: list[FactorCandidate] = []
+    chosen: set[str] = set()
+
+    def add(ticker: str, tier: int, reason: str) -> None:
+        if ticker not in chosen:
+            chosen.add(ticker)
+            result.append(FactorCandidate(ticker, tier, reason, composite.get(ticker)))
+
+    for ticker in sorted(held):
+        score = scores.get(ticker)
+        if score is not None and not score.passes_quality_gate and older_than(ticker, breakdown_review_days):
+            add(ticker, 0, "held_factor_breakdown")
+    for ticker in shortlist:
+        if older_than(ticker, refresh_days):
+            add(ticker, 1, "shortlist_due")
+    for ticker in sorted(held, key=lambda value: (last.get(value) or datetime.min.replace(tzinfo=timezone.utc), value)):
+        if older_than(ticker, refresh_days):
+            add(ticker, 2, "held_due")
+    return tuple(result)
+
+
 def merge_priority_lane(
     priority: Sequence[PriorityCandidate],
     ranked_tickers: Sequence[str],
@@ -448,6 +525,9 @@ def merge_priority_lane(
 __all__ = [
     "CandidateFeatures",
     "CandidateRank",
+    "FACTOR_SNAPSHOT_MAX_AGE_DAYS",
+    "FactorCandidate",
+    "select_factor_candidates",
     "HIGH_IMPACT_EVENT_IMPORTANCE",
     "PriorityCandidate",
     "merge_priority_lane",

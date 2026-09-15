@@ -70,6 +70,22 @@ class TossSnapshotTest(unittest.TestCase):
             )
 
 
+class ClockSkewTest(unittest.TestCase):
+    """토스 시세 시각이 로컬 시계보다 몇백 ms 앞서는 것은 정상, 몇 초를 넘으면 미래 시세다."""
+
+    def _capture(self, quote_time):
+        with mock.patch("investment_agent.execution.orders.toss_snapshot.toss.fetch_open_orders", return_value=[]),              mock.patch("investment_agent.execution.orders.toss_snapshot.toss.fetch_holdings",
+                        return_value={"items": [{"marketCountry": "US", "symbol": "AAPL", "quantity": "2"}]}),              mock.patch("investment_agent.execution.orders.toss_snapshot.toss.fetch_prices",
+                        return_value=({"AAPL": 100.0}, {"AAPL": quote_time})),              mock.patch("investment_agent.execution.orders.toss_snapshot.toss.fetch_buying_power", return_value=500.0):
+            return capture_toss_account_snapshot(account_seq=7, captured_at=datetime(2026, 8, 22, 1, 0, tzinfo=timezone.utc))
+
+    def test_sub_second_future_quote_is_accepted(self):
+        self.assertEqual(self._capture("2026-08-22T01:00:00.174+00:00").account_id, "7")
+
+    def test_quote_far_in_the_future_is_rejected(self):
+        with self.assertRaisesRegex(ExecutionSafetyError, "future"):
+            self._capture("2026-08-22T01:00:30+00:00")
+
+
 if __name__ == "__main__":
     unittest.main()
-

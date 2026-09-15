@@ -45,7 +45,39 @@ class CommandRunnerTest(unittest.TestCase):
         self.assertEqual(result.return_code, 0)
         self.assertEqual(captured["argv"][1:3], ["-m", "investment_agent.safe.entry"])
         self.assertFalse(captured["kwargs"]["shell"])
-        self.assertEqual(captured["kwargs"]["env"], {"SAFE": "value"})
+        self.assertEqual(
+            captured["kwargs"]["env"], {"SAFE": "value", "INVESTMENT_AGENT_SECRET_SCOPE": "analysis"},
+        )
+
+    def test_only_execution_modules_receive_broker_and_approval_secrets(self):
+        launched = {}
+
+        def launch(argv, **kwargs):
+            launched[argv[2]] = kwargs["env"]
+            return FakeProcess(0)
+
+        secrets = {"TOSS_CLIENT_SECRET": "s", "TOSS_CLIENT_ID": "i", "DISCORD_APPROVAL_HMAC_SECRET": "h",
+                   "AI_INVESTOR_API_KEY": "llm"}
+        with tempfile.TemporaryDirectory() as temp:
+            runner = SubprocessModuleRunner(
+                repository_root=temp,
+                allowed_modules=("investment_agent.safe.analysis", "investment_agent.safe.execution"),
+                execution_modules=("investment_agent.safe.execution",),
+                environ=secrets,
+                popen=launch,
+            )
+            for module in ("investment_agent.safe.analysis", "investment_agent.safe.execution"):
+                runner.run(PythonModuleCommand(module), stop_event=Event())
+        analysis = launched["investment_agent.safe.analysis"]
+        execution = launched["investment_agent.safe.execution"]
+        self.assertEqual(analysis, {"AI_INVESTOR_API_KEY": "llm", "INVESTMENT_AGENT_SECRET_SCOPE": "analysis"})
+        self.assertEqual(execution["TOSS_CLIENT_SECRET"], "s")
+        self.assertEqual(execution["INVESTMENT_AGENT_SECRET_SCOPE"], "execution")
+
+    def test_execution_module_must_be_allowed(self):
+        with self.assertRaises(ValueError):
+            SubprocessModuleRunner(repository_root=".", allowed_modules=("investment_agent.safe.entry",),
+                                   execution_modules=("investment_agent.safe.other",))
 
     def test_disallowed_module_never_starts_and_failure_hides_arguments(self):
         launch_calls = []

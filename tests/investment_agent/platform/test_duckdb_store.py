@@ -54,5 +54,75 @@ class DuckDBStoreTest(unittest.TestCase):
             duckdb_store.ddl_statements(Path("db/duckdb/does_not_exist/v1"))
 
 
+
+class DuckDBOpenRetryTest(unittest.TestCase):
+    """다른 프로세스가 파일을 잡고 있으면 즉시 죽지 않고 제한 시간 동안 기다린다."""
+
+    def test_busy_file_is_retried_until_it_opens(self):
+        import duckdb
+        from investment_agent.platform.db import duckdb as store
+
+        calls, sleeps = [], []
+
+        def open_file():
+            calls.append(1)
+            if len(calls) < 3:
+                raise duckdb.IOException("file is being used by another process")
+            return "connection"
+
+        clock = iter(range(100))
+        result = store._open_with_retry(open_file, target=Path("x.duckdb"), timeout_seconds=10,
+                                        sleep=sleeps.append, monotonic=lambda: next(clock))
+        self.assertEqual(result, "connection")
+        self.assertEqual(len(calls), 3)
+
+    def test_lock_that_outlives_the_timeout_is_raised(self):
+        import duckdb
+        from investment_agent.platform.db import duckdb as store
+
+        def open_file():
+            raise duckdb.IOException("busy")
+
+        clock = iter(range(100))
+        with self.assertRaises(duckdb.IOException):
+            store._open_with_retry(open_file, target=Path("x.duckdb"), timeout_seconds=3,
+                                   sleep=lambda seconds: None, monotonic=lambda: next(clock))
+
+    def test_non_lock_errors_are_not_retried(self):
+        from investment_agent.platform.db import duckdb as store
+
+        calls = []
+
+        def open_file():
+            calls.append(1)
+            raise ValueError("bad path")
+
+        with self.assertRaises(ValueError):
+            store._open_with_retry(open_file, target=Path("x.duckdb"), timeout_seconds=10, sleep=lambda s: None)
+        self.assertEqual(len(calls), 1)
+
+    def test_real_second_process_waits_for_the_writer_to_release(self):
+        import subprocess
+        import sys
+        import time as clock
+        from investment_agent.platform.db.duckdb import connect
+
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "busy.duckdb"
+            connect(target).close()
+            holder = subprocess.Popen([sys.executable, "-c", (
+                "import duckdb,time,sys;c=duckdb.connect(sys.argv[1]);print('held',flush=True);time.sleep(3);c.close()"
+            ), str(target)], stdout=subprocess.PIPE, text=True)
+            try:
+                self.assertEqual(holder.stdout.readline().strip(), "held")
+                started = clock.monotonic()
+                connection = connect(target)
+                connection.close()
+                self.assertGreater(clock.monotonic() - started, 0.5)
+            finally:
+                holder.wait(timeout=30)
+                holder.stdout.close()
+
+
 if __name__ == "__main__":
     unittest.main()

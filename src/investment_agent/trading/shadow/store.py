@@ -160,26 +160,97 @@ class VirtualBookStore:
                 )
             connection.execute("UPDATE virtual_books SET cash=? WHERE book_id=?", (float(state.cash), book_id))
 
-    def record_nav(self, *, book_id: str, trade_date: str, nav: float, cash: float, gross_exposure: float) -> None:
+    def apply_corporate_actions(self, *, book_id: str, actions: Iterable[Mapping[str, Any]],
+                                applied_at: datetime) -> list[dict[str, Any]]:
+        """분할은 보유 수량에, 배당은 현금에 반영한다. 이미 반영한 행위는 건너뛴다(멱등).
+
+        권리는 행위일 **전날까지** 보유한 수량에만 생긴다. 행위일 이후 체결은 지금 수량에서
+        되돌려 그 수량을 구한다 — 행위일에 새로 산 주식이 배당을 받거나 분할되면 안 된다.
+        """
+        applied: list[dict[str, Any]] = []
+        with self._connect() as connection:
+            for action in sorted(actions, key=lambda row: (str(row["action_date"]), str(row["ticker"]), str(row["kind"]))):
+                ticker, action_date, kind = str(action["ticker"]).upper(), str(action["action_date"]), str(action["kind"])
+                value = float(action["value"])
+                if connection.execute(
+                    "SELECT 1 FROM virtual_corporate_actions WHERE book_id=? AND ticker=? AND action_date=? AND kind=?",
+                    (book_id, ticker, action_date, kind),
+                ).fetchone():
+                    continue
+                held_row = connection.execute(
+                    "SELECT quantity,cost_basis FROM virtual_positions WHERE book_id=? AND ticker=?", (book_id, ticker),
+                ).fetchone()
+                held = float(held_row[0]) if held_row else 0.0
+                after_bought, after_sold = connection.execute(
+                    "SELECT COALESCE(SUM(CASE WHEN side='buy' THEN quantity END),0),"
+                    " COALESCE(SUM(CASE WHEN side='sell' THEN quantity END),0)"
+                    " FROM virtual_fills WHERE book_id=? AND ticker=? AND trade_date>=?",
+                    (book_id, ticker, action_date),
+                ).fetchone()
+                entitled = max(0.0, held - float(after_bought) + float(after_sold))
+                quantity_delta, cash_delta = 0.0, 0.0
+                if kind == "split" and entitled > 0 and held_row:
+                    quantity_delta = entitled * (value - 1.0)
+                    new_quantity = held + quantity_delta
+                    if new_quantity > 0:
+                        connection.execute(
+                            "UPDATE virtual_positions SET quantity=? WHERE book_id=? AND ticker=?",
+                            (new_quantity, book_id, ticker),
+                        )
+                    else:
+                        connection.execute("DELETE FROM virtual_positions WHERE book_id=? AND ticker=?", (book_id, ticker))
+                if kind == "split":
+                    # 분할 전에 계획한 미체결 주문도 같은 단위로 바꾼다. 안 바꾸면 매도 수량이 보유의 일부만 판다.
+                    connection.execute(
+                        "UPDATE virtual_orders SET requested_quantity=requested_quantity*? WHERE book_id=? AND ticker=?"
+                        " AND status='pending' AND created_at<?",
+                        (value, book_id, ticker, action_date),
+                    )
+                elif kind == "dividend" and entitled > 0:
+                    cash_delta = entitled * value
+                    connection.execute("UPDATE virtual_books SET cash=cash+? WHERE book_id=?", (cash_delta, book_id))
+                connection.execute(
+                    "INSERT INTO virtual_corporate_actions VALUES(?,?,?,?,?,?,?,?,?)",
+                    (book_id, ticker, action_date, kind, value, entitled, quantity_delta, cash_delta, applied_at.isoformat()),
+                )
+                applied.append({"ticker": ticker, "action_date": action_date, "kind": kind, "entitled_quantity": entitled,
+                                "quantity_delta": quantity_delta, "cash_delta": cash_delta})
+        return applied
+
+    def traded_tickers_since(self, book_id: str, trade_date: str) -> set[str]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT DISTINCT ticker FROM virtual_fills WHERE book_id=? AND trade_date>=?", (book_id, trade_date),
+            ).fetchall()
+        return {str(row[0]) for row in rows}
+
+    def record_nav(self, *, book_id: str, trade_date: str, nav: float, cash: float, gross_exposure: float,
+                   stale_price_tickers: Iterable[str] = ()) -> None:
         with self._connect() as connection:
             traded, cost = connection.execute(
                 "SELECT COALESCE(SUM(quantity*fill_price),0), COALESCE(SUM(spread_cost+impact_cost+commission),0)"
                 " FROM virtual_fills WHERE book_id=? AND trade_date=?", (book_id, trade_date),
             ).fetchone()
             connection.execute(
-                "INSERT INTO virtual_nav VALUES(?,?,?,?,?,?,?) ON CONFLICT(book_id,trade_date) DO UPDATE SET"
+                "INSERT INTO virtual_nav VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(book_id,trade_date) DO UPDATE SET"
                 " nav=excluded.nav, cash=excluded.cash, gross_exposure=excluded.gross_exposure,"
-                " traded_notional=excluded.traded_notional, cost=excluded.cost",
-                (book_id, trade_date, float(nav), float(cash), float(gross_exposure), float(traded), float(cost)),
+                " traded_notional=excluded.traded_notional, cost=excluded.cost,"
+                " stale_price_tickers_json=excluded.stale_price_tickers_json",
+                (book_id, trade_date, float(nav), float(cash), float(gross_exposure), float(traded), float(cost),
+                 json.dumps(sorted(set(stale_price_tickers)))),
             )
 
     def nav_history(self, book_id: str) -> list[dict[str, Any]]:
         with self._connect() as connection:
             rows = connection.execute(
-                "SELECT trade_date,nav,cash,gross_exposure,traded_notional,cost FROM virtual_nav"
+                "SELECT trade_date,nav,cash,gross_exposure,traded_notional,cost,stale_price_tickers_json FROM virtual_nav"
                 " WHERE book_id=? ORDER BY trade_date", (book_id,),
             ).fetchall()
-        return [dict(zip(("trade_date", "nav", "cash", "gross_exposure", "traded_notional", "cost"), row)) for row in rows]
+        return [
+            {**dict(zip(("trade_date", "nav", "cash", "gross_exposure", "traded_notional", "cost"), row[:6])),
+             "stale_price_tickers": json.loads(row[6])}
+            for row in rows
+        ]
 
 
 def book_summary(book: VirtualBook, history: list[Mapping[str, Any]]) -> dict[str, Any]:

@@ -60,9 +60,10 @@ EvidenceBundle이나 LLM prompt를 수정하지 않습니다.
 
 자유문장, reaction, 오래된 card, 다른 channel/message의 button은 승인으로 취급하지 않습니다.
 
-이 9단계는 하나의 프로세스가 아니라 서로 다른 세 실행(운영자가 직접 돌리는
-`request_toss_approval`·`execute_toss_live`와 상시 구동 중인 `approval_listener`)에 걸쳐
-있습니다. 어느 단계가 어느 프로세스·주체 소관인지는 순서 목록보다 sequence diagram이 더 분명합니다.
+이 9단계는 하나의 프로세스가 아니라 서로 다른 세 실행(`request_toss_approval`·`execute_toss_live`와
+상시 구동 중인 `approval_listener`)에 걸쳐 있습니다. 앞의 둘은 운영자가 직접 부를 수도 있고,
+`approval_workflow` 모드의 로컬 하네스가 승인 상태를 polling하다가 `approved`가 되면 부르기도 합니다.
+어느 쪽이든 사람이 누른 승인 ID 없이는 주문이 나가지 않습니다. 어느 단계가 어느 프로세스·주체 소관인지는 순서 목록보다 sequence diagram이 더 분명합니다.
 
 ```mermaid
 sequenceDiagram
@@ -127,9 +128,10 @@ Shadow와 연구용 Paper 단계는 주문 없는 분석·승격 증거에 사�
 - durable kill switch/lockdown: process restart 뒤에도 유지
 
 `execution_control`는 `data/local/runtime/runtime.sqlite3`(`db/sqlite/runtime/v1/30_execution.sql`)의
-`execution_control` 표에 있습니다. 신규 설치는 이 행을 자동으로 채우지 않고, 이 표에 쓰는
-CLI 명령도 아직 없습니다 — 사람이 직접 `execution_control(control_key='global', ...)` 행을
-심기 전까지는 `load_control_state()`가 예외를 던져 주문 경로 전체가 막힙니다(fail-closed).
+`execution_control` 표에 있습니다. `operations.commands.execution_controls --initialize`가 모든 권한을 닫은
+행을 심고, `--manual on|off --expected-version N --reason ...`이 사람의 명시적 변경을 기록합니다. 행이
+없으면 `load_control_state()`가 예외를 던져 주문 경로 전체가 막힙니다(fail-closed). `execute_toss_live`는
+입구에서 한 번, 그리고 **주문 POST마다 다시** 이 값을 읽습니다 — 배치 도중 운영자가 닫으면 다음 주문부터 멈춥니다.
 
 DB state를 읽지 못하면 허용으로 추정하지 않습니다. cancel이나 risk-reducing close는 별도 permit과
 검사로만 허용할 수 있습니다.
@@ -139,16 +141,17 @@ DB state를 읽지 못하면 허용으로 추정하지 않습니다. cancel이�
 `reconciliation.py`는 순수 비교 계약, `reconciliation_worker.py`는 Toss remote snapshot과 DB
 event 저장을 담당합니다. broker가 truth입니다.
 
-비교 대상:
+비교 대상과 현재 구현:
 
-- internal attempt와 broker order
-- internal fill과 broker fill
-- expected position과 broker position
-- internal cash와 broker cash
-- 내부 intent가 없는 external order
+- internal attempt와 broker order: 주문 ID별 상태·누적 체결량·identity를 대조한다.
+- expected position과 broker position: `reconciliation/positions.py`. 직전에 설명된 보유 + 그 뒤 우리 체결량이
+  broker 보유와 다르면 `unexplained_position_change`로 알리고 EXECUTION_LOCKDOWN을 건다. 결과를 모르는 우리
+  주문이 있으면 오판하지 않도록 미룬다.
+- 내부 intent가 없는 external order: 알림과 함께 EXECUTION_LOCKDOWN을 건다.
+- internal cash와 broker cash: **대사하지 않는다.** 배당·입출금·환전·수수료 정산이 정상적으로 현금을 움직여
+  주문 체결만으로 설명하려 하면 매 주기 불일치가 난다.
 
-명백한 snapshot 누락은 안전하게 보완할 수 있지만 identity 충돌과 external order는 CRITICAL alert와
-lockdown을 우선합니다.
+broker ID가 없는 주문은 ticker·수량으로 추측해 붙이지 않고 unresolved로 남깁니다.
 
 ## 주요 CLI
 

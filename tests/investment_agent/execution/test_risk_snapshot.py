@@ -75,5 +75,23 @@ class RiskSnapshotTest(unittest.TestCase):
         self.assertIsNone(repository.account)
 
 
+class RiskSnapshotQuoteAgeTest(unittest.TestCase):
+    def test_risk_baseline_tolerates_after_close_quotes_but_orders_do_not(self):
+        from investment_agent.execution.orders.live_worker import LiveExecutionPolicy
+        from investment_agent.execution.orders.risk_snapshot import RISK_SNAPSHOT_MAX_QUOTE_AGE_SECONDS
+
+        seen = {}
+
+        def capture(**kwargs):
+            seen.update(kwargs)
+            return _snapshot()
+
+        capture_and_store_risk_snapshot(account_seq=7, repository=_Repository(), captured_at=_NOW, capture=capture)
+        self.assertEqual(seen["max_quote_age_seconds"], RISK_SNAPSHOT_MAX_QUOTE_AGE_SECONDS)
+        # 장 마감 뒤 30분(감시 창 끝)의 마지막 체결도 기준선에는 쓸 수 있어야 한다.
+        self.assertGreaterEqual(RISK_SNAPSHOT_MAX_QUOTE_AGE_SECONDS, 30 * 60)
+        self.assertLess(LiveExecutionPolicy().max_quote_age_seconds, RISK_SNAPSHOT_MAX_QUOTE_AGE_SECONDS)
+
+
 if __name__ == "__main__":
     unittest.main()

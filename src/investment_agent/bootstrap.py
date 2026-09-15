@@ -19,7 +19,11 @@ def start_cli() -> None:
 
     from investment_agent.platform.logging import configure_logging
 
+    from investment_agent.platform.secret_scope import strip_out_of_scope_secrets
+
     load_dotenv(repository_root() / ".env", override=False)
+    # 하네스가 판단 범위로 띄운 프로세스면 `.env`에서 되살아난 broker·승인 비밀을 지운다.
+    strip_out_of_scope_secrets()
     configure_logging()
 
 

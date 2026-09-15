@@ -188,7 +188,10 @@ def emergency_stop(
     # 3. Terminate process and verify termination
     process_killed = False
     if kill_process and pid is not None:
-        if _is_process_alive(pid):
+        from investment_agent.operations.harness.switch import _find_running_harness_pids
+
+        # 재부팅 뒤 같은 PID를 받은 다른 프로그램을 죽이지 않도록 명령줄로 하네스인지 확인한다.
+        if _is_process_alive(pid) and pid in _find_running_harness_pids():
             process_killed = _terminate_process(pid)
         else:
             process_killed = True

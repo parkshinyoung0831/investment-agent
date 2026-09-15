@@ -33,6 +33,21 @@ _SIGNAL_LABELS = {
 }
 _BUY_SIDE = frozenset({"open", "increase"})
 _SELL_SIDE = frozenset({"reduce", "exit"})
+# optimizer가 비중을 바꾼 주 사유(`proposals.trade_reasons`). "유지 의견인데 왜 파나"에 답한다.
+_REASON_LABELS = {
+    "HARD_RISK_LIMIT": "위험 한도 준수",
+    "THESIS_EXIT": "청산 판단",
+    "ALPHA_DECAY": "전망 약화",
+    "REBALANCE": "더 나은 후보로 자금 이동",
+    "ALPHA_OPPORTUNITY": "전망 개선",
+}
+_ADJUSTMENT_LABELS = {
+    "exit_without_bearish_outlook": "청산 의견이지만 수치 전망이 하락이 아니라 축소로 낮춤",
+    "hold_with_bearish_outlook": "유지 의견이지만 수치 전망이 하락이라 축소로 표시",
+    "open_without_bullish_outlook": "편입 의견이지만 수치 전망이 상승이 아니라 유지로 낮춤",
+    "increase_without_bullish_outlook": "확대 의견이지만 수치 전망이 상승이 아니라 유지로 낮춤",
+}
+_MAX_REASONS = 8
 
 
 def _percent(value: Any) -> str:
@@ -62,6 +77,31 @@ def _lines(values: Sequence[Any], *, limit: int = _MAX_LINES) -> str:
 
 def _date(value: Any) -> str:
     return str(value or "")[:10] or "—"
+
+
+def _trade_reason_lines(metadata: Mapping[str, Any]) -> str:
+    """바뀐 비중마다 현재→목표와 주 사유를 적는다. 사유가 원장에 없으면 줄을 만들지 않는다."""
+    reasons = dict(metadata.get("trade_reasons") or {})
+    rows = sorted(
+        reasons.items(),
+        key=lambda item: abs(float(item[1].get("target_weight") or 0) - float(item[1].get("current_weight") or 0)),
+        reverse=True,
+    )
+    lines = []
+    for symbol, row in rows[:_MAX_REASONS]:
+        line = (
+            f"• `{symbol}` {_percent(row.get('current_weight'))} → {_percent(row.get('target_weight'))} · "
+            f"{_REASON_LABELS.get(str(row.get('code')), str(row.get('code')))}"
+        )
+        adjustment = _ADJUSTMENT_LABELS.get(str(row.get("action_adjustment") or ""))
+        if adjustment:
+            line += f" ({adjustment})"
+        if row.get("expected_return_capped"):
+            line += " · 과대 기대수익 상한 적용"
+        lines.append(line)
+    if len(rows) > _MAX_REASONS:
+        lines.append(f"• …외 {len(rows) - _MAX_REASONS}건")
+    return "\n".join(lines)
 
 
 def portfolio_embed(
@@ -130,6 +170,9 @@ def portfolio_embed(
             "inline": False,
         },
     ]
+    reason_text = _trade_reason_lines(dict(proposal.get("metadata") or {}))
+    if reason_text:
+        fields.insert(2, {"name": "🔁 비중 변경 사유", "value": reason_text[:1024], "inline": False})
     if run.get("failure_reason"):
         fields.append({
             "name": "⚠️ 실행 실패 사유",
@@ -162,6 +205,15 @@ def candidate_embed(*, decision: Mapping[str, Any]) -> dict[str, Any]:
         color = COLOR_INFO
 
     evidence_count = len(list(final.get("evidence_ids") or ()))
+    previous = final.get("previous_signal")
+    # LLM의 target_weight는 optimizer가 읽지 않는다. 카드에 "목표 비중"으로 적으면 반영되지 않는
+    # 값을 반영된 것처럼 보이게 한다 — 대신 직전 판단과의 연속성을 보여준다.
+    continuity = (
+        f"직전 판단 {_SIGNAL_LABELS.get(str(previous), str(previous))}"
+        + (" → **방향 변경**" if (previous in _BUY_SIDE and signal in _SELL_SIDE)
+           or (previous in _SELL_SIDE and signal in _BUY_SIDE) else "")
+        if previous else "직전 판단 없음"
+    )
     return {
         "title": f"[{label}] {decision.get('ticker', '—')}",
         "description": f"기준 {_date(decision.get('as_of_at'))} · 사례 `{decision.get('case_key', '—')}`",
@@ -172,8 +224,7 @@ def candidate_embed(*, decision: Mapping[str, Any]) -> dict[str, Any]:
                 "value": (
                     f"기대 초과수익 **{_signed_percent(final.get('expected_excess_return'))}** · "
                     f"상승확률 {_percent(final.get('probability_up'))}\n"
-                    f"신뢰도 {_percent(final.get('confidence'))} · "
-                    f"목표 비중 {_percent(final.get('target_weight'))}"
+                    f"신뢰도 {_percent(final.get('confidence'))} · {continuity}"
                 ),
                 "inline": False,
             },

@@ -143,11 +143,98 @@ class SignalActionConstraintTest(unittest.TestCase):
     def test_security_proposal_action_reaches_the_optimizer(self):
         proposal = SecurityProposal(
             ticker="AAPL", as_of_at=_AT, signal="exit", probability_up=0.3, confidence=0.8,
-            expected_excess_return=0.02, target_weight=0.0, reasoning=("e",), evidence_ids=("EV-1",),
+            expected_excess_return=-0.02, target_weight=0.0, reasoning=("e",), evidence_ids=("EV-1",),
         )
         signal = ExpectedReturnSignal.from_security_proposal(proposal, source="ta", version="v1")
         self.assertEqual(signal.action, "exit")
+        self.assertIsNone(signal.action_adjustment)
         self.assertLessEqual(signal.expected_return, 0.0)
+
+
+def _view(action: str, expected: float, probability: float) -> SecurityProposal:
+    return SecurityProposal(
+        ticker="AAPL", as_of_at=_AT, signal=action, probability_up=probability, confidence=0.8,
+        expected_excess_return=expected, target_weight=0.0, reasoning=("e",), evidence_ids=("EV-1",),
+    )
+
+
+class ActionCoherenceTest(unittest.TestCase):
+    """행동 단어와 수치 전망이 엇갈리면 강제력이 약한 행동으로 낮추고 사유를 남긴다."""
+
+    def _signal(self, *args):
+        return ExpectedReturnSignal.from_security_proposal(_view(*args), source="ta", version="v1")
+
+    def test_exit_without_a_bearish_outlook_cannot_force_liquidation(self):
+        signal = self._signal("exit", 0.02, 0.3)
+        self.assertEqual((signal.action, signal.action_adjustment), ("reduce", "exit_without_bearish_outlook"))
+        policy = OptimizerPolicy(turnover_penalty=0.0, max_turnover=1.0, risk_aversion=0.1)
+        result = RiskAwareOptimizer(policy).optimize((signal,), current_weights={"AAPL": 0.08, "CASH": 0.92})
+        self.assertLessEqual(result.weights.get("AAPL", 0.0), 0.08 + 1e-9)
+
+    def test_hold_with_a_bearish_outlook_is_shown_as_reduce(self):
+        signal = self._signal("hold", -0.03, 0.4)
+        self.assertEqual((signal.action, signal.action_adjustment), ("reduce", "hold_with_bearish_outlook"))
+
+    def test_buy_without_a_bullish_outlook_becomes_hold(self):
+        for action in ("open", "increase"):
+            signal = self._signal(action, -0.01, 0.6)
+            self.assertEqual((signal.action, signal.action_adjustment), ("hold", f"{action}_without_bullish_outlook"))
+
+    def test_coherent_views_are_untouched(self):
+        for action, expected, probability in (("open", 0.02, 0.6), ("hold", 0.01, 0.55), ("reduce", -0.01, 0.4)):
+            signal = self._signal(action, expected, probability)
+            self.assertEqual((signal.action, signal.action_adjustment), (action, None))
+
+
+class ExpectedReturnCapTest(unittest.TestCase):
+    def test_forecast_beyond_one_horizon_sigma_is_capped_and_recorded(self):
+        policy = OptimizerPolicy(max_turnover=1.0, turnover_penalty=0.0)
+        cov = ((0.0025, 0.0), (0.0, 0.0025))  # 신호 기간 σ = 5%
+        result = RiskAwareOptimizer(policy).optimize(
+            (_signal("MU", 0.25, "open"), _signal("AAPL", 0.03, "open")),
+            current_weights={"CASH": 1.0}, covariance=cov,
+        )
+        self.assertEqual(result.capped_expected_returns, {"MU": {"raw": 0.25, "capped": 0.05}})
+
+    def test_capping_changes_the_allocation_of_an_outsized_forecast(self):
+        cov = ((0.0025, 0.0), (0.0, 0.0025))
+        signals = (_signal("MU", 0.25, "open"), _signal("AAPL", 0.05, "open"))
+        loose = RiskAwareOptimizer(OptimizerPolicy(max_turnover=1.0, turnover_penalty=0.0, risk_aversion=20,
+                                                   max_symbol_weight=1.0, min_cash_weight=0.0,
+                                                   max_expected_return_sigma=None))
+        capped = RiskAwareOptimizer(OptimizerPolicy(max_turnover=1.0, turnover_penalty=0.0, risk_aversion=20,
+                                                    max_symbol_weight=1.0, min_cash_weight=0.0))
+        free = loose.optimize(signals, current_weights={"CASH": 1.0}, covariance=cov)
+        bounded = capped.optimize(signals, current_weights={"CASH": 1.0}, covariance=cov)
+        self.assertGreater(free.weights["MU"], bounded.weights["MU"] + 0.1)
+        self.assertAlmostEqual(bounded.weights["MU"], bounded.weights["AAPL"], places=4)
+
+    def test_fallback_without_covariance_does_not_cap(self):
+        result = RiskAwareOptimizer(OptimizerPolicy(max_turnover=1.0)).optimize(
+            (_signal("MU", 0.25, "open"),), current_weights={"CASH": 1.0},
+        )
+        self.assertEqual(result.capped_expected_returns, {})
+
+
+class TradeReasonTest(unittest.TestCase):
+    def test_each_changed_position_gets_one_reason(self):
+        from investment_agent.trading.portfolio.proposals import trade_reasons
+
+        signals = (
+            _signal("OVER", 0.01, "hold"), _signal("BAD", -0.02, "reduce"),
+            _signal("LOSER", 0.001, "hold"), _signal("NEW", 0.04, "open"), _signal("GONE", -0.03, "exit"),
+        )
+        reasons = trade_reasons(
+            signals,
+            current_weights={"OVER": 0.15, "BAD": 0.08, "LOSER": 0.08, "GONE": 0.05, "CASH": 0.64},
+            target_weights={"OVER": 0.10, "BAD": 0.04, "LOSER": 0.02, "NEW": 0.05, "CASH": 0.79},
+            max_symbol_weight=0.10, min_cash_weight=0.05, capped_expected_returns={"NEW": {}},
+        )
+        self.assertEqual({symbol: row["code"] for symbol, row in reasons.items()}, {
+            "OVER": "HARD_RISK_LIMIT", "BAD": "ALPHA_DECAY", "LOSER": "REBALANCE",
+            "NEW": "ALPHA_OPPORTUNITY", "GONE": "THESIS_EXIT",
+        })
+        self.assertTrue(reasons["NEW"]["expected_return_capped"])
 
 
 def _cost(symbol: str, *, adv: float, spread: float = 0.0001, vol: float = 0.02) -> TradingCostInputs:

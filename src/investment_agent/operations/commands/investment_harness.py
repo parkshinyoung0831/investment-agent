@@ -45,7 +45,9 @@ from investment_agent.operations.paths import HARNESS_STATE_DIR as _DEFAULT_STAT
 
 def build_registry(
     *,
-    analysis_interval_seconds: float = 30 * 60,
+    # 보유 후보 판단은 28일간 유효하고 하루 모델 예산은 약 20종목이다. 30분마다 깨워도 할 일이 없고,
+    # 깨울 때마다 후보 선정이 500종목 재무를 읽는다. 실패한 회차를 같은 날 다시 시도할 여유만 둔다.
+    analysis_interval_seconds: float = 3 * 60 * 60,
     investment_interval_seconds: float = 60,
     risk_snapshot_interval_seconds: float = 5 * 60,
     reconciliation_interval_seconds: float = 60,
@@ -149,7 +151,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--mode", choices=[item.value for item in HarnessMode],
                         default=HarnessMode.ANALYSIS_ONLY.value)
     parser.add_argument("--interval-seconds", type=float, default=None)
-    parser.add_argument("--analysis-interval-seconds", type=float, default=30 * 60)
+    parser.add_argument("--analysis-interval-seconds", type=float, default=3 * 60 * 60)
     parser.add_argument("--investment-interval-seconds", type=float, default=60.0)
     parser.add_argument("--risk-snapshot-interval-seconds", type=float, default=5 * 60)
     parser.add_argument("--reconciliation-interval-seconds", type=float, default=60)

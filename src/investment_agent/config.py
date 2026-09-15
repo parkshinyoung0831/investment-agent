@@ -71,6 +71,11 @@ def load_config(
 
         # override=False: 실제 환경변수가 이긴다. CI에서 secrets가 .env에 지지 않도록.
         loaded = load_dotenv(path, override=False)
+    if environ is None:
+        from investment_agent.platform.secret_scope import strip_out_of_scope_secrets
+
+        # 진입점마다 `.env`를 다시 읽으므로 여기서도 범위 밖 비밀을 지운다.
+        strip_out_of_scope_secrets()
     return Config(env=dict(source), dotenv_path=path if path.exists() else None, dotenv_loaded=loaded)
 
 

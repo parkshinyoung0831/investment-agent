@@ -13,6 +13,8 @@ from pathlib import Path
 from threading import Event
 from typing import Callable, Mapping, Protocol, Sequence
 
+from investment_agent.platform.secret_scope import SCOPE_ANALYSIS, SCOPE_EXECUTION, environ_for_scope
+
 _MODULE_RE = re.compile(r"^investment_agent(?:\.[a-z][a-z0-9_]*)+$")
 
 
@@ -61,6 +63,7 @@ class SubprocessModuleRunner:
         repository_root: Path | str,
         python_executable: Path | str | None = None,
         allowed_modules: Sequence[str],
+        execution_modules: Sequence[str] = (),
         environ: Mapping[str, str] | None = None,
         popen: Callable[..., subprocess.Popen] = subprocess.Popen,
         monotonic: Callable[[], float] = time.monotonic,
@@ -71,6 +74,10 @@ class SubprocessModuleRunner:
             Path(python_executable or sys.executable).expanduser().resolve()
         )
         self.allowed_modules = frozenset(allowed_modules)
+        # broker·승인 비밀을 받는 모듈. 나머지(LLM 판단·학습·보고)는 판단 범위로 띄운다.
+        self.execution_modules = frozenset(execution_modules)
+        if not self.execution_modules <= self.allowed_modules:
+            raise ValueError("execution modules must also be allowed modules")
         if not self.allowed_modules:
             raise ValueError("at least one command module must be allowed")
         for module in self.allowed_modules:
@@ -120,7 +127,10 @@ class SubprocessModuleRunner:
         argv = [self.python_executable, "-m", command.module, *command.arguments]
         kwargs: dict = {
             "cwd": str(self.repository_root),
-            "env": self.environ,
+            "env": environ_for_scope(
+                self.environ,
+                SCOPE_EXECUTION if command.module in self.execution_modules else SCOPE_ANALYSIS,
+            ),
             "stdin": subprocess.DEVNULL,
             "shell": False,
         }

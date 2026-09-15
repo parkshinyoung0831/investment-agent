@@ -4,9 +4,9 @@
     python -m investment_agent.operations.commands.virtual_books --summary  # 성과 요약
     python -m investment_agent.operations.commands.virtual_books --create paper-champion --stage paper
 
-계좌가 하나도 없으면 기본 두 개를 만든다: 실계좌와 같은 판단을 따르는 `shadow-champion`,
-승격된 RL 정책의 목표비중을 따르는 `shadow-rl-challenger`. 초기 자산은 가상의 기준값이라 성과는
-수익률로만 비교한다.
+기본 계좌 중 없는 것을 만든다: 실계좌와 같은 판단을 따르는 `shadow-champion`, 승격된 RL 정책의
+목표비중을 따르는 `shadow-rl-challenger`, factor 기대수익에 LLM 검증을 얹어 주 단위로 재조정하는
+`shadow-factor-composite`. 초기 자산은 가상의 기준값이라 성과는 수익률로만 비교한다.
 """
 from __future__ import annotations
 
@@ -16,24 +16,28 @@ from datetime import datetime, timezone
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.serialization import canonical_json, parse_datetime
 from investment_agent.trading.contracts import ContractError
-from investment_agent.trading.shadow.engine import run_book
+from investment_agent.trading.shadow.engine import FACTOR_EXPECTED_RETURNS, run_book
 from investment_agent.trading.shadow.store import VirtualBookStore, book_summary
 
 log = get_logger(__name__)
 
 DEFAULT_INITIAL_NAV = 100_000.0
 DEFAULT_BOOKS = (
-    ("shadow-champion", "shadow", "optimizer"),
-    ("shadow-rl-challenger", "shadow", "rl_policy"),
+    ("shadow-champion", "shadow", "optimizer", {}),
+    ("shadow-rl-challenger", "shadow", "rl_policy", {}),
+    # 중장기 factor 기대수익 + LLM 검증. 실계좌 경로와 비교하려고 같은 optimizer·RiskGate를 쓴다.
+    ("shadow-factor-composite", "shadow", "optimizer", {"expected_returns": FACTOR_EXPECTED_RETURNS}),
 )
 
 
 def ensure_default_books(store: VirtualBookStore, *, now: datetime) -> None:
-    if store.books():
-        return
-    for book_id, stage, policy_kind in DEFAULT_BOOKS:
+    """기본 계좌 중 없는 것만 만든다. 이미 운영 중인 계좌의 이력은 건드리지 않는다."""
+    existing = {book.book_id for book in store.books()}
+    for book_id, stage, policy_kind, config in DEFAULT_BOOKS:
+        if book_id in existing:
+            continue
         store.create_book(book_id=book_id, stage=stage, policy_kind=policy_kind,
-                          initial_nav=DEFAULT_INITIAL_NAV, created_at=now)
+                          initial_nav=DEFAULT_INITIAL_NAV, created_at=now, config=config)
 
 
 def run_all(store: VirtualBookStore, repository, *, now: datetime) -> dict[str, dict]:

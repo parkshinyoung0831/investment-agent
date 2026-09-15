@@ -74,6 +74,11 @@ def load_or_create_approval_secret(
     env: Mapping[str, str] | None = None,
 ) -> str:
     """환경변수를 우선 사용하고, 없으면 Git 제외 로컬 파일을 원자 생성한다."""
+    if env is None:
+        from investment_agent.platform.secret_scope import require_execution_scope
+
+        # 파일 경로는 기본값이 있어 환경변수를 지워도 판단 프로세스가 서명키를 읽을 수 있다.
+        require_execution_scope("Discord approval HMAC secret")
     values = os.environ if env is None else env
     inline = str(values.get("DISCORD_APPROVAL_HMAC_SECRET") or "").strip()
     if inline:

@@ -12,9 +12,12 @@ from investment_agent.trading.portfolio.contracts import (
     SecurityProposal,
 )
 from investment_agent.trading.portfolio.optimizer import (
+    ACTION_EXIT,
+    NO_INCREASE_ACTIONS,
     ExpectedReturnSignal,
     OptimizerPolicy,
     RiskAwareOptimizer,
+    mandatory_base_weights,
 )
 
 
@@ -220,6 +223,15 @@ def from_optimized_security_proposals(
         betas=betas,
     )
     confidence = sum(signal.confidence for signal in signals) / len(signals)
+    policy = optimizer_policy or OptimizerPolicy()
+    reasons = trade_reasons(
+        signals,
+        current_weights=current_weights,
+        target_weights=optimization.weights,
+        max_symbol_weight=policy.max_symbol_weight,
+        min_cash_weight=policy.min_cash_weight,
+        capped_expected_returns=optimization.capped_expected_returns or {},
+    )
     return PortfolioProposal.create(
         run_id=run_id,
         source_type="optimizer",
@@ -240,6 +252,12 @@ def from_optimized_security_proposals(
             "security_proposal_count": len(proposals),
             "analyzed_symbols": [signal.symbol for signal in signals],
             "signal_contracts": [asdict(signal) for signal in signals],
+            # 최종 행동(수치와 엇갈린 LLM 행동을 낮춘 뒤)이다. RiskGate의 청산 검사도 이것을 본다.
+            "signal_actions": {signal.symbol: signal.action for signal in signals},
+            "action_adjustments": {
+                signal.symbol: signal.action_adjustment for signal in signals if signal.action_adjustment
+            },
+            "trade_reasons": reasons,
             "optimizer": {
                 "solver": optimization.solver,
                 "policy_hash": optimization.policy_hash,
@@ -252,6 +270,7 @@ def from_optimized_security_proposals(
                 "turnover_penalty": optimization.turnover_penalty,
                 "objective_value": optimization.objective_value,
                 "transaction_cost": optimization.transaction_cost,
+                "capped_expected_returns": optimization.capped_expected_returns or {},
                 "betas": dict(sorted(betas.items())) if betas is not None else None,
                 "trading_costs": (
                     {symbol: value.to_metadata() for symbol, value in sorted(trading_costs.items())}
@@ -267,3 +286,62 @@ def from_optimized_security_proposals(
             "preserved_unanalyzed_holdings": preserve_unanalyzed_holdings,
         },
     )
+
+
+# 비중이 바뀐 이유. 카드가 "유지 의견인데 왜 파는가"를 설명하고, 성과 귀속이 신호 판단과
+# 위험 규칙과 자금 경쟁을 나눠 볼 수 있게 한다.
+REASON_HARD_RISK_LIMIT = "HARD_RISK_LIMIT"
+REASON_THESIS_EXIT = "THESIS_EXIT"
+REASON_ALPHA_DECAY = "ALPHA_DECAY"
+REASON_REBALANCE = "REBALANCE"
+REASON_ALPHA_OPPORTUNITY = "ALPHA_OPPORTUNITY"
+_WEIGHT_EPSILON = 1e-6
+
+
+def trade_reasons(
+    signals: Sequence[ExpectedReturnSignal],
+    *,
+    current_weights: Mapping[str, float],
+    target_weights: Mapping[str, float],
+    max_symbol_weight: float,
+    min_cash_weight: float,
+    capped_expected_returns: Mapping[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """비중이 변한 종목마다 한 가지 주 사유를 정한다. 판단은 결정적 규칙만 쓴다."""
+    by_symbol = {signal.symbol: signal for signal in signals}
+    current = {str(key).upper(): float(value) for key, value in current_weights.items()}
+    target = {str(key).upper(): float(value) for key, value in target_weights.items()}
+    base = mandatory_base_weights(
+        current,
+        exit_symbols=frozenset(symbol for symbol, signal in by_symbol.items() if signal.action == ACTION_EXIT),
+        max_symbol_weight=max_symbol_weight,
+        min_cash_weight=min_cash_weight,
+    )
+    output: dict[str, dict[str, Any]] = {}
+    for symbol in sorted((set(current) | set(target)) - {CASH_SYMBOL}):
+        before, after = current.get(symbol, 0.0), target.get(symbol, 0.0)
+        if abs(after - before) <= _WEIGHT_EPSILON:
+            continue
+        signal = by_symbol.get(symbol)
+        action = signal.action if signal else None
+        if after > before:
+            code = REASON_ALPHA_OPPORTUNITY
+        elif action == ACTION_EXIT:
+            code = REASON_THESIS_EXIT
+        elif base.get(symbol, 0.0) < before - _WEIGHT_EPSILON and after >= base.get(symbol, 0.0) - _WEIGHT_EPSILON:
+            # 종목 상한·최소 현금처럼 전망과 무관하게 줄여야 하는 몫까지만 줄였다.
+            code = REASON_HARD_RISK_LIMIT
+        elif action in NO_INCREASE_ACTIONS:
+            code = REASON_ALPHA_DECAY
+        else:
+            # 전망은 나쁘지 않지만 위험·비용 대비 더 나은 후보에 자리를 내줬다.
+            code = REASON_REBALANCE
+        output[symbol] = {
+            "code": code,
+            "current_weight": round(before, 6),
+            "target_weight": round(after, 6),
+            "action": action,
+            "action_adjustment": signal.action_adjustment if signal else None,
+            "expected_return_capped": symbol in capped_expected_returns,
+        }
+    return output

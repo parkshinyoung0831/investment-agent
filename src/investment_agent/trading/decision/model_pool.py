@@ -18,7 +18,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, Sequence
 
-from investment_agent.platform.external_usage import ExternalUsageError, reserve_provider_call
+from investment_agent.platform.external_usage import (
+    ExternalUsageError,
+    provider_attempts_today,
+    reserve_provider_call,
+)
 
 # 실측: 한 종목이 researcher·시장/펀더멘털/거시 애널리스트·회의론자·PM에 더해
 # bull/bear 토론·트레이더·리스크 토론까지 거치면 LLM 호출이 10건을 넘는다.
@@ -186,6 +190,25 @@ def select_model_for_ticker(
     return None
 
 
+def remaining_ticker_budget(
+    pool: Sequence[ModelCandidate],
+    *,
+    ledger_path: Path | str,
+    now: datetime | None = None,
+) -> int:
+    """오늘 더 시작할 수 있는 종목 수(키가 있는 후보의 남은 예산 합). 예약하지 않는다.
+
+    분석 대상을 이 수보다 많이 고르면 예산이 떨어진 뒤의 종목은 판단 없이 회차만 붙잡는다.
+    """
+    total = 0
+    for candidate in pool:
+        if not os.environ.get(candidate.api_key_env, "").strip():
+            continue
+        used = provider_attempts_today(ledger_path, provider=_ledger_key(candidate.name), now=now)
+        total += max(0, candidate.daily_ticker_budget - used)
+    return total
+
+
 def _ledger_key(name: str) -> str:
     """모델 id의 점(.)은 provider 이름 정규식이 허용하지 않아 하이픈으로 바꾼다."""
     return name.strip().lower().replace(".", "-")
@@ -224,6 +247,7 @@ def apply_candidate(candidate: ModelCandidate) -> Iterator[None]:
 
 
 __all__ = [
+    "remaining_ticker_budget",
     "CALLS_PER_TICKER_ESTIMATE",
     "DEFAULT_POOL",
     "GROQ_BASE_URL",
