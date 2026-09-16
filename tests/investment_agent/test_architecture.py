@@ -301,7 +301,6 @@ class LayerDirectionTest(unittest.TestCase):
             ("src/investment_agent/research/commands/factor_research.py", "investment_agent.trading.supabase_repository"),
             ("src/investment_agent/research/commands/ml_challengers.py", "investment_agent.trading.contracts"),
             ("src/investment_agent/research/commands/system_ablation.py", "investment_agent.trading.supabase_repository"),
-            ("src/investment_agent/research/contracts.py", "investment_agent.trading.contracts"),
             ("src/investment_agent/research/datasets/contracts.py", "investment_agent.trading.contracts"),
             ("src/investment_agent/research/datasets/core.py", "investment_agent.trading.contracts"),
             ("src/investment_agent/research/datasets/training.py", "investment_agent.trading.contracts"),

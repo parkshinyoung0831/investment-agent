@@ -6,8 +6,7 @@ import math
 from dataclasses import asdict, dataclass, field
 from typing import Any, Mapping, Sequence
 
-from investment_agent.trading.contracts import ContractError, json_value, parse_datetime
-from investment_agent.platform.serialization import canonical_json
+from investment_agent.platform.serialization import ContractError, canonical_json, json_value, parse_datetime
 
 
 def _strings(values: Sequence[str], field_name: str) -> tuple[str, ...]:
