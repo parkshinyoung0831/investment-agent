@@ -9,7 +9,7 @@ import traceback
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from investment_agent.operations.backfill import resolve_backfill_window, select_accessions
+from investment_agent.platform.cli.backfill import resolve_backfill_window, select_accessions
 from investment_agent.platform.logging import get_logger
 from investment_agent.data.fundamentals.application.segment_metrics import build_segment_metrics
 from investment_agent.data.fundamentals.application import (

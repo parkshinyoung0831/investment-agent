@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import traceback
 
-from investment_agent.operations.backfill import add_backfill_from_arg, add_backfill_scope_arg
+from investment_agent.platform.cli.backfill import add_backfill_from_arg, add_backfill_scope_arg
 from investment_agent.platform.logging import configure_logging, get_logger
 
 log = get_logger(__name__)

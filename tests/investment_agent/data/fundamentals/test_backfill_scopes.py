@@ -6,7 +6,7 @@ from datetime import date
 from pathlib import Path
 from unittest import mock
 
-from investment_agent.operations.backfill import resolve_backfill_window, select_accessions
+from investment_agent.platform.cli.backfill import resolve_backfill_window, select_accessions
 from investment_agent.data.fundamentals.domain.filings import FilingRef
 from investment_agent.data.fundamentals.application import backfill_history
 

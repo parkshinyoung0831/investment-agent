@@ -7,7 +7,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 from typing import Any
 
-from investment_agent.operations.runtime import utc_now_iso
+from investment_agent.platform.cli.runtime import utc_now_iso
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.db.postgres import sb, select_all_paged, select_paged_in_chunks
 from investment_agent.data.universe.persistence import select_security_ids_by_ticker

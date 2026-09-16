@@ -5,7 +5,7 @@ import argparse
 import time
 
 from investment_agent.data.universe.watchlists.toss_sync import sync_toss_holdings
-from investment_agent.operations.runtime import elapsed_sec
+from investment_agent.platform.cli.runtime import elapsed_sec
 from investment_agent.platform.logging import configure_logging, get_logger
 
 log = get_logger(__name__)

@@ -17,7 +17,7 @@ import time
 import traceback
 from datetime import datetime, timezone
 
-from investment_agent.operations.runtime import run_log_payload
+from investment_agent.platform.cli.runtime import run_log_payload
 from investment_agent.platform.logging import configure_logging, get_logger
 
 log = get_logger(__name__)

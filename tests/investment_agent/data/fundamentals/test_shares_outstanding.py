@@ -10,7 +10,7 @@ from investment_agent.data.fundamentals.domain.services.parse_shares import (
     parse_common_shares_from_companyfacts,
     validate_shares_outstanding,
 )
-from investment_agent.operations.runtime import EXIT_FAILED
+from investment_agent.platform.cli.runtime import EXIT_FAILED
 from investment_agent.data.fundamentals.commands import common_shares
 from investment_agent.data.universe.infrastructure.sources import nasdaq_trader
 from investment_agent.data.universe.domain.normalization import classify_security_type

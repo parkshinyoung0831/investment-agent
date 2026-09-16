@@ -12,7 +12,7 @@ import argparse
 import traceback
 
 from investment_agent.platform.clock import us_market_today
-from investment_agent.operations.runtime import notify_ops
+from investment_agent.platform.cli.runtime import notify_ops
 from investment_agent.platform.logging import configure_logging, get_logger
 from investment_agent.operations.monitoring.incidents import (
     build_incident_embed,

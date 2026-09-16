@@ -14,7 +14,7 @@ import os
 import unittest
 from unittest import mock
 
-from investment_agent.operations.runtime import _ops_webhook
+from investment_agent.platform.cli.runtime import _ops_webhook
 
 _ENV = ("GITHUB_ACTIONS", "DISCORD_WEBHOOK_OPS",
         "DISCORD_WEBHOOK_OPS_ACTIONS", "DISCORD_WEBHOOK_OPS_LOCAL")
@@ -52,7 +52,7 @@ class OriginTravelsWithTheMessageTest(unittest.TestCase):
     """전용 webhook이 아직 없으면 둘이 한 채널로 떨어진다 — 그때도 구분돼야 한다."""
 
     def test_the_sender_name_carries_the_origin(self) -> None:
-        from investment_agent.operations import runtime
+        from investment_agent.platform.cli import runtime
 
         sent: dict = {}
 

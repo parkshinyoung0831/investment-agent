@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from investment_agent.operations.backfill import BackfillWindow
+from investment_agent.platform.cli.backfill import BackfillWindow
 from investment_agent.research.features import (
     BACKFILL_WARMUP_TRADING_DAYS,
     BACKFILL_YEARS,

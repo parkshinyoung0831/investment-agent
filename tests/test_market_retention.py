@@ -7,7 +7,7 @@ from pathlib import Path
 import tempfile
 from unittest.mock import patch
 
-from investment_agent.operations.backfill import BackfillWindow
+from investment_agent.platform.cli.backfill import BackfillWindow
 from investment_agent.data.market import BACKFILL_YEARS
 from investment_agent.data.market.domain import retention
 from investment_agent.data.market.infrastructure.archive import archive_daily_rows

@@ -9,7 +9,7 @@ import pandas as pd
 
 from investment_agent.data.macro.application.refresh_market_state import MacroRefreshResult
 from investment_agent.data.macro.commands import macro_refresh as run
-from investment_agent.operations.runtime import EXIT_FAILED, EXIT_OK, EXIT_PARTIAL
+from investment_agent.platform.cli.runtime import EXIT_FAILED, EXIT_OK, EXIT_PARTIAL
 
 _TODAY = date(2026, 8, 27)
 

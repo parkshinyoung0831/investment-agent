@@ -15,7 +15,7 @@ import sys
 from datetime import timedelta
 from pathlib import Path
 
-from investment_agent.operations.runtime import notify_ops
+from investment_agent.platform.cli.runtime import notify_ops
 from investment_agent.platform.logging import configure_logging, get_logger
 from investment_agent.operations.monitoring import channels, counters, cron, digest, discord
 from investment_agent.operations.monitoring import github_actions

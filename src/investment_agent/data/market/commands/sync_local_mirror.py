@@ -9,7 +9,7 @@ import argparse
 import time
 from datetime import datetime, timezone
 
-from investment_agent.operations.runtime import elapsed_sec, run_log_payload
+from investment_agent.platform.cli.runtime import elapsed_sec, run_log_payload
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.serialization import canonical_json
 

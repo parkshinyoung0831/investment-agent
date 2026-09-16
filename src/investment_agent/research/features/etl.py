@@ -6,7 +6,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 
-from investment_agent.operations.runtime import elapsed_sec
+from investment_agent.platform.cli.runtime import elapsed_sec
 from investment_agent.platform.logging import get_logger
 from investment_agent.research.features import ROLLING_DAYS, STORAGE_DAYS, db
 from investment_agent.research.features.compute import compute_all

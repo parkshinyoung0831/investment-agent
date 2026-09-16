@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Protocol
 
 from investment_agent.platform.serialization import canonical_json
-from investment_agent.operations.runtime import notify_ops
+from investment_agent.platform.cli.runtime import notify_ops
 from investment_agent.platform.logging import get_logger
 from investment_agent.operations.harness.sanitize import sanitized
 

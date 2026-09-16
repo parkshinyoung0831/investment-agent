@@ -16,8 +16,8 @@ from investment_agent.data.macro.domain.quality import audit_fx_cross_sources
 from investment_agent.data.macro.repository import MacroRepository
 from investment_agent.data.macro.application.refresh_market_state import refresh_macro
 from investment_agent.data.universe.repository import UniverseRepository
-from investment_agent.operations.backfill import add_backfill_from_arg
-from investment_agent.operations.runtime import EXIT_FAILED, EXIT_OK, EXIT_PARTIAL, elapsed_sec, notify_ops
+from investment_agent.platform.cli.backfill import add_backfill_from_arg
+from investment_agent.platform.cli.runtime import EXIT_FAILED, EXIT_OK, EXIT_PARTIAL, elapsed_sec, notify_ops
 from investment_agent.platform.clock import utc_now
 from investment_agent.platform.db.postgres import Database
 from investment_agent.platform.logging import configure_logging, get_logger

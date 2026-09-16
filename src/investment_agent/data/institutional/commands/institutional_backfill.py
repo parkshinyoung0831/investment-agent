@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 
 from investment_agent.config import load_config
-from investment_agent.operations.backfill import add_backfill_from_arg
+from investment_agent.platform.cli.backfill import add_backfill_from_arg
 from investment_agent.data.institutional import HISTORICAL_START_DATE
 from investment_agent.data.institutional import persistence
 from investment_agent.platform.db.postgres import Database

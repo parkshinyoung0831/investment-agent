@@ -6,7 +6,7 @@ from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
-from investment_agent.operations.backfill import add_backfill_from_arg, resolve_backfill_window
+from investment_agent.platform.cli.backfill import add_backfill_from_arg, resolve_backfill_window
 from investment_agent.platform.logging import configure_logging, get_logger
 from investment_agent.data.macro.domain.releases import baseline, normalize, schedule
 from investment_agent.data.macro.releases import BASELINE_WINDOW

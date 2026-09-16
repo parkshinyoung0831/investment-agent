@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import time
 
-from investment_agent.operations.runtime import elapsed_sec
+from investment_agent.platform.cli.runtime import elapsed_sec
 from investment_agent.platform.logging import get_logger
 from investment_agent.operations.monitoring.github import write_changed_output
 

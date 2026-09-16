@@ -7,7 +7,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Sequence
 
 from investment_agent.data.universe.watchlists import db as alerts_db
-from investment_agent.operations.runtime import utc_now_iso
+from investment_agent.platform.cli.runtime import utc_now_iso
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.db.postgres import chunk_filter_values, sb, select_all_paged, select_paged_in_chunks
 from investment_agent.data.fundamentals.domain.services.assess_segment_quality import assess_rows

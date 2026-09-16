@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 from datetime import timedelta
 
-from investment_agent.operations.backfill import (
+from investment_agent.platform.cli.backfill import (
     BackfillWindow,
     add_backfill_from_arg,
     resolve_backfill_window,

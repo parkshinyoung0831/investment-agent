@@ -14,7 +14,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 
-from investment_agent.operations.runtime import run_log_payload
+from investment_agent.platform.cli.runtime import run_log_payload
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.serialization import canonical_json
 from investment_agent.research.evaluation.costs import TransactionCostModel

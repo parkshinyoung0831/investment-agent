@@ -6,7 +6,7 @@ import os
 import time
 from datetime import datetime, timezone
 
-from investment_agent.operations.runtime import notify_ops
+from investment_agent.platform.cli.runtime import notify_ops
 from investment_agent.platform.logging import configure_logging, get_logger
 from investment_agent.operations.monitoring import github_actions as github
 from investment_agent.operations.monitoring.incidents import (

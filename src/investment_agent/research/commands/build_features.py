@@ -12,7 +12,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
-from investment_agent.operations.runtime import run_log_payload
+from investment_agent.platform.cli.runtime import run_log_payload
 from investment_agent.platform.logging import get_logger
 from investment_agent.trading.evidence.context import ContextBuilder
 from investment_agent.trading.contracts import parse_datetime

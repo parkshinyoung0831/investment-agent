@@ -8,7 +8,7 @@ import pandas as pd
 
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.db.postgres import sb, select_all_paged
-from investment_agent.operations.runtime import utc_now_iso
+from investment_agent.platform.cli.runtime import utc_now_iso
 from investment_agent.research.storage.repository import ResearchStore
 from investment_agent.data.market.infrastructure.change_manifest import earliest_change_since as _manifest_change_since
 

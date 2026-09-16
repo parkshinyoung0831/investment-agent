@@ -5,7 +5,7 @@ import argparse
 import time
 from datetime import datetime, timedelta, timezone
 
-from investment_agent.operations.runtime import elapsed_sec, notify_ops
+from investment_agent.platform.cli.runtime import elapsed_sec, notify_ops
 from investment_agent.platform.logging import configure_logging, get_logger
 from investment_agent.data.macro.releases import HORIZON_DAYS
 

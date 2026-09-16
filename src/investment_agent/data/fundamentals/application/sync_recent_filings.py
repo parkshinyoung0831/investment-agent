@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from investment_agent.operations.backfill import resolve_backfill_window
+from investment_agent.platform.cli.backfill import resolve_backfill_window
 from investment_agent.platform.logging import get_logger
 from investment_agent.data.fundamentals.application import (
     CompanyFilingSource,

@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from investment_agent.platform.logging import get_logger
-from investment_agent.operations.runtime import notify_ops
+from investment_agent.platform.cli.runtime import notify_ops
 from investment_agent.operations.monitoring.incidents import (
     build_incident_embed,
     build_runtime_incident,

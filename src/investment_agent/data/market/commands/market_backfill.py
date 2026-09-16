@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import argparse
 
-from investment_agent.operations.backfill import add_backfill_from_arg, resolve_backfill_window
+from investment_agent.platform.cli.backfill import add_backfill_from_arg, resolve_backfill_window
 from investment_agent.platform.logging import get_logger
 from investment_agent.data.market import BACKFILL_YEARS
 from investment_agent.data.market.application.price_collection import collect_prices

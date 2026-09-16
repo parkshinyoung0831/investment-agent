@@ -6,7 +6,7 @@ import time
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from investment_agent.operations.runtime import elapsed_sec, notify_ops
+from investment_agent.platform.cli.runtime import elapsed_sec, notify_ops
 from investment_agent.platform.logging import get_logger
 from investment_agent.operations.monitoring.incidents import (
     build_incident_embed,
