@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -15,6 +16,7 @@ from typing import Any, Mapping
 
 from investment_agent.operations.runtime import run_log_payload
 from investment_agent.platform.logging import get_logger
+from investment_agent.platform.serialization import canonical_json
 from investment_agent.research.evaluation.costs import TransactionCostModel
 from investment_agent.trading.contracts import ContractError, parse_datetime
 from investment_agent.trading.supabase_repository import SupabaseRepository
@@ -28,10 +30,10 @@ log = get_logger(__name__)
 
 WORKFLOW = "ai_investor_build_training_samples"
 LABEL_DEFINITION = "net_excess_return"
+TRAINING_SAMPLE_RUNS_DATASET = "training_sample_runs"
 # 비용 비율이 규모와 무관하려면 최소 수수료가 0이어야 한다. 0보다 크면 실제 주문
 # 금액을 알아야 하므로 shadow 표본으로는 계산할 수 없다.
 _REFERENCE_PRICE = 100.0
-_UPSERT_CHUNK = 100
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -64,6 +66,39 @@ def _snapshot(row: Mapping[str, Any]) -> FeatureSnapshot:
     )
 
 
+def _period_signature(
+    *,
+    feature_version: str,
+    cost_model: TransactionCostModel,
+    rows: list[Mapping[str, Any]],
+    labels_by_key: Mapping[tuple[str, str], Mapping[str, Any]],
+) -> str:
+    """한 기준일 표본의 재계산 필요 여부를 결정하는 안정된 입력 서명이다."""
+    inputs = []
+    for row in sorted(rows, key=lambda item: str(item["ticker"])):
+        key = (str(row["as_of_at"]), str(row["ticker"]))
+        label = labels_by_key[key]
+        input_hash = row.get("input_hash")
+        if not input_hash:
+            input_hash = hashlib.sha256(canonical_json({
+                "features": row["features"],
+                "source_ids": row["source_ids"],
+                "provenance": row["provenance"],
+            }).encode("utf-8")).hexdigest()
+        inputs.append({
+            "ticker": key[1],
+            "feature_input_hash": str(input_hash),
+            "label_id": str(label.get("label_id") or ""),
+        })
+    payload = {
+        "feature_version": feature_version,
+        "label_definition": LABEL_DEFINITION,
+        "cost_model": cost_model.to_dict(),
+        "inputs": inputs,
+    }
+    return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+
+
 def build_training_samples(
     *,
     as_of_at: datetime,
@@ -84,6 +119,7 @@ def build_training_samples(
         )
     window_start = (as_of_at - timedelta(days=lookback_days)).isoformat()
     window_end = as_of_at.isoformat()
+    phase = time.monotonic()
     symbols = members_over_window(
         selected,
         start=(as_of_at - timedelta(days=lookback_days)).date(),
@@ -92,14 +128,26 @@ def build_training_samples(
     if not symbols:
         raise RuntimeError("no tracked ticker is available for training samples")
 
-    snapshot_rows = selected.rl_feature_snapshot_rows(
-        symbols, start_as_of=window_start, end_as_of=window_end,
-        feature_version=feature_version,
-    )
-    label_rows = selected.rl_training_label_rows(
-        symbols, start_as_of=window_start, end_as_of=window_end,
-        feature_version=feature_version, label_cutoff_at=window_end,
-    )
+    lightweight_inputs = None
+    if hasattr(selected, "training_sample_period_inputs"):
+        lightweight_inputs = selected.training_sample_period_inputs(
+            symbols, start_as_of=window_start, end_as_of=window_end,
+            feature_version=feature_version, label_cutoff_at=window_end,
+        )
+        snapshot_rows = lightweight_inputs["snapshots"]
+        label_rows = lightweight_inputs["labels"]
+    else:
+        snapshot_rows = selected.rl_feature_snapshot_rows(
+            symbols, start_as_of=window_start, end_as_of=window_end,
+            feature_version=feature_version,
+        )
+        label_rows = selected.rl_training_label_rows(
+            symbols, start_as_of=window_start, end_as_of=window_end,
+            feature_version=feature_version, label_cutoff_at=window_end,
+        )
+    run_rows = selected.training_sample_run_rows(
+        start_as_of=window_start, end_as_of=window_end,
+    ) if hasattr(selected, "training_sample_run_rows") else []
     if not label_rows:
         # 적재 첫 며칠은 horizon이 아직 안 지나 label이 0건이다. 이건 오류가 아니라
         # "아직 할 일이 없음"이므로 job을 실패시키지 않는다 — 실패로 두면 5거래일 동안
@@ -123,17 +171,81 @@ def build_training_samples(
                 "periods": 0,
                 "reason": "no_confirmed_label_yet",
                 "dry_run": dry_run,
+                "timings_sec": {"load": round(time.monotonic() - phase, 3), "compute": 0.0, "write": 0.0},
             },
         )
-    labels_by_key = {
+    phase = time.monotonic()
+    signature_labels_by_key = {
         (str(row["as_of_at"]), str(row["ticker"])): row for row in label_rows
     }
+    existing_runs = {
+        str(row["as_of_at"]): row for row in run_rows
+        if row.get("feature_version") == feature_version
+        and row.get("label_definition") == LABEL_DEFINITION
+    }
+    candidates_by_as_of: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    for row in snapshot_rows:
+        key = (str(row["as_of_at"]), str(row["ticker"]))
+        if key in signature_labels_by_key:
+            candidates_by_as_of[key[0]].append(row)
 
     # 결측 대체는 반드시 같은 시점 안에서만 한다 — 다른 날 값을 끌어오면 미래 정보다.
     by_as_of: dict[str, list[FeatureSnapshot]] = defaultdict(list)
-    for row in snapshot_rows:
-        if (str(row["as_of_at"]), str(row["ticker"])) in labels_by_key:
-            by_as_of[str(row["as_of_at"])].append(_snapshot(row))
+    pending_source_rows: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    pending_run_rows: list[dict[str, Any]] = []
+    already_sampled = 0
+    for as_of_key, rows in candidates_by_as_of.items():
+        signature = _period_signature(
+            feature_version=feature_version,
+            cost_model=model,
+            rows=rows,
+            labels_by_key=signature_labels_by_key,
+        )
+        if existing_runs.get(as_of_key, {}).get("signature") == signature:
+            already_sampled += len(rows)
+            continue
+        if lightweight_inputs:
+            pending_source_rows[as_of_key].extend(rows)
+        else:
+            by_as_of[as_of_key].extend(_snapshot(row) for row in rows)
+        pending_run_rows.append({
+            "record_key": f"{feature_version}:{LABEL_DEFINITION}:{as_of_key}",
+            "as_of_at": as_of_key,
+            "feature_version": feature_version,
+            "label_definition": LABEL_DEFINITION,
+            "signature": signature,
+            "sample_count": len(rows),
+        })
+
+    if lightweight_inputs and pending_source_rows:
+        pending_dates = tuple(pending_source_rows)
+        full_snapshot_rows = selected.rl_feature_snapshot_rows(
+            symbols, start_as_of=window_start, end_as_of=window_end,
+            feature_version=feature_version, as_of_values=pending_dates,
+        )
+        full_label_rows = selected.rl_training_label_rows(
+            symbols, start_as_of=window_start, end_as_of=window_end,
+            feature_version=feature_version, label_cutoff_at=window_end,
+            as_of_values=pending_dates,
+        )
+        labels_by_key = {
+            (str(row["as_of_at"]), str(row["ticker"])): row for row in full_label_rows
+        }
+        snapshots_by_key = {
+            (str(row["as_of_at"]), str(row["ticker"])): row for row in full_snapshot_rows
+        }
+        hydrated: dict[str, list[FeatureSnapshot]] = defaultdict(list)
+        for as_of_key, metadata_rows in pending_source_rows.items():
+            for metadata in metadata_rows:
+                key = (str(metadata["as_of_at"]), str(metadata["ticker"]))
+                if key not in snapshots_by_key or key not in labels_by_key:
+                    raise RuntimeError("training sample source changed while metadata was being read")
+                hydrated[as_of_key].append(_snapshot(snapshots_by_key[key]))
+        by_as_of = hydrated
+    else:
+        labels_by_key = signature_labels_by_key
+    load_sec = time.monotonic() - phase
+    phase = time.monotonic()
 
     samples: list[TrainingSample] = []
     flipped = 0
@@ -175,13 +287,16 @@ def build_training_samples(
                 },
                 outcome_id=result.outcome.outcome_id,
             ))
+    compute_sec = time.monotonic() - phase
 
+    phase = time.monotonic()
     saved = 0
-    if not dry_run:
-        for start in range(0, len(samples), _UPSERT_CHUNK):
-            chunk = samples[start:start + _UPSERT_CHUNK]
-            selected.save_training_samples(chunk)
-            saved += len(chunk)
+    if not dry_run and samples:
+        inserted = selected.save_training_samples(samples)
+        saved = len(samples) if inserted is None else int(inserted)
+        if pending_run_rows:
+            selected.save_training_sample_runs(pending_run_rows)
+    write_sec = time.monotonic() - phase
 
     count = len(samples) or 1
     payload = run_log_payload(
@@ -197,11 +312,14 @@ def build_training_samples(
             "window": [window_start, window_end],
             "samples": len(samples),
             "periods": len(by_as_of),
+            "already_sampled": already_sampled,
             "round_trip_cost_rate": round(round_trip_cost_rate(model), 6),
             "mean_gross_excess": round(gross_sum / count, 6),
             "mean_net_excess": round(net_sum / count, 6),
             "sign_flipped_by_cost": flipped,
             "dry_run": dry_run,
+            "timings_sec": {"load": round(load_sec, 3), "compute": round(compute_sec, 3),
+                            "write": round(write_sec, 3)},
         },
     )
     log.info("training samples %s", payload)
@@ -226,7 +344,10 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-__all__ = ["LABEL_DEFINITION", "WORKFLOW", "build_training_samples", "main"]
+__all__ = [
+    "LABEL_DEFINITION", "TRAINING_SAMPLE_RUNS_DATASET", "WORKFLOW",
+    "build_training_samples", "main",
+]
 
 
 if __name__ == "__main__":

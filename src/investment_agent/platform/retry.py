@@ -71,10 +71,17 @@ def is_transient(exc: BaseException) -> bool:
         # postgrest-py는 HTTPStatusError 대신 APIError를 던진다. 제약 위반·권한
         # 오류까지 재시도하면 같은 실패를 네 번 반복할 뿐이다.
         code = str(exc.code or "")
+        description = f"{getattr(exc, 'message', '')} {getattr(exc, 'details', '')}".lower()
+        cloudflare_html = (
+            code == "400"
+            and "json could not be generated" in description
+            and ("cloudflare" in description or "<html" in description)
+        )
         return (
             code.startswith(_TRANSIENT_SQLSTATE_PREFIX)
             or code in _TRANSIENT_SQLSTATE
             or code in _TRANSIENT_PGRST
+            or cloudflare_html
         )
     return isinstance(exc, TRANSPORT_ERRORS)
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from collections import defaultdict
+from collections.abc import Sequence
 from typing import Any
 
 from investment_agent.operations.runtime import utc_now_iso
@@ -176,3 +178,47 @@ def share_class_snapshots_filed_before(
         })
     result.sort(key=lambda row: (str(row.get("filed_at") or ""), str(row.get("as_of_date") or "")), reverse=True)
     return result[:limit]
+
+
+def share_class_snapshots_for_tickers_filed_before(
+    tickers: Sequence[str], as_of_at: datetime, *, limit: int = 24
+) -> dict[str, list[dict]]:
+    """여러 종목의 발행주식 시점 기록을 두 번의 paged 묶음 조회로 조립한다."""
+    symbols = sorted({str(ticker).upper() for ticker in tickers})
+    security_ids = select_security_ids_by_ticker(symbols)
+    output: dict[str, list[dict]] = {ticker: [] for ticker in symbols}
+    if not security_ids:
+        return output
+    tickers_by_id: dict[int, list[str]] = defaultdict(list)
+    for ticker, security_id in security_ids.items():
+        tickers_by_id[int(security_id)].append(ticker)
+    rows = select_paged_in_chunks(
+        lambda chunk: sb.schema(SCHEMA_FUNDAMENTALS).table(T_SHARE_CLASS_SNAPSHOTS)
+        .select("*").in_("mapped_security_id", chunk),
+        sorted(tickers_by_id), order_by="mapped_security_id,as_of_date,accession_no",
+        paged_reader=select_all_paged,
+    )
+    accessions = sorted({str(row["accession_no"]) for row in rows if row.get("accession_no")})
+    filings = select_paged_in_chunks(
+        lambda chunk: sb.schema(SCHEMA_FUNDAMENTALS).table(T_FILINGS)
+        .select("accession_no,filing_date,form_type,available_at").in_("accession_no", chunk),
+        accessions, order_by="accession_no", paged_reader=select_all_paged,
+    ) if accessions else []
+    by_accession = {str(row["accession_no"]): row for row in filings}
+    for row in rows:
+        filing = by_accession.get(str(row.get("accession_no")), {})
+        filed_at = filing.get("filing_date")
+        if not filed_at or str(filed_at) > as_of_at.date().isoformat():
+            continue
+        for ticker in tickers_by_id.get(int(row["mapped_security_id"]), []):
+            output[ticker].append({
+                **row, "ticker": ticker, "filed_at": filed_at,
+                "form_type": filing.get("form_type"), "available_at": filing.get("available_at"),
+            })
+    for ticker in output:
+        output[ticker].sort(
+            key=lambda row: (str(row.get("filed_at") or ""), str(row.get("as_of_date") or "")),
+            reverse=True,
+        )
+        output[ticker] = output[ticker][:limit]
+    return output

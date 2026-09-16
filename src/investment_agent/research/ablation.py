@@ -43,6 +43,7 @@ from investment_agent.trading.system.accounting import performance_summary
 from investment_agent.trading.system.engine import run_system
 from investment_agent.trading.system.store import SystemPortfolioStore
 from investment_agent.trading.system.target import SystemPortfolioPolicy
+from investment_agent.trading.portfolio.contracts import CASH_SYMBOL
 
 log = get_logger(__name__)
 
@@ -65,16 +66,17 @@ class AblationVariant:
 
 def default_variants(*, cvar_limits: Sequence[float] = (0.05, 0.12)) -> tuple[AblationVariant, ...]:
     base_alpha, base_system = AlphaPolicy(), SystemPortfolioPolicy()
+    risk_alpha = replace(base_alpha, use_ml=False, use_thesis=False)
     variants = [
         AblationVariant("factor_only", replace(base_alpha, use_ml=False, use_thesis=False), base_system, "factor 사전값만"),
         AblationVariant("factor_ml", replace(base_alpha, use_thesis=False), base_system, "factor + champion ML"),
         AblationVariant("factor_ml_thesis", base_alpha, base_system, "factor + ML + TradingAgents(운영 구성)"),
-        AblationVariant("no_tail_risk", base_alpha, replace(base_system, use_tail_risk=False), "운영 구성에서 CVaR 축소 끔"),
-        AblationVariant("no_market_risk", base_alpha, replace(base_system, use_market_risk=False), "운영 구성에서 시장위험 예산 끔"),
+        AblationVariant("no_tail_risk", risk_alpha, replace(base_system, use_tail_risk=False), "factor 입력에서 CVaR 축소만 끔"),
+        AblationVariant("no_market_risk", risk_alpha, replace(base_system, use_market_risk=False), "factor 입력에서 시장위험 예산만 끔"),
     ]
     variants += [
-        AblationVariant(f"cvar_{round(limit * 100)}", base_alpha, replace(base_system, max_cvar_95_5d=limit),
-                        f"운영 구성에서 CVaR 한도 {limit:.0%}")
+        AblationVariant(f"cvar_{round(limit * 100)}", risk_alpha, replace(base_system, max_cvar_95_5d=limit),
+                        f"factor 입력에서 CVaR 한도 {limit:.0%}")
         for limit in cvar_limits
     ]
     return tuple(variants)
@@ -102,6 +104,8 @@ class ReplayRepository:
         self._cross_section = cross_section
         self.now: datetime | None = None
         self.thesis_view_count = 0
+        self.factor_category_periods: dict[str, set[str]] = {}
+        self.proposals: list[dict[str, Any]] = []
 
     def __getattr__(self, name: str) -> Any:
         if name in _LEDGER_WRITES:
@@ -116,7 +120,9 @@ class ReplayRepository:
 
     def factor_cross_section(self, as_of_at: datetime, *, universe_size: int | None = None):
         if self._cross_section is not None:
-            return self._cross_section(as_of_at)
+            result = self._cross_section(as_of_at)
+            self._record_factor_categories(result)
+            return result
         from investment_agent.research.features.factors import latest_cross_section, score_cross_section
         from investment_agent.research.features.layer import FEATURE_VERSION
 
@@ -129,7 +135,21 @@ class ReplayRepository:
         if section is None:
             return None
         snapshot_as_of, features = section
-        return snapshot_as_of, score_cross_section(features, groups=self._base.sp500_sector_map(list(features)))
+        result = snapshot_as_of, score_cross_section(features, groups=self._base.sp500_sector_map(list(features)))
+        self._record_factor_categories(result)
+        return result
+
+    def _record_factor_categories(self, result: Any) -> None:
+        if result is None:
+            return
+        snapshot_as_of, scores = result
+        for score in scores.values():
+            for category in score.category_scores:
+                self.factor_category_periods.setdefault(str(category), set()).add(str(snapshot_as_of))
+
+    def save_portfolio_proposal(self, payload: Mapping[str, Any]) -> None:
+        """운영 원장에는 쓰지 않고 어블레이션 입력 활성도 계측에만 보관한다."""
+        self.proposals.append(dict(payload))
 
     def thesis_views(self, tickers: Sequence[str], *, as_of_at: datetime, valid_days: int) -> dict[str, Any]:
         views = self._base.thesis_views(tickers, as_of_at=as_of_at, valid_days=valid_days)
@@ -159,8 +179,17 @@ def replay_sessions(base: Any, *, start: date, end: date) -> list[datetime]:
 
 
 def _variant_result(store: SystemPortfolioStore, repository: ReplayRepository, *, variant: AblationVariant,
-                    targets: int, skipped: Mapping[str, int]) -> dict[str, Any]:
+                    targets: int, skipped: Mapping[str, int], ml_forecasts_applied: int) -> dict[str, Any]:
     history = store.history()
+    target_rows = store.targets(limit=max(50, targets + 1))
+    risky = sum(
+        any(symbol != CASH_SYMBOL and float(weight) > 0 for symbol, weight in target.weights.items())
+        for target in target_rows if target.is_approved
+    )
+    adjustments = sum(len(target.detail.get("adjustments") or ()) for target in target_rows)
+    metadata = [dict(proposal.get("metadata") or {}) for proposal in repository.proposals]
+    tail = [dict(item.get("tail_risk") or {}) for item in metadata]
+    regimes = [item.get("market_regime") for item in metadata]
     return {
         "name": variant.name,
         "description": variant.description,
@@ -170,7 +199,38 @@ def _variant_result(store: SystemPortfolioStore, repository: ReplayRepository, *
         "targets": targets,
         "skipped": dict(skipped),
         "thesis_views_seen": repository.thesis_view_count,
+        "coverage": {
+            "factor_snapshot_periods": len({target.factor_snapshot_as_of for target in target_rows}),
+            "ml_forecasts_applied": ml_forecasts_applied,
+            "thesis_views_seen": repository.thesis_view_count,
+            "risky_target_count": risky,
+            "risk_adjustment_count": adjustments,
+            "factor_category_periods": {
+                category: len(periods) for category, periods in sorted(repository.factor_category_periods.items())
+            },
+            "tail_risk_enabled_periods": sum(bool(item.get("enabled")) for item in tail),
+            "tail_risk_bound_periods": sum(float(item.get("scale", 1.0)) < 1.0 - 1e-9 for item in tail),
+            "market_risk_input_periods": sum(regime is not None for regime in regimes),
+            "market_risk_tightened_periods": sum(
+                isinstance(regime, Mapping) and regime.get("risk_state") not in {None, "NORMAL"}
+                for regime in regimes
+            ),
+        },
+        "_history": history,
     }
+
+
+def _coverage_reason(row: Mapping[str, Any], variant: AblationVariant) -> str | None:
+    coverage = row["coverage"]
+    if not row.get("targets") or not coverage["factor_snapshot_periods"]:
+        return "factor_target_never_built"
+    if variant.alpha.use_ml and not coverage["ml_forecasts_applied"]:
+        return "ml_forecast_never_applied"
+    if variant.alpha.use_thesis and not coverage["thesis_views_seen"]:
+        return "thesis_view_never_observed"
+    if variant.name in {"no_tail_risk", "no_market_risk", "cvar_5", "cvar_12"} and not coverage["risky_target_count"]:
+        return "risk_policy_never_exercised"
+    return None
 
 
 def run_ablation(
@@ -205,11 +265,16 @@ def run_ablation(
                 continue
             repository = ReplayRepository(base, feature_rows=feature_rows, cross_section=cross_section)
             store = SystemPortfolioStore(Path(scratch) / f"{variant.name}.sqlite3")
+            ml_forecasts_applied = 0
 
             def forecast(repo, tickers, *, as_of_at):
+                nonlocal ml_forecasts_applied
                 if model_path is None:
                     return NO_FORECAST
-                return champion_forecast(repo, tickers, as_of_at=as_of_at, model_path=model_path)
+                result = champion_forecast(repo, tickers, as_of_at=as_of_at, model_path=model_path)
+                if result.is_available:
+                    ml_forecasts_applied += 1
+                return result
 
             targets = 0
             skipped: dict[str, int] = {}
@@ -222,8 +287,24 @@ def run_ablation(
                 elif result.skipped_reason:
                     skipped[result.skipped_reason] = skipped.get(result.skipped_reason, 0) + 1
             log.info("ablation variant %s done targets=%d", variant.name, targets)
-            results.append({"status": "completed", **_variant_result(store, repository, variant=variant,
-                                                                     targets=targets, skipped=skipped)})
+            row = _variant_result(store, repository, variant=variant, targets=targets, skipped=skipped,
+                                  ml_forecasts_applied=ml_forecasts_applied)
+            reason = _coverage_reason(row, variant)
+            results.append({"status": "insufficient_coverage" if reason else "completed",
+                            **({"reason": reason} if reason else {}), **row})
+
+    comparable = [row for row in results if row.get("status") == "completed" and row.get("_history")]
+    common_dates = set.intersection(*[
+        {mark.trade_date for mark in row["_history"]} for row in comparable
+    ]) if comparable else set()
+    for row in results:
+        history = row.pop("_history", None)
+        if history is None:
+            continue
+        selected_history = [mark for mark in history if mark.trade_date in common_dates] if common_dates else history
+        row["summary"] = performance_summary(selected_history)
+        row["coverage"]["common_evaluation_start"] = min(common_dates) if common_dates else None
+        row["coverage"]["common_evaluation_end"] = max(common_dates) if common_dates else None
     baseline = next((row for row in results if row.get("status") == "completed"), None)
     for row in results:
         if row.get("status") != "completed" or baseline is None:

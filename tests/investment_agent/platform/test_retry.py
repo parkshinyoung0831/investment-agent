@@ -42,6 +42,14 @@ class IsTransientTest(unittest.TestCase):
         for code in ("08006", "53300", "40001", "57014", "PGRST002"):
             self.assertTrue(is_transient(APIError({"code": code, "message": "x"})), code)
 
+    def test_cloudflare_html_masquerading_as_postgrest_400_is_transient(self) -> None:
+        error = APIError({
+            "code": 400,
+            "message": "JSON could not be generated",
+            "details": "<html><center>cloudflare</center></html>",
+        })
+        self.assertTrue(is_transient(error))
+
     def test_constraint_and_permission_errors_are_not_retried(self) -> None:
         for code in ("23505", "23503", "42501", "42P01", "PGRST116"):
             self.assertFalse(is_transient(APIError({"code": code, "message": "x"})), code)

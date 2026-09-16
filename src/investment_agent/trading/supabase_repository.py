@@ -8,8 +8,9 @@ from __future__ import annotations
 import hashlib
 import math
 from collections.abc import Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Callable
 
 from investment_agent.trading.decision.candidate_ranker import (
     FACTOR_SNAPSHOT_MAX_AGE_DAYS,
@@ -39,6 +40,7 @@ from investment_agent.trading.decision.universe import normalize_ticker
 from investment_agent.trading.decision.event_impact import THEME_BY_NAME, global_event_priorities
 from investment_agent.trading.portfolio.market_risk import estimate_betas
 from investment_agent.platform.logging import get_logger
+from investment_agent.platform.retry import transient_retry
 from investment_agent.platform.db.postgres import sb
 from investment_agent.trading.decision.contracts import Event, EventFeatureSnapshot
 from investment_agent.research.datasets.contracts import TrainingSample
@@ -65,6 +67,12 @@ from investment_agent.data.universe.persistence import (
 # 매크로 최신값 탐색 창(일). 갱신이 멎은 지표도 마지막 값을 잃지 않을 만큼 넉넉히.
 
 log = get_logger(__name__)
+
+
+@transient_retry(attempts=4, max_wait=8.0)
+def _historical_input_read(read: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    """멱등인 과거 입력 GET 하나만 재시도해 이미 성공한 다른 도메인을 반복하지 않는다."""
+    return read(*args, **kwargs)
 
 
 def _iso(value: datetime) -> str:
@@ -356,6 +364,30 @@ class SupabaseRepository:
                 state["values"].clear()
             state["values"][key] = (value, now + self._MEMO_SECONDS)
         return value
+
+    def _memo_seed(self, key: tuple, value: Any) -> None:
+        """날짜별 일괄 조회 결과를 기존 단건 계약의 캐시에 넣는다."""
+        import threading
+        import time
+
+        state = self.__dict__.setdefault("_memo_state", {"lock": threading.Lock(), "values": {}})
+        with state["lock"]:
+            state["values"][key] = (value, time.monotonic() + self._MEMO_SECONDS)
+
+    def _memo_drop_historical_inputs(self) -> None:
+        """다음 재현 날짜를 넣기 전에 이전 날짜의 대형 종목별 입력 묶음을 버린다."""
+        import threading
+
+        state = self.__dict__.setdefault("_memo_state", {"lock": threading.Lock(), "values": {}})
+        date_scoped = {
+            "historical_replay_inputs", "fundamentals_pit", "observed_consensus",
+            "share_class_snapshots_pit", "segment_snapshot",
+        }
+        with state["lock"]:
+            state["values"] = {
+                key: value for key, value in state["values"].items()
+                if not key or key[0] not in date_scoped
+            }
 
     def _mirror(self, as_of_at: datetime | None = None):
         """로컬 사본이 이 조회를 답할 수 있으면 그 사본. 없거나 오래됐으면 None — Supabase로 읽는다.
@@ -795,7 +827,11 @@ class SupabaseRepository:
         return market_db.trading_dates(reference_ticker, start=start, end=end)
     def split_history(self, ticker: str) -> list[dict]:
         """market 스키마의 owner에게 위임한다."""
-        return market_db.split_history(ticker)
+        rows = self._memo(
+            ("split_history", str(ticker).upper()),
+            lambda: market_db.split_history(ticker),
+        )
+        return [dict(row) for row in rows]
     def technical_snapshot(self, ticker: str, as_of_at: datetime) -> list[dict]:
         """Research DuckDB feature store의 owner에게 위임한다.
 
@@ -815,15 +851,22 @@ class SupabaseRepository:
         return fundamentals_expectations.security_fundamentals_as_of(ticker, as_of_at, limit=limit)
     def fundamentals_pit(self, ticker: str, as_of_at: datetime, limit: int = 12) -> list[dict]:
         """공시일 cutoff까지 공개된 canonical financials 행을 반환한다."""
-        return fundamentals_expectations.security_fundamentals_filed_before(
-            ticker, as_of_at, limit=limit
+        rows = self._memo(
+            ("fundamentals_pit", str(ticker).upper(), as_of_at.isoformat(), int(limit)),
+            lambda: fundamentals_expectations.security_fundamentals_filed_before(
+                ticker, as_of_at, limit=limit
+            ),
         )
+        return [dict(row) for row in rows]
     def estimates(self, ticker: str, as_of_at: datetime, limit: int = 12) -> dict[str, list[dict]]:
         """관측 컨센서스만 담아 돌려준다 — 모양은 evidence 계약이 정한다."""
-        consensus = fundamentals_expectations.observed_consensus_as_of(
-            ticker, as_of_at, limit=limit
+        consensus = self._memo(
+            ("observed_consensus", str(ticker).upper(), as_of_at.isoformat(), int(limit)),
+            lambda: fundamentals_expectations.observed_consensus_as_of(
+                ticker, as_of_at, limit=limit
+            ),
         )
-        return {"consensus": consensus}
+        return {"consensus": [dict(row) for row in consensus]}
     def macro_snapshot(self, as_of_at: datetime) -> dict[str, Any]:
         """macro 스키마의 owner에게 위임한다."""
         return MacroRepository(Database(sb)).observation_snapshot_as_of(as_of_at)
@@ -841,7 +884,58 @@ class SupabaseRepository:
         return output
     def segment_snapshot(self, ticker: str, as_of_at: datetime) -> dict[str, Any]:
         """fundamentals 스키마의 owner에게 위임한다."""
-        return fundamentals_segments.segment_snapshot_as_of(ticker, as_of_at)
+        return dict(self._memo(
+            ("segment_snapshot", str(ticker).upper(), as_of_at.isoformat()),
+            lambda: fundamentals_segments.segment_snapshot_as_of(ticker, as_of_at),
+        ))
+
+    def prepare_historical_replay(self, tickers: Sequence[str], as_of_at: datetime) -> None:
+        """과거 재현에 필요한 원격 도메인을 날짜당 한 번씩 읽어 단건 계약 캐시에 배치한다."""
+        symbols = sorted({normalize_ticker(ticker) for ticker in tickers})
+        key = ("historical_replay_inputs", tuple(symbols), as_of_at.isoformat())
+
+        def read() -> bool:
+            self._memo_drop_historical_inputs()
+            with ThreadPoolExecutor(max_workers=4, thread_name_prefix="historical-input") as executor:
+                fundamentals_future = executor.submit(
+                    _historical_input_read, fundamentals_expectations.securities_fundamentals_filed_before,
+                    symbols, as_of_at, limit=12,
+                )
+                consensus_future = executor.submit(
+                    _historical_input_read, fundamentals_expectations.observed_consensus_for_tickers_as_of,
+                    symbols, as_of_at, limit=12,
+                )
+                shares_future = executor.submit(
+                    _historical_input_read, fundamentals_shares.share_class_snapshots_for_tickers_filed_before,
+                    symbols, as_of_at, limit=24,
+                )
+                segments_future = executor.submit(
+                    _historical_input_read, fundamentals_segments.segment_snapshots_as_of, symbols, as_of_at,
+                )
+                fundamentals = fundamentals_future.result()
+                consensus = consensus_future.result()
+                shares = shares_future.result()
+                segments = segments_future.result()
+            fundamentals_by_ticker: dict[str, list[dict]] = {ticker: [] for ticker in symbols}
+            for row in fundamentals:
+                fundamentals_by_ticker.setdefault(normalize_ticker(row.get("ticker")), []).append(dict(row))
+            mirror = self._mirror(as_of_at)
+            splits = mirror.split_histories(symbols) if mirror is not None else {
+                ticker: market_db.split_history(ticker) for ticker in symbols
+            }
+            for ticker in symbols:
+                self._memo_seed(("fundamentals_pit", ticker, as_of_at.isoformat(), 12),
+                                fundamentals_by_ticker.get(ticker, []))
+                self._memo_seed(("observed_consensus", ticker, as_of_at.isoformat(), 12),
+                                list(consensus.get(ticker, [])))
+                self._memo_seed(("share_class_snapshots_pit", ticker, as_of_at.isoformat(), 24),
+                                list(shares.get(ticker, [])))
+                self._memo_seed(("segment_snapshot", ticker, as_of_at.isoformat()),
+                                dict(segments.get(ticker, {"filings": [], "metrics": []})))
+                self._memo_seed(("split_history", ticker), list(splits.get(ticker, [])))
+            return True
+
+        self._memo(key, read)
     def segment_capability(self) -> dict[str, Any]:
         """코드에 구현된 도메인 저장소 기능을 반환한다.
 
@@ -1115,13 +1209,38 @@ class SupabaseRepository:
             })
         ResearchStore().upsert_records("event_feature_snapshots", rows, key="record_key")
 
-    def save_training_samples(self, samples: Sequence[TrainingSample]) -> None:
+    def save_training_samples(self, samples: Sequence[TrainingSample]) -> int:
         if not samples:
-            return
-        rows = [sample.to_dict() for sample in samples]
+            return 0
+        identities = [sample.sample_id for sample in samples]
+        if len(identities) != len(set(identities)):
+            raise ValueError("training sample batch contains duplicate identities")
+        store = ResearchStore()
+        existing = store.record_keys("training_samples")
+        rows = [sample.to_dict() for sample in samples if sample.sample_id not in existing]
+        if not rows:
+            return 0
         for row in rows:
             row["record_key"] = row["sample_id"]
-        ResearchStore().upsert_records("training_samples", rows, key="record_key")
+        return store.upsert_records(
+            "training_samples", rows, key="record_key", ignore_existing=True,
+        )
+
+    def training_sample_run_rows(
+        self, *, start_as_of: str, end_as_of: str,
+    ) -> list[dict[str, Any]]:
+        """학습 표본 기준일 매니페스트를 로컬 Research 저장소에서 읽는다."""
+        return ResearchStore(read_only=True).records(
+            "training_sample_runs", start_as_of=start_as_of, end_as_of=end_as_of,
+        )
+
+    def save_training_sample_runs(self, rows: Sequence[dict[str, Any]]) -> int:
+        """표본 저장이 끝난 기준일만 기록해 다음 실행의 재계산을 막는다."""
+        if not rows:
+            return 0
+        return ResearchStore().upsert_records(
+            "training_sample_runs", rows, key="record_key",
+        )
 
     def save_rl_feature_snapshots(self, rows: list[dict]) -> None:
         if not rows:
@@ -1156,9 +1275,13 @@ class SupabaseRepository:
         limit: int = 24,
     ) -> list[dict[str, Any]]:
         """공시 수리 시각이 cutoff 이전인 발행주식수 snapshot만 반환한다."""
-        return fundamentals_shares.share_class_snapshots_filed_before(
-            ticker, as_of_at, limit=limit
+        rows = self._memo(
+            ("share_class_snapshots_pit", str(ticker).upper(), as_of_at.isoformat(), int(limit)),
+            lambda: fundamentals_shares.share_class_snapshots_filed_before(
+                ticker, as_of_at, limit=limit
+            ),
         )
+        return [dict(row) for row in rows]
     def save_valuation_observations(self, rows: list[dict]) -> None:
         """같은 (ticker, as_of, source_kind)는 재실행해도 한 행으로 수렴한다."""
         if not rows:
@@ -1208,6 +1331,16 @@ class SupabaseRepository:
     ) -> list[dict[str, Any]]:
         """label 전용 미래 종가다 — evidence/feature 경로에서 절대 부르지 않는다."""
         return market_db.forward_closes_after(ticker, after_date=after_date, limit=limit)
+
+    def label_price_rows(
+        self, tickers: Sequence[str], *, start: date, end: date,
+    ) -> list[dict[str, Any]]:
+        """확정 라벨용 종가 창. 로컬 사본을 우선하고 없으면 owner의 묶음 조회를 쓴다."""
+        point = datetime.combine(end, datetime.max.time(), tzinfo=timezone.utc)
+        mirror = self._mirror(point)
+        if mirror is not None:
+            return mirror.closes_between(tickers, start=start, end=end)
+        return market_db.close_window_for_labels(tickers, start=start, end=end)
     def rl_feature_snapshot_rows(
         self,
         symbols: tuple[str, ...],
@@ -1215,6 +1348,7 @@ class SupabaseRepository:
         start_as_of: str,
         end_as_of: str,
         feature_version: str,
+        as_of_values: Sequence[str] | None = None,
     ) -> list[dict[str, Any]]:
         """미래 라벨 컬럼을 전혀 조회하지 않는 point-in-time feature 경계다."""
         normalized = normalize_symbols(symbols)
@@ -1228,6 +1362,7 @@ class SupabaseRepository:
             "rl_feature_snapshots",
             start_as_of=start.isoformat(),
             end_as_of=end.isoformat(),
+            as_of_values=as_of_values,
         )
         rows = [
             row for row in rows
@@ -1245,6 +1380,7 @@ class SupabaseRepository:
         end_as_of: str,
         feature_version: str,
         label_cutoff_at: str,
+        as_of_values: Sequence[str] | None = None,
     ) -> list[dict[str, Any]]:
         """학습 cutoff 전에 실제 생성된 미래 label만 별도로 반환한다."""
         normalized = normalize_symbols(symbols)
@@ -1261,6 +1397,7 @@ class SupabaseRepository:
             "rl_training_labels",
             start_as_of=start.isoformat(),
             end_as_of=end.isoformat(),
+            as_of_values=as_of_values,
         )
         rows = [
             row for row in rows
@@ -1269,6 +1406,45 @@ class SupabaseRepository:
             and parse_datetime(str(row["label_available_at"])) <= cutoff
         ]
         return [_training_label(dict(row)).to_storage_row() for row in rows]
+
+    def training_sample_period_inputs(
+        self,
+        symbols: Sequence[str],
+        *,
+        start_as_of: str,
+        end_as_of: str,
+        feature_version: str,
+        label_cutoff_at: str,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """표본 매니페스트 확인에 필요한 scalar만 읽어 전수 JSON 복원을 피한다."""
+        normalized = set(normalize_symbols(tuple(symbols)))
+        start = parse_datetime(start_as_of)
+        end = parse_datetime(end_as_of)
+        cutoff = parse_datetime(label_cutoff_at)
+        if end < start or cutoff < end:
+            raise ValueError("invalid training sample metadata window")
+        store = ResearchStore(read_only=True)
+        snapshots = store.records_with_payload_fields(
+            "rl_feature_snapshots", ("feature_version", "input_hash"),
+            start_as_of=start.isoformat(), end_as_of=end.isoformat(),
+        )
+        labels = store.records_with_payload_fields(
+            "rl_training_labels", ("feature_version", "label_available_at", "label_id"),
+            start_as_of=start.isoformat(), end_as_of=end.isoformat(),
+        )
+        return {
+            "snapshots": [
+                row for row in snapshots
+                if row.get("feature_version") == feature_version
+                and normalize_ticker(str(row.get("ticker"))) in normalized
+            ],
+            "labels": [
+                row for row in labels
+                if row.get("feature_version") == feature_version
+                and normalize_ticker(str(row.get("ticker"))) in normalized
+                and parse_datetime(str(row["label_available_at"])) <= cutoff
+            ],
+        }
 
     def rl_historical_membership_rows(
         self,

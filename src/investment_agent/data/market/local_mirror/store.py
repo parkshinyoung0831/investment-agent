@@ -235,6 +235,40 @@ class LocalMirror:
                     splits.append({"ticker": ticker.upper(), "action_date": day, "split_ratio": float(record["split_ratio"])})
         return merge_corporate_actions(rows, dividends, splits)
 
+    def split_histories(self, tickers: Sequence[str]) -> dict[str, list[dict]]:
+        """사본의 분할 이력을 여러 ticker에 한 번에 나눠 돌려준다."""
+        ids = self.security_ids(tickers)
+        _price_index, action_index = self._indexes()
+        output: dict[str, list[dict]] = {str(ticker).upper(): [] for ticker in tickers}
+        for ticker, security_id in ids.items():
+            positions = action_index.get(security_id)
+            if positions is None:
+                continue
+            output[ticker] = [
+                {"ticker": ticker, "action_date": str(row["action_date"]),
+                 "split_ratio": float(row["split_ratio"])}
+                for row in self._frames[T_ACTIONS].iloc[positions].to_dict("records")
+                if pd.notna(row.get("split_ratio"))
+            ]
+        return output
+
+    def closes_between(self, tickers: Sequence[str], *, start: date, end: date) -> list[dict]:
+        """라벨 계산용 원시 종가 창을 여러 ticker에서 한 번에 읽는다."""
+        if end < start:
+            raise ValueError("close window end must not precede start")
+        ids = self.security_ids(tickers)
+        price_index, _action_index = self._indexes()
+        output: list[dict] = []
+        for ticker, security_id in ids.items():
+            positions = price_index.get(security_id)
+            if positions is None:
+                continue
+            rows = self._frames[T_PRICES].iloc[positions]
+            rows = rows[(rows["trade_date"] >= start.isoformat()) & (rows["trade_date"] <= end.isoformat())]
+            output.extend({"ticker": ticker, "trade_date": str(row["trade_date"]), "close": float(row["close"])}
+                          for row in rows.to_dict("records") if pd.notna(row.get("close")))
+        return sorted(output, key=lambda row: (row["ticker"], row["trade_date"]))
+
 
 def _python(value: Any) -> Any:
     if value is None or (isinstance(value, float) and pd.isna(value)):

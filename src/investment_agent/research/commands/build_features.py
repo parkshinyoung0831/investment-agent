@@ -23,8 +23,6 @@ from investment_agent.research.datasets.universe import research_universe
 log = get_logger(__name__)
 
 WORKFLOW = "ai_investor_build_features"
-# PostgREST payload가 지나치게 커지지 않도록 upsert를 나눈다.
-_UPSERT_CHUNK = 100
 # 밸류에이션 관측값을 찾을 창. 공시가 없는 날에도 직전 값을 쓴다.
 _VALUATION_LOOKBACK_DAYS = 7
 
@@ -107,24 +105,24 @@ def build_features(
     started = time.monotonic()
     started_at = datetime.now(timezone.utc).isoformat()
     selected = repository or SupabaseRepository()
+    phase = time.monotonic()
+    if source_kind == "historical_replay" and hasattr(selected, "prepare_historical_replay"):
+        selected.prepare_historical_replay(tuple(tickers), as_of_at)
+    prepare_sec = time.monotonic() - phase
     builder = ContextBuilder(selected)
     layer = FeatureLayer()
     # 같은 실행 시각의 밸류에이션 관측값을 한 번만 읽어 종목별로 나눠 쓴다.
     # 하네스는 build_valuations를 먼저 돌리므로 그날 값이 이미 들어와 있다.
+    phase = time.monotonic()
     valuations = _valuations_by_ticker(
         selected, as_of_at=as_of_at, tickers=tickers, source_kind=source_kind,
     )
+    valuations_sec = time.monotonic() - phase
     rows: list[dict] = []
     failures: list[str] = []
     unavailable = 0
+    unavailable_tickers: list[str] = []
     saved = 0
-
-    def flush(pending: list[dict]) -> int:
-        # 다 계산한 뒤 한 번에 쓰면 중간 장애(파일 잠금 등)에 그때까지의 계산을 전부 잃는다.
-        if dry_run or not pending:
-            return 0
-        selected.save_rl_feature_snapshots(pending)
-        return len(pending)
 
     def compute(ticker: str):
         try:
@@ -135,6 +133,7 @@ def build_features(
 
     built = 0
     selected_workers = max(1, min(int(workers), len(tickers) or 1))
+    phase = time.monotonic()
     with ThreadPoolExecutor(max_workers=selected_workers, thread_name_prefix="feature-build") as executor:
         # 시간의 대부분이 Supabase 응답 대기라 스레드로 동시에 기다린다. 결과는 입력 순서대로 받아
         # 저장 묶음·로그·실패 목록이 순차 실행과 같은 순서를 유지한다.
@@ -145,15 +144,18 @@ def build_features(
                 failures.append(ticker)
                 continue
             if not snapshot.is_available:
-                # 근거가 하나도 없으면 저장해도 학습에 쓸 수 없다. 결측 사유는 로그로만 남긴다.
+                # 저장하지 않는 terminal 결과도 backfill manifest가 기억해 재시작 때 반복하지 않는다.
                 unavailable += 1
+                unavailable_tickers.append(ticker)
                 continue
             rows.append(snapshot.to_storage_row())
             built += 1
-            if len(rows) >= _UPSERT_CHUNK:
-                saved += flush(rows)
-                rows = []
-    saved += flush(rows)
+    compute_sec = time.monotonic() - phase
+    phase = time.monotonic()
+    if not dry_run and rows:
+        selected.save_rl_feature_snapshots(rows)
+        saved = len(rows)
+    write_sec = time.monotonic() - phase
 
     payload = run_log_payload(
         workflow=WORKFLOW,
@@ -170,10 +172,13 @@ def build_features(
             "built": built,
             "with_valuation": sum(1 for ticker in tickers if ticker in valuations),
             "unavailable": unavailable,
+            "unavailable_tickers": unavailable_tickers,
             "failed": failures[:20],
             "failed_count": len(failures),
             "dry_run": dry_run,
             "workers": selected_workers,
+            "timings_sec": {"prepare": round(prepare_sec, 3), "valuations": round(valuations_sec, 3),
+                            "compute": round(compute_sec, 3), "write": round(write_sec, 3)},
         },
     )
     log.info("feature snapshots %s", payload)

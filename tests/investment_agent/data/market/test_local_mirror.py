@@ -112,6 +112,15 @@ class LocalMirrorTest(unittest.TestCase):
         self.assertEqual(self.mirror.tracked_tickers(), ["AAA", "BBB"])
         self.assertEqual(self.mirror.sector_map(["AAA", "SPY"]), {"AAA": "Manufacturing"})
 
+    def test_label_close_window_reads_all_requested_tickers_in_one_frame(self):
+        self.sync(now=NOW)
+        rows = self.mirror.closes_between(
+            ["AAA", "BBB"], start=date(2026, 1, 2), end=date(2026, 1, 7),
+        )
+        self.assertEqual({row["ticker"] for row in rows}, {"AAA", "BBB"})
+        self.assertTrue(all("2026-01-02" <= row["trade_date"] <= "2026-01-07" for row in rows))
+        self.assertEqual(rows, sorted(rows, key=lambda row: (row["ticker"], row["trade_date"])))
+
     def test_incremental_sync_refetches_only_the_window_new_names_and_new_splits(self):
         self.sync(now=NOW)
         self.world.bar_calls.clear()

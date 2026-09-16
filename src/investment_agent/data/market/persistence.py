@@ -316,6 +316,20 @@ def forward_closes_after(ticker: str, *, after_date: str, limit: int = 40) -> li
     ][:limit]
 
 
+def close_window_for_labels(tickers: Sequence[str], *, start: date, end: date) -> list[dict]:
+    """연구 라벨 전용 미래 포함 종가 창. evidence 판단 경로에서는 사용하지 않는다."""
+    ids = _ids(sorted({str(ticker).upper() for ticker in tickers}))
+    if not ids:
+        return []
+    ticker_by_id = {int(security_id): ticker for ticker, security_id in ids.items()}
+    bars = MarketRepository(_db()).bars(sorted(ticker_by_id), start=start, end=end)
+    return sorted([
+        {"ticker": ticker_by_id[int(bar.security_id)], "trade_date": bar.trade_date.isoformat(),
+         "close": bar.close}
+        for bar in bars if int(bar.security_id) in ticker_by_id and bar.close is not None
+    ], key=lambda row: (row["ticker"], row["trade_date"]))
+
+
 def price_path_from(ticker: str, start_date: date, *, limit: int = 80) -> list[dict]:
     rows = _price_rows(ticker, start=start_date, end=date.today())[:limit]
     if not rows:

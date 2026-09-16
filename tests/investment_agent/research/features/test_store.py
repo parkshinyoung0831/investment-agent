@@ -181,6 +181,7 @@ class _FeatureRepository:
     def __init__(self, tickers: list[str]):
         self.tickers = tickers
         self.saved: list[dict] = []
+        self.save_calls = 0
 
     def current_tracked_tickers(self):
         return list(self.tickers)
@@ -217,10 +218,21 @@ class _FeatureRepository:
         return {"results": [], "forecasts": []}
 
     def save_rl_feature_snapshots(self, rows):
+        self.save_calls += 1
         self.saved.extend(rows)
 
 
 class BuildFeaturesEntryTest(unittest.TestCase):
+    def test_historical_replay_prepares_the_whole_date_once(self):
+        repository = _FeatureRepository(["AAA"])
+        prepared = []
+        repository.prepare_historical_replay = lambda tickers, as_of_at: prepared.append((tuple(tickers), as_of_at))
+        build_features(
+            as_of_at=parse_datetime(_AS_OF), tickers=["AAA"], source_kind="historical_replay",
+            repository=repository,
+        )
+        self.assertEqual(prepared, [(('AAA',), parse_datetime(_AS_OF))])
+
     def test_every_saved_row_shares_the_same_feature_columns(self):
         repository = _FeatureRepository(["AAA", "BBB"])
         payload = build_features(
@@ -234,6 +246,7 @@ class BuildFeaturesEntryTest(unittest.TestCase):
         column_sets = {frozenset(row["features"]) for row in repository.saved}
         self.assertEqual(len(column_sets), 1)
         self.assertEqual(column_sets.pop(), frozenset(FEATURE_COLUMNS))
+        self.assertEqual(set(payload["detail"]["timings_sec"]), {"prepare", "valuations", "compute", "write"})
 
     def test_dry_run_writes_nothing(self):
         repository = _FeatureRepository(["AAA"])
@@ -262,6 +275,15 @@ class BuildFeaturesEntryTest(unittest.TestCase):
         self.assertEqual(payload["rows_upserted"], 1)
         self.assertEqual(payload["detail"]["failed"], ["BAD"])
 
+    def test_one_date_is_written_once_even_when_it_has_more_than_one_chunk(self):
+        tickers = [f"T{index:03d}" for index in range(230)]
+        repository = _FeatureRepository(tickers)
+        payload = build_features(
+            as_of_at=parse_datetime(_AS_OF), tickers=tickers, repository=repository, workers=1,
+        )
+        self.assertEqual(payload["rows_upserted"], 230)
+        self.assertEqual(repository.save_calls, 1)
+
 
 class _LabelRepository:
     """label 생산 경로가 쓰는 조회만 흉내낸다."""
@@ -269,6 +291,8 @@ class _LabelRepository:
     def __init__(self, *, forward_days: int):
         self.forward_days = forward_days
         self.saved: list[dict] = []
+        self.bulk_price_calls = 0
+        self.save_calls = 0
 
     def current_tracked_tickers(self):
         return ["AAA"]
@@ -295,7 +319,19 @@ class _LabelRepository:
             for offset in range(1, self.forward_days + 1)
         ]
 
+    def label_price_rows(self, tickers, *, start, end):
+        self.bulk_price_calls += 1
+        rows = []
+        for ticker in tickers:
+            rows.append({"ticker": ticker, "trade_date": "2026-08-20", "close": 100.0})
+            rows.extend({
+                "ticker": ticker, "trade_date": f"2026-08-{20 + offset:02d}",
+                "close": 100.0 + offset,
+            } for offset in range(1, self.forward_days + 1))
+        return rows
+
     def save_rl_training_labels(self, rows):
+        self.save_calls += 1
         self.saved.extend(rows)
 
 
@@ -327,12 +363,20 @@ class BuildLabelsEntryTest(unittest.TestCase):
             parse_datetime(row["forward_end_at"]),
         )
         self.assertGreater(parse_datetime(row["forward_end_at"]), parse_datetime(row["as_of_at"]))
+        self.assertEqual(set(payload["detail"]["timings_sec"]), {"load", "prices", "compute", "write"})
 
     def test_label_carries_no_feature_value(self):
         repository = _LabelRepository(forward_days=8)
         self._run(repository, horizon=5)
         stored = set(repository.saved[0])
         self.assertFalse(stored & set(OPTIONAL_FEATURES))
+
+    def test_price_window_is_loaded_once_and_labels_are_written_once(self):
+        repository = _LabelRepository(forward_days=8)
+        payload = self._run(repository, horizon=5)
+        self.assertEqual(payload["detail"]["built"], 1)
+        self.assertEqual(repository.bulk_price_calls, 1)
+        self.assertEqual(repository.save_calls, 1)
 
 
 if __name__ == "__main__":

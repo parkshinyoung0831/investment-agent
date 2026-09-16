@@ -1,4 +1,4 @@
-"""feature 적재: 종목과 무관한 조회는 한 번만, 계산은 쌓이는 대로 저장한다."""
+"""feature 적재: 공통 조회는 한 번만 하고 날짜 단위 결과는 한 번에 저장한다."""
 from __future__ import annotations
 
 import unittest
@@ -12,11 +12,11 @@ AS_OF = datetime(2025, 1, 6, tzinfo=timezone.utc)
 
 
 class _CountingRepository(_ContextRepository):
-    def __init__(self, *, fail_saving_after: int | None = None):
+    def __init__(self, *, fail_saving: bool = False):
         super().__init__()
         self.econ_calls = 0
         self.saved: list[list[dict]] = []
-        self.fail_saving_after = fail_saving_after
+        self.fail_saving = fail_saving
 
     def market_prices(self, ticker, as_of_at, limit=260):
         day = datetime(2024, 11, 1)
@@ -28,7 +28,7 @@ class _CountingRepository(_ContextRepository):
         return super().econ_snapshot(as_of_at, lookback_days)
 
     def save_rl_feature_snapshots(self, rows):
-        if self.fail_saving_after is not None and len(self.saved) >= self.fail_saving_after:
+        if self.fail_saving:
             raise OSError("research store is busy")
         self.saved.append(list(rows))
 
@@ -44,20 +44,19 @@ class SharedContextTest(unittest.TestCase):
         self.assertEqual((repository.macro_calls, repository.econ_calls), (2, 2))
 
 
-class IncrementalSaveTest(unittest.TestCase):
-    def test_rows_are_saved_in_chunks_while_building(self):
+class DateAtomicSaveTest(unittest.TestCase):
+    def test_all_rows_are_saved_once_for_the_date(self):
         repository = _CountingRepository()
         tickers = [f"T{i:03d}" for i in range(250)]
         payload = build_features(as_of_at=AS_OF, tickers=tickers, repository=repository)
-        self.assertEqual([len(chunk) for chunk in repository.saved], [100, 100, 50])
+        self.assertEqual([len(batch) for batch in repository.saved], [250])
         self.assertEqual(payload["rows_upserted"], 250)
 
-    def test_a_late_storage_failure_keeps_the_chunks_already_written(self):
-        repository = _CountingRepository(fail_saving_after=1)
+    def test_storage_failure_does_not_leave_a_command_level_partial_batch(self):
+        repository = _CountingRepository(fail_saving=True)
         with self.assertRaises(OSError):
             build_features(as_of_at=AS_OF, tickers=[f"T{i:03d}" for i in range(150)], repository=repository)
-        self.assertEqual(len(repository.saved), 1)
-        self.assertEqual(len(repository.saved[0]), 100)
+        self.assertEqual(repository.saved, [])
 
 
 if __name__ == "__main__":

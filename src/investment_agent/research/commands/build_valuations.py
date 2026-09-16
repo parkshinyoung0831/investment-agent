@@ -25,7 +25,6 @@ log = get_logger(__name__)
 
 WORKFLOW = "ai_investor_build_valuations"
 SOURCE_VERSION = "pit-valuation-v1"
-_UPSERT_CHUNK = 100
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -89,6 +88,12 @@ def build_valuations(
     complete = 0
     reason_counts: dict[str, int] = {}
 
+    phase = time.monotonic()
+    if source_kind == "historical_replay" and hasattr(selected, "prepare_historical_replay"):
+        selected.prepare_historical_replay(tuple(tickers), as_of_at)
+    prepare_sec = time.monotonic() - phase
+
+    phase = time.monotonic()
     for ticker in tickers:
         try:
             observation = build_pit_valuation(build_valuation_inputs(
@@ -111,13 +116,14 @@ def build_valuations(
         if observation.market_cap is not None:
             complete += 1
         rows.append(_storage_row(observation))
+    compute_sec = time.monotonic() - phase
 
+    phase = time.monotonic()
     saved = 0
-    if not dry_run:
-        for start in range(0, len(rows), _UPSERT_CHUNK):
-            chunk = rows[start:start + _UPSERT_CHUNK]
-            selected.save_valuation_observations(chunk)
-            saved += len(chunk)
+    if not dry_run and rows:
+        selected.save_valuation_observations(rows)
+        saved = len(rows)
+    write_sec = time.monotonic() - phase
 
     payload = run_log_payload(
         workflow=WORKFLOW,
@@ -140,6 +146,8 @@ def build_valuations(
             "failed": failures[:20],
             "failed_count": len(failures),
             "dry_run": dry_run,
+            "timings_sec": {"prepare": round(prepare_sec, 3), "compute": round(compute_sec, 3),
+                            "write": round(write_sec, 3)},
         },
     )
     log.info("pit valuations %s", payload)

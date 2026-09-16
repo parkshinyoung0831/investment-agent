@@ -327,8 +327,11 @@ flowchart TD
 시점 이력이 없는 거시 관측, 적재 시각이 늦은 기술지표는 결측이고, 상장폐지 종목은 가격 원천에
 이력이 없으면 결측으로 남는다. LLM 판단은 모델이 이미 미래를 학습했으므로 과거 재현 대상이 아니다.
 
-과거 시점 snapshot은 `research.commands.backfill_research_history`가 명시적으로 쌓는다(이미 있는 시점은
-건너뛴다). 추정치 revision factor는 수집 전 시점에서 비므로, 과거 IC에서 revision category는 표본이 짧다.
+과거 시점 snapshot은 `research.commands.backfill_research_history`가 명시적으로 쌓는다. 원격 재무·컨센서스·
+주식수·세그먼트는 날짜마다 일괄 조회해 종목별 계산이 재사용하고, 날짜 결과는 Parquet에 한 번만 원자 저장한다.
+`historical_replay_runs` manifest는 기대 universe, 실제 snapshot, 영구 불가 ticker, 실패 ticker를 구분한다.
+중단 뒤에는 빠진 ticker만 재개하며 `--audit-only`는 날짜별 완결성을 읽기 전용 JSON으로 보고한다. 추정치
+revision factor는 수집 전 시점에서 비므로, 과거 IC에서 revision category는 표본이 짧다.
 
 ### factor IC 연구
 
@@ -490,6 +493,10 @@ RL 정책은 System Portfolio를 움직이지 않는 연구 후보다. 비교는
   System 원장은 변형마다 임시 SQLite다.
 - ML 변형은 학습·검증 구간이 재현 시작 전에 끝난 artifact만 쓴다(아니면 `refused`).
 - TradingAgents 논지는 그 시각까지 기록된 것만 있어, 논지 변형의 차이는 분석 기록이 쌓인 기간에서만 의미가 있다.
+- ML 예측이나 논지가 한 번도 적용되지 않은 변형은 `completed`로 가장하지 않고 `insufficient_coverage`와
+  이유를 남긴다. 결과의 `coverage`에는 factor category별 시점 수, ML·논지 적용 수, 위험자산 목표 수,
+  CVaR 활성·구속 시점 수, 시장위험 입력·긴축 시점 수와 공통 평가 시작·종료일이 들어간다.
+- 위험 정책 변형은 모두 factor-only alpha를 사용해 ML·논지 유무가 위험 정책 비교에 섞이지 않는다.
 - 결과는 `artifacts/research/ablation/latest.json`. 정책 변경은 사람이 결과를 보고 코드 리뷰로 한다.
 
 ## Qlib의 제한된 사용 범위

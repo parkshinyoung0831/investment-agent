@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import random
 import unittest
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 
 from investment_agent.research.ablation import (
@@ -83,8 +84,21 @@ class AblationTest(unittest.TestCase):
             self.assertEqual(row["status"], "completed")
             self.assertGreaterEqual(row["targets"], 1)
             self.assertGreater(row["summary"]["days"], 20)
+            self.assertGreater(row["coverage"]["factor_snapshot_periods"], 1)
+            self.assertGreater(row["coverage"]["risky_target_count"], 0)
+            self.assertGreater(row["coverage"]["factor_category_periods"]["quality"], 1)
+            self.assertIn("tail_risk_enabled_periods", row["coverage"])
+            self.assertIn("tail_risk_bound_periods", row["coverage"])
+            self.assertIn("market_risk_input_periods", row["coverage"])
+        self.assertGreater(by_name["factor_only"]["coverage"]["tail_risk_enabled_periods"], 0)
+        self.assertEqual(by_name["no_tail_risk"]["coverage"]["tail_risk_enabled_periods"], 0)
         self.assertEqual(by_name["factor_only"]["versus_baseline"]["total_return"], 0.0)
         self.assertFalse(by_name["no_tail_risk"]["system_policy"]["use_tail_risk"])
+        self.assertFalse(by_name["no_tail_risk"]["alpha_policy"]["use_thesis"])
+        self.assertEqual(
+            by_name["factor_only"]["summary"]["start_date"],
+            by_name["no_tail_risk"]["summary"]["start_date"],
+        )
         self.assertGreater(base.membership_calls, 0)  # 종목은 판단 시각의 멤버십으로 정했다
 
     def test_ml_fit_on_data_after_the_replay_start_is_refused(self):
@@ -115,9 +129,29 @@ class AblationTest(unittest.TestCase):
         self.assertIsNone(repository.factor_cross_section(repository.now))
 
     def test_default_variants_cover_the_requested_comparisons(self):
-        names = {variant.name for variant in default_variants()}
+        variants = default_variants()
+        names = {variant.name for variant in variants}
         self.assertTrue({"factor_only", "factor_ml", "factor_ml_thesis", "no_tail_risk", "no_market_risk",
                          "cvar_5", "cvar_12"} <= names)
+        risk_variants = [variant for variant in variants if variant.name in {"no_tail_risk", "no_market_risk", "cvar_5", "cvar_12"}]
+        self.assertTrue(all(not variant.alpha.use_ml and not variant.alpha.use_thesis for variant in risk_variants))
+
+    def test_missing_ml_and_thesis_inputs_are_not_reported_as_completed(self):
+        defaults = default_variants()
+        factor_ml = next(variant for variant in defaults if variant.name == "factor_ml")
+        factor_thesis = replace(
+            next(variant for variant in defaults if variant.name == "factor_ml_thesis"),
+            alpha=replace(factor_ml.alpha, use_ml=False, use_thesis=True),
+        )
+        report = run_ablation(
+            _Base(), start=date(2025, 11, 1), end=date(2026, 1, 31),
+            variants=(factor_ml, factor_thesis), cross_section=_cross_section,
+        )
+        by_name = {row["name"]: row for row in report["variants"]}
+        self.assertEqual(by_name["factor_ml"]["status"], "insufficient_coverage")
+        self.assertEqual(by_name["factor_ml"]["reason"], "ml_forecast_never_applied")
+        self.assertEqual(by_name["factor_ml_thesis"]["status"], "insufficient_coverage")
+        self.assertEqual(by_name["factor_ml_thesis"]["reason"], "thesis_view_never_observed")
 
 
 if __name__ == "__main__":

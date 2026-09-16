@@ -93,6 +93,9 @@ class _Repository:
         self.gross_returns = gross_returns
         self.periods = periods
         self.saved: list = []
+        self.save_calls = 0
+        self.sample_runs: dict[str, dict] = {}
+        self.changed_input_periods: set[int] = set()
 
     def current_tracked_tickers(self):
         return list(_TICKERS)
@@ -110,6 +113,7 @@ class _Repository:
             "features": _features(0.1 * (index + position)),
             "source_ids": [f"EV-{ticker}-{index}"],
             "provenance": {"definition_hash": "abc", "source_kind": "live_shadow"},
+            "input_hash": f"input-{index}-{ticker}-{'changed' if index in self.changed_input_periods else 'base'}",
         } for index in range(self.periods) for position, ticker in enumerate(_TICKERS)]
 
     def rl_training_label_rows(self, symbols, *, start_as_of, end_as_of, feature_version, label_cutoff_at):
@@ -130,7 +134,16 @@ class _Repository:
         return rows
 
     def save_training_samples(self, samples):
+        self.save_calls += 1
         self.saved.extend(samples)
+
+    def training_sample_run_rows(self, **_kwargs):
+        return list(self.sample_runs.values())
+
+    def save_training_sample_runs(self, rows):
+        for row in rows:
+            self.sample_runs[row["record_key"]] = dict(row)
+        return len(rows)
 
 
 class BuildTrainingSamplesTest(unittest.TestCase):
@@ -149,6 +162,108 @@ class BuildTrainingSamplesTest(unittest.TestCase):
         self.assertEqual(len(repository.saved), 6)
         self.assertEqual(repository.saved[0].label_definition, LABEL_DEFINITION)
         self.assertEqual(repository.saved[0].feature_version, FEATURE_VERSION)
+
+    def test_all_samples_are_persisted_in_one_repository_write(self):
+        repository = _Repository(periods=60)
+        payload = self._run(repository)
+        self.assertEqual(payload["detail"]["samples"], 120)
+        self.assertEqual(repository.save_calls, 1)
+        self.assertEqual(set(payload["detail"]["timings_sec"]), {"load", "compute", "write"})
+
+    def test_reported_upserts_exclude_samples_already_in_the_store(self):
+        class AlreadyStoredRepository(_Repository):
+            def save_training_samples(self, samples):
+                super().save_training_samples(samples)
+                return 0
+
+        payload = self._run(AlreadyStoredRepository(periods=3))
+        self.assertEqual(payload["detail"]["samples"], 6)
+        self.assertEqual(payload["rows_upserted"], 0)
+
+    def test_complete_periods_are_skipped_but_new_periods_are_computed(self):
+        repository = _Repository(periods=2)
+        first = self._run(repository)
+        second = self._run(repository)
+        repository.periods = 3
+        third = self._run(repository)
+        changed_cost = self._run(
+            repository, cost_model=TransactionCostModel(commission_rate=0.0001),
+        )
+
+        self.assertEqual(first["detail"]["samples"], 4)
+        self.assertEqual(second["detail"]["samples"], 0)
+        self.assertEqual(second["rows_upserted"], 0)
+        self.assertEqual(second["detail"]["already_sampled"], 4)
+        self.assertEqual(third["detail"]["samples"], 2)
+        self.assertEqual(third["detail"]["already_sampled"], 4)
+        self.assertEqual(changed_cost["detail"]["samples"], 6)
+        self.assertEqual(changed_cost["detail"]["already_sampled"], 0)
+        self.assertEqual(repository.save_calls, 3)
+        self.assertEqual(len(repository.sample_runs), 3)
+
+    def test_changed_feature_input_invalidates_only_its_period(self):
+        repository = _Repository(periods=3)
+        self._run(repository)
+        repository.changed_input_periods.add(1)
+
+        changed = self._run(repository)
+
+        self.assertEqual(changed["detail"]["samples"], 2)
+        self.assertEqual(changed["detail"]["already_sampled"], 4)
+
+    def test_unchanged_manifest_avoids_full_feature_and_label_reads(self):
+        class LightweightRepository(_Repository):
+            def __init__(self):
+                super().__init__(periods=2)
+                self.full_feature_reads: list[tuple[str, ...] | None] = []
+                self.full_label_reads: list[tuple[str, ...] | None] = []
+
+            def training_sample_period_inputs(self, symbols, **kwargs):
+                snapshots = super().rl_feature_snapshot_rows(
+                    symbols,
+                    start_as_of=kwargs["start_as_of"], end_as_of=kwargs["end_as_of"],
+                    feature_version=kwargs["feature_version"],
+                )
+                labels = super().rl_training_label_rows(
+                    symbols,
+                    start_as_of=kwargs["start_as_of"], end_as_of=kwargs["end_as_of"],
+                    feature_version=kwargs["feature_version"],
+                    label_cutoff_at=kwargs["label_cutoff_at"],
+                )
+                return {
+                    "snapshots": [{
+                        key: row[key] for key in ("as_of_at", "ticker", "feature_version", "input_hash")
+                    } for row in snapshots],
+                    "labels": [{
+                        key: row[key] for key in ("as_of_at", "ticker", "feature_version", "label_id")
+                    } for row in labels],
+                }
+
+            def rl_feature_snapshot_rows(self, symbols, *, as_of_values=None, **kwargs):
+                self.full_feature_reads.append(None if as_of_values is None else tuple(as_of_values))
+                rows = super().rl_feature_snapshot_rows(symbols, **kwargs)
+                return rows if as_of_values is None else [
+                    row for row in rows if row["as_of_at"] in as_of_values
+                ]
+
+            def rl_training_label_rows(self, symbols, *, as_of_values=None, **kwargs):
+                self.full_label_reads.append(None if as_of_values is None else tuple(as_of_values))
+                rows = super().rl_training_label_rows(symbols, **kwargs)
+                return rows if as_of_values is None else [
+                    row for row in rows if row["as_of_at"] in as_of_values
+                ]
+
+        repository = LightweightRepository()
+        self._run(repository)
+        repository.full_feature_reads.clear()
+        repository.full_label_reads.clear()
+
+        repeated = self._run(repository)
+
+        self.assertEqual(repeated["detail"]["samples"], 0)
+        self.assertEqual(repeated["detail"]["already_sampled"], 4)
+        self.assertEqual(repository.full_feature_reads, [])
+        self.assertEqual(repository.full_label_reads, [])
 
     def test_window_includes_former_members_not_only_current_tracked_names(self):
         """과거 편출 종목 BBB를 조회 범위에서 빼면 학습 표본이 조용히 사라진다."""

@@ -242,8 +242,15 @@ Supabase 원본을 읽기 전용으로 복사하고, 사본이 없거나 30시�
 ```powershell
 python -m investment_agent.data.market.commands.sync_local_mirror
 python -m investment_agent.data.market.commands.sync_local_mirror --full
+python -m investment_agent.research.commands.backfill_research_history --start 2023-01-06 --end 2025-12-31 --every-days 7 --audit-only
+python -m investment_agent.research.commands.backfill_research_history --start 2023-01-06 --end 2025-12-31 --every-days 7
 python -m investment_agent.research.commands.system_ablation --start 2025-01-01 --end 2025-12-31
 ```
+
+과거 재현 백필은 날짜별 manifest(`historical_replay_runs`)와 실제 feature snapshot을 함께 확인한다.
+중단 뒤에는 저장되지 않은 종목만 다시 계산하며, 가격 이력이 없어 영구 불가로 판정된 종목도 manifest에
+남긴다. `--audit-only`는 기대·snapshot·영구 불가·누락 수와 누락 ticker를 JSON으로 출력하고 저장하지 않는다.
+밸류에이션·feature·label 로그의 `detail.timings_sec`로 입력 준비·계산·쓰기 병목을 구분한다.
 
 ## 로컬 실행 스크립트
 

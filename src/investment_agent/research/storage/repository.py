@@ -14,7 +14,7 @@ from collections import defaultdict
 from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 from investment_agent.platform.db import duckdb as duckdb_store
 from investment_agent.platform.storage_paths import (
     RESEARCH_ROOT_ENV,
@@ -33,6 +33,7 @@ T_FEATURE_SETS = "feature_sets"
 T_DATASET_RUNS = "dataset_runs"
 FEATURE_VERSION = "technical_v1"
 _DATASET_NAME = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
+_PAYLOAD_FIELD_NAME = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
 
 
 def default_database_path() -> Path:
@@ -648,6 +649,7 @@ class ResearchStore:
         ticker: str | None = None,
         start_as_of: str | None = None,
         end_as_of: str | None = None,
+        as_of_values: Sequence[str] | None = None,
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
         root = self._dataset_root(dataset)
@@ -665,6 +667,12 @@ class ResearchStore:
         if end_as_of is not None:
             predicates.append("as_of_at <= ?")
             params.append(str(end_as_of))
+        if as_of_values is not None:
+            values = sorted({str(value) for value in as_of_values})
+            if not values:
+                return []
+            predicates.append(f"as_of_at IN ({','.join('?' for _ in values)})")
+            params.extend(values)
         statement = (
             f"SELECT payload FROM read_parquet(?, union_by_name=true) WHERE {' AND '.join(predicates)} "
             "ORDER BY as_of_at, record_key"
@@ -675,6 +683,69 @@ class ResearchStore:
         with self._connect() as connection:
             rows = connection.execute(statement, params).fetchall()
         return [dict(_decode_json(row[0])) for row in rows]
+
+    def records_with_payload_fields(
+        self,
+        dataset: str,
+        payload_fields: Sequence[str],
+        *,
+        ticker: str | None = None,
+        start_as_of: str | None = None,
+        end_as_of: str | None = None,
+        as_of_values: Sequence[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """원장 payload를 전부 JSON으로 풀지 않고 필요한 scalar field만 읽는다."""
+        fields = tuple(str(field) for field in payload_fields)
+        if len(fields) != len(set(fields)) or any(
+            not _PAYLOAD_FIELD_NAME.fullmatch(field) for field in fields
+        ):
+            raise ValueError("invalid or duplicate research payload field")
+        root = self._dataset_root(dataset)
+        self._ensure_bulk_migrated()
+        if not self._dataset_files(dataset):
+            return []
+        predicates = ["true"]
+        params: list[Any] = [self._parquet_pattern(root)]
+        if ticker is not None:
+            predicates.append("ticker = ?")
+            params.append(str(ticker).upper())
+        if start_as_of is not None:
+            predicates.append("as_of_at >= ?")
+            params.append(str(start_as_of))
+        if end_as_of is not None:
+            predicates.append("as_of_at <= ?")
+            params.append(str(end_as_of))
+        if as_of_values is not None:
+            values = sorted({str(value) for value in as_of_values})
+            if not values:
+                return []
+            predicates.append(f"as_of_at IN ({','.join('?' for _ in values)})")
+            params.extend(values)
+        columns = ["record_key", "ticker", "as_of_at", "available_at"]
+        columns.extend(
+            f"json_extract_string(payload, '$.{field}') AS {field}" for field in fields
+        )
+        statement = (
+            f"SELECT {','.join(columns)} FROM read_parquet(?, union_by_name=true) "
+            f"WHERE {' AND '.join(predicates)} ORDER BY as_of_at, record_key"
+        )
+        with self._connect() as connection:
+            rows = connection.execute(statement, params).fetchall()
+        names = ("record_key", "ticker", "as_of_at", "available_at", *fields)
+        return [dict(zip(names, row, strict=True)) for row in rows]
+
+    def record_keys(self, dataset: str) -> set[str]:
+        """이미 보존한 identity만 읽어 대용량 JSON payload 재처리를 피한다."""
+        root = self._dataset_root(dataset)
+        self._ensure_bulk_migrated()
+        if not self._dataset_files(dataset):
+            return set()
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT record_key FROM read_parquet(?, union_by_name=true)",
+                [self._parquet_pattern(root)],
+            ).fetchall()
+        return {str(row[0]) for row in rows}
 
 
 def _feature_row(row: dict[str, Any], ingested_at: str) -> dict[str, Any]:

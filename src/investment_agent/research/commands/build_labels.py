@@ -12,6 +12,7 @@ import argparse
 import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Mapping
+from collections import defaultdict
 
 from investment_agent.trading.decision.constants import SIGNAL_HORIZON_DAYS
 from investment_agent.operations.runtime import run_log_payload
@@ -26,7 +27,6 @@ log = get_logger(__name__)
 
 WORKFLOW = "ai_investor_build_labels"
 DEFAULT_BENCHMARK = "SPY"
-_UPSERT_CHUNK = 100
 # 미국 정규장 마감(16:00 ET)의 보수적 UTC 상한. 이 시각 이전을 label 확정 시점으로
 # 주장하지 않으려고 쓴다. 실제 확정 시각은 적재 시각과 함께 max로 결정한다.
 _SESSION_CLOSE_UTC_HOUR = 21
@@ -84,6 +84,7 @@ def build_labels(
     selected = repository or SupabaseRepository()
     window_start = (as_of_at - timedelta(days=lookback_days)).isoformat()
     window_end = as_of_at.isoformat()
+    phase = time.monotonic()
     symbols = _label_symbols(
         selected,
         start=(as_of_at - timedelta(days=lookback_days)).date(),
@@ -108,16 +109,32 @@ def build_labels(
             label_cutoff_at=window_end,
         )
     }
+    load_sec = time.monotonic() - phase
 
-    # 벤치마크 종가는 종목마다 다시 읽지 않고 창 전체를 한 번만 읽는다.
-    benchmark_rows = _closes_by_date(selected.forward_prices_for_labels(
-        benchmark,
-        after_date=(as_of_at - timedelta(days=lookback_days + 30)).date().isoformat(),
-        # 달력일 수가 거래일 수보다 크므로 창 전체를 덮는다. 고정 상한이면 긴 과거 창에서
-        # 앞부분만 읽혀 뒤쪽 snapshot이 벤치마크 없음으로 조용히 건너뛰어진다.
-        limit=lookback_days + 60,
-    ))
+    phase = time.monotonic()
+    bulk_prices: dict[str, list[dict[str, Any]]] | None = None
+    if hasattr(selected, "label_price_rows"):
+        price_rows = selected.label_price_rows(
+            tuple(sorted({*symbols, benchmark})),
+            start=(as_of_at - timedelta(days=lookback_days + 30)).date(),
+            end=as_of_at.date(),
+        )
+        bulk_prices = defaultdict(list)
+        for row in price_rows:
+            bulk_prices[str(row["ticker"]).upper()].append(dict(row))
+        for ticker in bulk_prices:
+            bulk_prices[ticker].sort(key=lambda row: str(row["trade_date"]))
+        benchmark_rows = _closes_by_date(bulk_prices.get(benchmark, []))
+    else:
+        # 이전 저장소 구현과 테스트 대역을 위한 scalar fallback.
+        benchmark_rows = _closes_by_date(selected.forward_prices_for_labels(
+            benchmark,
+            after_date=(as_of_at - timedelta(days=lookback_days + 30)).date().isoformat(),
+            limit=lookback_days + 60,
+        ))
+    prices_sec = time.monotonic() - phase
 
+    phase = time.monotonic()
     rows: list[dict] = []
     pending = skipped = 0
     failures: list[str] = []
@@ -129,13 +146,16 @@ def build_labels(
         snapshot_as_of = parse_datetime(str(snapshot_row["as_of_at"]))
         as_of_date = snapshot_as_of.date().isoformat()
         try:
-            current = selected.market_prices(ticker, snapshot_as_of, limit=1)
+            ticker_prices = bulk_prices.get(ticker, []) if bulk_prices is not None else None
+            current = ([row for row in ticker_prices if str(row["trade_date"]) <= as_of_date][-1:]
+                       if ticker_prices is not None else selected.market_prices(ticker, snapshot_as_of, limit=1))
             if not current or current[0].get("close") in (None, 0):
                 skipped += 1
                 continue
-            forward = selected.forward_prices_for_labels(
-                ticker, after_date=as_of_date, limit=horizon_days + 10
-            )
+            forward = ([row for row in ticker_prices if str(row["trade_date"]) > as_of_date][:horizon_days + 10]
+                       if ticker_prices is not None else selected.forward_prices_for_labels(
+                           ticker, after_date=as_of_date, limit=horizon_days + 10
+                       ))
             usable = [row for row in forward if row.get("close") not in (None, 0)]
             if len(usable) < horizon_days:
                 # 구간이 아직 안 끝났다. 다음 실행이 다시 집는다.
@@ -144,7 +164,12 @@ def build_labels(
             end_row = usable[horizon_days - 1]
             end_date = str(end_row["trade_date"])
             benchmark_end = benchmark_rows.get(end_date)
-            benchmark_start = _benchmark_close_at(selected, benchmark, snapshot_as_of)
+            if bulk_prices is not None:
+                benchmark_candidates = [row for row in bulk_prices.get(benchmark, [])
+                                        if str(row["trade_date"]) <= as_of_date]
+                benchmark_start = float(benchmark_candidates[-1]["close"]) if benchmark_candidates else None
+            else:
+                benchmark_start = _benchmark_close_at(selected, benchmark, snapshot_as_of)
             if benchmark_end is None or benchmark_start is None:
                 skipped += 1
                 continue
@@ -173,13 +198,14 @@ def build_labels(
             failures.append(f"{ticker}@{as_of_date}")
             continue
         rows.append(label.to_storage_row())
+    compute_sec = time.monotonic() - phase
 
+    phase = time.monotonic()
     saved = 0
-    if not dry_run:
-        for start in range(0, len(rows), _UPSERT_CHUNK):
-            chunk = rows[start:start + _UPSERT_CHUNK]
-            selected.save_rl_training_labels(chunk)
-            saved += len(chunk)
+    if not dry_run and rows:
+        selected.save_rl_training_labels(rows)
+        saved = len(rows)
+    write_sec = time.monotonic() - phase
 
     payload = run_log_payload(
         workflow=WORKFLOW,
@@ -200,6 +226,9 @@ def build_labels(
             "failed": failures[:20],
             "failed_count": len(failures),
             "dry_run": dry_run,
+            "timings_sec": {"load": round(load_sec, 3), "prices": round(prices_sec, 3),
+                            "compute": round(compute_sec, 3),
+                            "write": round(write_sec, 3)},
         },
     )
     log.info("forward labels %s", payload)

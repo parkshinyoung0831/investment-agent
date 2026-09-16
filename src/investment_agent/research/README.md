@@ -58,12 +58,26 @@ python -m investment_agent.research.commands.build_training_samples
 python -m investment_agent.research.commands.train_baseline
 python -m investment_agent.research.commands.evaluate
 python -m investment_agent.research.commands.export_dataset
+python -m investment_agent.research.commands.backfill_research_history --start 2023-01-06 --end 2025-12-31 --every-days 7 --audit-only
+python -m investment_agent.research.commands.backfill_research_history --start 2023-01-06 --end 2025-12-31 --every-days 7
 python -m investment_agent.research.commands.system_ablation --start 2025-01-01 --end 2025-12-31
 python -m investment_agent.research.strategies.etl            # 월간 전략 배분
 ```
 
 RL 후보 재학습은 하네스 `continuous_learning`이 7일마다 점검한다. 새 성숙 비중첩
 구간이 2개 미만이면 학습하지 않고, 후보의 System 채택은 사람이 별도로 결정한다.
+
+과거 재현 백필은 원격 재무·컨센서스·주식수·세그먼트를 날짜마다 일괄 조회하고, 종목별 계산은 그
+결과를 재사용한다. 날짜 결과는 Parquet에 한 번만 원자 저장한다. 날짜별 manifest가 실제 snapshot과
+영구 불가 ticker를 기록하므로 중단 후에는 누락 ticker만 재개한다. 먼저 `--audit-only`로 완결성을
+확인할 수 있으며, 이 모드는 어떤 연구 데이터도 쓰지 않는다.
+
+`build_training_samples`는 `training_sample_runs` 로컬 매니페스트에 기준일별 feature 입력 해시,
+확정 label ID, 비용 모델의 결합 서명을 기록한다. 같은 서명은 표본 재계산과 Parquet 쓰기를 모두
+건너뛴다. feature 입력·label·비용 모델이 바뀌면 영향을 받은 기준일만 다시 만든다. 매니페스트는
+ResearchStore의 로컬 데이터셋이므로 Supabase 스키마를 바꾸지 않는다. 반복 확인은 feature·label
+payload 전체를 복원하지 않고 서명에 필요한 scalar만 DuckDB에서 읽으며, 표본 본문은 변경된 기준일에만
+다시 읽는다.
 
 무거운 의존성(`lightgbm`, `stable-baselines3`, `pyqlib`)은 **호출 시점에 지연 import**한다.
 `research`를 import하는 것만으로 그것들이 설치돼 있어야 하면 안 된다.

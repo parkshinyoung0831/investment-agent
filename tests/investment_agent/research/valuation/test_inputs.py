@@ -185,6 +185,7 @@ class _Repository:
              "share_class_key": "common", "filed_at": "2026-07-25",
              "accepted_at": "2026-07-25T18:03:00+00:00"}]
         self.saved: list[dict] = []
+        self.save_calls = 0
 
     def current_tracked_tickers(self):
         return ["AAA"]
@@ -199,10 +200,20 @@ class _Repository:
         return list(self.share_rows)
 
     def save_valuation_observations(self, rows):
+        self.save_calls += 1
         self.saved.extend(rows)
 
 
 class BuildValuationsEntryTest(unittest.TestCase):
+    def test_historical_replay_prepares_the_whole_date_once(self):
+        repository = _Repository()
+        prepared = []
+        repository.prepare_historical_replay = lambda tickers, as_of_at: prepared.append((tuple(tickers), as_of_at))
+        build_valuations(
+            as_of_at=_AS_OF, tickers=["AAA"], source_kind="historical_replay", repository=repository,
+        )
+        self.assertEqual(prepared, [(('AAA',), _AS_OF)])
+
     def test_observation_is_stored_with_evidence_and_hash(self):
         repository = _Repository()
         payload = build_valuations(as_of_at=_AS_OF, tickers=["AAA"], repository=repository)
@@ -213,6 +224,7 @@ class BuildValuationsEntryTest(unittest.TestCase):
         self.assertEqual(row["market_cap"], 50000.0)
         self.assertTrue(row["input_evidence_ids"])
         self.assertEqual(len(row["input_hash"]), 64)
+        self.assertEqual(set(payload["detail"]["timings_sec"]), {"prepare", "compute", "write"})
 
     def test_incomplete_source_is_still_stored_with_reasons(self):
         """근거가 모자란 날도 기록한다 — 왜 못 만들었는지가 나중에 필요하다."""
@@ -240,6 +252,11 @@ class BuildValuationsEntryTest(unittest.TestCase):
         )
         self.assertEqual(repository.saved, [])
         self.assertEqual(payload["rows_upserted"], 0)
+
+    def test_one_date_is_written_once(self):
+        repository = _Repository()
+        build_valuations(as_of_at=_AS_OF, tickers=["AAA"] * 230, repository=repository)
+        self.assertEqual(repository.save_calls, 1)
 
 
 if __name__ == "__main__":

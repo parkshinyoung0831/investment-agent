@@ -358,6 +358,39 @@ def securities_fundamentals_as_of(
     return result
 
 
+def securities_fundamentals_filed_before(
+    tickers: Sequence[str], as_of_at: datetime, *, limit: int = 12
+) -> list[dict]:
+    """여러 종목의 canonical 재무를 SEC 제출일 공개 규칙으로 한 번에 읽는다."""
+    symbols = sorted({str(value).upper() for value in tickers})
+    if not symbols:
+        return []
+    securities = select_paged_in_chunks(
+        lambda chunk: sb.schema(SCHEMA_UNIVERSE).table(T_SECURITIES)
+        .select("ticker,cik").in_("ticker", chunk).eq("is_active_listing", True),
+        symbols, order_by="ticker", paged_reader=select_all_paged,
+    )
+    tickers_by_cik: dict[str, list[str]] = defaultdict(list)
+    for row in securities:
+        if row.get("cik"):
+            tickers_by_cik[str(row["cik"]).zfill(10)].append(str(row["ticker"]).upper())
+    if not tickers_by_cik:
+        return []
+    versions = _version_rows(list(tickers_by_cik))
+    provenance = _filings_for(versions)
+    by_ticker: dict[str, list[dict]] = defaultdict(list)
+    for row in versions:
+        for ticker in tickers_by_cik[str(row["cik"]).zfill(10)]:
+            by_ticker[ticker].append(row)
+    return [
+        projected
+        for ticker, rows in by_ticker.items()
+        for projected in _project_fundamental_rows(
+            ticker, rows, provenance, as_of_at, include_available_at=False, limit=limit,
+        )
+    ]
+
+
 def security_fundamentals_as_of(ticker: str, as_of_at: datetime, *, limit: int = 12) -> list[dict]:
     """공시일 cutoff까지의 canonical 재무 행."""
     return _fundamental_rows(
@@ -395,3 +428,34 @@ def observed_consensus_as_of(ticker: str, as_of_at: datetime, *, limit: int = 12
         result.append({**row, "ticker": str(ticker).upper()})
     result.sort(key=lambda row: str(row.get("snapshot_date") or ""), reverse=True)
     return result[:limit]
+
+
+def observed_consensus_for_tickers_as_of(
+    tickers: Sequence[str], as_of_at: datetime, *, limit: int = 12
+) -> dict[str, list[dict]]:
+    """여러 종목의 실제 관측 컨센서스를 한 번에 읽고 ticker별 최신 행으로 자른다."""
+    symbols = sorted({str(value).upper() for value in tickers})
+    by_ticker = _security_ids(symbols)
+    output: dict[str, list[dict]] = {ticker: [] for ticker in symbols}
+    if not by_ticker:
+        return output
+    tickers_by_id: dict[int, list[str]] = defaultdict(list)
+    for ticker, security_id in by_ticker.items():
+        tickers_by_id[int(security_id)].append(ticker)
+    rows = select_paged_in_chunks(
+        lambda chunk: sb.schema(SCHEMA_FUNDAMENTALS).table(T_EARNINGS_ESTIMATES)
+        .select("*").in_("security_id", chunk)
+        .eq("snapshot_kind", "captured_live")
+        .lte("snapshot_date", as_of_at.date().isoformat()),
+        sorted(tickers_by_id), order_by="snapshot_date,security_id", paged_reader=select_all_paged,
+    )
+    for row in rows:
+        collected_at = row.get("collected_at")
+        if collected_at and parse_datetime(str(collected_at)) > as_of_at:
+            continue
+        for ticker in tickers_by_id.get(int(row["security_id"]), []):
+            output[ticker].append({**row, "ticker": ticker})
+    for ticker in output:
+        output[ticker].sort(key=lambda row: str(row.get("snapshot_date") or ""), reverse=True)
+        output[ticker] = output[ticker][:limit]
+    return output
