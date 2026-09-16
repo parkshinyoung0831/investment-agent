@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import ast
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -42,15 +43,60 @@ def _modules(package: Path) -> list[Path]:
     return sorted(p for p in package.rglob("*.py") if "__pycache__" not in p.parts)
 
 
-def _imported_names(path: Path) -> set[str]:
+def _imported_names(path: Path, *, package: Path = PACKAGE) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"))
     names: set[str] = set()
+    relative = path.relative_to(package).with_suffix("")
+    module_parts = [package.name, *relative.parts]
+    current_package = module_parts[:-1]
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             names.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-            names.add(node.module)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level == 0 and node.module:
+                names.add(node.module)
+            elif node.level:
+                parent_parts = current_package[:len(current_package) - node.level + 1]
+                if node.module:
+                    parent_parts.extend(node.module.split("."))
+                    names.add(".".join(parent_parts))
+                else:
+                    names.update(".".join([*parent_parts, alias.name]) for alias in node.names)
     return names
+
+
+class ImportCollectionTest(unittest.TestCase):
+    def test_package_initializer_relative_imports_resolve_to_internal_modules(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            package = Path(temporary_directory) / "investment_agent"
+            source = package / "trading" / "__init__.py"
+            source.parent.mkdir(parents=True)
+            source.write_text(
+                "from .. import execution\n"
+                "from ..execution.contracts import AccountSnapshot\n",
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                {"investment_agent.execution", "investment_agent.execution.contracts"},
+                _imported_names(source, package=package),
+            )
+
+    def test_relative_imports_resolve_to_internal_module_names(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            package = Path(temporary_directory) / "investment_agent"
+            source = package / "trading" / "my_portfolio.py"
+            source.parent.mkdir(parents=True)
+            source.write_text(
+                "from ..execution import contracts\n"
+                "from ..execution.contracts import AccountSnapshot\n",
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                {"investment_agent.execution", "investment_agent.execution.contracts"},
+                _imported_names(source, package=package),
+            )
 
 
 class PlatformBoundaryTest(unittest.TestCase):
@@ -244,7 +290,7 @@ class LayerDirectionTest(unittest.TestCase):
         "execution": ("trading", "research", "data", "notifications", "dashboard", "operations"),
         # review §32의 dependency map에 따라 trading은 stable execution contract를 소비한다.
         # 주문 mutation은 여전히 execution 내부에서만 일어난다.
-        "trading": ("notifications", "dashboard"),
+        "trading": ("notifications", "dashboard", "execution"),
     }
 
     # operations monitoring은 pipeline 실패를 Discord ops에 알리는 운영 경계다.
@@ -261,6 +307,9 @@ class LayerDirectionTest(unittest.TestCase):
     PENDING_DEPENDENCIES = frozenset(
         {
             ("src/investment_agent/execution/safety/control.py", "investment_agent.operations.harness.emergency"),
+            ("src/investment_agent/trading/risk/gate.py", "investment_agent.execution.orders.intents"),
+            ("src/investment_agent/trading/supabase_repository.py", "investment_agent.execution.db"),
+            ("src/investment_agent/trading/supabase_repository.py", "investment_agent.execution.orders.snapshots"),
             ("src/investment_agent/research/ablation.py", "investment_agent.trading.decision.alpha"),
             ("src/investment_agent/research/ablation.py", "investment_agent.trading.portfolio.contracts"),
             ("src/investment_agent/research/ablation.py", "investment_agent.trading.risk.budget"),
@@ -334,7 +383,14 @@ class LayerDirectionTest(unittest.TestCase):
     def _is_allowed(cls, path: Path, name: str) -> bool:
         if path.is_relative_to(PACKAGE / "research" / "system_validation") and name.startswith("investment_agent.trading."):
             return True
+        if name == "investment_agent.execution.contracts":
+            return True
         return any(name == allowed or name.startswith(allowed + ".") for allowed in cls.ALLOWED_DEPENDENCIES)
+
+    def test_execution_contract_allowance_is_an_exact_module_match(self) -> None:
+        path = PACKAGE / "trading" / "my_portfolio.py"
+        self.assertTrue(self._is_allowed(path, "investment_agent.execution.contracts"))
+        self.assertFalse(self._is_allowed(path, "investment_agent.execution.contracts.private"))
 
     def test_layers_do_not_import_downstream(self) -> None:
         offenders: list[str] = []

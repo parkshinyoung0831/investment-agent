@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 import unittest
 from dataclasses import FrozenInstanceError
 
@@ -17,6 +19,33 @@ def position(ticker: str, value: float) -> PositionSnapshot:
 
 
 class AccountSnapshotTest(unittest.TestCase):
+    def test_safety_import_keeps_public_contracts_available(self):
+        """안전 게이트 초기화가 계약의 주문 타입 재노출을 순환시키지 않는다."""
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "from investment_agent.execution.safety.control import ExecutionSafetyError; "
+                    "from investment_agent.execution.contracts import AccountSnapshot, ExecutionLimits"
+                ),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_public_contract_re_exports_trading_inputs(self):
+        """Trading은 orders 내부가 아니라 고정된 execution 계약만 본다."""
+        from investment_agent.execution.contracts import AccountSnapshot as PublicAccountSnapshot
+        from investment_agent.execution.contracts import ExecutionLimits
+        from investment_agent.execution.orders.planning import ExecutionLimits as PlannerExecutionLimits
+
+        self.assertIs(PublicAccountSnapshot, AccountSnapshot)
+        self.assertIs(ExecutionLimits, PlannerExecutionLimits)
+
     def test_snapshot_is_immutable_and_content_addressed(self):
         first = AccountSnapshot(
             broker="TOSS",

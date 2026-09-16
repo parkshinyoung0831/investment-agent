@@ -16,8 +16,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from typing import Any, Mapping
 
-from investment_agent.execution.orders.planning import ExecutionLimits
-from investment_agent.execution.orders.snapshots import AccountSnapshot
+from investment_agent.execution.contracts import AccountSnapshot, ExecutionLimits
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.serialization import canonical_json, parse_datetime, stable_id
 from investment_agent.trading.contracts import ContractError
