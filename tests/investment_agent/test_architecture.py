@@ -233,12 +233,141 @@ class LayerDirectionTest(unittest.TestCase):
     """
 
     FORBIDDEN = {
+        # 수집·연구 코드는 실행 하네스의 기술 helper를 직접 알지 않는다. monitoring은
+        # 파이프라인 실패를 Discord ops에 알리는 정당한 운영 행위라 예외로 남긴다.
+        "data": ("operations",),
+        "research": ("operations", "trading"),
         # execution은 판단이 어떻게 만들어졌는지 알 필요가 없다. 승인된 계획만 받는다.
-        "execution": ("trading", "research", "data", "notifications", "dashboard"),
+        "execution": ("trading", "research", "data", "notifications", "dashboard", "operations"),
         # review §32의 dependency map에 따라 trading은 stable execution contract를 소비한다.
         # 주문 mutation은 여전히 execution 내부에서만 일어난다.
         "trading": ("notifications", "dashboard"),
     }
+
+    # operations monitoring은 pipeline 실패를 Discord ops에 알리는 운영 경계다.
+    # runtime/backfill처럼 호출자의 실행 흐름을 돕는 helper와 같은 취급을 하면 안 된다.
+    ALLOWED_DEPENDENCIES = frozenset(
+        {
+            "investment_agent.operations.monitoring.incidents",
+            "investment_agent.operations.monitoring.github",
+        }
+    )
+
+    # 허용 목록이 아니라 현재 의존성 부채의 기준선이다. 새 항목도, 해소된 항목의
+    # 잔류도 실패시켜 이후 phase에서 이 집합이 줄어들기만 하게 한다.
+    PENDING_DEPENDENCIES = frozenset(
+        {
+            ("src/investment_agent/data/fundamentals/application/backfill_history.py", "investment_agent.operations.backfill"),
+            ("src/investment_agent/data/fundamentals/application/sync_recent_filings.py", "investment_agent.operations.backfill"),
+            ("src/investment_agent/data/fundamentals/commands/backfill_history.py", "investment_agent.operations.backfill"),
+            ("src/investment_agent/data/fundamentals/commands/common_shares.py", "investment_agent.operations.backfill"),
+            ("src/investment_agent/data/fundamentals/commands/common_shares.py", "investment_agent.operations.runtime"),
+            ("src/investment_agent/data/fundamentals/commands/refresh_expectations.py", "investment_agent.operations.runtime"),
+            ("src/investment_agent/data/fundamentals/commands/verify_integrity.py", "investment_agent.operations.runtime"),
+            ("src/investment_agent/data/fundamentals/infrastructure/supabase/segment_metrics.py", "investment_agent.operations.runtime"),
+            ("src/investment_agent/data/fundamentals/infrastructure/supabase/share_class_snapshots.py", "investment_agent.operations.runtime"),
+            ("src/investment_agent/data/institutional/application/etl.py", "investment_agent.operations.backfill"),
+            ("src/investment_agent/data/institutional/application/etl.py", "investment_agent.operations.runtime"),
+            ("src/investment_agent/data/institutional/commands/institutional_backfill.py", "investment_agent.operations.backfill"),
+            ("src/investment_agent/data/macro/application/release_calendar.py", "investment_agent.operations.runtime"),
+            ("src/investment_agent/data/macro/commands/econ_calendar_backfill.py", "investment_agent.operations.backfill"),
+            ("src/investment_agent/data/macro/commands/econ_calendar_daily.py", "investment_agent.operations.runtime"),
+            ("src/investment_agent/data/macro/commands/econ_calendar_publish_ics.py", "investment_agent.operations.runtime"),
+            ("src/investment_agent/data/macro/commands/macro_refresh.py", "investment_agent.operations.backfill"),
+            ("src/investment_agent/data/macro/commands/macro_refresh.py", "investment_agent.operations.runtime"),
+            ("src/investment_agent/data/market/commands/market_backfill.py", "investment_agent.operations.backfill"),
+            ("src/investment_agent/data/market/commands/market_daily.py", "investment_agent.operations.runtime"),
+            ("src/investment_agent/data/market/commands/sync_local_mirror.py", "investment_agent.operations.runtime"),
+            ("src/investment_agent/data/universe/commands/universe_membership.py", "investment_agent.operations.runtime"),
+            ("src/investment_agent/data/universe/commands/universe_monthly.py", "investment_agent.operations.runtime"),
+            ("src/investment_agent/data/universe/commands/universe_names.py", "investment_agent.operations.runtime"),
+            ("src/investment_agent/data/universe/watchlists/toss_holdings.py", "investment_agent.operations.runtime"),
+            ("src/investment_agent/execution/safety/control.py", "investment_agent.operations.harness.emergency"),
+            ("src/investment_agent/research/ablation.py", "investment_agent.trading.decision.alpha"),
+            ("src/investment_agent/research/ablation.py", "investment_agent.trading.portfolio.contracts"),
+            ("src/investment_agent/research/ablation.py", "investment_agent.trading.risk.budget"),
+            ("src/investment_agent/research/ablation.py", "investment_agent.trading.system.accounting"),
+            ("src/investment_agent/research/ablation.py", "investment_agent.trading.system.engine"),
+            ("src/investment_agent/research/ablation.py", "investment_agent.trading.system.store"),
+            ("src/investment_agent/research/ablation.py", "investment_agent.trading.system.target"),
+            ("src/investment_agent/research/backtest/contracts.py", "investment_agent.trading.contracts"),
+            ("src/investment_agent/research/backtest/contracts.py", "investment_agent.trading.portfolio.contracts"),
+            ("src/investment_agent/research/backtest/engine.py", "investment_agent.trading.contracts"),
+            ("src/investment_agent/research/backtest/simulator.py", "investment_agent.trading.portfolio.contracts"),
+            ("src/investment_agent/research/commands/adopt_ml_model.py", "investment_agent.trading.contracts"),
+            ("src/investment_agent/research/commands/adopt_ml_model.py", "investment_agent.trading.decision.constants"),
+            ("src/investment_agent/research/commands/backfill_research_history.py", "investment_agent.trading.decision.constants"),
+            ("src/investment_agent/research/commands/backfill_research_history.py", "investment_agent.trading.supabase_repository"),
+            ("src/investment_agent/research/commands/build_decision_experiences.py", "investment_agent.trading.decision.constants"),
+            ("src/investment_agent/research/commands/build_decision_experiences.py", "investment_agent.trading.evidence.tools"),
+            ("src/investment_agent/research/commands/build_decision_experiences.py", "investment_agent.trading.supabase_repository"),
+            ("src/investment_agent/research/commands/build_events.py", "investment_agent.operations.runtime"),
+            ("src/investment_agent/research/commands/build_events.py", "investment_agent.trading.contracts"),
+            ("src/investment_agent/research/commands/build_events.py", "investment_agent.trading.decision.contracts"),
+            ("src/investment_agent/research/commands/build_events.py", "investment_agent.trading.evidence.cache"),
+            ("src/investment_agent/research/commands/build_events.py", "investment_agent.trading.supabase_repository"),
+            ("src/investment_agent/research/commands/build_features.py", "investment_agent.operations.runtime"),
+            ("src/investment_agent/research/commands/build_features.py", "investment_agent.trading.contracts"),
+            ("src/investment_agent/research/commands/build_features.py", "investment_agent.trading.evidence.context"),
+            ("src/investment_agent/research/commands/build_features.py", "investment_agent.trading.supabase_repository"),
+            ("src/investment_agent/research/commands/build_labels.py", "investment_agent.operations.runtime"),
+            ("src/investment_agent/research/commands/build_labels.py", "investment_agent.trading.contracts"),
+            ("src/investment_agent/research/commands/build_labels.py", "investment_agent.trading.decision.constants"),
+            ("src/investment_agent/research/commands/build_labels.py", "investment_agent.trading.supabase_repository"),
+            ("src/investment_agent/research/commands/build_training_samples.py", "investment_agent.operations.runtime"),
+            ("src/investment_agent/research/commands/build_training_samples.py", "investment_agent.trading.contracts"),
+            ("src/investment_agent/research/commands/build_training_samples.py", "investment_agent.trading.supabase_repository"),
+            ("src/investment_agent/research/commands/build_valuations.py", "investment_agent.operations.runtime"),
+            ("src/investment_agent/research/commands/build_valuations.py", "investment_agent.trading.contracts"),
+            ("src/investment_agent/research/commands/build_valuations.py", "investment_agent.trading.supabase_repository"),
+            ("src/investment_agent/research/commands/continuous_retrain.py", "investment_agent.trading.supabase_repository"),
+            ("src/investment_agent/research/commands/evaluate.py", "investment_agent.trading.supabase_repository"),
+            ("src/investment_agent/research/commands/export_dataset.py", "investment_agent.operations.runtime"),
+            ("src/investment_agent/research/commands/export_dataset.py", "investment_agent.trading.contracts"),
+            ("src/investment_agent/research/commands/export_dataset.py", "investment_agent.trading.decision.constants"),
+            ("src/investment_agent/research/commands/export_dataset.py", "investment_agent.trading.supabase_repository"),
+            ("src/investment_agent/research/commands/factor_research.py", "investment_agent.trading.supabase_repository"),
+            ("src/investment_agent/research/commands/ml_challengers.py", "investment_agent.trading.contracts"),
+            ("src/investment_agent/research/commands/system_ablation.py", "investment_agent.trading.supabase_repository"),
+            ("src/investment_agent/research/contracts.py", "investment_agent.trading.contracts"),
+            ("src/investment_agent/research/datasets/contracts.py", "investment_agent.trading.contracts"),
+            ("src/investment_agent/research/datasets/core.py", "investment_agent.trading.contracts"),
+            ("src/investment_agent/research/datasets/training.py", "investment_agent.trading.contracts"),
+            ("src/investment_agent/research/evaluation/evaluator.py", "investment_agent.trading.contracts"),
+            ("src/investment_agent/research/evaluation/evaluator.py", "investment_agent.trading.evidence.tools"),
+            ("src/investment_agent/research/evaluation/shadow_fill.py", "investment_agent.trading.performance.pnl"),
+            ("src/investment_agent/research/features/backfill.py", "investment_agent.operations.backfill"),
+            ("src/investment_agent/research/features/db.py", "investment_agent.operations.runtime"),
+            ("src/investment_agent/research/features/etl.py", "investment_agent.operations.runtime"),
+            ("src/investment_agent/research/features/event_intelligence.py", "investment_agent.trading.decision.contracts"),
+            ("src/investment_agent/research/features/event_intelligence.py", "investment_agent.trading.decision.event_impact"),
+            ("src/investment_agent/research/features/layer.py", "investment_agent.trading.contracts"),
+            ("src/investment_agent/research/ml_inference.py", "investment_agent.trading.contracts"),
+            ("src/investment_agent/research/ml_serving.py", "investment_agent.trading.contracts"),
+            ("src/investment_agent/research/ml_serving.py", "investment_agent.trading.decision.constants"),
+            ("src/investment_agent/research/models/baselines.py", "investment_agent.trading.contracts"),
+            ("src/investment_agent/research/promotion/cli.py", "investment_agent.trading.supabase_repository"),
+            ("src/investment_agent/research/rl/baseline.py", "investment_agent.trading.contracts"),
+            ("src/investment_agent/research/rl/baseline.py", "investment_agent.trading.portfolio.contracts"),
+            ("src/investment_agent/research/rl/contracts.py", "investment_agent.trading.contracts"),
+            ("src/investment_agent/research/rl/environment.py", "investment_agent.trading.portfolio.contracts"),
+            ("src/investment_agent/research/rl/environment.py", "investment_agent.trading.portfolio.optimizer"),
+            ("src/investment_agent/research/rl/environment.py", "investment_agent.trading.risk.gate"),
+            ("src/investment_agent/research/rl/features.py", "investment_agent.trading.contracts"),
+            ("src/investment_agent/research/rl/leakage.py", "investment_agent.trading.contracts"),
+            ("src/investment_agent/research/strategies/etl.py", "investment_agent.operations.runtime"),
+            ("src/investment_agent/research/training/baseline.py", "investment_agent.trading.contracts"),
+            ("src/investment_agent/research/training/walk_forward.py", "investment_agent.trading.contracts"),
+            ("src/investment_agent/research/valuation/engine.py", "investment_agent.trading.contracts"),
+            ("src/investment_agent/research/valuation/inputs.py", "investment_agent.trading.contracts"),
+        }
+    )
+
+    @classmethod
+    def _is_allowed(cls, path: Path, name: str) -> bool:
+        if path.is_relative_to(PACKAGE / "research" / "system_validation") and name.startswith("investment_agent.trading."):
+            return True
+        return any(name == allowed or name.startswith(allowed + ".") for allowed in cls.ALLOWED_DEPENDENCIES)
 
     def test_layers_do_not_import_downstream(self) -> None:
         offenders: list[str] = []
@@ -249,9 +378,23 @@ class LayerDirectionTest(unittest.TestCase):
             for path in _modules(root):
                 for name in _imported_names(path):
                     for other in forbidden:
-                        if name.startswith(f"investment_agent.{other}"):
-                            offenders.append(f"{path.relative_to(ROOT)} -> {name}")
-        self.assertEqual([], sorted(offenders))
+                        if name.startswith(f"investment_agent.{other}") and not self._is_allowed(path, name):
+                            offenders.append((path.relative_to(ROOT).as_posix(), name))
+
+        def fmt(pairs: set[tuple[str, str]] | list[tuple[str, str]]) -> list[str]:
+            return sorted(f"{path} -> {name}" for path, name in pairs)
+
+        found = set(offenders)
+        self.assertEqual(
+            [],
+            fmt(found - self.PENDING_DEPENDENCIES),
+            "새 계층 방향 위반. 다른 계층 구현을 직접 import하지 마세요",
+        )
+        self.assertEqual(
+            [],
+            fmt(self.PENDING_DEPENDENCIES - found),
+            "해소된 계층 의존성 부채를 PENDING_DEPENDENCIES에서 지우세요",
+        )
 
     def test_the_rule_covers_layers_that_exist(self) -> None:
         """검사 대상이 하나도 없으면 위 검사는 아무것도 지키지 않는다."""
