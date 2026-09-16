@@ -34,20 +34,16 @@ uv sync --group rl
 uv sync --group research
 ```
 
-### TradingAgents는 lock 밖에 있다
+### TradingAgents 판단 엔진은 로컬 구현이다
 
-판단 엔진 TradingAgents는 git 의존이라 `uv.lock`에 넣지 않는다(CI가 그 저장소 가용성에 묶이지
-않게). 그래서 **`uv sync`는 설치된 TradingAgents를 지운다.** 동기화 뒤 다시 설치하고, `openai`는
-2.x로 고정한다. `openai` 3.x의 새 전송 계층은 Windows에서 `pip-system-certs`가 바꿔 끼운 SSL
-클래스와 무한 재귀해 모든 LLM 호출이 `APIConnectionError`로 끝난다.
+판단 엔진(분석가 5명·Bull/Bear·Trader·Risk 3자·Portfolio Manager)은
+`investment_agent.trading.decision.llm.agents.orchestrator`가 로컬로 실행한다. 외부
+git 의존이나 별도 설치 단계가 없다 — `uv sync --group dev`만으로 끝난다. LLM 호출은
+전부 자체 httpx 클라이언트(`llm/client.py`) 하나를 거친다.
 
-```powershell
-uv sync --group dev --inexact
-uv pip install "tradingagents @ git+https://github.com/TauricResearch/TradingAgents.git@a33fd4c0f134485a43553a2c23a63cb14adbd88f" "openai>=2.45,<3"
-```
-
-`trading.decision.analysis`는 첫 종목 전에 요금 없는 모델 목록 조회로 이 경로를 확인하고, 실패하면 종목
-실패를 원장에 쌓지 않고 회차를 시작하지 않는다.
+`trading.decision.analysis`는 첫 종목 전에 요금 없는 `GET /models` 호출로 base_url·api_key
+경로를 확인하고, 실패하면 종목 실패를 원장에 쌓지 않고 회차를 시작하지 않는다
+(`verify_tradingagents_runtime`).
 
 한 회차가 고르는 종목 수는 `AI_INVESTOR_DAILY_LIMIT`와 **오늘 남은 모델 예산**(하루 요청 한도 ÷ 종목당
 추정 호출) 중 작은 쪽이다. 하네스는 분석 timeout의 85%를 `--max-runtime-seconds`로 넘기고, 가장 오래
@@ -56,8 +52,7 @@ uv pip install "tradingagents @ git+https://github.com/TauricResearch/TradingAge
 생기지 않는다. 예산이 없어 배치 없이 끝난 회차는 하네스가 `skipped`로 적는다.
 
 마지막 구조화 호출이 계약(없는 근거 ID 인용 등)을 어기면 역할 토론을 버리지 않고 구조화만 한 번 다시
-요청한다. 두 번째도 어기면 그 종목은 실패다. 실측으로 LLM이 근거 ID 마지막 글자를 틀리게 옮긴 사례가 있었다. Git Bash의 `uv`는 `.venv` 디렉터리 삭제가 막히는
-경우가 있어 설치는 PowerShell에서 한다.
+요청한다. 두 번째도 어기면 그 종목은 실패다. 실측으로 LLM이 근거 ID 마지막 글자를 틀리게 옮긴 사례가 있었다.
 
 처음부터 모든 연구 library와 broker key를 넣지 않는다.
 

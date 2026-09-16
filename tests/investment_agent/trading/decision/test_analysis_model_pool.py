@@ -145,13 +145,10 @@ class RuntimePreflightTest(unittest.TestCase):
         import os
         from unittest import mock
         import httpx
-        import openai
         from investment_agent.trading.decision.llm.agents import tradingagents_adapter as adapter
 
-        request = httpx.Request("GET", "https://example.invalid/models")
-        failure = openai.APIConnectionError(request=request)
         with mock.patch.dict(os.environ, {"AI_INVESTOR_BASE_URL": "https://example.invalid", "AI_INVESTOR_API_KEY": "k"}), \
-                mock.patch("openai.resources.models.Models.list", side_effect=failure):
+                mock.patch.object(httpx.Client, "get", side_effect=httpx.ConnectError("boom")):
             with self.assertRaises(adapter.TradingAgentsRuntimeError):
                 adapter.verify_tradingagents_runtime()
 
@@ -159,13 +156,11 @@ class RuntimePreflightTest(unittest.TestCase):
         import os
         from unittest import mock
         import httpx
-        import openai
         from investment_agent.trading.decision.llm.agents import tradingagents_adapter as adapter
 
         response = httpx.Response(401, request=httpx.Request("GET", "https://example.invalid/models"))
         with mock.patch.dict(os.environ, {"AI_INVESTOR_BASE_URL": "https://example.invalid", "AI_INVESTOR_API_KEY": "k"}), \
-                mock.patch("openai.resources.models.Models.list",
-                           side_effect=openai.AuthenticationError("bad", response=response, body=None)):
+                mock.patch.object(httpx.Client, "get", return_value=response):
             with self.assertRaisesRegex(adapter.TradingAgentsRuntimeError, "401"):
                 adapter.verify_tradingagents_runtime()
 

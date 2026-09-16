@@ -79,16 +79,6 @@ class DependencyDeclarationTest(unittest.TestCase):
             with self.subTest(group=group, package=package):
                 self.assertIn(package, flatten(group))
 
-    def test_the_unpackaged_dependency_keeps_its_pin_in_code(self) -> None:
-        """TradingAgents는 git 의존이라 lock에 넣지 않는다 — 그러면 모든 CI가 그
-        저장소의 가용성에 묶인다. 대신 검증된 commit을 코드가 들고 있어야 한다."""
-        from investment_agent.trading.decision.llm.agents.tradingagents_adapter import (
-            TRADINGAGENTS_PIN,
-        )
-
-        self.assertIn("git+https://github.com/TauricResearch/TradingAgents.git@", TRADINGAGENTS_PIN)
-        self.assertRegex(TRADINGAGENTS_PIN, r"@[0-9a-f]{40}$")
-
 
 if __name__ == "__main__":
     unittest.main()
