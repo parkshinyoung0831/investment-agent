@@ -85,17 +85,21 @@ class EmptyLedgerRaisesNotReadyTest(unittest.TestCase):
     """원장 세 갈래가 비었을 때만 '아직'이라고 부른다."""
 
     def _repository(self, *, features, labels, membership):
-        return mock.Mock(
-            rl_feature_snapshot_rows=mock.Mock(return_value=features),
-            rl_training_label_rows=mock.Mock(return_value=labels),
+        repository = mock.Mock(
             rl_historical_membership_rows=mock.Mock(return_value=membership),
         )
+        repository.store = mock.Mock(
+            rl_feature_snapshot_rows=mock.Mock(return_value=features),
+            rl_training_label_rows=mock.Mock(return_value=labels),
+        )
+        return repository
 
     def _load(self, repository):
         from investment_agent.research.rl.features import load_training_set
 
         return load_training_set(
             repository,
+            store=repository.store,
             symbols=("AAPL",),
             start_as_of="2026-01-01T00:00:00+00:00",
             end_as_of="2026-08-01T00:00:00+00:00",

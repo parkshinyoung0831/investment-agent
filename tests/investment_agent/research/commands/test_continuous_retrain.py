@@ -21,15 +21,30 @@ class _Repository:
     """원장 세 갈래를 그대로 흉내내는 fake. 네트워크를 쓰지 않는다."""
 
     def __init__(self, *, features=None, labels=None):
-        self._features = features
-        self._labels = labels
+        self.store = _Store(self, features=features, labels=labels)
         self.seen_windows: list[tuple[str, str]] = []
 
     def current_tracked_tickers(self):
         return list(SYMBOLS)
 
+
+    def rl_historical_membership_rows(self, *, start_as_of, end_as_of):
+        return [{
+            "effective_at": "2026-01-01T00:00:00+00:00",
+            "symbols": list(SYMBOLS),
+            "source_id": "c" * 64,
+            "source_kind": "historical_point_in_time",
+        }]
+
+
+class _Store:
+    def __init__(self, owner, *, features=None, labels=None):
+        self.owner = owner
+        self._features = features
+        self._labels = labels
+
     def rl_feature_snapshot_rows(self, symbols, *, start_as_of, end_as_of, feature_version):
-        self.seen_windows.append((start_as_of, end_as_of))
+        self.owner.seen_windows.append((start_as_of, end_as_of))
         if self._features is not None:
             return list(self._features)
         return [
@@ -64,15 +79,6 @@ class _Repository:
             for ticker in symbols
         ]
 
-    def rl_historical_membership_rows(self, *, start_as_of, end_as_of):
-        return [{
-            "effective_at": "2026-01-01T00:00:00+00:00",
-            "symbols": list(SYMBOLS),
-            "source_id": "c" * 64,
-            "source_kind": "historical_point_in_time",
-        }]
-
-
 class _StubModel:
     def __init__(self, n_assets: int):
         self.n_assets = n_assets
@@ -99,6 +105,7 @@ class ContinuousRetrainTest(unittest.TestCase):
         return run_continuous_retrain(
             as_of_at="2026-07-15T00:00:00+00:00",
             repository=repository,
+            store=repository.store,
             spec=SPEC,
             train_policy=train_policy,
             policy_dir=Path(temp),

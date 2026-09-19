@@ -261,6 +261,7 @@ def assemble_historical_training_set(
 def load_training_set(
     repository: Any,
     *,
+    store: Any,
     symbols: Sequence[str],
     start_as_of: str | datetime,
     end_as_of: str | datetime,
@@ -279,14 +280,14 @@ def load_training_set(
     end = parse_datetime(end_as_of).isoformat()
     cutoff = parse_datetime(label_cutoff_at).isoformat()
 
-    feature_rows = repository.rl_feature_snapshot_rows(
+    feature_rows = store.rl_feature_snapshot_rows(
         normalized, start_as_of=start, end_as_of=end, feature_version=spec.version,
     )
     if not feature_rows:
         raise RLDataNotReadyError(
             "no RL feature snapshot is stored for the requested window; run build_features first"
         )
-    label_rows = repository.rl_training_label_rows(
+    label_rows = store.rl_training_label_rows(
         normalized,
         start_as_of=start,
         end_as_of=end,

@@ -39,9 +39,24 @@ def _label_row(as_of_at: str, ticker: str, forward: float, benchmark: float):
 
 class _Repository:
     def __init__(self, *, features=None, labels=None, membership=None):
+        self.store = _Store(features=features, labels=labels)
+        self._membership = membership
+
+    def rl_historical_membership_rows(self, *, start_as_of, end_as_of):
+        if self._membership is not None:
+            return list(self._membership)
+        return [{
+            "effective_at": "2026-01-01T00:00:00+00:00",
+            "symbols": ["AAPL", "MSFT"],
+            "source_id": "a" * 64,
+            "source_kind": "historical_point_in_time",
+        }]
+
+
+class _Store:
+    def __init__(self, *, features=None, labels=None):
         self._features = features
         self._labels = labels
-        self._membership = membership
 
     def rl_feature_snapshot_rows(self, symbols, *, start_as_of, end_as_of, feature_version):
         if self._features is not None:
@@ -61,21 +76,11 @@ class _Repository:
             for index, ticker in enumerate(symbols)
         ]
 
-    def rl_historical_membership_rows(self, *, start_as_of, end_as_of):
-        if self._membership is not None:
-            return list(self._membership)
-        return [{
-            "effective_at": "2026-01-01T00:00:00+00:00",
-            "symbols": ["AAPL", "MSFT"],
-            "source_id": "a" * 64,
-            "source_kind": "historical_point_in_time",
-        }]
-
-
 class LoadTrainingSetTest(unittest.TestCase):
     def _load(self, repository, symbols=("AAPL", "MSFT")):
         return load_training_set(
             repository,
+            store=repository.store,
             symbols=symbols,
             start_as_of=PERIODS[0],
             end_as_of=PERIODS[-1],

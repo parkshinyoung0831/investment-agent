@@ -333,6 +333,17 @@
 - 남은 debt: `research/rl/features.py`를 사용하는 training runtime과 `research/ml_serving.py`의 serving runtime이 façade를 사용한다.
 - 다음 독립 작업: Task 3에서 `load_historical_training_set`의 feature/label repository와 membership repository가 실제 상위 caller에서 어떻게 조립되는지 추적한 뒤 owner를 분리한다.
 
+#### Full read Task 3a — RL training runtime 조립
+
+- 변경 전 실제 호출 관계: `load_training_set`이 한 repository에서 feature·label·historical membership 세 갈래를 읽었고, 유일한 production caller `continuous_retrain._training_set`이 `SupabaseRepository` 하나를 넘겼다. decision experience 기반 학습은 별도 우선 경로였다.
+- 변경 이유: full feature/label은 ResearchStore가 소유하지만 historical membership은 PIT universe read다. loader의 protocol만 나누고 실제 조립을 그대로 두면 역방향 runtime dependency가 숨겨지므로 production caller까지 함께 변경했다.
+- 수정 파일: `src/investment_agent/research/rl/features.py`, `src/investment_agent/research/commands/continuous_retrain.py`, RL loader·continuous retrain·exit-code 테스트 3개, 이 원장. 이동·삭제 파일과 학습/승격 계산 변경 없음.
+- import·runtime 방향: `load_training_set(repository, store=...)`에서 store가 feature/label을, repository가 membership을 읽는다. continuous retrain은 주입 store 또는 기본 `ResearchStore(read_only=True)`를 조립한다. decision experience 경로는 기존처럼 trading artifact rows만 사용하고 ResearchStore를 열지 않는다.
+- 테스트 결과: split fake와 store 인자를 먼저 적용해 기존 구현에서 15개 인자 오류로 RED, 구현 후 RL loader·continuous retrain·architecture·workflow 94개 통과. Research 전체 310개는 기존과 동일한 선택적 `lightgbm`/`xgboost` 미설치 오류 4개·skip 1개 외 새 실패 없음.
+- 제거된 debt: RL historical training의 feature/label runtime read가 Trading façade에서 분리됐다. membership façade와 continuous retrain의 lazy Trading repository import는 실제 남은 dependency라 pending 44쌍은 유지했다.
+- 남은 debt: ML serving의 feature snapshot read가 마지막 production façade caller다. 테스트 direct caller도 owner 경계로 이동해야 한다.
+- 다음 독립 작업: `champion_forecast`의 tracked ticker provider와 Research feature store를 분리하고, Trading system 상위 caller에서 read-only store를 조립해 fail-closed 동작을 유지한다.
+
 ## 향후 milestone
 
 | 묶음 | 해당 phase | 독립 완료 조건 |

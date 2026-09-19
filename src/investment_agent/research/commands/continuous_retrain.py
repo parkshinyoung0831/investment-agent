@@ -28,6 +28,7 @@ from investment_agent.research.rl.features import FeatureSpec, HistoricalTrainin
 from investment_agent.research.rl.pipeline import split_dataset, nonoverlapping_dataset
 from investment_agent.research.rl.bundle import load_policy_bundle, save_policy_bundle
 from investment_agent.research.features.layer import FEATURE_COLUMNS, FEATURE_VERSION
+from investment_agent.research.storage.repository import ResearchStore
 from investment_agent.platform.storage_paths import repository_root
 
 log = get_logger(__name__)
@@ -82,6 +83,7 @@ def _record_training(directory: Path, *, latest_period: str, periods: int, as_of
 def _training_set(
     repository: Any,
     *,
+    store: Any,
     as_of: datetime,
     spec: FeatureSpec,
     lookback_days: int,
@@ -101,6 +103,7 @@ def _training_set(
     symbols = tuple(sorted(tracked)[:max_symbols])
     return load_training_set(
         repository,
+        store=store,
         symbols=symbols,
         start_as_of=start.isoformat(),
         end_as_of=end.isoformat(),
@@ -123,6 +126,7 @@ def run_continuous_retrain(
     min_new_periods: int = DEFAULT_MIN_NEW_PERIODS,
     dry_run: bool = False,
     repository: Any | None = None,
+    store: Any | None = None,
     spec: FeatureSpec | None = None,
     train_policy: Callable[..., Any] | None = None,
     policy_dir: Path | None = None,
@@ -142,10 +146,12 @@ def run_continuous_retrain(
         from investment_agent.trading.supabase_repository import SupabaseRepository
 
         repository = SupabaseRepository()
+    selected_store = store if store is not None else ResearchStore(read_only=True)
 
     champion_score = None
     training_set = _training_set(
         repository,
+        store=selected_store,
         as_of=as_of,
         spec=selected_spec,
         lookback_days=lookback_days,
