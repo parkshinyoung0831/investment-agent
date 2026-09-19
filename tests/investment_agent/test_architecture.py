@@ -335,7 +335,6 @@ class LayerDirectionTest(unittest.TestCase):
             ("src/investment_agent/research/commands/build_decision_experiences.py", "investment_agent.trading.evidence.tools"),
             ("src/investment_agent/research/commands/build_decision_experiences.py", "investment_agent.trading.supabase_repository"),
             ("src/investment_agent/research/commands/build_events.py", "investment_agent.trading.evidence.cache"),
-            ("src/investment_agent/research/commands/build_events.py", "investment_agent.trading.supabase_repository"),
             ("src/investment_agent/research/commands/build_features.py", "investment_agent.trading.evidence.context"),
             ("src/investment_agent/research/commands/build_features.py", "investment_agent.trading.supabase_repository"),
             ("src/investment_agent/research/commands/build_labels.py", "investment_agent.trading.decision.constants"),

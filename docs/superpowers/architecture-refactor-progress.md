@@ -7,8 +7,8 @@
 - 기준 원격 `main`: `4181f6b53d84105f2b78d78c69e9119c1f55a6cf` (2026-09-20 세션 시작 시 로컬 HEAD와 일치 확인).
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
-- 현재 단계: Phase 2의 Research feature/label full read owner 이관과 Trading 호환 façade 제거 완료. Phase 3의 순수 공통 serialization import 20곳도 완료했으며, 남은 두 Trading 계약 import는 실제 금융 계약을 포함한다.
-- 현재 계획: `docs/superpowers/plans/2026-09-20-research-full-read-boundary.md` (Task 1~4 완료).
+- 현재 단계: Phase 2의 Research artifact owner 이관을 마치고, Phase 3의 실제 Data read owner 이관을 caller별로 진행 중이다.
+- 현재 계획: `docs/superpowers/plans/2026-09-20-research-data-read-boundaries.md` (Task 1 완료, Task 2 조사 전).
 - 완료 단계: Phase 1 조사, Phase 2의 feature snapshot·training label·valuation·event·training sample write 및 training metadata read owner 이관, Phase 3 공통 serialization import 정리. 현재 `PENDING_DEPENDENCIES`는 44쌍이다.
 - maintenance 상태: 확인·설정하지 않았다. 하네스 또는 execution 코드를 수정하기 전에 `harness_switch --maintenance on`을 수행하고 상태를 확인한다. live flag는 변경하지 않는다.
 
@@ -365,6 +365,17 @@
 - 제거된 debt: Trading God repository의 feature/label full-read 책임과 호환 façade 2개. write, metadata, full read 모두 이제 ResearchStore가 canonical owner다. `PENDING_DEPENDENCIES`는 실제 import 위반과 무관한 runtime façade 제거이므로 44쌍 유지한다.
 - 남은 debt: Research command의 구체 universe/price Trading reader imports, 실제 금융 계약·portfolio/risk imports, membership façade, Trading God repository의 다른 bounded-context 책임이 남는다.
 - 다음 독립 작업: 현재 pending 44쌍 중 일반 Research command의 `SupabaseRepository` import를 data/universe·market read owner별로 더 줄일지 caller와 기존 repository API를 조사한다. 실제 금융 알고리즘 검증은 별도 system_validation 경계로 판단한다.
+
+#### Data read Task 1 — build_events current universe
+
+- 변경 전 실제 호출 관계: `build_events.main`이 `SupabaseRepository`를 생성해 `current_tracked_tickers()` 한 메서드만 호출했다. 실제 event 계산 함수는 이미 tickers를 명시적으로 받고, operations on-demand 경로도 tickers를 넘겼다.
+- 변경 이유: live CLI의 현재 tracked universe는 `data.universe.persistence.select_tracked_tickers()`가 이미 소유한다. Trading God façade를 경유할 runtime/PIT 이유가 없다.
+- 수정 파일: `src/investment_agent/research/commands/build_events.py`, `tests/investment_agent/test_architecture.py`, 새 Data read 계획과 이 원장. 이동·삭제 파일, event 계산·저장·schema 변경 없음.
+- import·runtime 방향: CLI가 `research → data.universe`로 직접 읽는다. operations caller의 명시 ticker 흐름은 그대로다. 정확한 pending 한 쌍을 먼저 제거해 RED를 확인한 뒤 source import를 변경했다.
+- 테스트 결과: architecture test가 제거한 한 위반을 정확히 검출해 RED, 구현 후 build-events·architecture·workflow·docs 85개 통과.
+- 제거된 debt: `research/commands/build_events.py → trading/supabase_repository.py` pending 한 쌍. `PENDING_DEPENDENCIES` 44→43, 새 pending 없음.
+- 남은 debt: event command는 `LocalEvidenceCache`와 event 금융 계약 때문에 Trading imports 두 곳이 남는다. 이들은 ticker read와 다른 책임이므로 이번 단위에서 숨기지 않았다.
+- 다음 독립 작업: 각 Research command의 Supabase usage를 메서드 단위로 inventory하고, local mirror/PIT historical replay 의미가 없는 단순 Data owner read부터 선택한다.
 
 ## 향후 milestone
 

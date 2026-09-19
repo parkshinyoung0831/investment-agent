@@ -14,6 +14,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence
 
+from investment_agent.data.universe.persistence import select_tracked_tickers
 from investment_agent.platform.cli.runtime import run_log_payload
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.serialization import parse_datetime
@@ -97,17 +98,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    from investment_agent.trading.supabase_repository import SupabaseRepository
-
     args = _parse_args(argv)
     started = time.monotonic()
     started_at = datetime.now(timezone.utc).isoformat()
     as_of = args.as_of or started_at
-    repository = SupabaseRepository()
     result = build_events(
         cache=LocalEvidenceCache(args.cache_path),
         as_of_at=as_of,
-        tickers=repository.current_tracked_tickers(),
+        tickers=select_tracked_tickers(),
         window_days=args.window_days,
         dry_run=args.dry_run,
     )
