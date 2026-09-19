@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable
 
+import investment_agent.research.adapters.trading as research_adapter
 from investment_agent.trading.decision.candidate_ranker import (
     FACTOR_SNAPSHOT_MAX_AGE_DAYS,
     select_factor_candidates,
@@ -24,17 +25,21 @@ from investment_agent.trading.decision.candidate_ranker import (
 )
 from investment_agent.trading.contracts import ContractError, parse_datetime
 from investment_agent.platform.serialization import canonical_json
-from investment_agent.research.promotion.gate import (
+from investment_agent.research.adapters.trading import (
+    FEATURE_VERSION,
     EvaluationSummary,
+    FeatureSnapshot,
+    ForwardReturnLabel,
     PromotionDecision,
+    TrainingSample,
+    latest_cross_section,
+    latest_technical_signals_as_of,
+    normalize_symbols,
+    score_cross_section,
+    technical_features_since,
 )
 from investment_agent.trading.portfolio.signal_book import SignalBatch, SignalRecord
 from investment_agent.execution.orders.snapshots import AccountSnapshot
-from investment_agent.research.rl.contracts import (
-    FeatureSnapshot,
-    ForwardReturnLabel,
-    normalize_symbols,
-)
 from investment_agent.trading.decision.universe import normalize_ticker
 from investment_agent.trading.decision.event_impact import THEME_BY_NAME, global_event_priorities
 from investment_agent.trading.portfolio.market_risk import estimate_betas
@@ -42,10 +47,8 @@ from investment_agent.platform.logging import get_logger
 from investment_agent.platform.retry import transient_retry
 from investment_agent.platform.db.postgres import sb
 from investment_agent.trading.decision.contracts import Event, EventFeatureSnapshot
-from investment_agent.research.datasets.contracts import TrainingSample
 from investment_agent.data.macro.repository import MacroRepository
 from investment_agent.platform.db.postgres import Database
-from investment_agent.research.storage.repository import ResearchStore
 from investment_agent.data.macro.releases import db as econ_calendar_db
 from investment_agent.data.institutional import persistence as institutional_persistence
 from investment_agent.data.fundamentals.infrastructure.supabase import (
@@ -54,7 +57,6 @@ from investment_agent.data.fundamentals.infrastructure.supabase import (
     share_class_snapshots as fundamentals_shares,
 )
 from investment_agent.data.market import persistence as market_db
-from investment_agent.research.features import db as features_db
 from investment_agent.data.universe.persistence import (
     select_security_profiles,
     select_security_ids_by_ticker,
@@ -421,8 +423,8 @@ class SupabaseRepository:
         return self._reader_cache().mirror(as_of_at)
 
     @staticmethod
-    def _research_store(*, read_only: bool = False) -> ResearchStore:
-        return ResearchStore(read_only=read_only)
+    def _research_store(*, read_only: bool = False) -> Any:
+        return research_adapter.open_research_store(read_only=read_only)
 
     @staticmethod
     def _trading_repository():
@@ -508,7 +510,7 @@ class SupabaseRepository:
         until = as_of_at.date().isoformat()
         rows: list[dict[str, Any]] = []
         # 창 하나를 한 번에 읽는다. 종목마다 부르면 저장소 연결이 종목 수만큼 열린다.
-        for row in features_db.features_since(since):
+        for row in technical_features_since(since):
             if normalize_ticker(str(row.get("ticker") or "")) not in wanted:
                 continue
             if str(row.get("trade_date") or "") > until:
@@ -719,7 +721,7 @@ class SupabaseRepository:
 
     def _recent_global_events(self, as_of_at: datetime, *, hours: int) -> list[dict[str, Any]]:
         try:
-            rows = ResearchStore(read_only=True).records(
+            rows = research_adapter.open_research_store(read_only=True).records(
                 "events",
                 start_as_of=None,
                 end_as_of=None,
@@ -748,10 +750,8 @@ class SupabaseRepository:
         담는 종목이 어긋난다.
         """
         tickers_count = universe_size if universe_size is not None else len(self.current_tracked_tickers())
-        from investment_agent.research.factors import latest_cross_section, score_cross_section
-        from investment_agent.research.features.layer import FEATURE_VERSION
         try:
-            rows = ResearchStore(read_only=True).records(
+            rows = research_adapter.open_research_store(read_only=True).records(
                 "rl_feature_snapshots",
                 start_as_of=(as_of_at - timedelta(days=FACTOR_SNAPSHOT_MAX_AGE_DAYS)).isoformat(),
                 end_as_of=as_of_at.isoformat(),
@@ -806,7 +806,7 @@ class SupabaseRepository:
     def _candidate_event_features(self, as_of_at: datetime) -> list[dict[str, Any]]:
         """최근 7일 사건 요약. 로컬 research 저장소가 없으면 빈 목록이다."""
         try:
-            return ResearchStore(read_only=True).records(
+            return research_adapter.open_research_store(read_only=True).records(
                 "event_feature_snapshots",
                 start_as_of=(as_of_at - timedelta(days=7)).isoformat(),
                 end_as_of=as_of_at.isoformat(),
@@ -864,7 +864,7 @@ class SupabaseRepository:
             raise ValueError("as_of_at must include timezone")
         latest = self._memo(
             ("technical_snapshot", as_of_at.isoformat()),
-            lambda: features_db.latest_signals_as_of(as_of_at),
+            lambda: latest_technical_signals_as_of(as_of_at),
         )
         row = latest.get(str(ticker))
         return [dict(row)] if row is not None else []
@@ -1263,7 +1263,7 @@ class SupabaseRepository:
         end = parse_datetime(end_as_of)
         if end < start:
             raise ValueError("valuation end_as_of must not precede start_as_of")
-        rows = ResearchStore(read_only=True).records(
+        rows = research_adapter.open_research_store(read_only=True).records(
             "valuation_observations",
             start_as_of=start.isoformat(),
             end_as_of=end.isoformat(),
@@ -1310,7 +1310,7 @@ class SupabaseRepository:
             raise ValueError("RL feature end_as_of must not precede start_as_of")
         if not str(feature_version).strip():
             raise ValueError("feature_version is required")
-        rows = ResearchStore(read_only=True).records(
+        rows = research_adapter.open_research_store(read_only=True).records(
             "rl_feature_snapshots",
             start_as_of=start.isoformat(),
             end_as_of=end.isoformat(),
@@ -1345,7 +1345,7 @@ class SupabaseRepository:
             raise ValueError("label_cutoff_at must not precede the feature window end")
         if not str(feature_version).strip():
             raise ValueError("feature_version is required")
-        rows = ResearchStore(read_only=True).records(
+        rows = research_adapter.open_research_store(read_only=True).records(
             "rl_training_labels",
             start_as_of=start.isoformat(),
             end_as_of=end.isoformat(),
@@ -1375,7 +1375,7 @@ class SupabaseRepository:
         cutoff = parse_datetime(label_cutoff_at)
         if end < start or cutoff < end:
             raise ValueError("invalid training sample metadata window")
-        store = ResearchStore(read_only=True)
+        store = research_adapter.open_research_store(read_only=True)
         snapshots = store.records_with_payload_fields(
             "rl_feature_snapshots", ("feature_version", "input_hash"),
             start_as_of=start.isoformat(), end_as_of=end.isoformat(),
@@ -1509,7 +1509,7 @@ class SupabaseRepository:
     def decision_experience_rows(self, *, as_of_at: datetime | None = None) -> list[dict]:
         """라벨 관측 시각으로 제한한 가상 판단 경험을 읽는다."""
         try:
-            rows = ResearchStore(read_only=True).records("decision_experiences")
+            rows = research_adapter.open_research_store(read_only=True).records("decision_experiences")
         except FileNotFoundError:
             return []
         return [row for row in rows if as_of_at is None
@@ -1575,7 +1575,7 @@ def latest_model_artifact() -> dict | None:
 
 def latest_backtest_evaluation() -> dict | None:
     rows = [
-        row for row in ResearchStore(read_only=True).records("portfolio_evaluations")
+        row for row in research_adapter.open_research_store(read_only=True).records("portfolio_evaluations")
         if str(row.get("evaluation_kind") or "") == "backtest"
     ]
     rows.sort(key=lambda row: str(row.get("evaluated_at") or ""), reverse=True)

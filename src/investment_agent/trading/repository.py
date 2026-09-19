@@ -322,7 +322,7 @@ class TradingRepository:
     def evaluation_candidates(self, limit: int = 200) -> list[dict[str, Any]]:
         if limit < 1:
             raise ValueError("limit must be positive")
-        from investment_agent.research.evaluation.constants import EVALUATION_HORIZONS
+        from investment_agent.research.adapters.trading import EVALUATION_HORIZONS
         from investment_agent.trading.local_store import LocalTradingDatabase
         if isinstance(self._db, LocalTradingDatabase):
             # PK(case_key,horizon_days) 반조회로 완료 행은 LIMIT 이전에 제외한다.

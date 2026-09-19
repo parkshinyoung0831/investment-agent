@@ -300,7 +300,7 @@ class LayerDirectionTest(unittest.TestCase):
         "execution": ("trading", "research", "data", "notifications", "dashboard", "operations"),
         # review §32의 dependency map에 따라 trading은 stable execution contract를 소비한다.
         # 주문 mutation은 여전히 execution 내부에서만 일어난다.
-        "trading": ("notifications", "dashboard", "execution"),
+        "trading": ("notifications", "dashboard", "execution", "research"),
     }
 
     # operations monitoring은 pipeline 실패를 Discord ops에 알리는 운영 경계다.
@@ -394,12 +394,19 @@ class LayerDirectionTest(unittest.TestCase):
             return True
         if name == "investment_agent.execution.contracts":
             return True
+        if name == "investment_agent.research.adapters.trading":
+            return True
         return any(name == allowed or name.startswith(allowed + ".") for allowed in cls.ALLOWED_DEPENDENCIES)
 
     def test_execution_contract_allowance_is_an_exact_module_match(self) -> None:
         path = PACKAGE / "trading" / "my_portfolio.py"
         self.assertTrue(self._is_allowed(path, "investment_agent.execution.contracts"))
         self.assertFalse(self._is_allowed(path, "investment_agent.execution.contracts.private"))
+
+    def test_research_trading_adapter_allowance_is_an_exact_module_match(self) -> None:
+        path = PACKAGE / "trading" / "supabase_repository.py"
+        self.assertTrue(self._is_allowed(path, "investment_agent.research.adapters.trading"))
+        self.assertFalse(self._is_allowed(path, "investment_agent.research.adapters.trading.private"))
 
     def test_layers_do_not_import_downstream(self) -> None:
         offenders: list[str] = []

@@ -24,8 +24,12 @@ from typing import Any, Callable, Mapping
 from investment_agent.data.market.domain.calendar import bar_available_at
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.serialization import canonical_json, parse_datetime, stable_id
-from investment_agent.research.evaluation.costs import TransactionCostModel
-from investment_agent.research.ml_serving import NO_FORECAST, ChampionForecast, champion_forecast
+from investment_agent.research.adapters.trading import (
+    NO_FORECAST,
+    ChampionForecast,
+    TransactionCostModel,
+    champion_forecast,
+)
 from investment_agent.trading.contracts import ContractError
 from investment_agent.trading.decision.alpha import THESIS_BROKEN, AlphaPolicy, alpha_universe, is_valid_view
 from investment_agent.trading.portfolio.contracts import CASH_SYMBOL

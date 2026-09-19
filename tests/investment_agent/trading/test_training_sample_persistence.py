@@ -21,7 +21,7 @@ class TrainingSamplePersistenceTest(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as temporary:
             store = ResearchStore(Path(temporary) / "research.duckdb")
-            with patch("investment_agent.trading.supabase_repository.ResearchStore", return_value=store):
+            with patch("investment_agent.research.adapters.trading.open_research_store", return_value=store):
                 repository = SupabaseRepository()
                 first = repository.save_training_samples([sample])
                 parquet = store._dataset_root("training_samples") / "year=2025" / "data.parquet"

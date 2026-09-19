@@ -56,7 +56,7 @@ class ExperienceTest(unittest.TestCase):
         with TemporaryDirectory() as temp:
             store=ResearchStore(Path(temp)/"research.duckdb")
             first=dict(record_key="c",case_key="c",ticker="ABC",as_of_at="2026-01-01T00:00:00+00:00",available_at="2026-01-08T00:00:00+00:00",net_reward=.04)
-            with patch("investment_agent.trading.supabase_repository.ResearchStore",return_value=store):
+            with patch("investment_agent.research.adapters.trading.open_research_store",return_value=store):
                 repo=SupabaseRepository()
                 repo.save_decision_experiences([first])
                 repo.save_decision_experiences([{**first,"net_reward":99}])

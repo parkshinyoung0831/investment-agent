@@ -235,7 +235,7 @@ class RLRepositoryTest(unittest.TestCase):
 
     def test_feature_and_label_queries_are_separate_and_cutoff_bound(self):
         with patch(
-            "investment_agent.trading.supabase_repository.ResearchStore"
+            "investment_agent.research.adapters.trading.open_research_store"
         ) as research_store:
             research_store.return_value.records.side_effect = lambda dataset, **kwargs: (
                 [_feature().to_storage_row()] if dataset == "rl_feature_snapshots"
