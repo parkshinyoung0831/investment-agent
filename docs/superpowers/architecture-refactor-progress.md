@@ -6,6 +6,7 @@
 
 - 기준 원격 `main`: `53b232bb1547a57d53dd45fa940c2f135c742edc` (2026-09-19 확인).
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
+- 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
 - 현재 단계: 설계 문서 승인 완료. 첫 구현 계획 작성 완료·사용자 검토 대기. 제품 코드 변경 없음.
 - 현재 계획: `docs/superpowers/plans/2026-09-19-repository-boundaries.md` (Task 1~4 미착수).
 - 완료 단계: Phase 1의 최초 구조·runtime·import·기준 테스트 조사. Phase 2~10 구현은 시작 전.
