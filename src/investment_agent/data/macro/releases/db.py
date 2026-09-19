@@ -424,12 +424,6 @@ def due_releases(*, now: datetime | None = None, limit: int = 50) -> list[dict[s
     return due[:max(1, min(int(limit), 200))]
 
 
-def release_summary(key: str) -> dict[str, Any] | None:
-    sid, period = split_event_key(key)
-    center = datetime.fromisoformat(f"{period}T00:00:00+00:00")
-    return next((row for row in calendar_window(start=center - timedelta(days=1), end=center + timedelta(days=1)) if row_event_key(row) == key), None)
-
-
 def summaries_for(event_keys: set[str]) -> dict[str, dict[str, Any]]:
     if not event_keys:
         return {}

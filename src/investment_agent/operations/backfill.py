@@ -5,7 +5,6 @@ import argparse
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 
-TRADING_DAYS_PER_YEAR = 252
 BACKFILL_SCOPES = ("missing", "gaps", "all")
 
 
@@ -98,7 +97,3 @@ def resolve_backfill_window(
     else:
         raise ValueError("backfill_from or default_years is required")
     return BackfillWindow(start=start, end=end)
-
-
-def trading_days_from_years(years: int) -> int:
-    return years * TRADING_DAYS_PER_YEAR

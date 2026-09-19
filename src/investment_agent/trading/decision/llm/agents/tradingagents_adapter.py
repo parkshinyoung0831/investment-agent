@@ -69,7 +69,6 @@ _EXTERNAL_CALL_COUNT: contextvars.ContextVar[int | None] = contextvars.ContextVa
 from investment_agent.trading.decision.llm.agents.fundamentals_source import (
     fetch_fundamentals,
     fetch_macro_indicators,
-    fetch_statement,
 )
 from investment_agent.trading.decision.llm.agents.market_source import (
     fetch_indicator_data,
@@ -205,9 +204,6 @@ def _external_call_limit() -> int:
             "AI_INVESTOR_EXTERNAL_MAX_CALLS_PER_TICKER must be in [1, 100]"
         )
     return limit
-
-
-
 
 
 def _canonical_external_url(value: str) -> str:
@@ -652,10 +648,6 @@ def _indicator(symbol: str, indicator: str, curr_date: str, look_back_days: int 
 
 def _fundamentals(ticker: str, curr_date: str) -> str:
     return fetch_fundamentals(ticker, curr_date, get_bundle=_bundle)
-
-
-def _statement(ticker: str, freq: str = "quarterly", curr_date: str | None = None) -> str:
-    return fetch_statement(ticker, freq, curr_date, get_bundle=_bundle)
 
 
 def _macro(indicator: str, curr_date: str, look_back_days: int | None = None) -> str:

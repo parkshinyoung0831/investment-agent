@@ -799,18 +799,17 @@ def _render_discord_full(
                 )
 
     elif section == "건전성·이익의 질":
-        if True:
-            current_blocks = {
-                "Discord 건전성 게이지": discord_charts.gauges(health),
-                "수익성·자본효율": discord_charts.quality(health),
-                "이익의 질": discord_charts.earnings_quality({**metrics, **ttm}),
-            }
-            for label, rows in current_blocks.items():
-                st.markdown(f"**{label}**")
-                if rows:
-                    dataframe(rows, key=f"earnings_quality:{ticker}:{event_index}:{label}")
-                else:
-                    st.info(f"{label}에 필요한 실제 값이 없습니다.")
+        current_blocks = {
+            "Discord 건전성 게이지": discord_charts.gauges(health),
+            "수익성·자본효율": discord_charts.quality(health),
+            "이익의 질": discord_charts.earnings_quality({**metrics, **ttm}),
+        }
+        for label, rows in current_blocks.items():
+            st.markdown(f"**{label}**")
+            if rows:
+                dataframe(rows, key=f"earnings_quality:{ticker}:{event_index}:{label}")
+            else:
+                st.info(f"{label}에 필요한 실제 값이 없습니다.")
         source_note(SOURCE_DB, SOURCE_CALC, observed_at=(metrics or ttm).get("period_end"))
 
     elif section == "기술·주주환원":

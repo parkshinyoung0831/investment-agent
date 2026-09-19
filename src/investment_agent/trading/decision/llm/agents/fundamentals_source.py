@@ -42,15 +42,6 @@ def fetch_fundamentals(ticker: str, curr_date: str, get_bundle: Callable[[], Evi
     return _domain_payload(bundle, "fundamentals", "estimates", "segments", "gurus")
 
 
-def fetch_statement(
-    ticker: str, freq: str = "quarterly", curr_date: str | None = None, *, get_bundle: Callable[[], EvidenceBundle]
-) -> str:
-    """손익계산서/대차대조표/현금흐름표를 시점 일치 번들에서 읽는다."""
-    bundle = get_bundle()
-    date_val = curr_date or parse_datetime(bundle.as_of_at).date().isoformat()
-    return fetch_fundamentals(ticker, date_val, get_bundle=get_bundle)
-
-
 def fetch_macro_indicators(
     indicator: str, curr_date: str, look_back_days: int | None = None, *, get_bundle: Callable[[], EvidenceBundle]
 ) -> str:

@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "투자 에이전트 데이터 흐름",
+    "output": "pipeline.html",
+    "quality_profile": "showcase",
+    "viewBox": [1075, 520]
+  },
+  "stages": [
+    { "label": "외부 원천" },
+    { "label": "수집" },
+    { "label": "저장소" },
+    { "label": "판단" },
+    { "label": "출력·실행" }
+  ],
+  "nodes": [
+    { "id": "sources", "type": "external", "label": "공개 데이터", "sublabel": "SEC · yfinance · FRED", "stage": 0, "row": 1, "tag": "외부" },
+    { "id": "actions", "type": "cloud", "label": "Actions 파이프라인", "sublabel": "market · fundamentals", "stage": 1, "row": 0, "tag": "cron" },
+    { "id": "harness", "type": "backend", "label": "로컬 하네스", "sublabel": "뉴스 · 소셜 수집", "stage": 1, "row": 2, "tag": "로컬" },
+    { "id": "supabase", "type": "database", "label": "Supabase", "sublabel": "Postgres", "stage": 2, "row": 0, "tag": "SSOT" },
+    { "id": "localstore", "type": "database", "label": "로컬 저장소", "sublabel": "DuckDB · SQLite", "stage": 2, "row": 2, "tag": "로컬" },
+    { "id": "trading", "type": "backend", "label": "trading", "sublabel": "ALPHA · 리스크 게이트", "stage": 3, "row": 1, "tag": "판단" },
+    { "id": "notify", "type": "frontend", "label": "Discord 알림", "sublabel": "PNG 카드 · embed", "stage": 4, "row": 0, "tag": "출력" },
+    { "id": "execution", "type": "security", "label": "execution", "sublabel": "승인 → 주문 → 브로커", "stage": 4, "row": 2, "tag": "실주문" }
+  ],
+  "flows": [
+    { "id": "public-feeds", "from": "sources", "to": "actions", "label": "시세·공시·거시", "classification": "공개 데이터", "variant": "emphasis" },
+    { "id": "text-feeds", "from": "sources", "to": "harness", "label": "뉴스·서브레딧", "classification": "공개 데이터", "variant": "default" },
+    { "id": "incremental-load", "from": "actions", "to": "supabase", "label": "증분 적재", "classification": "daily", "variant": "emphasis" },
+    { "id": "text-store", "from": "harness", "to": "localstore", "label": "90일 보관", "classification": "텍스트", "variant": "default" },
+    { "id": "evidence-read", "from": "supabase", "to": "trading", "label": "evidence 읽기", "classification": "read model", "variant": "emphasis" },
+    { "id": "text-evidence", "from": "localstore", "to": "trading", "label": "뉴스 근거", "classification": "텍스트", "variant": "default" },
+    { "id": "reports", "from": "trading", "to": "notify", "label": "판단 보고서", "classification": "일 1회", "variant": "default" },
+    { "id": "target-weights", "from": "trading", "to": "execution", "label": "목표 비중", "classification": "리스크 통과분", "variant": "security" },
+    { "id": "pipeline-alerts", "from": "supabase", "to": "notify", "label": "정규 알림", "classification": "reporting", "variant": "dashed" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "수집은 둘로 갈린다",
+      "items": [
+        "공시·시세·거시는 GitHub Actions cron이 Supabase에 증분 적재한다",
+        "뉴스·소셜은 로컬 하네스가 모아 로컬 저장소에 90일만 둔다"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "실주문은 하나의 관문",
+      "items": [
+        "trading은 목표 비중까지만 만들고, 주문은 execution의 승인 단계를 지난다",
+        "LLM은 hard risk limit·최종 비중·브로커 권한을 갖지 않는다"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "알림은 두 경로",
+      "items": [
+        "정규 알림은 Supabase read model에서, 판단 보고서는 trading 원장에서 나간다",
+        "중복 방지는 notifications의 publish() 하나가 맡는다"
+      ]
+    }
+  ]
+}

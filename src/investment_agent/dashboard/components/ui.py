@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
@@ -15,23 +14,6 @@ SOURCE_DB = "DB 저장 데이터"
 SOURCE_LIVE = "실시간 조회"
 SOURCE_CALC = "화면 계산"
 SOURCE_LOCAL = "로컬 읽기"
-
-
-@dataclass(frozen=True)
-class DrilldownItem:
-    """요약에서 상세로 진입시키는 읽기 전용 선택 카드."""
-
-    key: str
-    label: str
-    value: str
-    delta: str | None = None
-    icon: str = ":material/query_stats:"
-    help: str | None = None
-    disabled: bool = False
-
-
-def _select_drilldown(state_key: str, item_key: str) -> None:
-    st.session_state[state_key] = item_key
 
 
 def view_selector(

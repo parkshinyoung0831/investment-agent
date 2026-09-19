@@ -143,6 +143,21 @@ class StrategyMarketBoundaryTest(unittest.TestCase):
         self.assertEqual([], offenders)
 
 
+class ResearchFactorsBoundaryTest(unittest.TestCase):
+    """투자 개념 factor는 feature 원재료 계층과 분리한다."""
+
+    def test_trading_does_not_import_feature_factor_implementation(self) -> None:
+        root = PACKAGE / "trading"
+        offenders = [
+            f"{path.relative_to(ROOT)} -> {name}"
+            for path in _modules(root)
+            for name in _imported_names(path)
+            if name == "investment_agent.research.features.factors"
+            or name.startswith("investment_agent.research.features.factors.")
+        ]
+        self.assertEqual([], sorted(offenders))
+
+
 class DashboardReportingBoundaryTest(unittest.TestCase):
     """Reporting으로 옮긴 화면이 dashboard DB god module로 돌아가지 않는다."""
 

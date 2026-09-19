@@ -6,7 +6,7 @@ from typing import Mapping
 import numpy as np
 from investment_agent.platform.serialization import canonical_json, parse_datetime
 from investment_agent.research.rl.environment import FeatureDataset
-from investment_agent.research.rl.features import HistoricalTrainingSet, LiveInferenceFrame
+from investment_agent.research.rl.features import HistoricalTrainingSet
 from investment_agent.research.rl.contracts import RLDataNotReadyError
 
 FEATURE_VERSION = "decision_v1"
@@ -60,19 +60,3 @@ def decision_training_set(rows, *, as_of_at, max_symbols):
     digest=hashlib.sha256(canonical_json(rows).encode()).hexdigest()
     membership=hashlib.sha256(canonical_json({"symbols":symbols,"times":times,"availability":masks.tolist()}).encode()).hexdigest()
     return HistoricalTrainingSet(dataset,tuple(ends),membership,tuple(ids),tuple(ids),digest)
-
-def decision_inference_frame(model, proposals, *, as_of_at):
-    if model.feature_names != FEATURE_NAMES:
-        raise ValueError("decision model feature axes mismatch")
-    by_ticker={p.ticker:p for p in proposals}
-    if len(by_ticker) != len(proposals):
-        raise ValueError("duplicate original decision ticker")
-    features=np.zeros((len(model.symbols),len(FEATURE_NAMES))); mask=np.zeros(len(model.symbols),dtype=bool)
-    for i,ticker in enumerate(model.symbols):
-        if ticker not in by_ticker: continue
-        proposal=by_ticker[ticker]
-        if parse_datetime(proposal.as_of_at)>parse_datetime(as_of_at): raise ValueError("future decision")
-        features[i]=[decision_features(proposal)[name] for name in FEATURE_NAMES]; mask[i]=True
-    if not mask.any(): raise ValueError("no original decisions match model axes")
-    digest=hashlib.sha256(canonical_json({"features":features.tolist(),"mask":mask.tolist(),"as_of_at":str(as_of_at)}).encode()).hexdigest()
-    return LiveInferenceFrame(model.symbols, FEATURE_NAMES, FEATURE_VERSION, str(as_of_at), features, mask, digest, digest)

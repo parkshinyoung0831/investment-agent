@@ -66,37 +66,3 @@ def fetch_external_news(
         request=request,
         fetch=(lambda: upstream_fetcher(ticker, start_date, end_date)) if upstream_fetcher else None,
     )
-
-
-def fetch_external_global_news(
-    curr_date: str,
-    look_back_days: int | None = None,
-    limit: int | None = None,
-    *,
-    requested_vendor: str,
-    get_bundle: Callable[[], EvidenceBundle],
-    external_fetch: Callable[..., str],
-    record_external: Callable[..., str],
-    upstream_fetcher: Callable[..., str] | None,
-) -> str:
-    """시장 전반의 실시간 글로벌 뉴스를 수집한다."""
-    bundle = get_bundle()
-    request = {
-        "curr_date": curr_date,
-        "look_back_days": look_back_days,
-        "limit": limit,
-    }
-    if not _date_ok(curr_date, bundle):
-        return record_external(
-            domain="news",
-            provider=requested_vendor,
-            request=request,
-            raw="DATA_UNAVAILABLE: requested global-news date is after as_of_at",
-            status="blocked",
-        )
-    return external_fetch(
-        domain="news",
-        provider=requested_vendor,
-        request=request,
-        fetch=(lambda: upstream_fetcher(curr_date, look_back_days, limit)) if upstream_fetcher else None,
-    )
