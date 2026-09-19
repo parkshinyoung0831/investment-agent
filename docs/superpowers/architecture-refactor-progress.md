@@ -4,12 +4,12 @@
 
 ## 식별과 현재 상태
 
-- 기준 원격 `main`: `53b232bb1547a57d53dd45fa940c2f135c742edc` (2026-09-19 확인).
+- 기준 원격 `main`: `4181f6b53d84105f2b78d78c69e9119c1f55a6cf` (2026-09-20 세션 시작 시 로컬 HEAD와 일치 확인).
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
-- 현재 단계: 설계 문서 승인 완료. 첫 구현 계획 작성 완료·사용자 검토 대기. 제품 코드 변경 없음.
-- 현재 계획: `docs/superpowers/plans/2026-09-19-repository-boundaries.md` (Task 1~4 미착수).
-- 완료 단계: Phase 1의 최초 구조·runtime·import·기준 테스트 조사. Phase 2~10 구현은 시작 전.
+- 현재 단계: Phase 2의 첫 Research 저장 경계 이관 완료. 다음 owner write 이관 대상 재검증 필요.
+- 현재 계획: `docs/superpowers/plans/2026-09-19-repository-boundaries.md` (Task 1~4 완료).
+- 완료 단계: Phase 1 조사와 Phase 2의 feature snapshot·training label write 직접 이관 및 두 façade 메서드 제거.
 - maintenance 상태: 확인·설정하지 않았다. 하네스 또는 execution 코드를 수정하기 전에 `harness_switch --maintenance on`을 수행하고 상태를 확인한다. live flag는 변경하지 않는다.
 
 ## 검증 기준선
@@ -17,8 +17,8 @@
 | 검사 | 결과 | 의미 |
 |---|---|---|
 | `git ls-remote origin refs/heads/main` | 로컬 HEAD와 동일 SHA | 최신 `main` 기준 확인 |
-| `python -m unittest tests.investment_agent.test_architecture tests.test_repo_conventions tests.test_workflow_wiring -q` | 99개 통과 | 구조·관례·workflow 기준선 |
-| `python -m unittest discover -s tests -t .` | 2,997개, 오류 4개, skip 1개 | `lightgbm`·`xgboost` 미설치로 인한 기존 환경 오류 4개 |
+| `python -m unittest tests.investment_agent.test_architecture tests.test_repo_conventions tests.test_workflow_wiring -q` | 100개 통과 | 구조·관례·workflow 현재 기준선 |
+| `python -m unittest discover -s tests -t .` | 3,009개, 오류 4개, skip 1개 | 오류는 기준선과 동일한 `test_ml_inference`의 `lightgbm`·`xgboost` 미설치 4개 |
 | `tests/investment_agent/test_architecture.py` | `PENDING_DEPENDENCIES` 69쌍 | 줄여야 하는 현재 import 부채 |
 
 ## 새 세션 재개 절차
@@ -87,6 +87,17 @@
 - 제거된 debt: trading façade의 feature snapshot·training label write 책임과 façade를 통하던 validation test caller.
 - 남은 debt: `SupabaseRepository`에는 valuation·event·training sample·promotion 등 다른 Research 저장/조회와 data read·trading/execution 책임이 남아 있다. `build_features`·`build_labels`의 read·계약 import도 trading을 향하므로 `PENDING_DEPENDENCIES` 69쌍은 아직 줄지 않았다.
 - 다음 독립 작업: Task 4 통합 검증 후, 현재 caller를 다시 조사해 valuation·event·training sample 중 가장 작은 Research owner 이관 계획을 작성한다.
+
+#### Task 4 — 첫 경계 통합 검증
+
+- 변경 전·후 호출 관계: feature와 label write는 `research command → SupabaseRepository → ResearchStore`에서 `research command → ResearchStore`로 바뀌었다. `SupabaseRepository`의 두 호환 메서드와 이를 호출하는 production·test caller는 0건이다.
+- 수정 파일 전체: `research/commands/build_features.py`, `research/commands/build_labels.py`, `trading/supabase_repository.py`, 직접 연결된 research·trading 테스트 5개와 이 원장. 다른 production 영역은 수정하지 않았다.
+- 이동·삭제 파일: 파일 이동·삭제 없음. façade 메서드 두 개만 삭제했다. 시작 HEAD 이후 변경은 9개 파일, 209 insertions, 45 deletions다.
+- import 방향: write runtime은 Research owner로 바로 향하지만 두 command의 PIT reader·trading 계약 import는 유지했으므로 일반 research→trading dependency debt는 아직 감소하지 않았다. 이를 façade나 alias로 숨기지 않았고 `PENDING_DEPENDENCIES`는 69쌍 그대로다.
+- 테스트 결과: architecture·repo convention·workflow 100개 통과. 전체 suite는 3,009개 중 기준선과 동일한 `tests.investment_agent.research.test_ml_inference` 선택적 ML 의존성 오류 4개, skip 1개이며 새 실패는 없다. ownership guard는 합성 source와 실제 임시 trading 호출 주입 모두에서 위반을 검출했다.
+- 보존 확인: DB schema, PIT/read, feature·label 계산, source kind, CLI 경로, batch write 조건, live flag와 execution/harness는 변경하지 않았다. maintenance 전환이 필요한 코드는 건드리지 않았다.
+- 남은 debt: valuation·event·event feature·training sample·training run과 여러 research read가 trading façade를 경유한다. data read·trading 원장·execution snapshot 책임도 같은 façade에 남아 있다.
+- 다음 독립 작업: `src/investment_agent/research/commands/build_valuations.py`의 `save_valuation_observations` caller와 `tests/investment_agent/research/valuation/test_inputs.py`, `tests/investment_agent/research/test_historical_replay_pit.py`를 먼저 재검증한다. 이어서 `build_events.py`와 `build_training_samples.py`를 각각 독립 단위로 판단한다.
 
 ## 향후 milestone
 
