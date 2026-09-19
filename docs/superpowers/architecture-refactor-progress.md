@@ -7,8 +7,8 @@
 - 기준 원격 `main`: `4181f6b53d84105f2b78d78c69e9119c1f55a6cf` (2026-09-20 세션 시작 시 로컬 HEAD와 일치 확인).
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
-- 현재 단계: Phase 2의 feature·label·valuation observation write 이관 완료. event write caller 재검증이 다음 단위다.
-- 현재 계획: `docs/superpowers/plans/2026-09-20-research-valuation-storage-boundary.md` (Task 1~3 완료).
+- 현재 단계: Phase 2의 feature·label·valuation write 이관 완료, event·event feature write 이관 착수.
+- 현재 계획: `docs/superpowers/plans/2026-09-20-research-event-storage-boundary.md` (Task 1~3 미착수).
 - 완료 단계: Phase 1 조사와 Phase 2의 feature snapshot·training label write 직접 이관 및 두 façade 메서드 제거.
 - maintenance 상태: 확인·설정하지 않았다. 하네스 또는 execution 코드를 수정하기 전에 `harness_switch --maintenance on`을 수행하고 상태를 확인한다. live flag는 변경하지 않는다.
 
