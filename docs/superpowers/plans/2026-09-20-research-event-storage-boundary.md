@@ -83,11 +83,11 @@ self.assertNotIn("repository", kwargs)
 
 - [ ] **Step 1: 실패 가드 작성.** `RESEARCH_WRITE_METHODS`에 `save_events`, `save_event_features`를 추가하고 합성 trading source의 두 호출을 detector가 반환하는지 검증한다.
 
-- [ ] **Step 2: RED 확인.** Run: `python -m unittest tests.investment_agent.trading.test_repository_ownership -q`. Expected: trading façade의 기존 두 호출로 실패.
+- [ ] **Step 2: RED 확인.** Run: `python -m unittest tests/investment_agent/trading/test_repository_ownership.py -q`. Expected: trading façade의 기존 두 호출로 실패.
 
 - [ ] **Step 3: 최소 구현.** `SupabaseRepository.save_events()`와 `save_event_features()` 정의만 삭제한다.
 
-- [ ] **Step 4: caller·GREEN 확인.** Run: `rg -n 'save_(events|event_features)' src/investment_agent tests/investment_agent --glob '*.py'`. Expected: ResearchStore·research command·test store·guard만 남는다. Run: `python -m unittest tests.investment_agent.research.commands.test_build_events tests.investment_agent.operations.commands.test_event_reanalysis tests.investment_agent.trading.test_repository_ownership tests.investment_agent.test_architecture -q`. Expected: 모두 통과.
+- [ ] **Step 4: caller·GREEN 확인.** Run: `rg -n 'save_(events|event_features)' src/investment_agent tests/investment_agent --glob '*.py'`. Expected: ResearchStore·research command·test store·guard만 남는다. Run: `python -m unittest tests/investment_agent/research/commands/test_build_events.py tests/investment_agent/operations/commands/test_event_reanalysis.py tests/investment_agent/trading/test_repository_ownership.py tests/investment_agent/test_architecture.py -q`. Expected: 모두 통과.
 
 - [ ] **Step 5: 실제 위반 주입.** trading façade에 각 write를 한 건씩 별도로 임시 주입해 guard 실패를 확인하고 원복한다. 최종 GREEN을 다시 실행한다.
 
@@ -103,7 +103,7 @@ self.assertNotIn("repository", kwargs)
 - Produces: training sample/run manifest 경계의 다음 계획 입력.
 
 - [ ] **Step 1: Run:** `python -m unittest tests.investment_agent.test_architecture tests.test_repo_conventions tests.test_workflow_wiring -q`. Expected: 100개 이상 통과.
-- [ ] **Step 2: Run:** `python -m unittest tests.investment_agent.research.commands.test_build_events tests.investment_agent.operations.commands.test_event_reanalysis tests.investment_agent.trading.decision.test_event_impact tests.investment_agent.trading.test_repository_ownership -q`. Expected: 모두 통과.
+- [ ] **Step 2: Run:** `python -m unittest tests/investment_agent/research/commands/test_build_events.py tests/investment_agent/operations/commands/test_event_reanalysis.py tests/investment_agent/trading/decision/test_event_impact.py tests/investment_agent/trading/test_repository_ownership.py -q`. Expected: 모두 통과.
 - [ ] **Step 3: 시작 HEAD 이후 diff·status·pending 수·event façade caller 0건을 확인하고 사용자 변경과 graphify 산출물을 제외한다.
 - [ ] **Step 4: 진행 원장에 완료 범위와 `build_training_samples.py`의 정확한 read/write·manifest caller를 기록하고 `git commit -m "docs: record event storage checkpoint"`.
 

@@ -7,8 +7,8 @@
 - 기준 원격 `main`: `4181f6b53d84105f2b78d78c69e9119c1f55a6cf` (2026-09-20 세션 시작 시 로컬 HEAD와 일치 확인).
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
-- 현재 단계: Phase 2의 feature·label·valuation·event artifact 이관 완료, training sample 저장/manifest read·write 이관 진행 중.
-- 현재 계획: `docs/superpowers/plans/2026-09-20-training-sample-storage-boundary.md` (Task 1~2 완료, Task 3 통합 검증 남음).
+- 현재 단계: Phase 2의 feature·label·valuation·event artifact 및 training sample/manifest 저장 경계 이관 완료. 다음 독립 단위는 Research feature/label read façade의 실제 caller·PIT 계약 조사다.
+- 현재 계획: `docs/superpowers/plans/2026-09-20-training-sample-storage-boundary.md` (Task 1~3 완료).
 - 완료 단계: Phase 1 조사와 Phase 2의 feature snapshot·training label·valuation·event artifact write 직접 이관, 관련 façade 메서드 제거. 현재 `PENDING_DEPENDENCIES`는 68쌍이다.
 - maintenance 상태: 확인·설정하지 않았다. 하네스 또는 execution 코드를 수정하기 전에 `harness_switch --maintenance on`을 수행하고 상태를 확인한다. live flag는 변경하지 않는다.
 
@@ -94,7 +94,7 @@
 - 수정 파일 전체: `research/commands/build_features.py`, `research/commands/build_labels.py`, `trading/supabase_repository.py`, 직접 연결된 research·trading 테스트 5개와 이 원장. 다른 production 영역은 수정하지 않았다.
 - 이동·삭제 파일: 파일 이동·삭제 없음. façade 메서드 두 개만 삭제했다. 시작 HEAD 이후 변경은 9개 파일, 209 insertions, 45 deletions다.
 - import 방향: write runtime은 Research owner로 바로 향하지만 두 command의 PIT reader·trading 계약 import는 유지했으므로 일반 research→trading dependency debt는 아직 감소하지 않았다. 이를 façade나 alias로 숨기지 않았고 `PENDING_DEPENDENCIES`는 69쌍 그대로다.
-- 테스트 결과: architecture·repo convention·workflow 100개 통과. 전체 suite는 3,009개 중 기준선과 동일한 `tests.investment_agent.research.test_ml_inference` 선택적 ML 의존성 오류 4개, skip 1개이며 새 실패는 없다. ownership guard는 합성 source와 실제 임시 trading 호출 주입 모두에서 위반을 검출했다.
+- 테스트 결과: architecture·repo convention·workflow 100개 통과. 전체 suite는 3,009개 중 기준선과 동일한 `tests/investment_agent/research/test_ml_inference.py` 선택적 ML 의존성 오류 4개, skip 1개이며 새 실패는 없다. ownership guard는 합성 source와 실제 임시 trading 호출 주입 모두에서 위반을 검출했다.
 - 보존 확인: DB schema, PIT/read, feature·label 계산, source kind, CLI 경로, batch write 조건, live flag와 execution/harness는 변경하지 않았다. maintenance 전환이 필요한 코드는 건드리지 않았다.
 - 남은 debt: valuation·event·event feature·training sample·training run과 여러 research read가 trading façade를 경유한다. data read·trading 원장·execution snapshot 책임도 같은 façade에 남아 있다.
 - 다음 독립 작업: `src/investment_agent/research/commands/build_valuations.py`의 `save_valuation_observations` caller와 `tests/investment_agent/research/valuation/test_inputs.py`, `tests/investment_agent/research/test_historical_replay_pit.py`를 먼저 재검증한다. 이어서 `build_events.py`와 `build_training_samples.py`를 각각 독립 단위로 판단한다.
@@ -192,6 +192,16 @@
 - 제거된 debt: training sample·run manifest façade 메서드 3개와 trading 경로의 Research Parquet 직접 검증 테스트.
 - 남은 debt: feature/label/metadata read façade와 기타 Research·Data/Trading/Execution 메서드, `PENDING_DEPENDENCIES` 68쌍.
 - 다음 독립 작업: 구조·workflow 및 관련 Research storage 통합 테스트와 façade caller 0건을 재확인한다.
+
+#### Training sample Task 3 — 통합 검증과 다음 read 경계 인계
+
+- 변경 전·후 호출 관계: `build_training_samples → SupabaseRepository → ResearchStore`였던 sample write·manifest read/write는 `build_training_samples → ResearchStore`로 직접 연결됐다. `backfill_research_history`와 harness adapter는 기존 command API를 호출하며 변경하지 않았다.
+- 수정 파일 전체: `research/commands/build_training_samples.py`, `trading/supabase_repository.py`, 직접 연결된 training command·Research persistence·ownership 테스트와 이 원장. trading의 persistence 테스트 하나를 Research 경로로 이동했다. schema, 계산, CLI, harness·execution은 변경하지 않았다.
+- import·runtime 방향: sample·manifest façade 메서드 3개와 `TrainingSample` 타입 import를 trading에서 제거했다. trading·operations의 세 메서드 호출은 0건이며, test의 합성 위반 문자열만 남는다. feature/label input read는 여전히 trading façade를 거치므로 해당 역방향 dependency는 남는다.
+- 테스트 결과: architecture·repo convention·workflow·training command·Research persistence·backfill·RL repository·ownership 147개 통과. `tests/test_docs_consistency.py` 7개 통과. 전체 suite는 3,012개 중 선택적 `lightgbm`·`xgboost` 미설치로 인한 기존 ML inference 오류 4개, skip 1개이며 추가 실패는 없다. 첫 전체 실행에서 과거 진행/계획 문서의 dotted unittest module 이름 11개가 SQL relation으로 오인된 문서 검사 실패 1개를 발견했다. 해당 문서의 명령을 동등한 실행 가능한 파일 경로 표기로 정리한 뒤 문서 검사와 전체 suite에서 이 실패가 사라졌다. repo-wide 테스트 자체는 수정하지 않았다.
+- 제거된 debt: sample·run manifest의 trading façade read/write 3개와 잘못 소유된 직접 persistence 테스트. `PENDING_DEPENDENCIES`는 68쌍으로 유지하며 새 허용 항목은 없다.
+- 남은 debt: `rl_feature_snapshot_rows`, `rl_training_label_rows`, `training_sample_period_inputs`가 trading façade에 있고 `build_labels`, `build_training_samples`, `export_dataset`, `research/rl/features.py`, `research/ml_serving.py` 등이 사용한다.
+- 다음 독립 작업: read migration을 일괄 rename하지 않는다. 먼저 `build_training_samples.py`의 lightweight scalar metadata와 pending 기간의 full payload read를 기준으로 PIT/version/ticker/cutoff 필터와 JSON 복원 회피를 테스트로 고정하고, Research owner read API가 실제로 더 깊은 경계인지 판단한다. 이후 나머지 caller를 각각 조사한다.
 
 ## 향후 milestone
 

@@ -67,7 +67,7 @@ class _ValuationStore:
 
 `test_dry_run_writes_nothing`은 store의 `saved == []`와 `save_calls == 0`을 모두 확인한다. historical replay 두 테스트도 별도 store에 저장된 row를 검증한다.
 
-- [ ] **Step 2: RED 확인.** Run: `python -m unittest tests.investment_agent.research.valuation.test_inputs tests.investment_agent.research.test_historical_replay_pit -q`. Expected: `build_valuations() got an unexpected keyword argument 'store'`.
+- [ ] **Step 2: RED 확인.** Run: `python -m unittest tests/investment_agent/research/valuation/test_inputs.py tests/investment_agent/research/test_historical_replay_pit.py -q`. Expected: `build_valuations() got an unexpected keyword argument 'store'`.
 
 - [ ] **Step 3: 최소 구현.** `ResearchStore` import와 `store` 인자를 추가하고 write 조건 안에서만 owner를 연다.
 
@@ -81,7 +81,7 @@ if not dry_run and rows:
 
 read는 계속 `selected`가 담당하며 historical replay prepare와 모든 valuation input을 변경하지 않는다.
 
-- [ ] **Step 4: GREEN·architecture 확인.** Run: `python -m unittest tests.investment_agent.research.valuation.test_inputs tests.investment_agent.research.test_historical_replay_pit tests.investment_agent.test_architecture -q`. Expected: 모두 통과.
+- [ ] **Step 4: GREEN·architecture 확인.** Run: `python -m unittest tests/investment_agent/research/valuation/test_inputs.py tests/investment_agent/research/test_historical_replay_pit.py tests/investment_agent/test_architecture.py -q`. Expected: 모두 통과.
 
 - [ ] **Step 5: 원장·커밋.** 실제 전후 caller, 수정 파일, import 방향, 테스트, 남은 façade를 진행 원장에 기록하고 `git commit -m "refactor: route valuations to research storage"`.
 
@@ -106,11 +106,11 @@ RESEARCH_WRITE_METHODS = frozenset({
 })
 ```
 
-- [ ] **Step 2: RED 확인.** Run: `python -m unittest tests.investment_agent.trading.test_repository_ownership -q`. Expected: `trading/supabase_repository.py`의 valuation write 호출 1건으로 실패.
+- [ ] **Step 2: RED 확인.** Run: `python -m unittest tests/investment_agent/trading/test_repository_ownership.py -q`. Expected: `trading/supabase_repository.py`의 valuation write 호출 1건으로 실패.
 
 - [ ] **Step 3: 최소 구현.** `SupabaseRepository.save_valuation_observations()` 정의 전체만 삭제한다. `_research_store()`와 다른 façade 메서드는 현재 caller가 있으므로 유지한다.
 
-- [ ] **Step 4: caller·GREEN 확인.** Run: `rg -n 'save_valuation_observations' src/investment_agent tests/investment_agent --glob '*.py'`. Expected: ResearchStore, research command, research test store와 guard만 남고 trading façade 호출은 0건. Run: `python -m unittest tests.investment_agent.research.valuation.test_inputs tests.investment_agent.research.test_historical_replay_pit tests.investment_agent.trading.test_repository_ownership tests.investment_agent.test_architecture -q`. Expected: 모두 통과.
+- [ ] **Step 4: caller·GREEN 확인.** Run: `rg -n 'save_valuation_observations' src/investment_agent tests/investment_agent --glob '*.py'`. Expected: ResearchStore, research command, research test store와 guard만 남고 trading façade 호출은 0건. Run: `python -m unittest tests/investment_agent/research/valuation/test_inputs.py tests/investment_agent/research/test_historical_replay_pit.py tests/investment_agent/trading/test_repository_ownership.py tests/investment_agent/test_architecture.py -q`. Expected: 모두 통과.
 
 - [ ] **Step 5: 실제 위반 주입.** trading façade에 valuation write 호출을 임시로 한 건 추가하고 ownership test가 실패함을 확인한 뒤 즉시 원복한다. 최종 GREEN command를 다시 실행한다.
 
@@ -127,7 +127,7 @@ RESEARCH_WRITE_METHODS = frozenset({
 
 - [ ] **Step 1: 구조 검증.** Run: `python -m unittest tests.investment_agent.test_architecture tests.test_repo_conventions tests.test_workflow_wiring -q`. Expected: 100개 이상 통과.
 
-- [ ] **Step 2: 관련 전체 검증.** Run: `python -m unittest tests.investment_agent.research.valuation.test_inputs tests.investment_agent.research.test_historical_replay_pit tests.investment_agent.research.commands.test_backfill_research_history tests.investment_agent.trading.test_repository_ownership -q`. Expected: 모두 통과.
+- [ ] **Step 2: 관련 전체 검증.** Run: `python -m unittest tests/investment_agent/research/valuation/test_inputs.py tests/investment_agent/research/test_historical_replay_pit.py tests/investment_agent/research/commands/test_backfill_research_history.py tests/investment_agent/trading/test_repository_ownership.py -q`. Expected: 모두 통과.
 
 - [ ] **Step 3: 범위·debt 확인.** 시작 HEAD 이후 diff, `git status`, `PENDING_DEPENDENCIES` 수, valuation façade caller 0건을 확인한다. 기존 사용자 미커밋 변경과 graphify 산출물은 이 계획 커밋에 섞지 않는다.
 
