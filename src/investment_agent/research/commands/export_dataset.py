@@ -28,6 +28,7 @@ from investment_agent.research.features.layer import (
 from investment_agent.research.rl.contracts import FeatureSnapshot
 from investment_agent.research.datasets import build_research_dataset
 from investment_agent.research.datasets.universe import members_over_window
+from investment_agent.research.storage.repository import ResearchStore
 from investment_agent.research.training.baseline import EXCESS_LABEL_PREFIX
 
 log = get_logger(__name__)
@@ -76,6 +77,7 @@ def export_dataset(
     feature_version: str = FEATURE_VERSION,
     output: Path | None = None,
     repository: SupabaseRepository | None = None,
+    store: ResearchStore | None = None,
 ) -> dict[str, Any]:
     """원장을 읽어 label이 확정된 행만 학습 dataset으로 결합한다."""
     started = time.monotonic()
@@ -87,10 +89,11 @@ def export_dataset(
     if not symbols:
         raise RuntimeError("no tracked ticker is available for dataset export")
 
-    snapshot_rows = selected.rl_feature_snapshot_rows(
+    selected_store = store if store is not None else ResearchStore(read_only=True)
+    snapshot_rows = selected_store.rl_feature_snapshot_rows(
         symbols, start_as_of=start_as_of, end_as_of=end_as_of, feature_version=feature_version,
     )
-    label_rows = selected.rl_training_label_rows(
+    label_rows = selected_store.rl_training_label_rows(
         symbols, start_as_of=start_as_of, end_as_of=end_as_of,
         feature_version=feature_version, label_cutoff_at=label_cutoff_at,
     )

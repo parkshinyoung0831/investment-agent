@@ -322,6 +322,17 @@
 - 남은 debt: `export_dataset`, RL training loader, ML serving이 façade를 사용한다. `build_training_samples`도 universe reader 타입이 구체 `SupabaseRepository`이므로 일반 Research→Trading 역방향은 별도 작업이다.
 - 다음 독립 작업: `export_dataset`이 universe membership reader와 ResearchStore를 별도 주입받도록 이관한다.
 
+#### Full read Task 2c — export_dataset read 이관
+
+- 변경 전 실제 호출 관계: `export_dataset`이 기간 membership과 feature/label full payload를 모두 `SupabaseRepository`에서 읽었다. dataset 결합·purged split 테스트의 한 fake도 universe와 Research artifact를 함께 구현했다.
+- 변경 이유: export가 결합하는 두 원장 payload는 ResearchStore의 검증된 canonical read이며, universe membership은 별도 입력이다.
+- 수정 파일: `src/investment_agent/research/commands/export_dataset.py`, `tests/investment_agent/research/commands/test_dataset_export.py`, 현재 계획과 이 원장. 이동·삭제 파일, JSON 형식, 계산, schema 변경 없음.
+- import·runtime 방향: command는 membership에 기존 reader를 쓰고, feature/label에는 주입 store 또는 기본 `ResearchStore(read_only=True)`를 쓴다. label cutoff, 동일 시점 imputation, excess-return target과 출력 형식은 유지된다.
+- 테스트 결과: store 주입 계약 4개가 기존 구현의 인자 오류로 RED였고, 구현 후 dataset export·purged split·owner·architecture·workflow 88개 통과.
+- 제거된 debt: 세 Research command의 full feature/label read가 Trading façade에서 모두 분리되어 계획 Task 2가 완료됐다. pending은 구체 universe reader와 다른 Trading imports 때문에 44쌍 유지.
+- 남은 debt: `research/rl/features.py`를 사용하는 training runtime과 `research/ml_serving.py`의 serving runtime이 façade를 사용한다.
+- 다음 독립 작업: Task 3에서 `load_historical_training_set`의 feature/label repository와 membership repository가 실제 상위 caller에서 어떻게 조립되는지 추적한 뒤 owner를 분리한다.
+
 ## 향후 milestone
 
 | 묶음 | 해당 phase | 독립 완료 조건 |

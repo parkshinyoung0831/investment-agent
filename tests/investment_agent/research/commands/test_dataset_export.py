@@ -37,10 +37,11 @@ def _features(seed: float, *, drop_technical: bool = False) -> dict:
 
 
 class _Repository:
-    """원장 두 표만 흉내낸다."""
+    """기간 universe reader만 흉내낸다."""
 
     def __init__(self, periods: int = 12):
         self.periods = periods
+        self.store = _Store(self)
 
     def current_tracked_tickers(self):
         return list(_TICKERS)
@@ -48,10 +49,17 @@ class _Repository:
     def _as_of(self, index: int) -> datetime:
         return _START + timedelta(days=7 * index)
 
+
+class _Store:
+    """Research feature/label owner read를 흉내낸다."""
+
+    def __init__(self, owner):
+        self.owner = owner
+
     def rl_feature_snapshot_rows(self, symbols, *, start_as_of, end_as_of, feature_version):
         rows = []
-        for index in range(self.periods):
-            as_of = self._as_of(index)
+        for index in range(self.owner.periods):
+            as_of = self.owner._as_of(index)
             for position, ticker in enumerate(_TICKERS):
                 rows.append({
                     "feature_version": feature_version,
@@ -71,8 +79,8 @@ class _Repository:
     def rl_training_label_rows(self, symbols, *, start_as_of, end_as_of, feature_version, label_cutoff_at):
         cutoff = parse_datetime(label_cutoff_at)
         rows = []
-        for index in range(self.periods):
-            as_of = self._as_of(index)
+        for index in range(self.owner.periods):
+            as_of = self.owner._as_of(index)
             end = as_of + timedelta(days=_HORIZON_DAYS)
             if end > cutoff:
                 continue
@@ -99,6 +107,7 @@ class ExportDatasetTest(unittest.TestCase):
             horizon_days=5,
             output=output,
             repository=repository,
+            store=repository.store,
         )
 
     def test_export_writes_a_dataset_that_reloads_into_a_matrix(self):
@@ -145,11 +154,11 @@ class PurgedSplitTest(unittest.TestCase):
     def _dataset(self, periods: int = 12):
         repository = _Repository(periods=periods)
         end = _START + timedelta(days=7 * periods + 30)
-        features = repository.rl_feature_snapshot_rows(
+        features = repository.store.rl_feature_snapshot_rows(
             _TICKERS, start_as_of=_START.isoformat(), end_as_of=end.isoformat(),
             feature_version=FEATURE_VERSION,
         )
-        labels = repository.rl_training_label_rows(
+        labels = repository.store.rl_training_label_rows(
             _TICKERS, start_as_of=_START.isoformat(), end_as_of=end.isoformat(),
             feature_version=FEATURE_VERSION, label_cutoff_at=end.isoformat(),
         )
