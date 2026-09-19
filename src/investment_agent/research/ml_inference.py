@@ -15,7 +15,7 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
-from investment_agent.trading.contracts import ContractError
+from investment_agent.platform.serialization import ContractError
 
 # artifact 상태만으로 같은 예측을 다시 만들 수 있는 모델. 부스팅은 booster 원문을 저장한다.
 RELOADABLE_KINDS = ("naive", "ridge", "lightgbm", "xgboost")

@@ -29,11 +29,10 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 
 from investment_agent.platform.logging import get_logger
-from investment_agent.platform.serialization import parse_datetime
+from investment_agent.platform.serialization import ContractError, parse_datetime
 from investment_agent.research.features.layer import impute_cross_section
 from investment_agent.research.ml_inference import LoadedModel, load_model
 from investment_agent.research.rl.contracts import FeatureSnapshot, RLSafetyError
-from investment_agent.trading.contracts import ContractError
 from investment_agent.trading.decision.constants import SIGNAL_HORIZON_DAYS
 
 log = get_logger(__name__)

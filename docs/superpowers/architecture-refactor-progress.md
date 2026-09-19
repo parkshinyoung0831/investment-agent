@@ -7,8 +7,8 @@
 - 기준 원격 `main`: `4181f6b53d84105f2b78d78c69e9119c1f55a6cf` (2026-09-20 세션 시작 시 로컬 HEAD와 일치 확인).
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
-- 현재 단계: Phase 3의 Research 공통 serialization import 후속 정리 중. valuation 3곳, command 7곳, RL·training·backtest 7곳 완료. ML 3곳과 최종 통합이 남았다.
-- 현재 계획: `docs/superpowers/plans/2026-09-20-research-shared-serialization-imports.md` (Task 1~3 완료, Task 4 남음).
+- 현재 단계: Phase 3의 순수 공통 serialization import 20곳 이관 완료. 남은 두 `trading/contracts.py` import는 실제 금융 계약을 포함하므로 별도 소유권 설계가 필요하다.
+- 현재 계획: `docs/superpowers/plans/2026-09-20-research-shared-serialization-imports.md` (Task 1~4 완료).
 - 완료 단계: Phase 1 조사와 Phase 2의 feature snapshot·training label·valuation·event artifact write 직접 이관, 관련 façade 메서드 제거. 현재 `PENDING_DEPENDENCIES`는 68쌍이다.
 - maintenance 상태: 확인·설정하지 않았다. 하네스 또는 execution 코드를 수정하기 전에 `harness_switch --maintenance on`을 수행하고 상태를 확인한다. live flag는 변경하지 않는다.
 
@@ -277,6 +277,17 @@
 - 테스트 결과: pending 제거 직후 architecture test가 정확히 7개 위반으로 RED, 변경 후 RL·training·backtest·architecture·docs consistency 69개 통과, `git diff --check` 통과.
 - 남은 debt: ML 3곳의 공통 import, 실제 금융/portfolio 계약과 Trading algorithm/read 호출.
 - 다음 독립 작업: ML 세 파일의 정확한 심볼을 확인하고 선택적 ML 패키지 오류 기준선과 구분해 검증한다.
+
+#### Shared serialization Task 4 — ML 세 곳과 통합 검증
+
+- 변경 전 호출·import 관계: `research/ml_inference.py`, `ml_serving.py`, `models/baselines.py`는 공통 `ContractError` 또는 `parse_datetime`를 Trading 재수출에서 읽었다. ML 모델 학습·serving 구현은 Research 내부에 그대로 있다.
+- 변경 이유: 공통 검증/시각 파싱의 실제 owner는 Platform이며 Trading 금융 판단 구현을 요구하지 않는다.
+- 수정 파일: 위 ML 3개, architecture test, 이 원장. 이동·삭제 파일, ML 알고리즘·artifact·schema 변경 없음.
+- dependency 방향: 세 순수 import가 Platform 직접 경로로 바뀌고 정확한 pending 3쌍을 제거했다(47→44). 전체 후속 계획에서는 valuation 3, command 7, RL·training·backtest 7, ML 3으로 총 20쌍(64→44)을 제거했고 새 pending은 없다.
+- 테스트 결과: pending 제거 직후 architecture test에서 정확한 세 위반으로 RED, 이후 ML serving·baseline·architecture·docs consistency 42개와 선택적 booster 없이 실행 가능한 inference 6개가 통과했다. 전체 suite 3,016개에서 기존과 같은 `lightgbm`/`xgboost` 미설치 오류 4개, skip 1개 외 새 실패 없음. `git diff --check` 통과.
+- 제거된 debt: 순수 공통 심볼 때문에 Research가 Trading 계약을 import하던 20곳. 현재 Research에서 남은 `trading/contracts.py` 직접 import는 `features/layer.py`의 `EvidenceBundle`(같은 줄의 `parse_datetime`는 나중에 독립 정리 가능)과 `evaluation/evaluator.py`의 `EvaluationResult` 두 곳뿐이다.
+- 남은 debt: 실제 Trading 금융 계약·portfolio·risk·system 구현을 Research가 참조하는 경로, Supabase read façade, event evidence cache 및 backtest/system validation 경계. 이들을 단순 Platform 이동이나 re-export로 숨기지 않는다.
+- 다음 독립 작업: feature/label full read façade의 모든 caller와 PIT filter를 다시 검증한 뒤 Research owner read 계약 이관 여부를 결정한다. 실제 production Trading algorithm 검증은 필요할 때에만 `research/system_validation` 경계로 별도 분리한다.
 
 ## 향후 milestone
 
