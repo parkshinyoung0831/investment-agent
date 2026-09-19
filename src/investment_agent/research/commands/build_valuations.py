@@ -15,7 +15,7 @@ from typing import Any
 
 from investment_agent.platform.cli.runtime import run_log_payload
 from investment_agent.platform.logging import get_logger
-from investment_agent.trading.contracts import ContractError, parse_datetime
+from investment_agent.platform.serialization import ContractError, parse_datetime
 from investment_agent.trading.supabase_repository import SupabaseRepository
 from investment_agent.research.datasets.universe import research_universe
 from investment_agent.research.storage.repository import ResearchStore

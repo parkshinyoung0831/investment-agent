@@ -11,7 +11,7 @@ from typing import Any, Mapping, Sequence
 
 from investment_agent.data.fundamentals.domain.filing import filing_available_at as _filing_available_at
 from investment_agent.data.market.domain.calendar import bar_available_at
-from investment_agent.trading.contracts import parse_datetime
+from investment_agent.platform.serialization import parse_datetime
 from investment_agent.research.valuation.engine import PITScalar, PITValuationInputs
 
 # TTM은 직전 4개 분기의 합이다. financials의 분기 행은 Q1~Q4로 구분한다.

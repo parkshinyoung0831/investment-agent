@@ -6,8 +6,7 @@ import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
-from investment_agent.trading.contracts import ContractError, parse_datetime
-from investment_agent.platform.serialization import canonical_json
+from investment_agent.platform.serialization import ContractError, canonical_json, parse_datetime
 
 
 _TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.-]{0,14}$")

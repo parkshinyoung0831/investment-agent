@@ -348,7 +348,6 @@ class LayerDirectionTest(unittest.TestCase):
             ("src/investment_agent/research/commands/build_labels.py", "investment_agent.trading.supabase_repository"),
             ("src/investment_agent/research/commands/build_training_samples.py", "investment_agent.trading.contracts"),
             ("src/investment_agent/research/commands/build_training_samples.py", "investment_agent.trading.supabase_repository"),
-            ("src/investment_agent/research/commands/build_valuations.py", "investment_agent.trading.contracts"),
             ("src/investment_agent/research/commands/build_valuations.py", "investment_agent.trading.supabase_repository"),
             ("src/investment_agent/research/commands/continuous_retrain.py", "investment_agent.trading.supabase_repository"),
             ("src/investment_agent/research/commands/evaluate.py", "investment_agent.trading.supabase_repository"),
@@ -378,8 +377,6 @@ class LayerDirectionTest(unittest.TestCase):
             ("src/investment_agent/research/rl/leakage.py", "investment_agent.trading.contracts"),
             ("src/investment_agent/research/training/baseline.py", "investment_agent.trading.contracts"),
             ("src/investment_agent/research/training/walk_forward.py", "investment_agent.trading.contracts"),
-            ("src/investment_agent/research/valuation/engine.py", "investment_agent.trading.contracts"),
-            ("src/investment_agent/research/valuation/inputs.py", "investment_agent.trading.contracts"),
         }
     )
 
