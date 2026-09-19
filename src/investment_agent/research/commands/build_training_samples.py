@@ -16,9 +16,8 @@ from typing import Any, Mapping
 
 from investment_agent.platform.cli.runtime import run_log_payload
 from investment_agent.platform.logging import get_logger
-from investment_agent.platform.serialization import canonical_json
+from investment_agent.platform.serialization import ContractError, canonical_json, parse_datetime
 from investment_agent.research.evaluation.costs import TransactionCostModel
-from investment_agent.trading.contracts import ContractError, parse_datetime
 from investment_agent.trading.supabase_repository import SupabaseRepository
 from investment_agent.research.features.layer import FEATURE_VERSION, impute_cross_section
 from investment_agent.research.rl.contracts import FeatureSnapshot

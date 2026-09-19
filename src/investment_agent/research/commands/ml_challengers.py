@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from investment_agent.platform.logging import get_logger
-from investment_agent.platform.serialization import canonical_json, parse_datetime
+from investment_agent.platform.serialization import ContractError, canonical_json, parse_datetime
 from investment_agent.research.commands.adopt_ml_model import check_adoptable
 from investment_agent.research.commands.export_dataset import export_dataset
 from investment_agent.research.commands.train_baseline import artifact_document
@@ -33,7 +33,6 @@ from investment_agent.research.ml_serving import default_active_model_path
 from investment_agent.research.rl.contracts import RLSafetyError
 from investment_agent.research.training.baseline import train_baseline_dataset
 from investment_agent.research.training.walk_forward import purged_row_splits
-from investment_agent.trading.contracts import ContractError
 
 log = get_logger(__name__)
 

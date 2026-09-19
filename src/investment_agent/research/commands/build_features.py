@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from investment_agent.platform.cli.runtime import run_log_payload
 from investment_agent.platform.logging import get_logger
 from investment_agent.trading.evidence.context import ContextBuilder
-from investment_agent.trading.contracts import parse_datetime
+from investment_agent.platform.serialization import parse_datetime
 from investment_agent.trading.supabase_repository import SupabaseRepository
 from investment_agent.research.features.layer import FEATURE_VERSION, FeatureLayer
 from investment_agent.research.datasets.universe import research_universe

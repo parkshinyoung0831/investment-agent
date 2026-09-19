@@ -18,7 +18,7 @@ from investment_agent.trading.decision.constants import SIGNAL_HORIZON_DAYS
 from investment_agent.platform.logging import get_logger
 from investment_agent.research.ml_inference import MIN_IC_T_STAT, load_model
 from investment_agent.research.ml_serving import default_active_model_path
-from investment_agent.trading.contracts import ContractError
+from investment_agent.platform.serialization import ContractError
 
 log = get_logger(__name__)
 
