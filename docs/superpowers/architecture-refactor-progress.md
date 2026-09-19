@@ -7,8 +7,8 @@
 - 기준 원격 `main`: `4181f6b53d84105f2b78d78c69e9119c1f55a6cf` (2026-09-20 세션 시작 시 로컬 HEAD와 일치 확인).
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
-- 현재 단계: Phase 2의 training sample metadata scalar read를 Research owner로 직접 이관 중이다. 나머지 feature/label full read façade는 유지하며 별도 판단한다.
-- 현재 계획: `docs/superpowers/plans/2026-09-20-training-sample-metadata-read-boundary.md` (Task 1 완료, Task 2 남음).
+- 현재 단계: Phase 2의 training sample metadata scalar read 이관과 미사용 trading façade 제거 완료. 다음은 Research feature/label full read의 caller·PIT 계약을 별도 판단한다.
+- 현재 계획: `docs/superpowers/plans/2026-09-20-training-sample-metadata-read-boundary.md` (Task 1~2 완료).
 - 완료 단계: Phase 1 조사와 Phase 2의 feature snapshot·training label·valuation·event artifact write 직접 이관, 관련 façade 메서드 제거. 현재 `PENDING_DEPENDENCIES`는 68쌍이다.
 - maintenance 상태: 확인·설정하지 않았다. 하네스 또는 execution 코드를 수정하기 전에 `harness_switch --maintenance on`을 수행하고 상태를 확인한다. live flag는 변경하지 않는다.
 
@@ -214,6 +214,16 @@
 - 제거된 debt: lightweight metadata production read의 trading façade 경유 1곳. `PENDING_DEPENDENCIES`는 아직 68쌍이다.
 - 남은 debt: façade의 미사용 메서드 하나와 Research feature/label full row read façade, 일반 Research→Trading import.
 - 다음 독립 작업: façade 메서드 하나만 삭제하고 owner guard·통합 테스트를 확인한다.
+
+#### Training metadata read Task 2 — façade 제거와 통합 검증
+
+- 변경 전·후 호출 관계: metadata projection은 `build_training_samples → SupabaseRepository → ResearchStore`에서 `build_training_samples → ResearchStore`로 바뀌었다. `SupabaseRepository.training_sample_period_inputs`는 command 이관 뒤 production/test caller 0건이어서 삭제했다.
+- 수정 파일 전체: `research/storage/repository.py`, `research/commands/build_training_samples.py`, `trading/supabase_repository.py`, Research command·storage 테스트, `trading/test_repository_ownership.py`, 이 원장. 새 Research metadata 테스트 1개 외 파일 이동·삭제와 schema 변경은 없다.
+- import·runtime 방향: scalar metadata read는 Research owner만 정의·호출한다. AST 가드는 owner 밖의 정의와 호출을 모두 검출하며, 기존 trading façade 정의에서 RED 후 삭제로 GREEN이 됐다. `build_training_samples`가 full feature/label rows를 읽는 `SupabaseRepository` import는 그대로 유지돼 `PENDING_DEPENDENCIES`는 68쌍이다.
+- 테스트 결과: metadata·training command·record key·backfill·RL repository·ownership·architecture·repo convention·workflow·docs consistency 159개 통과. 전체 suite 3,016개 중 기준선과 같은 `lightgbm`/`xgboost` 미설치 오류 4개, skip 1개이며 새 실패는 없다. `git diff --check` 통과.
+- 제거된 debt: 미사용 trading metadata read façade 메서드 하나와 command의 역방향 runtime 경유.
+- 남은 debt: `rl_feature_snapshot_rows`, `rl_training_label_rows`는 research의 build_labels·build_training_samples·export_dataset·RL features·ML serving과 일부 테스트에서 사용한다. façade 자체를 제거하려면 각 caller의 version·ticker·availability·label cutoff 필터와 반환 정규화 계약을 먼저 고정해야 한다.
+- 다음 독립 작업: full feature/label read의 전체 caller를 조사하고 `ResearchStore`에 실제 공통 read 계약이 필요한지 판단한다. Research command 한 곳만 바꿔 미사용 façade라고 주장하지 않는다.
 
 ## 향후 milestone
 

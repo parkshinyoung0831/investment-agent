@@ -17,6 +17,7 @@ RESEARCH_WRITE_METHODS = frozenset({
     "save_training_samples",
     "save_valuation_observations",
 })
+RESEARCH_READ_METHODS = frozenset({"training_sample_period_inputs"})
 
 
 def _research_write_violations(relative_path: Path, source: str) -> list[tuple[int, str]]:
@@ -31,6 +32,22 @@ def _research_write_violations(relative_path: Path, source: str) -> list[tuple[i
     if relative_path.parts and relative_path.parts[0] == "research":
         return []
     return calls
+
+
+def _research_read_violations(relative_path: Path, source: str) -> list[tuple[int, str]]:
+    """Research 전용 scalar read의 owner 밖 정의·호출을 반환한다."""
+    if relative_path.parts and relative_path.parts[0] == "research":
+        return []
+    return [
+        (node.lineno, node.name if isinstance(node, ast.FunctionDef) else node.func.attr)
+        for node in ast.walk(ast.parse(source))
+        if (
+            isinstance(node, ast.FunctionDef) and node.name in RESEARCH_READ_METHODS
+        ) or (
+            isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr in RESEARCH_READ_METHODS
+        )
+    ]
 
 
 class RepositoryOwnershipTest(unittest.TestCase):
@@ -114,6 +131,29 @@ class RepositoryOwnershipTest(unittest.TestCase):
         self.assertEqual(
             _research_write_violations(Path("trading/injected.py"), sample_source),
             [(2, "save_training_samples"), (3, "save_training_sample_runs")],
+        )
+
+    def test_training_metadata_scalar_read_stays_in_research_owner(self) -> None:
+        from investment_agent.research.storage.repository import ResearchStore
+
+        self.assertTrue(RESEARCH_READ_METHODS <= set(dir(ResearchStore)))
+        violations = [
+            f"{path.relative_to(PACKAGE).as_posix()}:{line}:{method}"
+            for path in PACKAGE.rglob("*.py")
+            for line, method in _research_read_violations(
+                path.relative_to(PACKAGE), path.read_text(encoding="utf-8")
+            )
+        ]
+        self.assertEqual(violations, [])
+
+    def test_training_metadata_read_guard_rejects_trading_definition_and_caller(self) -> None:
+        source = (
+            "def training_sample_period_inputs(self):\n    pass\n"
+            "def leak(reader):\n    reader.training_sample_period_inputs()\n"
+        )
+        self.assertEqual(
+            _research_read_violations(Path("trading/injected.py"), source),
+            [(1, "training_sample_period_inputs"), (4, "training_sample_period_inputs")],
         )
 
 

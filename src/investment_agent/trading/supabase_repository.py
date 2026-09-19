@@ -1328,45 +1328,6 @@ class SupabaseRepository:
         ]
         return [_training_label(dict(row)).to_storage_row() for row in rows]
 
-    def training_sample_period_inputs(
-        self,
-        symbols: Sequence[str],
-        *,
-        start_as_of: str,
-        end_as_of: str,
-        feature_version: str,
-        label_cutoff_at: str,
-    ) -> dict[str, list[dict[str, Any]]]:
-        """표본 매니페스트 확인에 필요한 scalar만 읽어 전수 JSON 복원을 피한다."""
-        normalized = set(normalize_symbols(tuple(symbols)))
-        start = parse_datetime(start_as_of)
-        end = parse_datetime(end_as_of)
-        cutoff = parse_datetime(label_cutoff_at)
-        if end < start or cutoff < end:
-            raise ValueError("invalid training sample metadata window")
-        store = research_adapter.open_research_store(read_only=True)
-        snapshots = store.records_with_payload_fields(
-            "rl_feature_snapshots", ("feature_version", "input_hash"),
-            start_as_of=start.isoformat(), end_as_of=end.isoformat(),
-        )
-        labels = store.records_with_payload_fields(
-            "rl_training_labels", ("feature_version", "label_available_at", "label_id"),
-            start_as_of=start.isoformat(), end_as_of=end.isoformat(),
-        )
-        return {
-            "snapshots": [
-                row for row in snapshots
-                if row.get("feature_version") == feature_version
-                and normalize_ticker(str(row.get("ticker"))) in normalized
-            ],
-            "labels": [
-                row for row in labels
-                if row.get("feature_version") == feature_version
-                and normalize_ticker(str(row.get("ticker"))) in normalized
-                and parse_datetime(str(row["label_available_at"])) <= cutoff
-            ],
-        }
-
     def rl_historical_membership_rows(
         self,
         *,
