@@ -1226,12 +1226,6 @@ class SupabaseRepository:
         """표본 저장이 끝난 기준일만 기록해 다음 실행의 재계산을 막는다."""
         return self._research_store().save_training_sample_runs(rows)
 
-    def save_rl_feature_snapshots(self, rows: list[dict]) -> None:
-        self._research_store().save_rl_feature_snapshots(rows)
-
-    def save_rl_training_labels(self, rows: list[dict]) -> None:
-        self._research_store().save_rl_training_labels(rows)
-
     def share_class_snapshots_pit(
         self,
         ticker: str,

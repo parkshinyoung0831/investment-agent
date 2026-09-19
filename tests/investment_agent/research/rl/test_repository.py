@@ -10,6 +10,7 @@ from unittest.mock import patch
 from investment_agent.trading.supabase_repository import SupabaseRepository
 from investment_agent.research.promotion.gate import EvaluationSummary, ManualPromotionGate
 from investment_agent.research.rl.contracts import FeatureSnapshot, ForwardReturnLabel
+from investment_agent.research.storage.repository import ResearchStore
 from investment_agent.platform.db.postgres import Database
 from investment_agent.platform.db.sqlite import runtime_connection
 
@@ -262,8 +263,10 @@ class RLRepositoryTest(unittest.TestCase):
     def test_tampered_feature_hash_is_rejected_before_write(self):
         row = _feature().to_storage_row()
         row["input_hash"] = "0" * 64
-        with self.assertRaisesRegex(RuntimeError, "input_hash"):
-            SupabaseRepository().save_rl_feature_snapshots([row])
+        with tempfile.TemporaryDirectory() as temporary:
+            store = ResearchStore(Path(temporary) / "research.duckdb")
+            with self.assertRaisesRegex(RuntimeError, "input_hash"):
+                store.save_rl_feature_snapshots([row])
 
     def test_membership_rows_keep_point_in_time_source(self):
         repository = SupabaseRepository()

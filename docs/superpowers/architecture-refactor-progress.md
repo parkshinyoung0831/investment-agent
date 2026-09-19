@@ -76,6 +76,18 @@
 - 남은 debt: façade의 두 미사용 호환 메서드, feature hash 검증 테스트의 façade caller, 나머지 God façade 책임과 `PENDING_DEPENDENCIES` 69쌍.
 - 다음 독립 작업: Task 3에서 두 façade 메서드를 제거하고 Research write ownership guard를 위반 주입으로 검증한다.
 
+#### Task 3 — feature·label write façade 제거
+
+- 변경 전 호출 관계: Task 1·2 뒤 production write caller는 `research.commands.build_features`와 `build_labels`뿐이었지만, `SupabaseRepository`에는 ResearchStore로 전달하는 두 호환 메서드가 남아 있었다. 변조 hash 테스트도 feature owner가 아닌 trading façade를 통해 검증했다.
+- 변경 이유: caller가 0인 호환 write를 남기면 이후 코드가 다시 trading façade에 결합할 수 있고, 실제 저장 검증 owner가 테스트에서 가려진다.
+- 수정 파일: `src/investment_agent/trading/supabase_repository.py`, `tests/investment_agent/research/rl/test_repository.py`, `tests/investment_agent/trading/test_repository_ownership.py`, 이 원장.
+- 이동·삭제 파일: 파일 이동·삭제는 없다. `SupabaseRepository.save_rl_feature_snapshots()`와 `save_rl_training_labels()` 메서드 두 개를 삭제했다.
+- import·runtime 방향 변화: feature·label write는 research command → `ResearchStore`로만 흐른다. 변조 hash 검증도 `ResearchStore`를 직접 사용한다. AST ownership guard는 두 write 호출이 `src/investment_agent/research/**` 밖에 생기면 실패한다.
+- 테스트 결과: 새 ownership guard가 기존 trading façade 호출 2건으로 RED가 되는 것을 확인했다. 제거 후 관련 63개가 통과했다. trading에 임시 위반 1건을 주입했을 때 guard 실패를 확인하고 원복한 뒤 같은 63개를 다시 통과시켰다.
+- 제거된 debt: trading façade의 feature snapshot·training label write 책임과 façade를 통하던 validation test caller.
+- 남은 debt: `SupabaseRepository`에는 valuation·event·training sample·promotion 등 다른 Research 저장/조회와 data read·trading/execution 책임이 남아 있다. `build_features`·`build_labels`의 read·계약 import도 trading을 향하므로 `PENDING_DEPENDENCIES` 69쌍은 아직 줄지 않았다.
+- 다음 독립 작업: Task 4 통합 검증 후, 현재 caller를 다시 조사해 valuation·event·training sample 중 가장 작은 Research owner 이관 계획을 작성한다.
+
 ## 향후 milestone
 
 | 묶음 | 해당 phase | 독립 완료 조건 |
