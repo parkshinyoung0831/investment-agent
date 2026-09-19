@@ -10,8 +10,8 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any, Callable
 
-from investment_agent.trading.decision.llm.agents import analysts, debate, risk_debate, trader
-from investment_agent.trading.decision.llm.agents.graph_state import AnalystReports
+from investment_agent.trading.decision.agents import analysts, debate, risk_debate, trader
+from investment_agent.trading.decision.agents.graph_state import AnalystReports
 from investment_agent.trading.decision.llm.client import LLMClient
 
 

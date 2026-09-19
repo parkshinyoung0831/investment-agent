@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import unittest
 
-from investment_agent.trading.decision.llm.agents import orchestrator
+from investment_agent.trading.decision.agents import orchestrator
 
 
 class _FakeClient:

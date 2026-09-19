@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from investment_agent.trading.decision.llm.agents import analysts
+from investment_agent.trading.decision.agents import analysts
 
 
 class _RecordingClient:

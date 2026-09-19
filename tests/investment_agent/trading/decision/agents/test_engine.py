@@ -7,9 +7,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from investment_agent.trading.decision.llm.agents import tradingagents_adapter as adapter
-from investment_agent.trading.decision.llm.agents import social_source
-from investment_agent.trading.contracts import EvidenceBundle, EvidenceItem
+from investment_agent.trading.decision.agents.engine import TradingAgentsDecisionEngine
+from investment_agent.trading.decision.llm import runtime as adapter
+from investment_agent.trading.decision.llm import social_source
+from investment_agent.trading.contracts import ContractError, EvidenceBundle, EvidenceItem
 
 
 def _bundle() -> EvidenceBundle:
@@ -169,7 +170,7 @@ class TradingAgentsAdapterTest(unittest.TestCase):
             adapter._ACTIVE_BUNDLE.reset(token)
 
     def test_structured_result_keeps_missing_data(self):
-        result = adapter.TradingAgentsDecisionEngine(_Client(), _Runner()).run(
+        result = TradingAgentsDecisionEngine(_Client(), _Runner()).run(
             _bundle(), memory_text="past evaluated case"
         )
         self.assertEqual(result.proposal.ticker, "AAPL")
@@ -178,7 +179,7 @@ class TradingAgentsAdapterTest(unittest.TestCase):
 
     def test_one_repair_request_fixes_an_invalid_citation_without_rerunning_the_roles(self):
         client = _RepairClient(["EV-OLD-DAY", "EV-MARKET-123"])
-        result = adapter.TradingAgentsDecisionEngine(client, _Runner()).run(_bundle(), memory_text="m")
+        result = TradingAgentsDecisionEngine(client, _Runner()).run(_bundle(), memory_text="m")
         self.assertEqual(result.proposal.evidence_ids, ("EV-MARKET-123",))
         self.assertEqual([call["task_name"] for call in client.calls],
                          ["tradingagents_security_proposal", "tradingagents_security_proposal_repair"])
@@ -187,13 +188,13 @@ class TradingAgentsAdapterTest(unittest.TestCase):
 
     def test_a_second_violation_still_fails_closed(self):
         client = _RepairClient(["EV-OLD-DAY", "EV-STILL-WRONG"])
-        with self.assertRaises(adapter.ContractError):
-            adapter.TradingAgentsDecisionEngine(client, _Runner()).run(_bundle(), memory_text="m")
+        with self.assertRaises(ContractError):
+            TradingAgentsDecisionEngine(client, _Runner()).run(_bundle(), memory_text="m")
         self.assertEqual(len(client.calls), 2)
 
     def test_a_valid_first_answer_makes_exactly_one_structuring_call(self):
         client = _RepairClient(["EV-MARKET-123"])
-        adapter.TradingAgentsDecisionEngine(client, _Runner()).run(_bundle(), memory_text="m")
+        TradingAgentsDecisionEngine(client, _Runner()).run(_bundle(), memory_text="m")
         self.assertEqual(len(client.calls), 1)
 
     def test_guru_evidence_is_available_to_fundamental_analyst(self):
@@ -222,7 +223,7 @@ class TradingAgentsAdapterTest(unittest.TestCase):
         self.assertIn("EV-GURUS-123", result)
 
     def test_external_manifest_id_can_be_cited_without_raw_text(self):
-        result = adapter.TradingAgentsDecisionEngine(
+        result = TradingAgentsDecisionEngine(
             _ExternalClient(), _ExternalRunner()
         ).run(_bundle(), memory_text="")
         self.assertEqual(result.proposal.evidence_ids, ("EXT-NEWS-ABC",))
@@ -546,7 +547,7 @@ class TradingAgentsAdapterTest(unittest.TestCase):
         self.assertEqual(len(manifests), 1)
         self.assertNotIn("raw_content", manifests[0])
     def test_modular_sources_separation(self):
-        from investment_agent.trading.decision.llm.agents import (
+        from investment_agent.trading.decision.llm import (
             fundamentals_source,
             market_source,
             news_source,

@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from investment_agent.trading.decision.llm.agents.vendor.stocktwits import fetch_stocktwits_messages
+from investment_agent.trading.decision.llm.vendor.stocktwits import fetch_stocktwits_messages
 
 
 def _payload(messages: list[dict]) -> bytes:

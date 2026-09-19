@@ -10,7 +10,7 @@ from typing import Any
 
 from investment_agent.platform.serialization import canonical_json
 from investment_agent.trading.decision.constants import SIGNAL_HORIZON_DAYS
-from investment_agent.trading.decision.llm.agents.graph_state import (
+from investment_agent.trading.decision.agents.graph_state import (
     AnalystReports,
     RiskDebateState,
     risk_next_speaker,

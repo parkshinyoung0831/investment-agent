@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import unittest
 
-from investment_agent.trading.decision.llm.agents.vendor.yfinance_news import get_news_yfinance
+from investment_agent.trading.decision.llm.vendor.yfinance_news import get_news_yfinance
 
 
 class _FakeTicker:

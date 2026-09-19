@@ -131,7 +131,7 @@ class RuntimePreflightTest(unittest.TestCase):
     def test_every_candidate_failing_raises_one_runtime_error(self):
         import os
         from unittest import mock
-        from investment_agent.trading.decision.llm.agents.tradingagents_adapter import TradingAgentsRuntimeError
+        from investment_agent.trading.decision.llm.runtime import TradingAgentsRuntimeError
         from investment_agent.trading.decision.analysis import verify_runtime
 
         def broken():
@@ -145,7 +145,7 @@ class RuntimePreflightTest(unittest.TestCase):
         import os
         from unittest import mock
         import httpx
-        from investment_agent.trading.decision.llm.agents import tradingagents_adapter as adapter
+        from investment_agent.trading.decision.llm import runtime as adapter
 
         with mock.patch.dict(os.environ, {"AI_INVESTOR_BASE_URL": "https://example.invalid", "AI_INVESTOR_API_KEY": "k"}), \
                 mock.patch.object(httpx.Client, "get", side_effect=httpx.ConnectError("boom")):
@@ -156,7 +156,7 @@ class RuntimePreflightTest(unittest.TestCase):
         import os
         from unittest import mock
         import httpx
-        from investment_agent.trading.decision.llm.agents import tradingagents_adapter as adapter
+        from investment_agent.trading.decision.llm import runtime as adapter
 
         response = httpx.Response(401, request=httpx.Request("GET", "https://example.invalid/models"))
         with mock.patch.dict(os.environ, {"AI_INVESTOR_BASE_URL": "https://example.invalid", "AI_INVESTOR_API_KEY": "k"}), \

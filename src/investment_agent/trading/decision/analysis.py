@@ -14,13 +14,15 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from investment_agent.trading.decision.constants import DEFAULT_HORIZON_DAYS
-from investment_agent.trading.decision.llm.agents.tradingagents_adapter import (
+from investment_agent.trading.decision.agents.engine import (
     TradingAgentsDecisionEngine,
-    TradingAgentsRunner,
+)
+from investment_agent.trading.decision.agents.runner import TradingAgentsRunner
+from investment_agent.trading.decision.llm.runtime import (
     TradingAgentsRuntimeError,
     verify_tradingagents_runtime,
 )
-from investment_agent.trading.decision.llm.agents.social_source import enabled_social_vendors
+from investment_agent.trading.decision.llm.social_source import enabled_social_vendors
 from investment_agent.trading.decision.candidate_ranker import validate_live_candidate_as_of
 from investment_agent.trading.evidence.context import ContextBuilder
 from investment_agent.trading.contracts import parse_datetime

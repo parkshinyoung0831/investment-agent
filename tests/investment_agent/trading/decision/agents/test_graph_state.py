@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import unittest
 
-from investment_agent.trading.decision.llm.agents.graph_state import (
+from investment_agent.trading.decision.agents.graph_state import (
     InvestDebateState,
     RiskDebateState,
     debate_next_speaker,

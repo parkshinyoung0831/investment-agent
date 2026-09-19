@@ -13,7 +13,7 @@ import os
 import unittest
 from unittest import mock
 
-from investment_agent.trading.decision.llm.agents.tradingagents_adapter import (
+from investment_agent.trading.decision.llm.runtime import (
     _llm_max_retries,
     apply_downstream_api_key,
 )

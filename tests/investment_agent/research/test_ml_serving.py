@@ -117,13 +117,13 @@ class ChampionForecastTest(unittest.TestCase):
 class SignalHorizonContractTest(unittest.TestCase):
     def test_llm_schema_states_the_signal_horizon(self):
         from investment_agent.trading.decision.constants import SIGNAL_HORIZON_DAYS
-        from investment_agent.trading.decision.llm.agents.tradingagents_adapter import SECURITY_PROPOSAL_SCHEMA
+        from investment_agent.trading.decision.agents.engine import SECURITY_PROPOSAL_SCHEMA
 
         for field in ("expected_excess_return", "probability_up"):
             self.assertIn(f"{SIGNAL_HORIZON_DAYS} trading days", SECURITY_PROPOSAL_SCHEMA[field])
 
     def test_llm_schema_asks_for_a_thesis_not_a_trade(self):
-        from investment_agent.trading.decision.llm.agents.tradingagents_adapter import SECURITY_PROPOSAL_SCHEMA
+        from investment_agent.trading.decision.agents.engine import SECURITY_PROPOSAL_SCHEMA
 
         self.assertNotIn("signal", SECURITY_PROPOSAL_SCHEMA)
         self.assertNotIn("target_weight", SECURITY_PROPOSAL_SCHEMA)

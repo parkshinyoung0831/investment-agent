@@ -4,8 +4,8 @@ from __future__ import annotations
 import json
 import unittest
 
-from investment_agent.trading.decision.llm.agents import risk_debate
-from investment_agent.trading.decision.llm.agents.graph_state import AnalystReports, RiskDebateState
+from investment_agent.trading.decision.agents import risk_debate
+from investment_agent.trading.decision.agents.graph_state import AnalystReports, RiskDebateState
 
 
 class _ScriptedClient:

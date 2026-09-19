@@ -4,7 +4,7 @@ from __future__ import annotations
 import unittest
 from urllib.error import HTTPError
 
-from investment_agent.trading.decision.llm.agents.vendor.reddit import fetch_reddit_posts
+from investment_agent.trading.decision.llm.vendor.reddit import fetch_reddit_posts
 
 _ATOM_ONE_ENTRY = b"""<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">

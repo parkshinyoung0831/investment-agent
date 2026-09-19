@@ -13,7 +13,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
-from investment_agent.trading.decision.llm.agents.vendor.symbol_utils import normalize_symbol
+from investment_agent.trading.decision.llm.vendor.symbol_utils import normalize_symbol
 
 logger = logging.getLogger(__name__)
 

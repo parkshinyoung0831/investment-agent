@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import unittest
 
-from investment_agent.trading.decision.llm.agents.vendor.symbol_utils import (
+from investment_agent.trading.decision.llm.vendor.symbol_utils import (
     crypto_base,
     normalize_symbol,
 )

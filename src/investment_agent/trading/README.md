@@ -120,12 +120,12 @@ bundle은 다음을 함께 보존합니다.
 
 ## 4. TradingAgents
 
-`agents/tradingagents_adapter.py`는 upstream TradingAgents의 도구를 이 저장소의 데이터 경계로
-교체합니다.
+`decision/agents/`는 TradingAgents 역할 그래프와 공개 실행 인터페이스를,
+`decision/llm/runtime.py`는 upstream 도구를 이 저장소의 데이터 경계로 교체한 실행 환경을 소유합니다.
 
 ```mermaid
 flowchart TD
-    subgraph ANALYSTS["Analysts (병렬 실행)"]
+    subgraph ANALYSTS["Analysts (순차 실행)"]
         MA["Market<br/>market_report"]
         FA["Fundamentals<br/>fundamentals_report"]
         NA["News<br/>news_report"]

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import unittest
 
-from investment_agent.trading.decision.llm.agents.external_parsing import parse_external_payload
+from investment_agent.trading.decision.llm.external_parsing import parse_external_payload
 
 FETCHED_AT = "2026-09-03T00:00:00+00:00"
 

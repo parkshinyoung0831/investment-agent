@@ -6,7 +6,7 @@ import os
 import unittest
 from unittest import mock
 
-from investment_agent.trading.decision.llm.agents.vendor.alpha_vantage_news import (
+from investment_agent.trading.decision.llm.vendor.alpha_vantage_news import (
     AlphaVantageNotConfiguredError,
     AlphaVantageRateLimitError,
     format_datetime_for_api,

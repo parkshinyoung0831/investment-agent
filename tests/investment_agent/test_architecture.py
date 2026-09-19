@@ -82,6 +82,16 @@ class ImportCollectionTest(unittest.TestCase):
                 _imported_names(source, package=package),
             )
 
+
+class TradingAgentsOwnershipTest(unittest.TestCase):
+    """TradingAgents 그래프와 LLM 실행 환경은 서로 다른 형제 패키지가 소유한다."""
+
+    def test_graph_and_llm_runtime_are_sibling_packages(self) -> None:
+        decision = PACKAGE / "trading" / "decision"
+        self.assertTrue((decision / "agents").is_dir())
+        self.assertTrue((decision / "llm" / "runtime.py").is_file())
+        self.assertFalse((decision / "llm" / "agents" / "__init__.py").is_file())
+
     def test_relative_imports_resolve_to_internal_module_names(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             package = Path(temporary_directory) / "investment_agent"

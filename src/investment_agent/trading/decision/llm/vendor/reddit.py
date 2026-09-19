@@ -18,7 +18,7 @@ from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from investment_agent.trading.decision.llm.agents.vendor.symbol_utils import crypto_base
+from investment_agent.trading.decision.llm.vendor.symbol_utils import crypto_base
 
 logger = logging.getLogger(__name__)
 
