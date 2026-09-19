@@ -139,11 +139,11 @@ def build_training_samples(
         snapshot_rows = lightweight_inputs["snapshots"]
         label_rows = lightweight_inputs["labels"]
     else:
-        snapshot_rows = selected.rl_feature_snapshot_rows(
+        snapshot_rows = selected_store.rl_feature_snapshot_rows(
             symbols, start_as_of=window_start, end_as_of=window_end,
             feature_version=feature_version,
         )
-        label_rows = selected.rl_training_label_rows(
+        label_rows = selected_store.rl_training_label_rows(
             symbols, start_as_of=window_start, end_as_of=window_end,
             feature_version=feature_version, label_cutoff_at=window_end,
         )
@@ -221,11 +221,11 @@ def build_training_samples(
 
     if lightweight_inputs and pending_source_rows:
         pending_dates = tuple(pending_source_rows)
-        full_snapshot_rows = selected.rl_feature_snapshot_rows(
+        full_snapshot_rows = selected_store.rl_feature_snapshot_rows(
             symbols, start_as_of=window_start, end_as_of=window_end,
             feature_version=feature_version, as_of_values=pending_dates,
         )
-        full_label_rows = selected.rl_training_label_rows(
+        full_label_rows = selected_store.rl_training_label_rows(
             symbols, start_as_of=window_start, end_as_of=window_end,
             feature_version=feature_version, label_cutoff_at=window_end,
             as_of_values=pending_dates,

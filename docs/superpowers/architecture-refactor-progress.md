@@ -311,6 +311,17 @@
 - 남은 debt: `build_training_samples`, `export_dataset`, RL training loader, ML serving이 두 façade 중 하나 이상을 사용한다. façade는 아직 삭제할 수 없다.
 - 다음 독립 작업: `build_training_samples`의 lightweight/full hydration 두 경로가 같은 ResearchStore를 사용하도록 테스트와 runtime을 이관한다.
 
+#### Full read Task 2b — build_training_samples read 이관
+
+- 변경 전 실제 호출 관계: completion 판정용 scalar metadata와 run manifest는 ResearchStore에서 읽었지만, metadata 미지원 fallback과 변경된 기간의 full payload hydration은 `SupabaseRepository.rl_feature_snapshot_rows`·`rl_training_label_rows`로 되돌아갔다.
+- 변경 이유: 한 학습 표본 실행 안에서 같은 Research artifact를 서로 다른 owner API로 읽으면 필터·무결성 계약이 갈라지고 Trading façade 제거가 불가능하다.
+- 수정 파일: `src/investment_agent/research/commands/build_training_samples.py`, `tests/investment_agent/research/commands/test_training_samples.py`, 이 원장. 이동·삭제 파일, schema, 비용·label 계산 변경 없음.
+- import·runtime 방향: metadata 지원 여부와 무관하게 full feature/label payload는 `selected_store`에서 읽는다. universe membership만 Trading/Data reader에 남고, 재시작 signature·변경 기간만 hydrate·sample batch 후 manifest 기록 순서는 유지된다.
+- 테스트 결과: test fake의 Trading full read를 제거한 뒤 기존 구현에서 14개 오류로 RED였다. 구현 후 training sample owner·metadata·persistence·architecture 48개, Research command 89개, architecture·workflow·docs 81개 통과.
+- 제거된 debt: `build_training_samples`의 네 full-read 호출 지점(초기 fallback 2, 선택 기간 hydration 2)이 Trading façade에서 분리됐다. pending은 파일의 다른 Trading imports 때문에 44쌍 유지.
+- 남은 debt: `export_dataset`, RL training loader, ML serving이 façade를 사용한다. `build_training_samples`도 universe reader 타입이 구체 `SupabaseRepository`이므로 일반 Research→Trading 역방향은 별도 작업이다.
+- 다음 독립 작업: `export_dataset`이 universe membership reader와 ResearchStore를 별도 주입받도록 이관한다.
+
 ## 향후 milestone
 
 | 묶음 | 해당 phase | 독립 완료 조건 |

@@ -89,10 +89,54 @@ def _features(seed: float) -> dict:
 
 
 class _ResearchStore:
-    def __init__(self):
+    def __init__(self, owner=None):
+        self.owner = owner
         self.saved: list = []
         self.save_calls = 0
         self.sample_runs: dict[str, dict] = {}
+        self.full_feature_reads: list[tuple[str, ...] | None] = []
+        self.full_label_reads: list[tuple[str, ...] | None] = []
+        self.feature_symbols: list[tuple[str, ...]] = []
+        self.label_symbols: list[tuple[str, ...]] = []
+
+    def rl_feature_snapshot_rows(self, symbols, *, as_of_values=None, feature_version, **_kwargs):
+        self.full_feature_reads.append(None if as_of_values is None else tuple(as_of_values))
+        self.feature_symbols.append(tuple(symbols))
+        rows = [{
+            "feature_version": feature_version,
+            "as_of_at": self.owner._as_of(index).isoformat(),
+            "ticker": ticker,
+            "available_at": (self.owner._as_of(index) - timedelta(hours=1)).isoformat(),
+            "is_available": True,
+            "features": _features(0.1 * (index + position)),
+            "source_ids": [f"EV-{ticker}-{index}"],
+            "provenance": {"definition_hash": "abc", "source_kind": "live_shadow"},
+            "input_hash": f"input-{index}-{ticker}-{'changed' if index in self.owner.changed_input_periods else 'base'}",
+        } for index in range(self.owner.periods) for position, ticker in enumerate(_TICKERS)]
+        return rows if as_of_values is None else [
+            row for row in rows if row["as_of_at"] in as_of_values
+        ]
+
+    def rl_training_label_rows(self, symbols, *, as_of_values=None, feature_version, **_kwargs):
+        self.full_label_reads.append(None if as_of_values is None else tuple(as_of_values))
+        self.label_symbols.append(tuple(symbols))
+        rows = []
+        for index in range(self.owner.periods):
+            end = self.owner._as_of(index) + timedelta(days=5)
+            for position, ticker in enumerate(_TICKERS):
+                rows.append({
+                    "feature_version": feature_version,
+                    "as_of_at": self.owner._as_of(index).isoformat(),
+                    "ticker": ticker,
+                    "forward_end_at": end.isoformat(),
+                    "label_available_at": end.isoformat(),
+                    "forward_return": self.owner.gross_returns[position],
+                    "benchmark_forward_return": 0.0,
+                    "label_id": f"rl_label_{index}{position:023d}"[:33],
+                })
+        return rows if as_of_values is None else [
+            row for row in rows if row["as_of_at"] in as_of_values
+        ]
 
     def save_training_samples(self, samples):
         self.save_calls += 1
@@ -111,7 +155,7 @@ class _Repository:
     def __init__(self, *, gross_returns=(0.03, 0.001), periods: int = 3):
         self.gross_returns = gross_returns
         self.periods = periods
-        self.store = _ResearchStore()
+        self.store = _ResearchStore(self)
         self.changed_input_periods: set[int] = set()
 
     def current_tracked_tickers(self):
@@ -120,38 +164,9 @@ class _Repository:
     def _as_of(self, index: int) -> datetime:
         return _START + timedelta(days=7 * index)
 
-    def rl_feature_snapshot_rows(self, symbols, *, start_as_of, end_as_of, feature_version):
-        return [{
-            "feature_version": feature_version,
-            "as_of_at": self._as_of(index).isoformat(),
-            "ticker": ticker,
-            "available_at": (self._as_of(index) - timedelta(hours=1)).isoformat(),
-            "is_available": True,
-            "features": _features(0.1 * (index + position)),
-            "source_ids": [f"EV-{ticker}-{index}"],
-            "provenance": {"definition_hash": "abc", "source_kind": "live_shadow"},
-            "input_hash": f"input-{index}-{ticker}-{'changed' if index in self.changed_input_periods else 'base'}",
-        } for index in range(self.periods) for position, ticker in enumerate(_TICKERS)]
-
-    def rl_training_label_rows(self, symbols, *, start_as_of, end_as_of, feature_version, label_cutoff_at):
-        rows = []
-        for index in range(self.periods):
-            end = self._as_of(index) + timedelta(days=5)
-            for position, ticker in enumerate(_TICKERS):
-                rows.append({
-                    "feature_version": feature_version,
-                    "as_of_at": self._as_of(index).isoformat(),
-                    "ticker": ticker,
-                    "forward_end_at": end.isoformat(),
-                    "label_available_at": end.isoformat(),
-                    "forward_return": self.gross_returns[position],
-                    "benchmark_forward_return": 0.0,
-                    "label_id": f"rl_label_{index}{position:023d}"[:33],
-                })
-        return rows
-
 class BuildTrainingSamplesTest(unittest.TestCase):
     def _run(self, repository, **kwargs):
+        repository.store.owner = repository
         return build_training_samples(
             as_of_at=_START + timedelta(days=60),
             lookback_days=365,
@@ -221,23 +236,26 @@ class BuildTrainingSamplesTest(unittest.TestCase):
     def test_unchanged_manifest_avoids_full_feature_and_label_reads(self):
         class LightweightStore(_ResearchStore):
             def __init__(self, reader):
-                super().__init__()
+                super().__init__(reader)
                 self.reader = reader
                 self.metadata_calls = 0
 
             def training_sample_period_inputs(self, symbols, **kwargs):
                 self.metadata_calls += 1
-                snapshots = _Repository.rl_feature_snapshot_rows(
-                    self.reader, symbols,
+                snapshots = super().rl_feature_snapshot_rows(
+                    symbols,
                     start_as_of=kwargs["start_as_of"], end_as_of=kwargs["end_as_of"],
                     feature_version=kwargs["feature_version"],
                 )
-                labels = _Repository.rl_training_label_rows(
-                    self.reader, symbols,
+                labels = super().rl_training_label_rows(
+                    symbols,
                     start_as_of=kwargs["start_as_of"], end_as_of=kwargs["end_as_of"],
                     feature_version=kwargs["feature_version"],
                     label_cutoff_at=kwargs["label_cutoff_at"],
                 )
+                # metadata projection을 만드는 fixture 동작은 full payload read 계수에서 제외한다.
+                self.full_feature_reads.pop()
+                self.full_label_reads.pop()
                 return {
                     "snapshots": [{
                         key: row[key] for key in ("as_of_at", "ticker", "feature_version", "input_hash")
@@ -250,38 +268,22 @@ class BuildTrainingSamplesTest(unittest.TestCase):
         class LightweightRepository(_Repository):
             def __init__(self):
                 super().__init__(periods=2)
-                self.full_feature_reads: list[tuple[str, ...] | None] = []
-                self.full_label_reads: list[tuple[str, ...] | None] = []
 
             def training_sample_period_inputs(self, symbols, **kwargs):
                 raise AssertionError("metadata must be read from the Research store")
 
-            def rl_feature_snapshot_rows(self, symbols, *, as_of_values=None, **kwargs):
-                self.full_feature_reads.append(None if as_of_values is None else tuple(as_of_values))
-                rows = super().rl_feature_snapshot_rows(symbols, **kwargs)
-                return rows if as_of_values is None else [
-                    row for row in rows if row["as_of_at"] in as_of_values
-                ]
-
-            def rl_training_label_rows(self, symbols, *, as_of_values=None, **kwargs):
-                self.full_label_reads.append(None if as_of_values is None else tuple(as_of_values))
-                rows = super().rl_training_label_rows(symbols, **kwargs)
-                return rows if as_of_values is None else [
-                    row for row in rows if row["as_of_at"] in as_of_values
-                ]
-
         repository = LightweightRepository()
         repository.store = LightweightStore(repository)
         self._run(repository)
-        repository.full_feature_reads.clear()
-        repository.full_label_reads.clear()
+        repository.store.full_feature_reads.clear()
+        repository.store.full_label_reads.clear()
 
         repeated = self._run(repository)
 
         self.assertEqual(repeated["detail"]["samples"], 0)
         self.assertEqual(repeated["detail"]["already_sampled"], 4)
-        self.assertEqual(repository.full_feature_reads, [])
-        self.assertEqual(repository.full_label_reads, [])
+        self.assertEqual(repository.store.full_feature_reads, [])
+        self.assertEqual(repository.store.full_label_reads, [])
         self.assertEqual(repository.store.metadata_calls, 2)
 
     def test_window_includes_former_members_not_only_current_tracked_names(self):
@@ -293,18 +295,10 @@ class BuildTrainingSamplesTest(unittest.TestCase):
             def historical_sp500_membership(self, *, start_date, end_date):
                 return [{"symbols": ["AAA", "BBB"]}]
 
-            def rl_feature_snapshot_rows(self, symbols, **kwargs):
-                self.feature_symbols = symbols
-                return super().rl_feature_snapshot_rows(symbols, **kwargs)
-
-            def rl_training_label_rows(self, symbols, **kwargs):
-                self.label_symbols = symbols
-                return super().rl_training_label_rows(symbols, **kwargs)
-
         repository = FormerMemberRepository(periods=1)
         payload = self._run(repository)
-        self.assertIn("BBB", repository.feature_symbols)
-        self.assertIn("BBB", repository.label_symbols)
+        self.assertIn("BBB", repository.store.feature_symbols[0])
+        self.assertIn("BBB", repository.store.label_symbols[0])
         self.assertEqual(payload["detail"]["samples"], 2)
 
     def test_sample_carries_both_gross_and_net_labels(self):
@@ -344,7 +338,7 @@ class BuildTrainingSamplesTest(unittest.TestCase):
         feature까지 문제로 보인다. 실제 하네스 첫 가동에서 이 경로로 죽었다.
         """
         repository = _Repository()
-        repository.rl_training_label_rows = lambda *a, **k: []
+        repository.store.rl_training_label_rows = lambda *a, **k: []
         payload = self._run(repository)
         self.assertEqual(payload["status"], "success")
         self.assertEqual(payload["detail"]["samples"], 0)
