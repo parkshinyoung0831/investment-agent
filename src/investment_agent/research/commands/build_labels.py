@@ -14,7 +14,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Mapping
 from collections import defaultdict
 
-from investment_agent.trading.decision.constants import SIGNAL_HORIZON_DAYS
+from investment_agent.forecasting import SIGNAL_HORIZON_DAYS
 from investment_agent.platform.cli.runtime import run_log_payload
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.serialization import parse_datetime

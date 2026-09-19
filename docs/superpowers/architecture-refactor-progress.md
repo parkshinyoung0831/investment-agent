@@ -8,8 +8,8 @@
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
 - 현재 단계: Phase 2~3의 Research artifact/Data read owner 이관을 caller별로 진행 중이다. decision experience read/write façade를 제거했고 세 Research command의 universe read를 Data owner로 직접 연결했다.
-- 현재 계획: `docs/superpowers/plans/2026-09-20-research-data-read-boundaries.md` (Task 1~3 완료, Task 4 조사 전).
-- 완료 단계: Phase 1 조사, Phase 2의 feature snapshot·training label·valuation·event·training sample·decision experience owner 이관, Phase 3 공통 serialization 및 일부 Data read 역방향 import 정리. 현재 `PENDING_DEPENDENCIES`는 39쌍이다.
+- 현재 계획: `docs/superpowers/plans/2026-09-20-shared-forecast-horizon-contract.md` (Task 1~3 완료).
+- 완료 단계: Phase 1 조사, Phase 2의 feature snapshot·training label·valuation·event·training sample·decision experience owner 이관, Phase 3 공통 serialization·forecast 계약 및 일부 Data read 역방향 import 정리. 현재 `PENDING_DEPENDENCIES`는 33쌍이다.
 - maintenance 상태: 확인·설정하지 않았다. 하네스 또는 execution 코드를 수정하기 전에 `harness_switch --maintenance on`을 수행하고 상태를 확인한다. live flag는 변경하지 않는다.
 
 ## 검증 기준선
@@ -412,6 +412,18 @@
 - 제거된 debt: `research/commands/factor_research.py → trading/supabase_repository.py` 한 쌍. `PENDING_DEPENDENCIES` 40→39, 새 pending 없음.
 - 남은 debt: label·feature·valuation producer는 local mirror/PIT cutoff와 여러 owner를 함께 사용하며, decision/evaluation/promotion/ablation은 실제 Trading 원장 또는 알고리즘을 소비한다. 이들을 단순 Data read처럼 치환하지 않는다.
 - 다음 독립 작업: 관련/전체 suite와 caller 검색 후 커밋한다. 이후 남은 producer 중 explicit read interfaces를 분리해 historical replay를 보존할 수 있는 후보를 다시 설계한다.
+
+#### Shared forecast horizon Task 1~2 — canonical 계약 이관과 legacy 삭제
+
+- 변경 전 실제 import 관계: Research의 model adoption, historical backfill, decision experience, label, dataset export, ML serving 여섯 파일이 `trading/decision/constants.py`의 `SIGNAL_HORIZON_DAYS`를 역방향 import했다. Trading decision agents·alpha·system target·analysis도 같은 값을 사용했고, legacy 파일의 다른 policy/evaluation 상수는 source/test caller가 없었다.
+- 변경 이유: 20거래일은 Research label/model과 Trading 판단·optimizer가 같은 단위로 기대수익을 다루게 하는 금융 도메인 불변값이다. Research 또는 Trading 구현에 소유시키거나 값을 복제하면 dependency 역전 또는 조용한 horizon drift가 생긴다. Platform은 금융 도메인을 몰라야 한다.
+- 수정 파일: 새 `src/investment_agent/forecasting.py`, Research caller 6개, Trading caller 8개, ML serving·architecture·새 forecasting 계약 테스트, 새 계획과 이 원장.
+- 이동·삭제 파일: caller 0을 확인한 `src/investment_agent/trading/decision/constants.py`를 삭제했다. 호환 re-export나 alias는 남기지 않았다.
+- import·runtime 방향: Research와 Trading 모두 최상위 금융 계약을 직접 소비한다. horizon 값 20, label/forecast 검증, agent prompt, system target, decision case key는 변하지 않았다. Research pending 정확한 여섯 쌍을 먼저 제거해 RED를 확인한 뒤 import를 이관했다.
+- 테스트 결과: canonical 모듈 부재 1건과 architecture 위반 정확히 6건으로 RED를 확인했다. 이관 후 forecasting·Research label/dataset/experience/ML serving·Trading alpha/decision/system·architecture·workflow·docs·packaging 245개가 통과했다. AST ownership guard는 정의가 canonical 파일 한 곳뿐인지 검사하고 임시 중복 정의도 검출한다. 전체 suite 3,031개는 기준선과 같은 선택적 `lightgbm`/`xgboost` 미설치 오류 4개·skip 1개 외 새 실패가 없었다. source/test legacy import 0건과 `git diff --check`를 확인했다.
+- 제거된 debt: 여섯 Research 파일의 `research → trading/decision/constants.py` 역방향 import와 caller 없는 legacy constants module. `PENDING_DEPENDENCIES` 39→33, 새 pending 없음.
+- 남은 debt: Research의 Trading algorithm/contract/ledger import와 producer façade가 남는다. local replay와 실제 production validation 의미를 먼저 분리해야 하며, shared top-level 계약을 임의의 공용 dumping ground로 확장하지 않는다.
+- 다음 독립 작업: 이 단위를 커밋한 뒤 Data read 계획 Task 4로 돌아가 남은 producer façade와 actual Trading validation import를 구분한다.
 
 ## 향후 milestone
 

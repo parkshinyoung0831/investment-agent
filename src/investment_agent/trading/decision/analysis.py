@@ -13,7 +13,7 @@ import re
 import time
 from datetime import datetime, timedelta, timezone
 
-from investment_agent.trading.decision.constants import DEFAULT_HORIZON_DAYS
+from investment_agent.forecasting import SIGNAL_HORIZON_DAYS
 from investment_agent.trading.decision.agents.engine import (
     TradingAgentsDecisionEngine,
 )
@@ -52,7 +52,7 @@ AGENT_POLICY_VERSION = 1
 def _case_key(ticker: str, as_of_at: datetime) -> str:
     raw = (
         f"{ticker}__{as_of_at.astimezone(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}__"
-        f"{DEFAULT_HORIZON_DAYS}d__"
+        f"{SIGNAL_HORIZON_DAYS}d__"
         f"{AGENT_POLICY_KEY}-v{AGENT_POLICY_VERSION}"
     )
     return re.sub(r"[^A-Za-z0-9_.-]+", "-", raw)
@@ -302,7 +302,7 @@ def main(argv: list[str] | None = None) -> int:
             "run_id": run_id,
             "ticker": bundle.ticker,
             "as_of_at": bundle.as_of_at,
-            "horizon_days": DEFAULT_HORIZON_DAYS,
+            "horizon_days": SIGNAL_HORIZON_DAYS,
             "policy_key": AGENT_POLICY_KEY,
             "policy_version": AGENT_POLICY_VERSION,
             "source_kind": "live_shadow",

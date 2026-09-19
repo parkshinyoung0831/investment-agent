@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
-from investment_agent.trading.decision.constants import SIGNAL_HORIZON_DAYS
+from investment_agent.forecasting import SIGNAL_HORIZON_DAYS
 from investment_agent.platform.logging import get_logger
 from investment_agent.research.ml_inference import MIN_IC_T_STAT, load_model
 from investment_agent.research.ml_serving import default_active_model_path

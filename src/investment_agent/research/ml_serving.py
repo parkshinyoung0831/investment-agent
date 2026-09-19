@@ -34,7 +34,7 @@ from investment_agent.research.features.layer import impute_cross_section
 from investment_agent.research.ml_inference import LoadedModel, load_model
 from investment_agent.research.rl.contracts import FeatureSnapshot, RLSafetyError
 from investment_agent.research.storage.repository import ResearchStore
-from investment_agent.trading.decision.constants import SIGNAL_HORIZON_DAYS
+from investment_agent.forecasting import SIGNAL_HORIZON_DAYS
 
 log = get_logger(__name__)
 

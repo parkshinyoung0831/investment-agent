@@ -8,7 +8,7 @@ from investment_agent.platform.serialization import canonical_json
 from investment_agent.trading.contracts import ContractError, EvidenceBundle
 from investment_agent.trading.decision.agents.base import AgentEngineResult
 from investment_agent.trading.decision.agents.runner import TradingAgentsRunner
-from investment_agent.trading.decision.constants import SIGNAL_HORIZON_DAYS
+from investment_agent.forecasting import SIGNAL_HORIZON_DAYS
 from investment_agent.trading.decision.llm.client import LLMClient
 from investment_agent.trading.decision.llm.runtime import _deduplicate_external_manifests
 from investment_agent.trading.portfolio.contracts import SecurityProposal

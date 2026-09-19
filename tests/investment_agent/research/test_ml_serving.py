@@ -125,7 +125,7 @@ class ChampionForecastTest(unittest.TestCase):
 
 class SignalHorizonContractTest(unittest.TestCase):
     def test_llm_schema_states_the_signal_horizon(self):
-        from investment_agent.trading.decision.constants import SIGNAL_HORIZON_DAYS
+        from investment_agent.forecasting import SIGNAL_HORIZON_DAYS
         from investment_agent.trading.decision.agents.engine import SECURITY_PROPOSAL_SCHEMA
 
         for field in ("expected_excess_return", "probability_up"):

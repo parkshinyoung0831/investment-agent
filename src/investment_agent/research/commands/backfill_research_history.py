@@ -169,7 +169,7 @@ def main(argv: list[str] | None = None) -> int:
     from investment_agent.research.commands.build_valuations import build_valuations
     from investment_agent.research.datasets.universe import research_universe
     from investment_agent.research.storage.repository import ResearchStore
-    from investment_agent.trading.decision.constants import SIGNAL_HORIZON_DAYS
+    from investment_agent.forecasting import SIGNAL_HORIZON_DAYS
     from investment_agent.trading.supabase_repository import SupabaseRepository
 
     now = datetime.now(timezone.utc)

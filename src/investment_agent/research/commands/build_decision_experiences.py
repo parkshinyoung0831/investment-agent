@@ -7,7 +7,7 @@ import hashlib
 import math
 from datetime import datetime, timedelta, timezone
 
-from investment_agent.trading.decision.constants import SIGNAL_HORIZON_DAYS
+from investment_agent.forecasting import SIGNAL_HORIZON_DAYS
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.serialization import parse_datetime, canonical_json
 from investment_agent.research.storage.repository import ResearchStore

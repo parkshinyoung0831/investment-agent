@@ -29,7 +29,7 @@ from investment_agent.platform.serialization import stable_id
 from investment_agent.research.adapters.trading import NO_FORECAST, ChampionForecast
 from investment_agent.trading.contracts import ContractError
 from investment_agent.trading.decision.alpha import AlphaPlan, AlphaPolicy, alpha_universe, expected_return_signals
-from investment_agent.trading.decision.constants import SIGNAL_HORIZON_DAYS
+from investment_agent.forecasting import SIGNAL_HORIZON_DAYS
 from investment_agent.trading.portfolio.contracts import CASH_SYMBOL, PortfolioProposal, RiskDecision, validated_weights
 from investment_agent.trading.portfolio.market_risk import (
     calculate_market_covariance,

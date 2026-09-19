@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from investment_agent.platform.serialization import canonical_json
-from investment_agent.trading.decision.constants import SIGNAL_HORIZON_DAYS
+from investment_agent.forecasting import SIGNAL_HORIZON_DAYS
 from investment_agent.trading.decision.agents.graph_state import AnalystReports, InvestDebateState
 from investment_agent.trading.decision.llm.client import LLMClient
 

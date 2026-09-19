@@ -44,7 +44,7 @@ from typing import Any, Mapping, Sequence
 
 from investment_agent.platform.serialization import finite_float, parse_datetime
 from investment_agent.research.adapters.trading import percentile_ranks
-from investment_agent.trading.decision.constants import SIGNAL_HORIZON_DAYS
+from investment_agent.forecasting import SIGNAL_HORIZON_DAYS
 from investment_agent.trading.portfolio.contracts import (
     HARD_CONSTRAINT_BLOCK_NEW_BUY,
     HARD_CONSTRAINT_EXCLUDE,
