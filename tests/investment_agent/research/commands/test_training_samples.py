@@ -88,13 +88,30 @@ def _features(seed: float) -> dict:
     return values
 
 
+class _ResearchStore:
+    def __init__(self):
+        self.saved: list = []
+        self.save_calls = 0
+        self.sample_runs: dict[str, dict] = {}
+
+    def save_training_samples(self, samples):
+        self.save_calls += 1
+        self.saved.extend(samples)
+
+    def training_sample_run_rows(self, **_kwargs):
+        return list(self.sample_runs.values())
+
+    def save_training_sample_runs(self, rows):
+        for row in rows:
+            self.sample_runs[row["record_key"]] = dict(row)
+        return len(rows)
+
+
 class _Repository:
     def __init__(self, *, gross_returns=(0.03, 0.001), periods: int = 3):
         self.gross_returns = gross_returns
         self.periods = periods
-        self.saved: list = []
-        self.save_calls = 0
-        self.sample_runs: dict[str, dict] = {}
+        self.store = _ResearchStore()
         self.changed_input_periods: set[int] = set()
 
     def current_tracked_tickers(self):
@@ -133,25 +150,13 @@ class _Repository:
                 })
         return rows
 
-    def save_training_samples(self, samples):
-        self.save_calls += 1
-        self.saved.extend(samples)
-
-    def training_sample_run_rows(self, **_kwargs):
-        return list(self.sample_runs.values())
-
-    def save_training_sample_runs(self, rows):
-        for row in rows:
-            self.sample_runs[row["record_key"]] = dict(row)
-        return len(rows)
-
-
 class BuildTrainingSamplesTest(unittest.TestCase):
     def _run(self, repository, **kwargs):
         return build_training_samples(
             as_of_at=_START + timedelta(days=60),
             lookback_days=365,
             repository=repository,
+            store=repository.store,
             **kwargs,
         )
 
@@ -159,24 +164,26 @@ class BuildTrainingSamplesTest(unittest.TestCase):
         repository = _Repository(periods=3)
         payload = self._run(repository)
         self.assertEqual(payload["detail"]["samples"], 6)
-        self.assertEqual(len(repository.saved), 6)
-        self.assertEqual(repository.saved[0].label_definition, LABEL_DEFINITION)
-        self.assertEqual(repository.saved[0].feature_version, FEATURE_VERSION)
+        self.assertEqual(len(repository.store.saved), 6)
+        self.assertEqual(repository.store.saved[0].label_definition, LABEL_DEFINITION)
+        self.assertEqual(repository.store.saved[0].feature_version, FEATURE_VERSION)
 
     def test_all_samples_are_persisted_in_one_repository_write(self):
         repository = _Repository(periods=60)
         payload = self._run(repository)
         self.assertEqual(payload["detail"]["samples"], 120)
-        self.assertEqual(repository.save_calls, 1)
+        self.assertEqual(repository.store.save_calls, 1)
         self.assertEqual(set(payload["detail"]["timings_sec"]), {"load", "compute", "write"})
 
     def test_reported_upserts_exclude_samples_already_in_the_store(self):
-        class AlreadyStoredRepository(_Repository):
+        class AlreadyStoredStore(_ResearchStore):
             def save_training_samples(self, samples):
                 super().save_training_samples(samples)
                 return 0
 
-        payload = self._run(AlreadyStoredRepository(periods=3))
+        repository = _Repository(periods=3)
+        repository.store = AlreadyStoredStore()
+        payload = self._run(repository)
         self.assertEqual(payload["detail"]["samples"], 6)
         self.assertEqual(payload["rows_upserted"], 0)
 
@@ -198,8 +205,8 @@ class BuildTrainingSamplesTest(unittest.TestCase):
         self.assertEqual(third["detail"]["already_sampled"], 4)
         self.assertEqual(changed_cost["detail"]["samples"], 6)
         self.assertEqual(changed_cost["detail"]["already_sampled"], 0)
-        self.assertEqual(repository.save_calls, 3)
-        self.assertEqual(len(repository.sample_runs), 3)
+        self.assertEqual(repository.store.save_calls, 3)
+        self.assertEqual(len(repository.store.sample_runs), 3)
 
     def test_changed_feature_input_invalidates_only_its_period(self):
         repository = _Repository(periods=3)
@@ -291,7 +298,7 @@ class BuildTrainingSamplesTest(unittest.TestCase):
     def test_sample_carries_both_gross_and_net_labels(self):
         repository = _Repository()
         self._run(repository)
-        labels = repository.saved[0].labels
+        labels = repository.store.saved[0].labels
         for name in ("gross_return", "net_return", "cost_drag",
                      "gross_excess_return", "net_excess_return", "benchmark_return"):
             self.assertIn(name, labels)
@@ -308,7 +315,7 @@ class BuildTrainingSamplesTest(unittest.TestCase):
     def test_every_sample_links_to_a_reproducible_outcome(self):
         repository = _Repository()
         self._run(repository)
-        for sample in repository.saved:
+        for sample in repository.store.saved:
             self.assertTrue(sample.outcome_id.startswith("outcome_"))
             self.assertEqual(sample.provenance["source"], "shadow_simulation")
             self.assertIn("cost_model", sample.provenance)
@@ -330,13 +337,42 @@ class BuildTrainingSamplesTest(unittest.TestCase):
         self.assertEqual(payload["status"], "success")
         self.assertEqual(payload["detail"]["samples"], 0)
         self.assertEqual(payload["detail"]["reason"], "no_confirmed_label_yet")
-        self.assertEqual(repository.saved, [])
+        self.assertEqual(repository.store.saved, [])
 
     def test_dry_run_writes_nothing(self):
         repository = _Repository()
         payload = self._run(repository, dry_run=True)
-        self.assertEqual(repository.saved, [])
+        self.assertEqual(repository.store.saved, [])
+        self.assertEqual(repository.store.sample_runs, {})
         self.assertEqual(payload["rows_upserted"], 0)
+
+    def test_sample_write_failure_does_not_record_completion_manifest(self):
+        class FailingStore(_ResearchStore):
+            def save_training_samples(self, samples):
+                raise RuntimeError("sample writer unavailable")
+
+        repository = _Repository()
+        repository.store = FailingStore()
+        with self.assertRaisesRegex(RuntimeError, "sample writer unavailable"):
+            self._run(repository)
+        self.assertEqual(repository.store.sample_runs, {})
+
+    def test_completion_manifest_follows_the_sample_batch_write(self):
+        calls: list[str] = []
+
+        class OrderedStore(_ResearchStore):
+            def save_training_samples(self, samples):
+                calls.append("samples")
+                return super().save_training_samples(samples)
+
+            def save_training_sample_runs(self, rows):
+                calls.append("runs")
+                return super().save_training_sample_runs(rows)
+
+        repository = _Repository()
+        repository.store = OrderedStore()
+        self._run(repository)
+        self.assertEqual(calls, ["samples", "runs"])
 
 
 if __name__ == "__main__":

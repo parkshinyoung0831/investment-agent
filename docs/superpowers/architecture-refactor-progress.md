@@ -7,8 +7,8 @@
 - 기준 원격 `main`: `4181f6b53d84105f2b78d78c69e9119c1f55a6cf` (2026-09-20 세션 시작 시 로컬 HEAD와 일치 확인).
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
-- 현재 단계: Phase 2의 feature·label·valuation·event artifact write 이관과 관련 trading façade 제거 완료. 사용자 요청에 따라 다음 독립 단위 시작 전 일시 정지한다.
-- 현재 계획: `docs/superpowers/plans/2026-09-20-research-event-storage-boundary.md` (Task 1~3 완료).
+- 현재 단계: Phase 2의 feature·label·valuation·event artifact 이관 완료, training sample 저장/manifest read·write 이관 진행 중.
+- 현재 계획: `docs/superpowers/plans/2026-09-20-training-sample-storage-boundary.md` (Task 1 완료, Task 2~3 남음).
 - 완료 단계: Phase 1 조사와 Phase 2의 feature snapshot·training label·valuation·event artifact write 직접 이관, 관련 façade 메서드 제거. 현재 `PENDING_DEPENDENCIES`는 68쌍이다.
 - maintenance 상태: 확인·설정하지 않았다. 하네스 또는 execution 코드를 수정하기 전에 `harness_switch --maintenance on`을 수행하고 상태를 확인한다. live flag는 변경하지 않는다.
 
@@ -168,6 +168,18 @@
 - 제거된 debt: event·event feature write의 trading façade 경유, command-local pass-through Protocol, `PENDING_DEPENDENCIES` 1쌍(69→68).
 - 남은 debt: `build_events`의 trading cache/read import와 `SupabaseRepository`의 training sample/run, promotion·evaluation 및 여러 Research read façade가 남아 있다.
 - 다음 독립 작업: 재개 시 `build_training_samples.py`를 새 계획으로 분리한다. 현재 이 command는 `SupabaseRepository` 하나에서 membership·feature·label·기간별 scalar·run manifest를 읽고, `save_training_samples()` 성공 뒤에만 `save_training_sample_runs()`를 호출한다. `ResearchStore`에는 sample·run read/write 구현이 이미 있으므로 먼저 `tests/investment_agent/research/commands/test_training_samples.py`에서 read/write store 분리와 저장 실패 시 manifest 미기록, inserted count, 재시작 semantics를 고정한다. `tests/investment_agent/trading/test_training_sample_persistence.py`의 façade 직접 검증도 실제 owner 테스트로 이관할지 caller와 함께 판정한다.
+
+#### Training sample Task 1 — sample·manifest owner 직접 연결
+
+- 변경 전 호출 관계: `build_training_samples`는 membership·feature/label input뿐 아니라 completion manifest read, sample write, manifest write까지 한 `SupabaseRepository`로 수행했다. façade는 후자의 세 메서드를 `ResearchStore`로 전달했다.
+- 변경 이유: sample과 completion manifest는 Research DuckDB/Parquet 산출물이다. input reader와 산출물 저장 계약을 분리하면서 sample 성공 후 manifest 기록 순서를 고정해야 한다.
+- 수정 파일: `src/investment_agent/research/commands/build_training_samples.py`, `tests/investment_agent/research/commands/test_training_samples.py`, 이 원장.
+- 이동·삭제 파일: 없음. façade 호환 메서드 3개는 다음 Task에서 직접 caller 0건 확인 뒤 제거한다.
+- import·runtime 방향: command의 universe·feature/label·lightweight input read는 기존 `SupabaseRepository`에 남고, manifest는 기본 `ResearchStore(read_only=True)`로 읽는다. sample이 실제 생성되고 dry-run이 아닐 때만 writable `ResearchStore`를 열어 sample batch 저장 뒤 manifest를 기록한다. 주입 store는 read/write 양쪽에 사용한다.
+- 테스트 결과: reader와 store를 분리한 15개 기존 계약이 구현 전 `store` 인자 오류로 RED였고, sample write 실패 시 manifest 미기록 및 저장 순서 계약을 추가했다. 구현 후 training sample·architecture 45개 통과, `git diff --check` 통과.
+- 제거된 debt: command runtime의 training sample write와 completion manifest read/write가 trading façade를 경유하던 세 호출.
+- 남은 debt: façade의 세 호환 메서드와 이를 직접 검증하는 trading 테스트 1개, Research feature/label read façade, `PENDING_DEPENDENCIES` 68쌍.
+- 다음 독립 작업: 직접 Parquet no-rewrite 테스트를 Research owner로 옮긴 뒤 세 façade 메서드를 삭제하고 AST owner guard를 강화한다.
 
 ## 향후 milestone
 

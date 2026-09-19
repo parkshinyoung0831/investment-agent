@@ -25,6 +25,7 @@ from investment_agent.research.rl.contracts import FeatureSnapshot
 from investment_agent.research.evaluation.shadow_fill import round_trip_cost_rate, simulate_shadow_trade
 from investment_agent.research.datasets.contracts import TrainingSample
 from investment_agent.research.datasets.universe import members_over_window
+from investment_agent.research.storage.repository import ResearchStore
 
 log = get_logger(__name__)
 
@@ -107,6 +108,7 @@ def build_training_samples(
     cost_model: TransactionCostModel | None = None,
     dry_run: bool = False,
     repository: SupabaseRepository | None = None,
+    store: ResearchStore | None = None,
 ) -> dict[str, object]:
     """label이 확정된 (종목, 시점)마다 비용 반영 학습 표본을 하나씩 만든다."""
     started = time.monotonic()
@@ -145,9 +147,9 @@ def build_training_samples(
             symbols, start_as_of=window_start, end_as_of=window_end,
             feature_version=feature_version, label_cutoff_at=window_end,
         )
-    run_rows = selected.training_sample_run_rows(
+    run_rows = (store if store is not None else ResearchStore(read_only=True)).training_sample_run_rows(
         start_as_of=window_start, end_as_of=window_end,
-    ) if hasattr(selected, "training_sample_run_rows") else []
+    )
     if not label_rows:
         # 적재 첫 며칠은 horizon이 아직 안 지나 label이 0건이다. 이건 오류가 아니라
         # "아직 할 일이 없음"이므로 job을 실패시키지 않는다 — 실패로 두면 5거래일 동안
@@ -292,10 +294,11 @@ def build_training_samples(
     phase = time.monotonic()
     saved = 0
     if not dry_run and samples:
-        inserted = selected.save_training_samples(samples)
+        writable_store = store if store is not None else ResearchStore()
+        inserted = writable_store.save_training_samples(samples)
         saved = len(samples) if inserted is None else int(inserted)
         if pending_run_rows:
-            selected.save_training_sample_runs(pending_run_rows)
+            writable_store.save_training_sample_runs(pending_run_rows)
     write_sec = time.monotonic() - phase
 
     count = len(samples) or 1
