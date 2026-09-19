@@ -7,8 +7,8 @@
 - 기준 원격 `main`: `4181f6b53d84105f2b78d78c69e9119c1f55a6cf` (2026-09-20 세션 시작 시 로컬 HEAD와 일치 확인).
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
-- 현재 단계: Phase 3의 Research 핵심 계약에서 Trading 재수출을 경유한 공통 serialization import 제거 진행 중. feature/label full read 경계는 별도 판단 대상으로 유지한다.
-- 현재 계획: `docs/superpowers/plans/2026-09-20-research-core-serialization-imports.md` (Task 1 완료, Task 2 통합 검증 남음).
+- 현재 단계: Phase 3의 Research 핵심 계약에서 공통 serialization import 네 곳 정리 완료. feature/label full read 경계와 나머지 순수 공통 import는 별도 단위다.
+- 현재 계획: `docs/superpowers/plans/2026-09-20-research-core-serialization-imports.md` (Task 1~2 완료).
 - 완료 단계: Phase 1 조사와 Phase 2의 feature snapshot·training label·valuation·event artifact write 직접 이관, 관련 façade 메서드 제거. 현재 `PENDING_DEPENDENCIES`는 68쌍이다.
 - maintenance 상태: 확인·설정하지 않았다. 하네스 또는 execution 코드를 수정하기 전에 `harness_switch --maintenance on`을 수행하고 상태를 확인한다. live flag는 변경하지 않는다.
 
@@ -237,6 +237,16 @@
 - 테스트 결과: pending 네 쌍 제거 직후 architecture test에서 정확히 네 위반으로 RED, import 변경 뒤 계약·dataset·RL·training sample·architecture 65개 통과. `ContractError`, `parse_datetime`, `json_value`가 Trading re-export와 동일 객체임을 확인했다.
 - 남은 debt: `research.features.layer`의 `EvidenceBundle`, `research.evaluation.evaluator`의 `EvaluationResult`는 실제 Trading 금융 계약이므로 기계적으로 옮기지 않는다. 그 외 순수 serialization import와 수많은 trading algorithm/read 호출은 각각 검증이 필요하다.
 - 다음 독립 작업: 통합 검증과 남은 Research→Trading import의 성격 재분류.
+
+#### Core serialization Task 2 — 통합 검증과 남은 import 분류
+
+- 변경 전·후 호출 관계: 네 Research 계약은 공통 에러·파서·JSON 값을 Trading 재수출 대신 Platform 구현에서 직접 읽는다. 다른 Research module이나 runtime caller의 API는 변하지 않았다.
+- 수정 파일 전체: `research/datasets/contracts.py`, `core.py`, `training.py`, `research/rl/contracts.py`, architecture test, 이 원장과 계획 문서. 파일 이동·삭제와 schema·계산·실행 안전성 변경은 없다.
+- dependency 방향: `PENDING_DEPENDENCIES` 68→64이며 새 pending은 없다. architecture rule은 네 정확한 쌍을 제거하기 전 네 위반으로 실패한 뒤 변경 후 통과했다.
+- 테스트 결과: architecture·repo convention·workflow·docs consistency·Research 계약/dataset/RL/backtest 관련 153개 통과. 전체 suite 3,016개에서 이전과 같은 선택적 `lightgbm`·`xgboost` 미설치 오류 4개와 skip 1개 외 새 실패가 없다.
+- 제거된 debt: 네 핵심 Research 계약의 불필요한 Trading 재수출 import.
+- 남은 debt: 다른 Research 파일의 공통 serialization 심볼 import는 다음 묶음으로 이전 가능하나, `features/layer.py`의 `EvidenceBundle`과 `evaluation/evaluator.py`의 `EvaluationResult`는 실제 Trading 금융 계약이므로 소유권 설계 없이 변경하지 않는다. feature/label full read façade와 Trading 알고리즘 검증 caller도 남는다.
+- 다음 독립 작업: 동일한 순수 serialization import를 사용하는 valuation·training·backtest/ML/command 단위를 caller·테스트별로 나누어 제거한다. 금융 계약까지 기계적으로 옮기지 않는다.
 
 ## 향후 milestone
 
