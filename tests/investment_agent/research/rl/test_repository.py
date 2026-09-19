@@ -338,9 +338,9 @@ class RLRepositoryTest(unittest.TestCase):
                 "model_artifact_id": "artifact-1",
             })
         with patch(
-            "investment_agent.trading.supabase_repository.ResearchStore"
-        ) as research_store:
-            research_store.return_value.records.return_value = evaluations
+            "investment_agent.research.storage.repository.ResearchStore.model_evaluation_rows",
+            return_value=evaluations,
+        ):
             summary = SupabaseRepository().model_evaluation_summary("artifact-1")
         self.assertEqual(summary.out_of_sample_days, 61)
         self.assertEqual(summary.walk_forward_windows, 3)

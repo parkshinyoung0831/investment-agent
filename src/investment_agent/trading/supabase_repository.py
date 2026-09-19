@@ -27,7 +27,6 @@ from investment_agent.platform.serialization import canonical_json
 from investment_agent.research.promotion.gate import (
     EvaluationSummary,
     PromotionDecision,
-    aggregate_evaluations,
 )
 from investment_agent.trading.portfolio.signal_book import SignalBatch, SignalRecord
 from investment_agent.execution.orders.snapshots import AccountSnapshot
@@ -339,8 +338,8 @@ def _nearest_rows(
     return sorted(nearest, key=lambda row: str((row.get("release") or {}).get("scheduled_at") or ""))
 
 
-class SupabaseRepository:
-    """LLM에는 노출하지 않는 제한된 읽기 도구와 판단 저장소."""
+class PointInTimeReaderCache:
+    """동일 실행의 point-in-time 입력 재사용과 local mirror 상태를 소유한다."""
 
     # 같은 판단 시각의 같은 조회를 한 실행 안에서 다시 보내지 않는다. 판단 하나가 비용·베타·스트레스·시장위험마다
     # 같은 종목 가격을 읽고, 13F 유효 보유 상태는 종목과 무관한데 종목마다 다시 만든다. 키에 판단 시각이 들어가
@@ -348,7 +347,7 @@ class SupabaseRepository:
     _MEMO_SECONDS = 600.0
     _MEMO_MAX_ENTRIES = 4096
 
-    def _memo(self, key: tuple, read):
+    def memo(self, key: tuple, read):
         import threading
         import time
 
@@ -365,7 +364,7 @@ class SupabaseRepository:
             state["values"][key] = (value, now + self._MEMO_SECONDS)
         return value
 
-    def _memo_seed(self, key: tuple, value: Any) -> None:
+    def seed(self, key: tuple, value: Any) -> None:
         """날짜별 일괄 조회 결과를 기존 단건 계약의 캐시에 넣는다."""
         import threading
         import time
@@ -374,7 +373,7 @@ class SupabaseRepository:
         with state["lock"]:
             state["values"][key] = (value, time.monotonic() + self._MEMO_SECONDS)
 
-    def _memo_drop_historical_inputs(self) -> None:
+    def drop_historical_inputs(self) -> None:
         """다음 재현 날짜를 넣기 전에 이전 날짜의 대형 종목별 입력 묶음을 버린다."""
         import threading
 
@@ -389,7 +388,7 @@ class SupabaseRepository:
                 if not key or key[0] not in date_scoped
             }
 
-    def _mirror(self, as_of_at: datetime | None = None):
+    def mirror(self, as_of_at: datetime | None = None):
         """로컬 사본이 이 조회를 답할 수 있으면 그 사본. 없거나 오래됐으면 None — Supabase로 읽는다.
 
         사본은 Supabase 원본의 계산용 복사다(`data.market.local_mirror`). 판단마다 종목별로 원격 표를 읽지 않게 한다.
@@ -401,6 +400,29 @@ class SupabaseRepository:
             mirror = self.__dict__.setdefault("_local_mirror", LocalMirror())
         moment = as_of_at or datetime.now(timezone.utc)
         return mirror if mirror.covers(moment) else None
+
+
+class SupabaseRepository:
+    """Reader·trading 원장·Research artifact 저장소를 잇는 호환 façade."""
+
+    def _reader_cache(self) -> PointInTimeReaderCache:
+        return self.__dict__.setdefault("_reader_cache_state", PointInTimeReaderCache())
+
+    def _memo(self, key: tuple, read):
+        return self._reader_cache().memo(key, read)
+
+    def _memo_seed(self, key: tuple, value: Any) -> None:
+        self._reader_cache().seed(key, value)
+
+    def _memo_drop_historical_inputs(self) -> None:
+        self._reader_cache().drop_historical_inputs()
+
+    def _mirror(self, as_of_at: datetime | None = None):
+        return self._reader_cache().mirror(as_of_at)
+
+    @staticmethod
+    def _research_store(*, read_only: bool = False) -> ResearchStore:
+        return ResearchStore(read_only=read_only)
 
     @staticmethod
     def _trading_repository():
@@ -1184,89 +1206,31 @@ class SupabaseRepository:
         self._trading_repository().record_model_version(row)
 
     def save_events(self, events: Sequence[Event]) -> None:
-        """Research event는 production DB가 아닌 local artifact store에 저장한다."""
-        if not events:
-            return
-        rows: list[dict[str, Any]] = []
-        for event in events:
-            payload = event.to_dict()
-            rows.append({
-                **payload,
-                "record_key": hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest(),
-            })
-        ResearchStore().upsert_records("events", rows, key="record_key")
+        self._research_store().save_events(events)
 
     def save_event_features(self, snapshots: Sequence[EventFeatureSnapshot]) -> None:
-        """Research event feature는 local artifact store에 저장한다."""
-        if not snapshots:
-            return
-        rows: list[dict[str, Any]] = []
-        for snapshot in snapshots:
-            payload = snapshot.to_dict()
-            rows.append({
-                "record_key": f"event_features_{snapshot.input_hash[:24]}",
-                **payload,
-            })
-        ResearchStore().upsert_records("event_feature_snapshots", rows, key="record_key")
+        self._research_store().save_event_features(snapshots)
 
     def save_training_samples(self, samples: Sequence[TrainingSample]) -> int:
-        if not samples:
-            return 0
-        identities = [sample.sample_id for sample in samples]
-        if len(identities) != len(set(identities)):
-            raise ValueError("training sample batch contains duplicate identities")
-        store = ResearchStore()
-        existing = store.record_keys("training_samples")
-        rows = [sample.to_dict() for sample in samples if sample.sample_id not in existing]
-        if not rows:
-            return 0
-        for row in rows:
-            row["record_key"] = row["sample_id"]
-        return store.upsert_records(
-            "training_samples", rows, key="record_key", ignore_existing=True,
-        )
+        return self._research_store().save_training_samples(samples)
 
     def training_sample_run_rows(
         self, *, start_as_of: str, end_as_of: str,
     ) -> list[dict[str, Any]]:
         """학습 표본 기준일 매니페스트를 로컬 Research 저장소에서 읽는다."""
-        return ResearchStore(read_only=True).records(
-            "training_sample_runs", start_as_of=start_as_of, end_as_of=end_as_of,
+        return self._research_store(read_only=True).training_sample_run_rows(
+            start_as_of=start_as_of, end_as_of=end_as_of,
         )
 
     def save_training_sample_runs(self, rows: Sequence[dict[str, Any]]) -> int:
         """표본 저장이 끝난 기준일만 기록해 다음 실행의 재계산을 막는다."""
-        if not rows:
-            return 0
-        return ResearchStore().upsert_records(
-            "training_sample_runs", rows, key="record_key",
-        )
+        return self._research_store().save_training_sample_runs(rows)
 
     def save_rl_feature_snapshots(self, rows: list[dict]) -> None:
-        if not rows:
-            return
-        snapshots = [_feature_snapshot(dict(row)) for row in rows]
-        identities = [
-            (item.feature_version, item.as_of_at, item.ticker) for item in snapshots
-        ]
-        if len(identities) != len(set(identities)):
-            raise ValueError("RL feature batch contains duplicate snapshot identities")
-        stored = [item.to_storage_row() for item in snapshots]
-        for row in stored:
-            row["record_key"] = f"{row['feature_version']}:{row['as_of_at']}:{row['ticker']}"
-        ResearchStore().upsert_records("rl_feature_snapshots", stored, key="record_key")
+        self._research_store().save_rl_feature_snapshots(rows)
 
     def save_rl_training_labels(self, rows: list[dict]) -> None:
-        if not rows:
-            return
-        labels = [_training_label(dict(row)) for row in rows]
-        identities = [(item.feature_version, item.as_of_at, item.ticker) for item in labels]
-        if len(identities) != len(set(identities)):
-            raise ValueError("RL label batch contains duplicate label identities")
-        stored = [item.to_storage_row() for item in labels]
-        for row in stored:
-            row["record_key"] = f"{row['feature_version']}:{row['as_of_at']}:{row['ticker']}"
-        ResearchStore().upsert_records("rl_training_labels", stored, key="record_key")
+        self._research_store().save_rl_training_labels(rows)
 
     def share_class_snapshots_pit(
         self,
@@ -1283,19 +1247,7 @@ class SupabaseRepository:
         )
         return [dict(row) for row in rows]
     def save_valuation_observations(self, rows: list[dict]) -> None:
-        """같은 (ticker, as_of, source_kind)는 재실행해도 한 행으로 수렴한다."""
-        if not rows:
-            return
-        identities = [
-            (str(row["ticker"]), str(row["as_of_at"]), str(row["source_kind"]))
-            for row in rows
-        ]
-        if len(identities) != len(set(identities)):
-            raise ValueError("valuation batch contains duplicate observation identities")
-        stored = [dict(row) for row in rows]
-        for row in stored:
-            row["record_key"] = f"{row['ticker']}:{row['as_of_at']}:{row['source_kind']}"
-        ResearchStore().upsert_records("valuation_observations", stored, key="record_key")
+        self._research_store().save_valuation_observations(rows)
 
     def valuation_observation_rows(
         self,
@@ -1472,7 +1424,7 @@ class SupabaseRepository:
         ]
 
     def save_promotion(self, row: dict) -> None:
-        self._trading_repository().record_model_promotion(row)
+        self._research_store().save_promotion(self._trading_repository(), row)
 
     def model_artifact(self, artifact_id: str) -> dict[str, Any] | None:
         return self._trading_repository().model_version(artifact_id)
@@ -1481,21 +1433,13 @@ class SupabaseRepository:
         return self._trading_repository().current_model_stage(artifact_id)
 
     def model_evaluation_rows(self, artifact_id: str) -> list[dict[str, Any]]:
-        """artifact에 연결된 local Research 평가를 안전 증명 컬럼까지 포함해 조회한다."""
-        artifact_id = str(artifact_id).strip()
-        if not artifact_id:
-            raise ValueError("artifact_id is required")
-        return [
-            {**row, "artifact_id": artifact_id}
-            for row in ResearchStore(read_only=True).records("portfolio_evaluations")
-            if str(row.get("model_artifact_id") or "") == artifact_id
-        ]
+        return self._research_store(read_only=True).model_evaluation_rows(artifact_id)
 
     def model_evaluation_summary(self, artifact_id: str) -> EvaluationSummary:
         """평가 원장 전체를 보수적인 승격 요약으로 집계한다."""
         if self.model_artifact(artifact_id) is None:
             raise LookupError(f"model artifact not found: {artifact_id}")
-        return aggregate_evaluations(self.model_evaluation_rows(artifact_id))
+        return self._research_store(read_only=True).model_evaluation_summary(artifact_id)
 
     def approve_model_promotion(
         self,
@@ -1504,29 +1448,12 @@ class SupabaseRepository:
         confirmation: str,
     ) -> dict[str, Any]:
         """평가 재검증 뒤 현재 단계를 잠그고 승인 audit만 기록한다."""
-        if decision.status != "approved" or decision.violations:
-            raise ValueError("only a manually is_approved clean decision can be persisted")
-        if self.model_artifact(decision.artifact_id) is None:
-            raise RuntimeError("model promotion failed closed: artifact not found")
-        if self.model_stage(decision.artifact_id) != decision.from_stage:
-            raise RuntimeError("model promotion failed closed: artifact stage changed")
-        expected = f"PROMOTE {decision.artifact_id} {decision.from_stage}->{decision.to_stage}"
-        if confirmation != expected:
-            raise ValueError(f"confirmation must exactly match: {expected}")
-        return self._trading_repository().approve_model_promotion(
-            audit_row={
-                "artifact_id": decision.artifact_id,
-                "from_stage": decision.from_stage,
-                "to_stage": decision.to_stage,
-                "status": "approved",
-                "evidence": decision.to_record()["evidence"],
-                "approved_by": decision.approved_by,
-                "approved_at": decision.approved_at,
-                "confirmation_text": confirmation,
-            },
-            artifact_id=decision.artifact_id,
-            from_stage=decision.from_stage,
-            to_stage=decision.to_stage,
+        return self._research_store().approve_model_promotion(
+            self._trading_repository(),
+            decision,
+            confirmation=confirmation,
+            model_artifact=self.model_artifact(decision.artifact_id),
+            model_stage=self.model_stage(decision.artifact_id),
         )
 
     def risk_decision(self, risk_decision_id: str) -> dict | None:
@@ -1589,10 +1516,7 @@ class SupabaseRepository:
                 or parse_datetime(row["available_at"]) <= as_of_at]
 
     def save_decision_experiences(self, rows: Sequence[dict]) -> None:
-        """경험 최초 관측을 보존하며 같은 자연키 재시도는 무시한다."""
-        ResearchStore().upsert_records(
-            "decision_experiences", rows, key="record_key", ignore_existing=True,
-        )
+        self._research_store().save_decision_experiences(rows)
 
     def cases_for_evaluation(self, limit: int = 200) -> list[dict]:
         rows = self._trading_repository().evaluation_candidates(limit=limit)

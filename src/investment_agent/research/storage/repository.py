@@ -7,6 +7,7 @@ Research 산출물은 Production Supabase 스키마에 저장하지 않는다. �
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import tempfile
@@ -16,11 +17,19 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 from investment_agent.platform.db import duckdb as duckdb_store
+from investment_agent.platform.serialization import canonical_json
 from investment_agent.platform.storage_paths import (
     RESEARCH_ROOT_ENV,
     repository_root,
     research_database_path,
 )
+from investment_agent.research.datasets.contracts import TrainingSample
+from investment_agent.research.promotion.gate import (
+    EvaluationSummary,
+    PromotionDecision,
+    aggregate_evaluations,
+)
+from investment_agent.research.rl.contracts import FeatureSnapshot, ForwardReturnLabel
 
 DEFAULT_RESEARCH_ROOT = Path("data/local/research")
 DATABASE_NAME = "research.duckdb"
@@ -746,6 +755,172 @@ class ResearchStore:
                 [self._parquet_pattern(root)],
             ).fetchall()
         return {str(row[0]) for row in rows}
+
+    def save_events(self, events: Sequence[Any]) -> None:
+        """Research event는 production 원장이 아닌 local artifact에 보존한다."""
+        if not events:
+            return
+        rows: list[dict[str, Any]] = []
+        for event in events:
+            payload = event.to_dict()
+            rows.append({
+                **payload,
+                "record_key": hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest(),
+            })
+        self.upsert_records("events", rows, key="record_key")
+
+    def save_event_features(self, snapshots: Sequence[Any]) -> None:
+        if not snapshots:
+            return
+        rows = [
+            {"record_key": f"event_features_{snapshot.input_hash[:24]}", **snapshot.to_dict()}
+            for snapshot in snapshots
+        ]
+        self.upsert_records("event_feature_snapshots", rows, key="record_key")
+
+    def save_training_samples(self, samples: Sequence[TrainingSample]) -> int:
+        if not samples:
+            return 0
+        identities = [sample.sample_id for sample in samples]
+        if len(identities) != len(set(identities)):
+            raise ValueError("training sample batch contains duplicate identities")
+        existing = self.record_keys("training_samples")
+        rows = [sample.to_dict() for sample in samples if sample.sample_id not in existing]
+        if not rows:
+            return 0
+        for row in rows:
+            row["record_key"] = row["sample_id"]
+        return self.upsert_records("training_samples", rows, key="record_key", ignore_existing=True)
+
+    def training_sample_run_rows(self, *, start_as_of: str, end_as_of: str) -> list[dict[str, Any]]:
+        return self.records("training_sample_runs", start_as_of=start_as_of, end_as_of=end_as_of)
+
+    def save_training_sample_runs(self, rows: Sequence[dict[str, Any]]) -> int:
+        if not rows:
+            return 0
+        return self.upsert_records("training_sample_runs", rows, key="record_key")
+
+    def save_rl_feature_snapshots(self, rows: Sequence[dict[str, Any]]) -> None:
+        if not rows:
+            return
+        snapshots = [self._feature_snapshot(dict(row)) for row in rows]
+        identities = [(item.feature_version, item.as_of_at, item.ticker) for item in snapshots]
+        if len(identities) != len(set(identities)):
+            raise ValueError("RL feature batch contains duplicate snapshot identities")
+        stored = [item.to_storage_row() for item in snapshots]
+        for row in stored:
+            row["record_key"] = f"{row['feature_version']}:{row['as_of_at']}:{row['ticker']}"
+        self.upsert_records("rl_feature_snapshots", stored, key="record_key")
+
+    def save_rl_training_labels(self, rows: Sequence[dict[str, Any]]) -> None:
+        if not rows:
+            return
+        labels = [self._training_label(dict(row)) for row in rows]
+        identities = [(item.feature_version, item.as_of_at, item.ticker) for item in labels]
+        if len(identities) != len(set(identities)):
+            raise ValueError("RL label batch contains duplicate label identities")
+        stored = [item.to_storage_row() for item in labels]
+        for row in stored:
+            row["record_key"] = f"{row['feature_version']}:{row['as_of_at']}:{row['ticker']}"
+        self.upsert_records("rl_training_labels", stored, key="record_key")
+
+    def save_valuation_observations(self, rows: Sequence[dict[str, Any]]) -> None:
+        if not rows:
+            return
+        identities = [
+            (str(row["ticker"]), str(row["as_of_at"]), str(row["source_kind"]))
+            for row in rows
+        ]
+        if len(identities) != len(set(identities)):
+            raise ValueError("valuation batch contains duplicate observation identities")
+        stored = [dict(row) for row in rows]
+        for row in stored:
+            row["record_key"] = f"{row['ticker']}:{row['as_of_at']}:{row['source_kind']}"
+        self.upsert_records("valuation_observations", stored, key="record_key")
+
+    def save_decision_experiences(self, rows: Sequence[dict[str, Any]]) -> None:
+        self.upsert_records("decision_experiences", rows, key="record_key", ignore_existing=True)
+
+    def model_evaluation_rows(self, artifact_id: str) -> list[dict[str, Any]]:
+        artifact_id = str(artifact_id).strip()
+        if not artifact_id:
+            raise ValueError("artifact_id is required")
+        return [
+            {**row, "artifact_id": artifact_id}
+            for row in self.records("portfolio_evaluations")
+            if str(row.get("model_artifact_id") or "") == artifact_id
+        ]
+
+    def model_evaluation_summary(self, artifact_id: str) -> EvaluationSummary:
+        return aggregate_evaluations(self.model_evaluation_rows(artifact_id))
+
+    def save_promotion(self, trading_repository: Any, row: dict[str, Any]) -> None:
+        trading_repository.record_model_promotion(row)
+
+    def approve_model_promotion(
+        self,
+        trading_repository: Any,
+        decision: PromotionDecision,
+        *,
+        confirmation: str,
+        model_artifact: dict[str, Any] | None,
+        model_stage: str | None,
+    ) -> dict[str, Any]:
+        if decision.status != "approved" or decision.violations:
+            raise ValueError("only a manually is_approved clean decision can be persisted")
+        if model_artifact is None:
+            raise RuntimeError("model promotion failed closed: artifact not found")
+        if model_stage != decision.from_stage:
+            raise RuntimeError("model promotion failed closed: artifact stage changed")
+        expected = f"PROMOTE {decision.artifact_id} {decision.from_stage}->{decision.to_stage}"
+        if confirmation != expected:
+            raise ValueError(f"confirmation must exactly match: {expected}")
+        return trading_repository.approve_model_promotion(
+            audit_row={
+                "artifact_id": decision.artifact_id,
+                "from_stage": decision.from_stage,
+                "to_stage": decision.to_stage,
+                "status": "approved",
+                "evidence": decision.to_record()["evidence"],
+                "approved_by": decision.approved_by,
+                "approved_at": decision.approved_at,
+                "confirmation_text": confirmation,
+            },
+            artifact_id=decision.artifact_id,
+            from_stage=decision.from_stage,
+            to_stage=decision.to_stage,
+        )
+
+    @staticmethod
+    def _feature_snapshot(row: dict[str, Any]) -> FeatureSnapshot:
+        snapshot = FeatureSnapshot(
+            feature_version=str(row["feature_version"]),
+            as_of_at=str(row["as_of_at"]),
+            ticker=str(row["ticker"]),
+            available_at=str(row["available_at"]),
+            is_available=row["is_available"],
+            features=dict(row["features"]),
+            source_ids=tuple(row["source_ids"]),
+            provenance=dict(row["provenance"]),
+        )
+        if str(row.get("input_hash") or "") != snapshot.input_hash:
+            raise RuntimeError("stored RL feature input_hash does not match its provenance")
+        return snapshot
+
+    @staticmethod
+    def _training_label(row: dict[str, Any]) -> ForwardReturnLabel:
+        label = ForwardReturnLabel(
+            feature_version=str(row["feature_version"]),
+            as_of_at=str(row["as_of_at"]),
+            ticker=str(row["ticker"]),
+            forward_end_at=str(row["forward_end_at"]),
+            label_available_at=str(row["label_available_at"]),
+            forward_return=float(row["forward_return"]),
+            benchmark_forward_return=float(row["benchmark_forward_return"]),
+        )
+        if str(row.get("label_id") or "") != label.label_id:
+            raise RuntimeError("stored RL label_id does not match its payload")
+        return label
 
 
 def _feature_row(row: dict[str, Any], ingested_at: str) -> dict[str, Any]:
