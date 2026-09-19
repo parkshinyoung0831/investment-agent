@@ -21,11 +21,10 @@ from pathlib import Path
 
 from investment_agent.platform.serialization import canonical_json
 from investment_agent.operations.harness.emergency import (
-    REARM_CONFIRMATION_PHRASE,
     check_runtime_status,
     emergency_stop,
-    rearm_execution,
 )
+from investment_agent.execution.safety.lockdown import REARM_CONFIRMATION_PHRASE, rearm_execution
 
 from investment_agent.operations.paths import REPOSITORY_ROOT as _ROOT
 from investment_agent.operations.paths import HARNESS_STATE_DIR as _DEFAULT_STATE_DIR

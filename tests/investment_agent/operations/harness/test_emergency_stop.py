@@ -9,13 +9,17 @@ from pathlib import Path
 from unittest.mock import patch
 
 from investment_agent.operations.commands.emergency_stop import main as cli_main
-from investment_agent.operations.harness.emergency import (
+from investment_agent.execution.safety import lockdown
+from investment_agent.operations.harness import emergency as harness_emergency
+from investment_agent.execution.safety.lockdown import (
     REARM_CONFIRMATION_PHRASE,
-    check_runtime_status,
-    emergency_stop,
     is_execution_locked_down,
     rearm_execution,
     set_execution_lockdown,
+)
+from investment_agent.operations.harness.emergency import (
+    check_runtime_status,
+    emergency_stop,
 )
 from investment_agent.operations.harness.state import HarnessState, JobRuntime, JsonStateStore, StageRuntime, utc_iso
 
@@ -144,6 +148,11 @@ class TestEmergencyStop(unittest.TestCase):
         unlocked = rearm_execution(state_dir=self.state_dir, confirmation=REARM_CONFIRMATION_PHRASE)
         self.assertTrue(unlocked)
         self.assertFalse(is_execution_locked_down(self.state_dir))
+
+    def test_harness_lockdown_api_is_a_compatibility_reexport(self) -> None:
+        self.assertIs(harness_emergency.set_execution_lockdown, lockdown.set_execution_lockdown)
+        self.assertIs(harness_emergency.is_execution_locked_down, lockdown.is_execution_locked_down)
+        self.assertIs(harness_emergency.rearm_execution, lockdown.rearm_execution)
 
     def test_emergency_stop_lockdown_env_file(self) -> None:
         dummy_repo = self.state_dir / "repo"

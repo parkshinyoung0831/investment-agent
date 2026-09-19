@@ -46,7 +46,7 @@ def main(
     reporter = reporter or HarnessReporter(logger=log, alerts=DiscordOpsAlert(log))
 
     if is_locked_down is None:
-        from investment_agent.operations.harness.emergency import is_execution_locked_down as is_locked_down
+        from investment_agent.execution.safety.lockdown import is_execution_locked_down as is_locked_down
     if is_locked_down():
         reporter.error("execution_locked_down", approval_id=approval_id)
         return 1

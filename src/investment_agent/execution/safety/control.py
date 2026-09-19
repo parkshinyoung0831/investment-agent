@@ -246,12 +246,12 @@ def assert_live_order_allowed(
     조건 하나라도 어기면 예외다. **통과 경로는 하나뿐**이고, 여기서 통과하지 못한
     주문이 나가는 길은 없다.
 
-    잠금 sentinel은 operations가 소유하고, 호출 시점에만 읽는다.
+    잠금 sentinel은 execution safety가 소유하고, 호출 시점에만 읽는다.
     """
     current = ensure_aware(now or utc_now())
 
     # 잠금은 다른 무엇보다 먼저 본다. 잠긴 동안에는 어떤 조건도 검사할 이유가 없다.
-    from investment_agent.operations.harness.emergency import is_execution_locked_down
+    from investment_agent.execution.safety.lockdown import is_execution_locked_down
     if is_execution_locked_down(lockdown_state_dir):
         raise ExecutionSafetyError("trading execution is under durable lockdown")
     if not controls.live_enabled:

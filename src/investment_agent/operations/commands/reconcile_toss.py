@@ -10,7 +10,7 @@ from investment_agent.execution.brokers.toss import client as toss
 from investment_agent.execution.brokers.toss.orders import TossOrderApi
 from investment_agent.execution.db import ExecutionRepository
 from investment_agent.execution.reconciliation.worker import TossReconciliationWorker
-from investment_agent.operations.harness.emergency import set_execution_lockdown
+from investment_agent.execution.safety.lockdown import set_execution_lockdown
 from investment_agent.operations.harness.reporting import DiscordOpsAlert, HarnessReporter
 
 log = get_logger(__name__)

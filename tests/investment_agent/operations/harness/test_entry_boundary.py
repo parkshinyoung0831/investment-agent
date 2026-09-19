@@ -36,9 +36,19 @@ class HarnessEntryBoundaryTest(unittest.TestCase):
             ).glob("*.py")
         )
         paths.append(root / "src" / "investment_agent" / "operations" / "commands" / "investment_harness.py")
-        combined = "\n".join(path.read_text(encoding="utf-8").lower() for path in paths)
-        for forbidden in ("investment_agent.execution", "submit_order", "/api/v1/orders", "toss_manual"):
-            self.assertNotIn(forbidden, combined)
+        allowed_lockdown_owner = root / "src" / "investment_agent" / "operations" / "harness" / "emergency.py"
+        for path in paths:
+            source = path.read_text(encoding="utf-8").lower()
+            with self.subTest(path=path.name):
+                if path == allowed_lockdown_owner:
+                    self.assertIn(
+                        "from investment_agent.execution.safety.lockdown import",
+                        source,
+                    )
+                else:
+                    self.assertNotIn("investment_agent.execution", source)
+                for forbidden in ("submit_order", "/api/v1/orders", "toss_manual"):
+                    self.assertNotIn(forbidden, source)
 
     def test_analysis_keeps_its_daily_cycle_while_live_workflow_is_paused(self):
         calls = []
