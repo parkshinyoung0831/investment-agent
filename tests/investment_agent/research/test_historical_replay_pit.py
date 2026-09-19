@@ -128,9 +128,6 @@ class ReplayUniverseTest(unittest.TestCase):
 
 
 class _ValuationRepository:
-    def __init__(self):
-        self.saved = []
-
     def market_prices(self, ticker, as_of_at, limit=260):
         return [{"ticker": ticker, "trade_date": "2016-02-26", "close": 50.0}]
 
@@ -140,6 +137,11 @@ class _ValuationRepository:
     def share_class_snapshots_pit(self, ticker, as_of_at, limit=24):
         return []
 
+
+class _ValuationStore:
+    def __init__(self):
+        self.saved = []
+
     def save_valuation_observations(self, rows):
         self.saved.extend(rows)
 
@@ -147,15 +149,17 @@ class _ValuationRepository:
 class HistoricalValuationTest(unittest.TestCase):
     def test_source_kind_is_recorded_as_historical_replay(self):
         repository = _ValuationRepository()
+        store = _ValuationStore()
         build_valuations(
             as_of_at=datetime(2016, 2, 29, 23, tzinfo=timezone.utc), tickers=["AAA"],
-            source_kind="historical_replay", repository=repository,
+            source_kind="historical_replay", repository=repository, store=store,
         )
-        self.assertEqual(repository.saved[0]["source_kind"], "historical_replay")
-        self.assertEqual(repository.saved[0]["price"], 50.0)
+        self.assertEqual(store.saved[0]["source_kind"], "historical_replay")
+        self.assertEqual(store.saved[0]["price"], 50.0)
 
     def test_entry_restates_shares_with_the_market_split_history(self):
         repository = _ValuationRepository()
+        store = _ValuationStore()
         repository.share_class_snapshots_pit = lambda ticker, as_of_at, limit=24: [{
             "shares_outstanding": 100, "accession_no": "0000000001-16-000001", "share_class_key": "common",
             "as_of_date": "2016-01-15", "filed_at": "2016-01-20", "accepted_at": "2016-01-20T20:00:00+00:00",
@@ -163,16 +167,16 @@ class HistoricalValuationTest(unittest.TestCase):
         repository.split_history = lambda ticker: [{"action_date": "2020-08-31", "split_ratio": 4.0}]
         build_valuations(
             as_of_at=datetime(2016, 2, 29, 23, tzinfo=timezone.utc), tickers=["AAA"],
-            source_kind="historical_replay", repository=repository,
+            source_kind="historical_replay", repository=repository, store=store,
         )
-        self.assertEqual(repository.saved[0]["shares_outstanding"], 400.0)
-        self.assertEqual(repository.saved[0]["market_cap"], 20000.0)
+        self.assertEqual(store.saved[0]["shares_outstanding"], 400.0)
+        self.assertEqual(store.saved[0]["market_cap"], 20000.0)
 
     def test_unknown_source_kind_is_rejected(self):
         with self.assertRaises(ValueError):
             build_valuations(
                 as_of_at=datetime(2016, 2, 29, tzinfo=timezone.utc), tickers=["AAA"],
-                source_kind="backtest", repository=_ValuationRepository(),
+                source_kind="backtest", repository=_ValuationRepository(), store=_ValuationStore(),
             )
 
 

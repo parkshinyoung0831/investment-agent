@@ -184,8 +184,6 @@ class _Repository:
             {"shares_outstanding": 1000, "accession_no": "0000000001-26-000004",
              "share_class_key": "common", "filed_at": "2026-07-25",
              "accepted_at": "2026-07-25T18:03:00+00:00"}]
-        self.saved: list[dict] = []
-        self.save_calls = 0
 
     def current_tracked_tickers(self):
         return ["AAA"]
@@ -199,6 +197,12 @@ class _Repository:
     def share_class_snapshots_pit(self, ticker, as_of_at, limit=24):
         return list(self.share_rows)
 
+
+class _ValuationStore:
+    def __init__(self):
+        self.saved: list[dict] = []
+        self.save_calls = 0
+
     def save_valuation_observations(self, rows):
         self.save_calls += 1
         self.saved.extend(rows)
@@ -207,19 +211,24 @@ class _Repository:
 class BuildValuationsEntryTest(unittest.TestCase):
     def test_historical_replay_prepares_the_whole_date_once(self):
         repository = _Repository()
+        store = _ValuationStore()
         prepared = []
         repository.prepare_historical_replay = lambda tickers, as_of_at: prepared.append((tuple(tickers), as_of_at))
         build_valuations(
-            as_of_at=_AS_OF, tickers=["AAA"], source_kind="historical_replay", repository=repository,
+            as_of_at=_AS_OF, tickers=["AAA"], source_kind="historical_replay",
+            repository=repository, store=store,
         )
         self.assertEqual(prepared, [(('AAA',), _AS_OF)])
 
     def test_observation_is_stored_with_evidence_and_hash(self):
         repository = _Repository()
-        payload = build_valuations(as_of_at=_AS_OF, tickers=["AAA"], repository=repository)
+        store = _ValuationStore()
+        payload = build_valuations(
+            as_of_at=_AS_OF, tickers=["AAA"], repository=repository, store=store,
+        )
         self.assertEqual(payload["status"], "success")
-        self.assertEqual(len(repository.saved), 1)
-        row = repository.saved[0]
+        self.assertEqual(len(store.saved), 1)
+        row = store.saved[0]
         self.assertEqual(row["source_kind"], "live_shadow")
         self.assertEqual(row["market_cap"], 50000.0)
         self.assertTrue(row["input_evidence_ids"])
@@ -229,8 +238,11 @@ class BuildValuationsEntryTest(unittest.TestCase):
     def test_incomplete_source_is_still_stored_with_reasons(self):
         """근거가 모자란 날도 기록한다 — 왜 못 만들었는지가 나중에 필요하다."""
         repository = _Repository(share_rows=[])
-        build_valuations(as_of_at=_AS_OF, tickers=["AAA"], repository=repository)
-        row = repository.saved[0]
+        store = _ValuationStore()
+        build_valuations(
+            as_of_at=_AS_OF, tickers=["AAA"], repository=repository, store=store,
+        )
+        row = store.saved[0]
         self.assertIsNone(row["market_cap"])
         self.assertFalse(row["is_meaningful_pe_ttm"])
         self.assertIn("shares_outstanding", row["missing_reasons"])
@@ -238,8 +250,11 @@ class BuildValuationsEntryTest(unittest.TestCase):
     def test_meaningful_flags_always_agree_with_the_stored_value(self):
         """DB CHECK 제약과 같은 불변식을 코드 쪽에서도 지킨다."""
         for repository in (_Repository(), _Repository(share_rows=[]), _Repository(fundamental_rows=[])):
-            build_valuations(as_of_at=_AS_OF, tickers=["AAA"], repository=repository)
-            row = repository.saved[0]
+            store = _ValuationStore()
+            build_valuations(
+                as_of_at=_AS_OF, tickers=["AAA"], repository=repository, store=store,
+            )
+            row = store.saved[0]
             for metric in ("pe_ttm", "pb", "ps_ttm", "fcf_yield"):
                 self.assertEqual(
                     row[metric] is not None, row[f"is_meaningful_{metric}"], metric,
@@ -247,16 +262,23 @@ class BuildValuationsEntryTest(unittest.TestCase):
 
     def test_dry_run_writes_nothing(self):
         repository = _Repository()
+        store = _ValuationStore()
         payload = build_valuations(
-            as_of_at=_AS_OF, tickers=["AAA"], dry_run=True, repository=repository,
+            as_of_at=_AS_OF, tickers=["AAA"], dry_run=True,
+            repository=repository, store=store,
         )
-        self.assertEqual(repository.saved, [])
+        self.assertEqual(store.saved, [])
+        self.assertEqual(store.save_calls, 0)
         self.assertEqual(payload["rows_upserted"], 0)
 
     def test_one_date_is_written_once(self):
         repository = _Repository()
-        build_valuations(as_of_at=_AS_OF, tickers=["AAA"] * 230, repository=repository)
-        self.assertEqual(repository.save_calls, 1)
+        store = _ValuationStore()
+        build_valuations(
+            as_of_at=_AS_OF, tickers=["AAA"] * 230,
+            repository=repository, store=store,
+        )
+        self.assertEqual(store.save_calls, 1)
 
 
 if __name__ == "__main__":

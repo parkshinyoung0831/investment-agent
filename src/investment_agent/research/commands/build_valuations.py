@@ -18,6 +18,7 @@ from investment_agent.platform.logging import get_logger
 from investment_agent.trading.contracts import ContractError, parse_datetime
 from investment_agent.trading.supabase_repository import SupabaseRepository
 from investment_agent.research.datasets.universe import research_universe
+from investment_agent.research.storage.repository import ResearchStore
 from investment_agent.research.valuation.engine import PITValuationObservation, build_pit_valuation
 from investment_agent.research.valuation.inputs import build_valuation_inputs
 
@@ -76,6 +77,7 @@ def build_valuations(
     source_kind: str = "live_shadow",
     dry_run: bool = False,
     repository: SupabaseRepository | None = None,
+    store: ResearchStore | None = None,
 ) -> dict[str, object]:
     """종목별 가격·발행주식수·TTM 재무를 하나의 PIT 관측값으로 만든다."""
     if source_kind not in ("live_shadow", "historical_replay"):
@@ -121,7 +123,7 @@ def build_valuations(
     phase = time.monotonic()
     saved = 0
     if not dry_run and rows:
-        selected.save_valuation_observations(rows)
+        (store or ResearchStore()).save_valuation_observations(rows)
         saved = len(rows)
     write_sec = time.monotonic() - phase
 

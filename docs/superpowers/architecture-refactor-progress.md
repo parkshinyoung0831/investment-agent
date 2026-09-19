@@ -99,6 +99,18 @@
 - 남은 debt: valuation·event·event feature·training sample·training run과 여러 research read가 trading façade를 경유한다. data read·trading 원장·execution snapshot 책임도 같은 façade에 남아 있다.
 - 다음 독립 작업: `src/investment_agent/research/commands/build_valuations.py`의 `save_valuation_observations` caller와 `tests/investment_agent/research/valuation/test_inputs.py`, `tests/investment_agent/research/test_historical_replay_pit.py`를 먼저 재검증한다. 이어서 `build_events.py`와 `build_training_samples.py`를 각각 독립 단위로 판단한다.
 
+#### Valuation Task 1 — observation write 직접 연결
+
+- 변경 전 호출 관계: `research.commands.build_valuations`가 가격·재무·발행주식수·split을 읽는 `SupabaseRepository`에 valuation write도 호출했고 façade가 ResearchStore로 전달했다. live·historical 테스트 fake도 read와 write를 함께 소유했다.
+- 변경 이유: valuation observation은 PIT 원천을 입력으로 다시 계산할 수 있는 Research 산출물이며, Supabase read interface와 Research DuckDB write interface를 한 객체로 요구할 이유가 없다.
+- 수정 파일: `src/investment_agent/research/commands/build_valuations.py`, `tests/investment_agent/research/valuation/test_inputs.py`, `tests/investment_agent/research/test_historical_replay_pit.py`, 이 원장.
+- 이동·삭제 파일: 없음. façade 호환 메서드는 다음 task에서 caller 0건을 확인한 뒤 제거한다.
+- import·runtime 방향: valuation 계산은 기존 `SupabaseRepository` read를 유지하고 write만 직접 `ResearchStore`로 향한다. historical replay prepare, PIT cutoff, source kind, split restatement, row 형식과 CLI는 변하지 않았다.
+- 테스트 결과: 기존 구현에서 9개 계약이 `store` 인자 오류로 RED가 됐다. 구현 후 valuation·historical replay·architecture 55개가 통과했다.
+- 제거된 debt: valuation production write의 trading façade 경유 1곳.
+- 남은 debt: `SupabaseRepository.save_valuation_observations` 메서드와 다른 Research façade 책임, research→trading read·계약 import, `PENDING_DEPENDENCIES` 69쌍.
+- 다음 독립 작업: valuation write owner guard를 확장하고 façade 메서드를 제거한다.
+
 ## 향후 milestone
 
 | 묶음 | 해당 phase | 독립 완료 조건 |
