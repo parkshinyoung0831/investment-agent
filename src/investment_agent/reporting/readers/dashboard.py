@@ -6,17 +6,19 @@ client·schema 이름·pagination 정책을 다시 들여오지 않는다.
 from __future__ import annotations
 
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 import re
 from typing import Any
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 import pandas as pd
 
 from investment_agent.platform.cache import cache_data
 from investment_agent.platform.db.postgres import service_client
-from investment_agent.reporting.models import DataResult, public_exception_message
+from investment_agent.reporting.models import DataResult, normalize_observed_at, public_exception_message
 from investment_agent.reporting.readers.financial import ReportingQueries
+from investment_agent.reporting.readers.research import load_local_research_records
+from investment_agent.reporting.readers.runtime import read_local_rows, read_runtime_rows
 
 SOURCE = "DB 저장 데이터 · v1 Supabase"
 MACRO_LOOKBACK_DAYS = 400
@@ -248,8 +250,146 @@ def load_execution_data() -> DataResult:
     return DataResult.empty(value=payload, source="reporting execution", message="아직 저장된 실행·체결 기록이 없습니다.") if not any(payload.values()) else DataResult.ok(value=payload, source="reporting execution")
 
 
+def _as_datetime(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+    if isinstance(value, date):
+        return datetime(value.year, value.month, value.day, tzinfo=timezone.utc)
+    if value in (None, ""):
+        return None
+    text = str(value).strip()
+    try:
+        current = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        return current.replace(tzinfo=timezone.utc) if current.tzinfo is None else current
+    except ValueError:
+        try:
+            current_date = date.fromisoformat(text)
+        except ValueError:
+            return None
+        return datetime(current_date.year, current_date.month, current_date.day, tzinfo=timezone.utc)
+
+
+def _latest_at(groups: Sequence[tuple[Sequence[Mapping[str, Any]], Sequence[str]]]) -> str | None:
+    candidates: list[datetime] = []
+    for rows, fields in groups:
+        for row in rows:
+            for field in fields:
+                parsed = _as_datetime(row.get(field))
+                if parsed is not None:
+                    candidates.append(parsed.astimezone(timezone.utc))
+                    break
+    return normalize_observed_at(max(candidates)) if candidates else None
+
+
+@cache_data(ttl="2m", max_entries=2)
+def load_alpha_lab_data() -> DataResult:
+    """투자 엔진의 최근 입력·모델·신호·위험 심사 사실을 한 번에 읽는다.
+
+    표마다 적재 주기가 다르므로 한 표의 실패가 전체 화면을 가리지 않게 부분 결과를
+    보존한다. 집계값을 꾸미지 않고 최근 행만 제한해서 가져온 뒤 화면에서 계산한다.
+    """
+
+    source = "로컬 Research/Runtime · 투자 엔진"
+    payload: dict[str, list[dict[str, Any]]] = {
+        "decision_runs": [],
+        "signal_runs": [],
+        "market_regimes": [],
+        "candidate_ranks": [],
+        "event_features": [],
+        "model_artifacts": [],
+        "ticker_signals": [],
+        "portfolio_proposals": [],
+        "risk_decisions": [],
+        "portfolio_evaluations": [],
+        "promotions": [],
+        "training_samples": [],
+        "approvals": [],
+    }
+    failures: list[str] = []
+    # Research는 v1 Supabase schema가 아니라 동일한 local DuckDB를 읽는다.
+    for key, dataset in (
+        ("market_regimes", "market_regimes"),
+        ("candidate_ranks", "candidate_ranks"),
+        ("event_features", "event_feature_snapshots"),
+        ("training_samples", "training_samples"),
+        ("portfolio_evaluations", "portfolio_evaluations"),
+    ):
+        try:
+            payload[key] = load_local_research_records(dataset)
+        except Exception:
+            failures.append(key)
+
+    queries = {
+        "decision_runs": ("decision_runs", "started_at", 20),
+        "signal_runs": ("signal_runs", "completed_at", 20),
+        "ticker_signals": ("signals", "recorded_at", 200),
+        "portfolio_proposals": ("portfolio_proposals", "as_of_at", 80),
+        "risk_decisions": ("risk_decisions", "decided_at", 120),
+        "promotions": ("model_promotions", "created_at", 80),
+    }
+    for key, (dataset, order_column, limit) in queries.items():
+        try:
+            rows = read_runtime_rows(dataset)
+            rows.sort(key=lambda row: str(row.get(order_column) or ""), reverse=True)
+            payload[key] = rows[:limit]
+        except Exception:
+            failures.append(key)
+
+    try:
+        rows = read_runtime_rows("approvals")
+        rows.sort(key=lambda row: str(row.get("requested_at") or row.get("created_at") or ""), reverse=True)
+        payload["approvals"] = rows[:80]
+    except Exception:
+        failures.append("approvals")
+    try:
+        rows = read_local_rows("current_model_stage")
+        rows.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
+        payload["model_artifacts"] = rows[:60]
+    except Exception:
+        failures.append("model_artifacts")
+
+    observed_at = _latest_at(
+        (
+            (payload["decision_runs"], ("finished_at", "started_at")),
+            (payload["signal_runs"], ("completed_at", "created_at")),
+            (payload["market_regimes"], ("as_of_at", "created_at")),
+            (payload["candidate_ranks"], ("as_of_at", "created_at")),
+            (payload["event_features"], ("as_of_at", "created_at")),
+            (payload["model_artifacts"], ("created_at",)),
+            (payload["ticker_signals"], ("recorded_at", "created_at")),
+            (payload["portfolio_proposals"], ("as_of_at", "created_at")),
+            (payload["risk_decisions"], ("decided_at",)),
+            (payload["portfolio_evaluations"], ("evaluated_at",)),
+            (payload["promotions"], ("approved_at", "created_at")),
+            (payload["training_samples"], ("as_of_at", "created_at")),
+            (payload["approvals"], ("updated_at", "requested_at")),
+        )
+    )
+    if len(failures) == len(payload):
+        return DataResult.error(
+            source=source,
+            value=payload,
+            observed_at=observed_at,
+            message="투자 엔진 데이터셋을 읽지 못했습니다.",
+        )
+    if not any(payload.values()):
+        return DataResult.empty(
+            source=source,
+            value=payload,
+            observed_at=observed_at,
+            message="아직 저장된 투자 엔진 실행 결과가 없습니다.",
+        )
+    message = f"일부 데이터셋 조회 실패: {', '.join(failures)}" if failures else None
+    return DataResult.ok(
+        source=source,
+        value=payload,
+        observed_at=observed_at,
+        message=message,
+    )
+
+
 __all__ = [
     "load_econ_calendar_window", "load_econ_detail", "load_econ_recent_results",
     "load_econ_series", "load_econ_series_history", "load_econ_upcoming",
-    "load_execution_data", "load_guru_data", "load_macro_window", "load_price_history", "load_strategy_data", "load_tickers",
+    "load_alpha_lab_data", "load_execution_data", "load_guru_data", "load_macro_window", "load_price_history", "load_strategy_data", "load_tickers",
 ]

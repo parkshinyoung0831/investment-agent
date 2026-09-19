@@ -838,15 +838,17 @@ class DashboardStaticBoundaryTests(unittest.TestCase):
 
         self.assertEqual(violations, [], "\n".join(violations))
 
-    #: 두 모듈이 같은 이름으로 같은 조회를 각자 구현하는 잔여 구간.
+    #: 두 모듈이 같은 이름으로 같은 조회를 각자 구현하는 잔여 구간과, 이전 중인
+    #: dashboard.db의 호환 재노출 경로.
     #: 화면은 `reporting.readers.dashboard` 쪽만 import한다 — `dashboard.db` 쪽은
     #: 이 테스트 파일이 게이트웨이 동작을 확인하려고 붙잡고 있는 마지막 소비자다.
-    #: **줄어들기만 해야 한다.** 늘어나면 같은 숫자를 두 곳이 각자 말하기 시작하고,
-    #: 실제로 그렇게 해서 `reporting.macro_measures` 결함이 양쪽에 동시에 있었다.
+    #: 독립 구현은 줄어들기만 해야 한다. 호환 재노출을 추가할 때는 아래 집합에
+    #: 명시하고 같은 함수 객체인지도 검증한다.
     _KNOWN_OVERLAP = frozenset({
-        "load_execution_data", "load_guru_data", "load_price_history",
+        "load_alpha_lab_data", "load_execution_data", "load_guru_data", "load_price_history",
         "load_strategy_data", "load_tickers",
     })
+    _COMPATIBILITY_REEXPORTS = frozenset({"load_alpha_lab_data"})
 
     def test_required_public_loader_names_exist(self) -> None:
         expected_db = {
@@ -895,6 +897,8 @@ class DashboardStaticBoundaryTests(unittest.TestCase):
             and callable(getattr(reporting_dashboard, name, None))
         }
         self.assertEqual(self._KNOWN_OVERLAP, both)
+        for name in self._COMPATIBILITY_REEXPORTS:
+            self.assertIs(getattr(db, name), getattr(reporting_dashboard, name))
 
     def test_load_reporting_view_delegates_to_queries(self) -> None:
         from investment_agent.reporting.readers.financial import VIEWS

@@ -149,6 +149,7 @@ class DashboardReportingBoundaryTest(unittest.TestCase):
     _MIGRATED = {
         "app_pages/macro.py",
         "app_pages/econ_calendar.py",
+        "app_pages/decision_flow.py",
         "app_pages/gurus.py",
         "app_pages/ml_rl_lab.py",
     }

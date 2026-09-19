@@ -29,9 +29,9 @@ from investment_agent.reporting.services.investment import (
 from investment_agent.reporting.readers.runtime import read_local_rows, read_runtime_rows
 from investment_agent.reporting.readers.research import (
     load_local_features,
-    load_local_research_records,
     load_local_strategy_data,
 )
+from investment_agent.reporting.readers.dashboard import load_alpha_lab_data
 
 DB_SOURCE = "DB 저장 데이터 · v1 Supabase"
 MACRO_KPI_SERIES: tuple[str, ...] = ("FEAR_GREED", "TNX", "DXY", "WTI", "VIX")
@@ -1208,113 +1208,6 @@ def load_latest_account_snapshot() -> DataResult:
             source=source,
             message=public_exception_message("계좌 스냅샷 조회에 실패했습니다.", error),
         )
-
-
-@cache_data(ttl="2m", max_entries=2)
-def load_alpha_lab_data() -> DataResult:
-    """투자 엔진의 최근 입력·모델·신호·위험 심사 사실을 한 번에 읽는다.
-
-    표마다 적재 주기가 다르므로 한 표의 실패가 전체 화면을 가리지 않게 부분 결과를
-    보존한다. 집계값을 꾸미지 않고 최근 행만 제한해서 가져온 뒤 화면에서 계산한다.
-    """
-
-    source = "로컬 Research/Runtime · 투자 엔진"
-    payload: dict[str, list[dict[str, Any]]] = {
-        "decision_runs": [],
-        "signal_runs": [],
-        "market_regimes": [],
-        "candidate_ranks": [],
-        "event_features": [],
-        "model_artifacts": [],
-        "ticker_signals": [],
-        "portfolio_proposals": [],
-        "risk_decisions": [],
-        "portfolio_evaluations": [],
-        "promotions": [],
-        "training_samples": [],
-        "approvals": [],
-    }
-    failures: list[str] = []
-    # Research는 v1 Supabase schema가 아니라 동일한 local DuckDB를 읽는다.
-    for key, dataset in (
-        ("market_regimes", "market_regimes"),
-        ("candidate_ranks", "candidate_ranks"),
-        ("event_features", "event_feature_snapshots"),
-        ("training_samples", "training_samples"),
-        ("portfolio_evaluations", "portfolio_evaluations"),
-    ):
-        try:
-            payload[key] = load_local_research_records(dataset)
-        except Exception:
-            failures.append(key)
-
-    queries = {
-        "decision_runs": ("decision_runs", "started_at", 20),
-        "signal_runs": ("signal_runs", "completed_at", 20),
-        "ticker_signals": ("signals", "recorded_at", 200),
-        "portfolio_proposals": ("portfolio_proposals", "as_of_at", 80),
-        "risk_decisions": ("risk_decisions", "decided_at", 120),
-        "promotions": ("model_promotions", "created_at", 80),
-    }
-    for key, (dataset, order_column, limit) in queries.items():
-        try:
-            rows = read_runtime_rows(dataset)
-            rows.sort(key=lambda row: str(row.get(order_column) or ""), reverse=True)
-            payload[key] = rows[:limit]
-        except Exception:
-            failures.append(key)
-
-    try:
-        rows = read_runtime_rows("approvals")
-        rows.sort(key=lambda row: str(row.get("requested_at") or row.get("created_at") or ""), reverse=True)
-        payload["approvals"] = rows[:80]
-    except Exception:
-        failures.append("approvals")
-    try:
-        rows = read_local_rows("current_model_stage")
-        rows.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
-        payload["model_artifacts"] = rows[:60]
-    except Exception:
-        failures.append("model_artifacts")
-
-    observed_at = _latest_at(
-        (
-            (payload["decision_runs"], ("finished_at", "started_at")),
-            (payload["signal_runs"], ("completed_at", "created_at")),
-            (payload["market_regimes"], ("as_of_at", "created_at")),
-            (payload["candidate_ranks"], ("as_of_at", "created_at")),
-            (payload["event_features"], ("as_of_at", "created_at")),
-            (payload["model_artifacts"], ("created_at",)),
-            (payload["ticker_signals"], ("recorded_at", "created_at")),
-            (payload["portfolio_proposals"], ("as_of_at", "created_at")),
-            (payload["risk_decisions"], ("decided_at",)),
-            (payload["portfolio_evaluations"], ("evaluated_at",)),
-            (payload["promotions"], ("approved_at", "created_at")),
-            (payload["training_samples"], ("as_of_at", "created_at")),
-            (payload["approvals"], ("updated_at", "requested_at")),
-        )
-    )
-    if len(failures) == len(payload):
-        return DataResult.error(
-            source=source,
-            value=payload,
-            observed_at=observed_at,
-            message="투자 엔진 데이터셋을 읽지 못했습니다.",
-        )
-    if not any(payload.values()):
-        return DataResult.empty(
-            source=source,
-            value=payload,
-            observed_at=observed_at,
-            message="아직 저장된 투자 엔진 실행 결과가 없습니다.",
-        )
-    message = f"일부 데이터셋 조회 실패: {', '.join(failures)}" if failures else None
-    return DataResult.ok(
-        source=source,
-        value=payload,
-        observed_at=observed_at,
-        message=message,
-    )
 
 
 @cache_data(ttl="15m", max_entries=32)

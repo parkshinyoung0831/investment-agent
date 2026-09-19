@@ -10,8 +10,7 @@ from typing import Any, Mapping
 
 import streamlit as st
 
-from investment_agent.dashboard.db import load_alpha_lab_data
-from investment_agent.reporting.readers.dashboard import load_execution_data
+from investment_agent.reporting.readers.dashboard import load_alpha_lab_data, load_execution_data
 from investment_agent.dashboard.components.ui import (
     awaiting_data,
     compact_json,
