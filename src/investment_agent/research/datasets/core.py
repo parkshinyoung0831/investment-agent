@@ -10,8 +10,7 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
-from investment_agent.trading.contracts import ContractError, parse_datetime
-from investment_agent.platform.serialization import canonical_json
+from investment_agent.platform.serialization import ContractError, canonical_json, parse_datetime
 from investment_agent.research.contracts import DatasetManifest, FeatureRecord, LabelRecord
 
 

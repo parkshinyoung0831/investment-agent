@@ -5,8 +5,7 @@ import hashlib
 from dataclasses import dataclass
 from typing import Sequence
 
-from investment_agent.trading.contracts import ContractError
-from investment_agent.platform.serialization import canonical_json
+from investment_agent.platform.serialization import ContractError, canonical_json
 from investment_agent.research.datasets.contracts import TrainingSample
 
 

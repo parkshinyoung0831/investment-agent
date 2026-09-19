@@ -10,8 +10,7 @@ from datetime import datetime
 from types import MappingProxyType
 from typing import Any, Iterable, Mapping
 
-from investment_agent.trading.contracts import parse_datetime
-from investment_agent.platform.serialization import canonical_json
+from investment_agent.platform.serialization import canonical_json, parse_datetime
 
 _TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.-]{0,14}$")
 _MEMBERSHIP_KINDS = {"live_tracked", "historical_point_in_time"}

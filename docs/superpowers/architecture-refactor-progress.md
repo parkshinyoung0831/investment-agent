@@ -7,8 +7,8 @@
 - 기준 원격 `main`: `4181f6b53d84105f2b78d78c69e9119c1f55a6cf` (2026-09-20 세션 시작 시 로컬 HEAD와 일치 확인).
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
-- 현재 단계: Phase 2의 training sample metadata scalar read 이관과 미사용 trading façade 제거 완료. 다음은 Research feature/label full read의 caller·PIT 계약을 별도 판단한다.
-- 현재 계획: `docs/superpowers/plans/2026-09-20-training-sample-metadata-read-boundary.md` (Task 1~2 완료).
+- 현재 단계: Phase 3의 Research 핵심 계약에서 Trading 재수출을 경유한 공통 serialization import 제거 진행 중. feature/label full read 경계는 별도 판단 대상으로 유지한다.
+- 현재 계획: `docs/superpowers/plans/2026-09-20-research-core-serialization-imports.md` (Task 1 완료, Task 2 통합 검증 남음).
 - 완료 단계: Phase 1 조사와 Phase 2의 feature snapshot·training label·valuation·event artifact write 직접 이관, 관련 façade 메서드 제거. 현재 `PENDING_DEPENDENCIES`는 68쌍이다.
 - maintenance 상태: 확인·설정하지 않았다. 하네스 또는 execution 코드를 수정하기 전에 `harness_switch --maintenance on`을 수행하고 상태를 확인한다. live flag는 변경하지 않는다.
 
@@ -224,6 +224,19 @@
 - 제거된 debt: 미사용 trading metadata read façade 메서드 하나와 command의 역방향 runtime 경유.
 - 남은 debt: `rl_feature_snapshot_rows`, `rl_training_label_rows`는 research의 build_labels·build_training_samples·export_dataset·RL features·ML serving과 일부 테스트에서 사용한다. façade 자체를 제거하려면 각 caller의 version·ticker·availability·label cutoff 필터와 반환 정규화 계약을 먼저 고정해야 한다.
 - 다음 독립 작업: full feature/label read의 전체 caller를 조사하고 `ResearchStore`에 실제 공통 read 계약이 필요한지 판단한다. Research command 한 곳만 바꿔 미사용 façade라고 주장하지 않는다.
+
+### Phase 3 — Research 역방향 import 제거
+
+#### Core serialization Task 1 — 공통 owner 직접 import
+
+- 변경 전 호출·import 관계: `research/datasets/contracts.py`, `core.py`, `training.py`, `research/rl/contracts.py`는 `ContractError`, `json_value`, `parse_datetime`를 `trading/contracts.py`에서 import했다. 그 모듈은 세 심볼을 `platform.serialization`에서 그대로 import해 재수출했다.
+- 변경 이유: Research 계약의 값·예외·파싱은 Trading 계산에 속하지 않으며 실제 구현 owner인 Platform을 직접 바라볼 수 있다. 새 façade나 alias를 만들지 않고 기존 불필요한 역방향 import 네 개를 제거한다.
+- 수정 파일: 위 Research 계약 4개, `tests/investment_agent/test_architecture.py`, 이 원장.
+- 이동·삭제 파일: 없음. 금융 계약, DB schema, 계산, 저장, runtime caller는 변경하지 않았다.
+- dependency/import 방향: 네 파일의 `research → trading/contracts.py`가 `research → platform.serialization`로 바뀌었고 정확한 pending 네 쌍을 삭제했다. `PENDING_DEPENDENCIES` 68→64.
+- 테스트 결과: pending 네 쌍 제거 직후 architecture test에서 정확히 네 위반으로 RED, import 변경 뒤 계약·dataset·RL·training sample·architecture 65개 통과. `ContractError`, `parse_datetime`, `json_value`가 Trading re-export와 동일 객체임을 확인했다.
+- 남은 debt: `research.features.layer`의 `EvidenceBundle`, `research.evaluation.evaluator`의 `EvaluationResult`는 실제 Trading 금융 계약이므로 기계적으로 옮기지 않는다. 그 외 순수 serialization import와 수많은 trading algorithm/read 호출은 각각 검증이 필요하다.
+- 다음 독립 작업: 통합 검증과 남은 Research→Trading import의 성격 재분류.
 
 ## 향후 milestone
 
