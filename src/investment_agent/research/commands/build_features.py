@@ -19,6 +19,7 @@ from investment_agent.trading.contracts import parse_datetime
 from investment_agent.trading.supabase_repository import SupabaseRepository
 from investment_agent.research.features.layer import FEATURE_VERSION, FeatureLayer
 from investment_agent.research.datasets.universe import research_universe
+from investment_agent.research.storage.repository import ResearchStore
 
 log = get_logger(__name__)
 
@@ -96,6 +97,7 @@ def build_features(
     source_kind: str = "live_shadow",
     dry_run: bool = False,
     repository: SupabaseRepository | None = None,
+    store: ResearchStore | None = None,
     workers: int | None = None,
 ) -> dict[str, object]:
     """종목별 EvidenceBundle을 고정 스키마 FeatureSnapshot으로 바꿔 저장한다."""
@@ -153,7 +155,7 @@ def build_features(
     compute_sec = time.monotonic() - phase
     phase = time.monotonic()
     if not dry_run and rows:
-        selected.save_rl_feature_snapshots(rows)
+        (store or ResearchStore()).save_rl_feature_snapshots(rows)
         saved = len(rows)
     write_sec = time.monotonic() - phase
 

@@ -12,11 +12,9 @@ AS_OF = datetime(2025, 1, 6, tzinfo=timezone.utc)
 
 
 class _CountingRepository(_ContextRepository):
-    def __init__(self, *, fail_saving: bool = False):
+    def __init__(self):
         super().__init__()
         self.econ_calls = 0
-        self.saved: list[list[dict]] = []
-        self.fail_saving = fail_saving
 
     def market_prices(self, ticker, as_of_at, limit=260):
         day = datetime(2024, 11, 1)
@@ -26,6 +24,12 @@ class _CountingRepository(_ContextRepository):
     def econ_snapshot(self, as_of_at, lookback_days=14):
         self.econ_calls += 1
         return super().econ_snapshot(as_of_at, lookback_days)
+
+
+class _CountingStore:
+    def __init__(self, *, fail_saving: bool = False):
+        self.saved: list[list[dict]] = []
+        self.fail_saving = fail_saving
 
     def save_rl_feature_snapshots(self, rows):
         if self.fail_saving:
@@ -47,16 +51,36 @@ class SharedContextTest(unittest.TestCase):
 class DateAtomicSaveTest(unittest.TestCase):
     def test_all_rows_are_saved_once_for_the_date(self):
         repository = _CountingRepository()
+        store = _CountingStore()
         tickers = [f"T{i:03d}" for i in range(250)]
-        payload = build_features(as_of_at=AS_OF, tickers=tickers, repository=repository)
-        self.assertEqual([len(batch) for batch in repository.saved], [250])
+        payload = build_features(
+            as_of_at=AS_OF, tickers=tickers, repository=repository, store=store,
+        )
+        self.assertEqual([len(batch) for batch in store.saved], [250])
         self.assertEqual(payload["rows_upserted"], 250)
 
     def test_storage_failure_does_not_leave_a_command_level_partial_batch(self):
-        repository = _CountingRepository(fail_saving=True)
+        store = _CountingStore(fail_saving=True)
         with self.assertRaises(OSError):
-            build_features(as_of_at=AS_OF, tickers=[f"T{i:03d}" for i in range(150)], repository=repository)
-        self.assertEqual(repository.saved, [])
+            build_features(
+                as_of_at=AS_OF,
+                tickers=[f"T{i:03d}" for i in range(150)],
+                repository=_CountingRepository(),
+                store=store,
+            )
+        self.assertEqual(store.saved, [])
+
+    def test_dry_run_does_not_write_to_the_research_store(self):
+        store = _CountingStore()
+        payload = build_features(
+            as_of_at=AS_OF,
+            tickers=["AAA"],
+            dry_run=True,
+            repository=_CountingRepository(),
+            store=store,
+        )
+        self.assertEqual(store.saved, [])
+        self.assertEqual(payload["rows_upserted"], 0)
 
 
 if __name__ == "__main__":

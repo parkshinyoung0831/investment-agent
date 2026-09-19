@@ -184,13 +184,21 @@ class ParallelFeatureBuildTest(unittest.TestCase):
         from tests.investment_agent.research.commands.test_build_features_resilience import (
             AS_OF as RESILIENCE_AS_OF,
             _CountingRepository,
+            _CountingStore,
         )
 
         tickers = [f"T{i:03d}" for i in range(230)]
         sequential, parallel = _CountingRepository(), _CountingRepository()
-        build_features(as_of_at=RESILIENCE_AS_OF, tickers=tickers, repository=sequential, workers=1)
-        payload = build_features(as_of_at=RESILIENCE_AS_OF, tickers=tickers, repository=parallel, workers=8)
-        self.assertEqual(parallel.saved, sequential.saved)
+        sequential_store, parallel_store = _CountingStore(), _CountingStore()
+        build_features(
+            as_of_at=RESILIENCE_AS_OF, tickers=tickers,
+            repository=sequential, store=sequential_store, workers=1,
+        )
+        payload = build_features(
+            as_of_at=RESILIENCE_AS_OF, tickers=tickers,
+            repository=parallel, store=parallel_store, workers=8,
+        )
+        self.assertEqual(parallel_store.saved, sequential_store.saved)
         self.assertEqual(payload["detail"]["workers"], 8)
         self.assertEqual(parallel.econ_calls, 1)
 
@@ -199,6 +207,7 @@ class ParallelFeatureBuildTest(unittest.TestCase):
         from tests.investment_agent.research.commands.test_build_features_resilience import (
             AS_OF as RESILIENCE_AS_OF,
             _CountingRepository,
+            _CountingStore,
         )
 
         active, peak, lock = [0], [0], threading.Lock()
@@ -216,8 +225,13 @@ class ParallelFeatureBuildTest(unittest.TestCase):
                 return super().market_prices(ticker, as_of_at, limit)
 
         repository = Slow()
-        payload = build_features(as_of_at=RESILIENCE_AS_OF, tickers=[f"T{i:03d}" for i in range(12)],
-                                 repository=repository, workers=4)
+        payload = build_features(
+            as_of_at=RESILIENCE_AS_OF,
+            tickers=[f"T{i:03d}" for i in range(12)],
+            repository=repository,
+            store=_CountingStore(),
+            workers=4,
+        )
         self.assertGreater(peak[0], 1)
         self.assertEqual(payload["detail"]["failed"], ["T003"])
         self.assertEqual(payload["rows_upserted"], 11)

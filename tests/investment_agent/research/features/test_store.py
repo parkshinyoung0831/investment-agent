@@ -180,8 +180,6 @@ class _FeatureRepository:
 
     def __init__(self, tickers: list[str]):
         self.tickers = tickers
-        self.saved: list[dict] = []
-        self.save_calls = 0
 
     def current_tracked_tickers(self):
         return list(self.tickers)
@@ -217,6 +215,12 @@ class _FeatureRepository:
     def econ_snapshot(self, as_of_at, lookback_days=14):
         return {"results": [], "forecasts": []}
 
+
+class _FeatureStore:
+    def __init__(self):
+        self.saved: list[dict] = []
+        self.save_calls = 0
+
     def save_rl_feature_snapshots(self, rows):
         self.save_calls += 1
         self.saved.extend(rows)
@@ -225,41 +229,46 @@ class _FeatureRepository:
 class BuildFeaturesEntryTest(unittest.TestCase):
     def test_historical_replay_prepares_the_whole_date_once(self):
         repository = _FeatureRepository(["AAA"])
+        store = _FeatureStore()
         prepared = []
         repository.prepare_historical_replay = lambda tickers, as_of_at: prepared.append((tuple(tickers), as_of_at))
         build_features(
             as_of_at=parse_datetime(_AS_OF), tickers=["AAA"], source_kind="historical_replay",
-            repository=repository,
+            repository=repository, store=store,
         )
         self.assertEqual(prepared, [(('AAA',), parse_datetime(_AS_OF))])
 
     def test_every_saved_row_shares_the_same_feature_columns(self):
         repository = _FeatureRepository(["AAA", "BBB"])
+        store = _FeatureStore()
         payload = build_features(
             as_of_at=parse_datetime(_AS_OF),
             tickers=["AAA", "BBB"],
             repository=repository,
+            store=store,
         )
         self.assertEqual(payload["status"], "success")
         self.assertEqual(payload["rows_upserted"], 2)
-        self.assertEqual(len(repository.saved), 2)
-        column_sets = {frozenset(row["features"]) for row in repository.saved}
+        self.assertEqual(len(store.saved), 2)
+        column_sets = {frozenset(row["features"]) for row in store.saved}
         self.assertEqual(len(column_sets), 1)
         self.assertEqual(column_sets.pop(), frozenset(FEATURE_COLUMNS))
         self.assertEqual(set(payload["detail"]["timings_sec"]), {"prepare", "valuations", "compute", "write"})
 
     def test_dry_run_writes_nothing(self):
         repository = _FeatureRepository(["AAA"])
+        store = _FeatureStore()
         payload = build_features(
             as_of_at=parse_datetime(_AS_OF), tickers=["AAA"],
-            dry_run=True, repository=repository,
+            dry_run=True, repository=repository, store=store,
         )
-        self.assertEqual(repository.saved, [])
+        self.assertEqual(store.saved, [])
         self.assertEqual(payload["rows_upserted"], 0)
         self.assertTrue(payload["detail"]["dry_run"])
 
     def test_one_failing_ticker_does_not_stop_the_run(self):
         repository = _FeatureRepository(["AAA", "BAD"])
+        store = _FeatureStore()
         original = repository.market_prices
 
         def _market_prices(ticker, as_of_at, limit=260):
@@ -269,7 +278,8 @@ class BuildFeaturesEntryTest(unittest.TestCase):
 
         repository.market_prices = _market_prices
         payload = build_features(
-            as_of_at=parse_datetime(_AS_OF), tickers=["AAA", "BAD"], repository=repository,
+            as_of_at=parse_datetime(_AS_OF), tickers=["AAA", "BAD"],
+            repository=repository, store=store,
         )
         self.assertEqual(payload["status"], "partial")
         self.assertEqual(payload["rows_upserted"], 1)
@@ -278,11 +288,13 @@ class BuildFeaturesEntryTest(unittest.TestCase):
     def test_one_date_is_written_once_even_when_it_has_more_than_one_chunk(self):
         tickers = [f"T{index:03d}" for index in range(230)]
         repository = _FeatureRepository(tickers)
+        store = _FeatureStore()
         payload = build_features(
-            as_of_at=parse_datetime(_AS_OF), tickers=tickers, repository=repository, workers=1,
+            as_of_at=parse_datetime(_AS_OF), tickers=tickers,
+            repository=repository, store=store, workers=1,
         )
         self.assertEqual(payload["rows_upserted"], 230)
-        self.assertEqual(repository.save_calls, 1)
+        self.assertEqual(store.save_calls, 1)
 
 
 class _LabelRepository:
