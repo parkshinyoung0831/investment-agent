@@ -7,8 +7,8 @@
 - 기준 원격 `main`: `4181f6b53d84105f2b78d78c69e9119c1f55a6cf` (2026-09-20 세션 시작 시 로컬 HEAD와 일치 확인).
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
-- 현재 단계: Phase 2의 feature·label write 이관 완료, valuation observation write 이관 착수.
-- 현재 계획: `docs/superpowers/plans/2026-09-20-research-valuation-storage-boundary.md` (Task 1~3 미착수).
+- 현재 단계: Phase 2의 feature·label·valuation observation write 이관 완료. event write caller 재검증이 다음 단위다.
+- 현재 계획: `docs/superpowers/plans/2026-09-20-research-valuation-storage-boundary.md` (Task 1~3 완료).
 - 완료 단계: Phase 1 조사와 Phase 2의 feature snapshot·training label write 직접 이관 및 두 façade 메서드 제거.
 - maintenance 상태: 확인·설정하지 않았다. 하네스 또는 execution 코드를 수정하기 전에 `harness_switch --maintenance on`을 수행하고 상태를 확인한다. live flag는 변경하지 않는다.
 
@@ -122,6 +122,16 @@
 - 제거된 debt: trading façade의 valuation write 책임.
 - 남은 debt: valuation read와 다른 Research artifact read/write, data read, trading·execution persistence가 façade에 남아 있으며 `PENDING_DEPENDENCIES`는 69쌍이다.
 - 다음 독립 작업: 통합 검증 후 event/event feature write caller를 재검증한다.
+
+#### Valuation Task 3 — 통합 검증
+
+- 변경 전·후 호출 관계: valuation write는 `research command → SupabaseRepository → ResearchStore`에서 `research command → ResearchStore`로 바뀌었고 trading façade method·caller는 0건이다.
+- 수정 파일 전체: `research/commands/build_valuations.py`, `trading/supabase_repository.py`, valuation·historical replay·ownership 테스트 3개와 이 원장. 파일 이동·삭제와 schema 변경은 없다.
+- import 방향: write dependency는 Research owner로 정렬됐다. valuation command가 사용하는 trading contract와 read façade import는 남아 있어 `PENDING_DEPENDENCIES`는 69쌍 그대로다.
+- 테스트 결과: architecture·repo convention·workflow 100개와 valuation·historical replay·backfill·ownership 46개가 통과했다. valuation write guard는 실제 임시 trading 위반에서 실패했다.
+- 범위 확인: 계획 시작 HEAD 이후 6개 파일, 85 insertions, 27 deletions다. 기존 사용자 변경과 현재 dirty graphify 산출물은 커밋에 섞지 않았다.
+- 남은 debt: `SupabaseRepository`의 event/event feature, training sample/run, promotion·evaluation read/write와 data/trading/execution 책임.
+- 다음 독립 작업: `src/investment_agent/research/commands/build_events.py`의 `EventRepository` interface와 `tests/investment_agent/research/commands/test_build_events.py`를 다시 읽어 read/source와 two-write atomicity를 분리할 수 있는지 판정한다.
 
 ## 향후 milestone
 
