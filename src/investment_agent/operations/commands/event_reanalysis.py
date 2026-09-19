@@ -28,8 +28,11 @@ def _refresh_events(now: datetime) -> dict[str, Any]:
 
     repository = SupabaseRepository()
     try:
-        return build_events(cache=LocalEvidenceCache(None), repository=repository, as_of_at=now.isoformat(),
-                            tickers=repository.current_tracked_tickers())
+        return build_events(
+            cache=LocalEvidenceCache(None),
+            as_of_at=now.isoformat(),
+            tickers=repository.current_tracked_tickers(),
+        )
     except Exception as exc:  # noqa: BLE001 - 사건 저장소 장애가 공시 트리거까지 막지 않게 한다
         log.warning("event refresh failed: %s", type(exc).__name__)
         return {"error": type(exc).__name__}

@@ -133,6 +133,18 @@
 - 남은 debt: `SupabaseRepository`의 event/event feature, training sample/run, promotion·evaluation read/write와 data/trading/execution 책임.
 - 다음 독립 작업: `src/investment_agent/research/commands/build_events.py`의 `EventRepository` interface와 `tests/investment_agent/research/commands/test_build_events.py`를 다시 읽어 read/source와 two-write atomicity를 분리할 수 있는지 판정한다.
 
+#### Event Task 1 — event artifact write 직접 연결
+
+- 변경 전 호출 관계: `build_events`의 `EventRepository`는 두 Research write만 선언했지만 production adapter는 `SupabaseRepository` 하나였고, command main과 `operations.commands.event_reanalysis`가 tracked ticker reader를 event store로도 재사용했다.
+- 변경 이유: cache read와 Research artifact write는 이미 별도 저장소이므로 얕은 pass-through interface와 trading façade 경유를 제거하고 operations는 read 조립만 담당하게 한다.
+- 수정 파일: `src/investment_agent/research/commands/build_events.py`, `src/investment_agent/operations/commands/event_reanalysis.py`, `tests/investment_agent/research/commands/test_build_events.py`, 새 `tests/investment_agent/operations/commands/test_event_reanalysis.py`, `tests/investment_agent/test_architecture.py`, 이 원장.
+- 이동·삭제 파일: 없음. command-local `EventRepository` Protocol을 제거했다.
+- import·runtime 방향: `build_events`는 lazy `ResearchStore` write를 직접 소유하고, main·operations caller의 SupabaseRepository는 tracked ticker read에만 쓴다. Protocol 제거로 `build_events → trading.decision.contracts` import도 사라졌다.
+- 테스트 결과: 새 store interface 4건과 operations composition 1건이 RED가 됐다. 구현 후 event·operations·event impact·architecture 36개가 통과했다.
+- 제거된 debt: event production write의 trading façade 경유 2곳 중 command caller, 그리고 `PENDING_DEPENDENCIES`의 `build_events → trading.decision.contracts` 1쌍(69→68).
+- 남은 debt: façade의 두 event write 메서드와 `build_events`의 trading contracts/cache/Supabase read imports.
+- 다음 독립 작업: 두 façade 메서드를 제거하고 event write owner guard를 확장한다.
+
 ## 향후 milestone
 
 | 묶음 | 해당 phase | 독립 완료 조건 |

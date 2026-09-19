@@ -12,13 +12,13 @@ from __future__ import annotations
 import argparse
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any, Protocol, Sequence
+from typing import Any, Sequence
 
 from investment_agent.platform.cli.runtime import run_log_payload
 from investment_agent.platform.logging import get_logger
+from investment_agent.research.storage.repository import ResearchStore
 from investment_agent.trading.contracts import parse_datetime
 from investment_agent.trading.evidence.cache import LocalEvidenceCache
-from investment_agent.trading.decision.contracts import Event, EventFeatureSnapshot
 from investment_agent.research.features.event_intelligence import (
     NormalizedContent,
     extract_events,
@@ -30,11 +30,6 @@ log = get_logger(__name__)
 
 WORKFLOW = "ai_investor_build_events"
 DEFAULT_WINDOW_DAYS = 7
-
-
-class EventRepository(Protocol):
-    def save_events(self, events: Sequence[Event]) -> None: ...
-    def save_event_features(self, snapshots: Sequence[EventFeatureSnapshot]) -> None: ...
 
 
 def _normalized(rows: Sequence[dict[str, Any]]) -> tuple[list[NormalizedContent], int]:
@@ -53,11 +48,11 @@ def _normalized(rows: Sequence[dict[str, Any]]) -> tuple[list[NormalizedContent]
 def build_events(
     *,
     cache: LocalEvidenceCache,
-    repository: EventRepository,
     as_of_at: str,
     tickers: Sequence[str],
     window_days: int = DEFAULT_WINDOW_DAYS,
     dry_run: bool = False,
+    store: ResearchStore | None = None,
 ) -> dict[str, Any]:
     """cutoff 이전 원문만 읽어 사건을 만들고 종목별 feature snapshot을 남긴다."""
     as_of = parse_datetime(as_of_at)
@@ -80,8 +75,9 @@ def build_events(
         for ticker in sorted(covered)
     )
     if not dry_run:
-        repository.save_events(events)
-        repository.save_event_features(snapshots)
+        selected_store = store or ResearchStore()
+        selected_store.save_events(events)
+        selected_store.save_event_features(snapshots)
     return {
         "rows_read": len(rows),
         "rows_skipped": skipped,
@@ -110,7 +106,6 @@ def main(argv: list[str] | None = None) -> int:
     repository = SupabaseRepository()
     result = build_events(
         cache=LocalEvidenceCache(args.cache_path),
-        repository=repository,
         as_of_at=as_of,
         tickers=repository.current_tracked_tickers(),
         window_days=args.window_days,

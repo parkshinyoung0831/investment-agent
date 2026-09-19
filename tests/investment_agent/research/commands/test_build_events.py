@@ -12,7 +12,7 @@ from investment_agent.trading.evidence.cache import ExternalContent, LocalEviden
 AS_OF = datetime(2026, 8, 20, tzinfo=timezone.utc)
 
 
-class _Repository:
+class _EventStore:
     def __init__(self) -> None:
         self.events: list = []
         self.snapshots: list = []
@@ -60,35 +60,35 @@ class BuildEventsTest(unittest.TestCase):
 
     def test_persists_events_and_one_feature_snapshot_per_ticker(self):
         with tempfile.TemporaryDirectory() as temp:
-            repository = _Repository()
+            store = _EventStore()
 
             result = build_events(
                 cache=self._cache(temp),
-                repository=repository,
+                store=store,
                 as_of_at=AS_OF.isoformat(),
                 tickers=("AAPL", "MSFT"),
             )
 
-            self.assertGreaterEqual(len(repository.events), 3)
+            self.assertGreaterEqual(len(store.events), 3)
             self.assertEqual(
-                sorted(snapshot.ticker for snapshot in repository.snapshots), ["AAPL", "MSFT"]
+                sorted(snapshot.ticker for snapshot in store.snapshots), ["AAPL", "MSFT"]
             )
-            self.assertEqual(result["events"], len(repository.events))
+            self.assertEqual(result["events"], len(store.events))
             self.assertEqual(result["snapshots"], 2)
 
     def test_untracked_ticker_is_dropped_before_the_foreign_key_can_reject_it(self):
         with tempfile.TemporaryDirectory() as temp:
-            repository = _Repository()
+            store = _EventStore()
 
             build_events(
                 cache=self._cache(temp),
-                repository=repository,
+                store=store,
                 as_of_at=AS_OF.isoformat(),
                 tickers=("AAPL",),
             )
 
-            self.assertEqual({event.ticker for event in repository.events}, {"AAPL"})
-            self.assertEqual([snapshot.ticker for snapshot in repository.snapshots], ["AAPL"])
+            self.assertEqual({event.ticker for event in store.events}, {"AAPL"})
+            self.assertEqual([snapshot.ticker for snapshot in store.snapshots], ["AAPL"])
 
     def test_content_fetched_after_the_cutoff_never_reaches_an_event(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -104,35 +104,35 @@ class BuildEventsTest(unittest.TestCase):
                     content="This was collected after the cutoff.", source="yfinance",
                 ),
             ])
-            repository = _Repository()
+            store = _EventStore()
 
             build_events(
                 cache=cache,
-                repository=repository,
+                store=store,
                 as_of_at=AS_OF.isoformat(),
                 tickers=("AAPL",),
             )
 
             joined = " ".join(
-                str(value) for event in repository.events for value in event.evidence_ids
+                str(value) for event in store.events for value in event.evidence_ids
             )
-            self.assertEqual(len(repository.events), 1)
+            self.assertEqual(len(store.events), 1)
             self.assertNotIn("leak", joined)
 
     def test_dry_run_computes_without_writing(self):
         with tempfile.TemporaryDirectory() as temp:
-            repository = _Repository()
+            store = _EventStore()
 
             result = build_events(
                 cache=self._cache(temp),
-                repository=repository,
+                store=store,
                 as_of_at=AS_OF.isoformat(),
                 tickers=("AAPL", "MSFT"),
                 dry_run=True,
             )
 
-            self.assertEqual(repository.events, [])
-            self.assertEqual(repository.snapshots, [])
+            self.assertEqual(store.events, [])
+            self.assertEqual(store.snapshots, [])
             self.assertGreater(result["events"], 0)
 
 
