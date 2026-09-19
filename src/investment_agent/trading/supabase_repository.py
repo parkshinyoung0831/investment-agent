@@ -726,7 +726,7 @@ class SupabaseRepository:
         담는 종목이 어긋난다.
         """
         tickers_count = universe_size if universe_size is not None else len(self.current_tracked_tickers())
-        from investment_agent.research.features.factors import latest_cross_section, score_cross_section
+        from investment_agent.research.factors import latest_cross_section, score_cross_section
         from investment_agent.research.features.layer import FEATURE_VERSION
         try:
             rows = ResearchStore(read_only=True).records(

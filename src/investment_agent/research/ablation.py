@@ -123,7 +123,7 @@ class ReplayRepository:
             result = self._cross_section(as_of_at)
             self._record_factor_categories(result)
             return result
-        from investment_agent.research.features.factors import latest_cross_section, score_cross_section
+        from investment_agent.research.factors import latest_cross_section, score_cross_section
         from investment_agent.research.features.layer import FEATURE_VERSION
 
         members = set(self.current_tracked_tickers())

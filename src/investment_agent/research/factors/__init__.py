@@ -1,7 +1,11 @@
-"""`research.factors`로 옮긴 factor 계산의 호환 재노출 경로."""
+"""투자 개념 factor의 계산·계약 경계.
+
+feature는 관측 원재료를 만들고, 이 패키지는 그것을 품질·가치·모멘텀 같은
+횡단면 투자 개념으로 점수화한다.
+"""
 from __future__ import annotations
 
-from investment_agent.research.factors import (
+from investment_agent.research.factors.core import (
     FACTOR_CATEGORIES,
     SECTOR_RELATIVE_CATEGORIES,
     FactorModel,

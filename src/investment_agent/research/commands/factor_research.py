@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from investment_agent.platform.logging import get_logger
-from investment_agent.research.features.factors import (
+from investment_agent.research.factors import (
     FACTOR_CATEGORIES,
     FactorModel,
     percentile_ranks,
