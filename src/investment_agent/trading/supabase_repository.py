@@ -28,8 +28,6 @@ from investment_agent.platform.serialization import canonical_json
 from investment_agent.research.adapters.trading import (
     FEATURE_VERSION,
     EvaluationSummary,
-    FeatureSnapshot,
-    ForwardReturnLabel,
     PromotionDecision,
     latest_cross_section,
     latest_technical_signals_as_of,
@@ -272,39 +270,6 @@ def _guru_candidate_signals(
             ),
         }
     return output
-
-
-def _feature_snapshot(row: dict[str, Any]) -> FeatureSnapshot:
-    """저장 hash까지 다시 계산해 변조·레거시 행을 fail-closed한다."""
-    snapshot = FeatureSnapshot(
-        feature_version=str(row["feature_version"]),
-        as_of_at=str(row["as_of_at"]),
-        ticker=str(row["ticker"]),
-        available_at=str(row["available_at"]),
-        is_available=row["is_available"],
-        features=dict(row["features"]),
-        source_ids=tuple(row["source_ids"]),
-        provenance=dict(row["provenance"]),
-    )
-    if str(row.get("input_hash") or "") != snapshot.input_hash:
-        raise RuntimeError("stored RL feature input_hash does not match its provenance")
-    return snapshot
-
-
-def _training_label(row: dict[str, Any]) -> ForwardReturnLabel:
-    """label ID를 재계산해 feature와 다른 시점의 라벨 결합을 차단한다."""
-    label = ForwardReturnLabel(
-        feature_version=str(row["feature_version"]),
-        as_of_at=str(row["as_of_at"]),
-        ticker=str(row["ticker"]),
-        forward_end_at=str(row["forward_end_at"]),
-        label_available_at=str(row["label_available_at"]),
-        forward_return=float(row["forward_return"]),
-        benchmark_forward_return=float(row["benchmark_forward_return"]),
-    )
-    if str(row.get("label_id") or "") != label.label_id:
-        raise RuntimeError("stored RL label_id does not match its payload")
-    return label
 
 
 ECON_MAX_ROWS_PER_KIND = 12
@@ -1272,26 +1237,13 @@ class SupabaseRepository:
         as_of_values: Sequence[str] | None = None,
     ) -> list[dict[str, Any]]:
         """미래 라벨 컬럼을 전혀 조회하지 않는 point-in-time feature 경계다."""
-        normalized = normalize_symbols(symbols)
-        start = parse_datetime(start_as_of)
-        end = parse_datetime(end_as_of)
-        if end < start:
-            raise ValueError("RL feature end_as_of must not precede start_as_of")
-        if not str(feature_version).strip():
-            raise ValueError("feature_version is required")
-        rows = research_adapter.open_research_store(read_only=True).records(
-            "rl_feature_snapshots",
-            start_as_of=start.isoformat(),
-            end_as_of=end.isoformat(),
+        return research_adapter.open_research_store(read_only=True).rl_feature_snapshot_rows(
+            symbols,
+            start_as_of=start_as_of,
+            end_as_of=end_as_of,
+            feature_version=feature_version,
             as_of_values=as_of_values,
         )
-        rows = [
-            row for row in rows
-            if row.get("feature_version") == feature_version
-            and normalize_ticker(str(row.get("ticker"))) in normalized
-            and parse_datetime(str(row["available_at"])) <= end
-        ]
-        return [_feature_snapshot(dict(row)).to_storage_row() for row in rows]
 
     def rl_training_label_rows(
         self,
@@ -1304,29 +1256,14 @@ class SupabaseRepository:
         as_of_values: Sequence[str] | None = None,
     ) -> list[dict[str, Any]]:
         """학습 cutoff 전에 실제 생성된 미래 label만 별도로 반환한다."""
-        normalized = normalize_symbols(symbols)
-        start = parse_datetime(start_as_of)
-        end = parse_datetime(end_as_of)
-        cutoff = parse_datetime(label_cutoff_at)
-        if end < start:
-            raise ValueError("RL label end_as_of must not precede start_as_of")
-        if cutoff < end:
-            raise ValueError("label_cutoff_at must not precede the feature window end")
-        if not str(feature_version).strip():
-            raise ValueError("feature_version is required")
-        rows = research_adapter.open_research_store(read_only=True).records(
-            "rl_training_labels",
-            start_as_of=start.isoformat(),
-            end_as_of=end.isoformat(),
+        return research_adapter.open_research_store(read_only=True).rl_training_label_rows(
+            symbols,
+            start_as_of=start_as_of,
+            end_as_of=end_as_of,
+            feature_version=feature_version,
+            label_cutoff_at=label_cutoff_at,
             as_of_values=as_of_values,
         )
-        rows = [
-            row for row in rows
-            if row.get("feature_version") == feature_version
-            and normalize_ticker(str(row.get("ticker"))) in normalized
-            and parse_datetime(str(row["label_available_at"])) <= cutoff
-        ]
-        return [_training_label(dict(row)).to_storage_row() for row in rows]
 
     def rl_historical_membership_rows(
         self,

@@ -238,11 +238,12 @@ class RLRepositoryTest(unittest.TestCase):
         with patch(
             "investment_agent.research.adapters.trading.open_research_store"
         ) as research_store:
-            research_store.return_value.records.side_effect = lambda dataset, **kwargs: (
-                [_feature().to_storage_row()] if dataset == "rl_feature_snapshots"
-                else [_label().to_storage_row()] if dataset == "rl_training_labels"
-                else []
-            )
+            research_store.return_value.rl_feature_snapshot_rows.return_value = [
+                _feature().to_storage_row()
+            ]
+            research_store.return_value.rl_training_label_rows.return_value = [
+                _label().to_storage_row()
+            ]
             features = SupabaseRepository().rl_feature_snapshot_rows(
                 ("AAPL",),
                 start_as_of="2026-01-01T00:00:00+00:00",
@@ -258,7 +259,10 @@ class RLRepositoryTest(unittest.TestCase):
             )
         self.assertNotIn("forward_return", features[0])
         self.assertNotIn("features", labels[0])
-        self.assertEqual(research_store.return_value.records.call_count, 2)
+        self.assertEqual(research_store.call_args_list[0].kwargs, {"read_only": True})
+        self.assertEqual(research_store.return_value.rl_feature_snapshot_rows.call_count, 1)
+        self.assertEqual(research_store.return_value.rl_training_label_rows.call_count, 1)
+        research_store.return_value.records.assert_not_called()
 
     def test_tampered_feature_hash_is_rejected_before_write(self):
         row = _feature().to_storage_row()

@@ -7,9 +7,9 @@
 - 기준 원격 `main`: `4181f6b53d84105f2b78d78c69e9119c1f55a6cf` (2026-09-20 세션 시작 시 로컬 HEAD와 일치 확인).
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
-- 현재 단계: Phase 3의 순수 공통 serialization import 20곳 이관 완료. 남은 두 `trading/contracts.py` import는 실제 금융 계약을 포함하므로 별도 소유권 설계가 필요하다.
-- 현재 계획: `docs/superpowers/plans/2026-09-20-research-shared-serialization-imports.md` (Task 1~4 완료).
-- 완료 단계: Phase 1 조사와 Phase 2의 feature snapshot·training label·valuation·event artifact write 직접 이관, 관련 façade 메서드 제거. 현재 `PENDING_DEPENDENCIES`는 68쌍이다.
+- 현재 단계: Phase 2의 Research feature/label full read owner 이관. Phase 3의 순수 공통 serialization import 20곳은 완료했으며, 남은 두 Trading 계약 import는 실제 금융 계약을 포함한다.
+- 현재 계획: `docs/superpowers/plans/2026-09-20-research-full-read-boundary.md` (Task 1 완료, Task 2~4 대기).
+- 완료 단계: Phase 1 조사, Phase 2의 feature snapshot·training label·valuation·event·training sample write 및 training metadata read owner 이관, Phase 3 공통 serialization import 정리. 현재 `PENDING_DEPENDENCIES`는 44쌍이다.
 - maintenance 상태: 확인·설정하지 않았다. 하네스 또는 execution 코드를 수정하기 전에 `harness_switch --maintenance on`을 수행하고 상태를 확인한다. live flag는 변경하지 않는다.
 
 ## 검증 기준선
@@ -288,6 +288,17 @@
 - 제거된 debt: 순수 공통 심볼 때문에 Research가 Trading 계약을 import하던 20곳. 현재 Research에서 남은 `trading/contracts.py` 직접 import는 `features/layer.py`의 `EvidenceBundle`(같은 줄의 `parse_datetime`는 나중에 독립 정리 가능)과 `evaluation/evaluator.py`의 `EvaluationResult` 두 곳뿐이다.
 - 남은 debt: 실제 Trading 금융 계약·portfolio·risk·system 구현을 Research가 참조하는 경로, Supabase read façade, event evidence cache 및 backtest/system validation 경계. 이들을 단순 Platform 이동이나 re-export로 숨기지 않는다.
 - 다음 독립 작업: feature/label full read façade의 모든 caller와 PIT filter를 다시 검증한 뒤 Research owner read 계약 이관 여부를 결정한다. 실제 production Trading algorithm 검증은 필요할 때에만 `research/system_validation` 경계로 별도 분리한다.
+
+#### Full read Task 1 — Research owner 조회 계약
+
+- 변경 전 실제 호출 관계: `build_labels`, `build_training_samples`, `export_dataset`, RL 학습 loader, ML serving이 `SupabaseRepository.rl_feature_snapshot_rows` 또는 `rl_training_label_rows`를 호출했다. façade가 Research DuckDB의 원시 `records()`를 읽고 version·ticker·window·availability·label cutoff를 필터한 뒤 hash/label ID를 재검증했다. ResearchStore에는 동일한 검증 helper와 write 계약만 있었다.
+- 변경 이유: feature/label payload의 PIT read와 저장 무결성 판정은 Trading 영구 원장이 아니라 Research DuckDB owner의 책임이다. 기존 caller를 한꺼번에 변경하면 학습·serving 동작이 흔들릴 수 있어 owner API를 먼저 고정했다.
+- 수정 파일: `src/investment_agent/research/storage/repository.py`, `src/investment_agent/trading/supabase_repository.py`, `tests/investment_agent/research/test_rl_full_reads.py`, `tests/investment_agent/research/rl/test_repository.py`, 현재 계획과 이 원장. 이동·삭제 파일과 DB schema 변경 없음.
+- import·runtime 방향: façade는 read-only ResearchStore를 열어 두 조회를 직접 위임한다. 필터와 변조 거부는 ResearchStore가 소유하며 Trading façade의 중복 변환 함수를 제거했다. production caller는 아직 façade 경유이므로 research→trading pending은 이 Task에서 줄이지 않았다.
+- 테스트 결과: 새 owner 계약 4개가 메서드 부재로 RED, 구현 후 owner·기존 façade·metadata·architecture 38개 통과. 전체 suite 3,020개는 기존과 동일한 선택적 `lightgbm`/`xgboost` 미설치 오류 4개·skip 1개 외 새 실패가 없었다. `git diff --check` 통과.
+- 제거된 debt: Trading 모듈 안에 있던 Research artifact full read 필터·무결성 검증 구현 중복. `PENDING_DEPENDENCIES`는 44쌍 유지.
+- 남은 debt: 다섯 production caller 묶음이 Trading façade를 호출하며 façade의 두 호환 메서드가 남는다. RL membership과 ML serving의 상위 조립 caller는 owner 이관 전에 재확인해야 한다.
+- 다음 독립 작업: Task 2에서 `build_labels`의 feature/label read를 먼저 ResearchStore로 직접 연결하고, 명령의 가격·membership 조회와 쓰기 순서를 유지하는 테스트를 갱신한다.
 
 ## 향후 milestone
 

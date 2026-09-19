@@ -833,6 +833,72 @@ class ResearchStore:
             ],
         }
 
+    def rl_feature_snapshot_rows(
+        self,
+        symbols: tuple[str, ...],
+        *,
+        start_as_of: str,
+        end_as_of: str,
+        feature_version: str,
+        as_of_values: Sequence[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """미래 label 없이 point-in-time feature payload만 검증해 반환한다."""
+        normalized = normalize_symbols(symbols)
+        start = parse_datetime(start_as_of)
+        end = parse_datetime(end_as_of)
+        if end < start:
+            raise ValueError("RL feature end_as_of must not precede start_as_of")
+        if not str(feature_version).strip():
+            raise ValueError("feature_version is required")
+        rows = self.records(
+            "rl_feature_snapshots",
+            start_as_of=start.isoformat(),
+            end_as_of=end.isoformat(),
+            as_of_values=as_of_values,
+        )
+        rows = [
+            row for row in rows
+            if row.get("feature_version") == feature_version
+            and normalize_ticker(str(row.get("ticker"))) in normalized
+            and parse_datetime(str(row["available_at"])) <= end
+        ]
+        return [self._feature_snapshot(dict(row)).to_storage_row() for row in rows]
+
+    def rl_training_label_rows(
+        self,
+        symbols: tuple[str, ...],
+        *,
+        start_as_of: str,
+        end_as_of: str,
+        feature_version: str,
+        label_cutoff_at: str,
+        as_of_values: Sequence[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """학습 cutoff 전에 생성된 미래 label payload만 검증해 반환한다."""
+        normalized = normalize_symbols(symbols)
+        start = parse_datetime(start_as_of)
+        end = parse_datetime(end_as_of)
+        cutoff = parse_datetime(label_cutoff_at)
+        if end < start:
+            raise ValueError("RL label end_as_of must not precede start_as_of")
+        if cutoff < end:
+            raise ValueError("label_cutoff_at must not precede the feature window end")
+        if not str(feature_version).strip():
+            raise ValueError("feature_version is required")
+        rows = self.records(
+            "rl_training_labels",
+            start_as_of=start.isoformat(),
+            end_as_of=end.isoformat(),
+            as_of_values=as_of_values,
+        )
+        rows = [
+            row for row in rows
+            if row.get("feature_version") == feature_version
+            and normalize_ticker(str(row.get("ticker"))) in normalized
+            and parse_datetime(str(row["label_available_at"])) <= cutoff
+        ]
+        return [self._training_label(dict(row)).to_storage_row() for row in rows]
+
     def save_training_sample_runs(self, rows: Sequence[dict[str, Any]]) -> int:
         if not rows:
             return 0
