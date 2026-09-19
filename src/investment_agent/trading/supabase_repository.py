@@ -31,7 +31,6 @@ from investment_agent.research.adapters.trading import (
     FeatureSnapshot,
     ForwardReturnLabel,
     PromotionDecision,
-    TrainingSample,
     latest_cross_section,
     latest_technical_signals_as_of,
     normalize_symbols,
@@ -1203,21 +1202,6 @@ class SupabaseRepository:
 
     def save_model_artifact(self, row: dict) -> None:
         self._trading_repository().record_model_version(row)
-
-    def save_training_samples(self, samples: Sequence[TrainingSample]) -> int:
-        return self._research_store().save_training_samples(samples)
-
-    def training_sample_run_rows(
-        self, *, start_as_of: str, end_as_of: str,
-    ) -> list[dict[str, Any]]:
-        """학습 표본 기준일 매니페스트를 로컬 Research 저장소에서 읽는다."""
-        return self._research_store(read_only=True).training_sample_run_rows(
-            start_as_of=start_as_of, end_as_of=end_as_of,
-        )
-
-    def save_training_sample_runs(self, rows: Sequence[dict[str, Any]]) -> int:
-        """표본 저장이 끝난 기준일만 기록해 다음 실행의 재계산을 막는다."""
-        return self._research_store().save_training_sample_runs(rows)
 
     def share_class_snapshots_pit(
         self,

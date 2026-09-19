@@ -8,7 +8,7 @@
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
 - 현재 단계: Phase 2의 feature·label·valuation·event artifact 이관 완료, training sample 저장/manifest read·write 이관 진행 중.
-- 현재 계획: `docs/superpowers/plans/2026-09-20-training-sample-storage-boundary.md` (Task 1 완료, Task 2~3 남음).
+- 현재 계획: `docs/superpowers/plans/2026-09-20-training-sample-storage-boundary.md` (Task 1~2 완료, Task 3 통합 검증 남음).
 - 완료 단계: Phase 1 조사와 Phase 2의 feature snapshot·training label·valuation·event artifact write 직접 이관, 관련 façade 메서드 제거. 현재 `PENDING_DEPENDENCIES`는 68쌍이다.
 - maintenance 상태: 확인·설정하지 않았다. 하네스 또는 execution 코드를 수정하기 전에 `harness_switch --maintenance on`을 수행하고 상태를 확인한다. live flag는 변경하지 않는다.
 
@@ -180,6 +180,18 @@
 - 제거된 debt: command runtime의 training sample write와 completion manifest read/write가 trading façade를 경유하던 세 호출.
 - 남은 debt: façade의 세 호환 메서드와 이를 직접 검증하는 trading 테스트 1개, Research feature/label read façade, `PENDING_DEPENDENCIES` 68쌍.
 - 다음 독립 작업: 직접 Parquet no-rewrite 테스트를 Research owner로 옮긴 뒤 세 façade 메서드를 삭제하고 AST owner guard를 강화한다.
+
+#### Training sample Task 2 — persistence 테스트 owner 이관과 façade 제거
+
+- 변경 전 호출 관계: command가 ResearchStore를 직접 쓰도록 바뀐 뒤에도 `SupabaseRepository`에 sample write·manifest read/write forwarding 세 메서드가 남았고, trading 테스트 하나가 sample write façade를 직접 호출했다.
+- 변경 이유: 실제 caller가 없는 호환 메서드가 다시 Research write를 trading façade로 끌어들이지 않게 제거하고, 저장 파일의 idempotency 검증을 실제 Research owner에 둔다.
+- 수정 파일: `src/investment_agent/trading/supabase_repository.py`, `tests/investment_agent/trading/test_repository_ownership.py`, 이 원장.
+- 이동·삭제 파일: `tests/investment_agent/trading/test_training_sample_persistence.py`를 `tests/investment_agent/research/test_training_sample_persistence.py`로 옮겨 직접 ResearchStore를 검증한다. façade의 세 메서드와 전용 `TrainingSample` import를 삭제했다. 새 schema·저장 구현은 없다.
+- import·runtime 방향: sample·manifest read/write의 trading façade 경유가 0건이다. Research write AST guard가 `save_training_samples`, `save_training_sample_runs`를 owner 밖에서 호출하면 실패한다. test fixture의 임시 디렉터리 종료 후 조회는 종료 전에 수행하도록 고쳤다.
+- 테스트 결과: guard 확장 직후 기존 trading façade의 두 write 호출 때문에 RED가 됐다. 삭제 후 training command·Research persistence·ownership·architecture 50개가 통과했고 guard의 합성 trading 위반 두 건이 검출된다.
+- 제거된 debt: training sample·run manifest façade 메서드 3개와 trading 경로의 Research Parquet 직접 검증 테스트.
+- 남은 debt: feature/label/metadata read façade와 기타 Research·Data/Trading/Execution 메서드, `PENDING_DEPENDENCIES` 68쌍.
+- 다음 독립 작업: 구조·workflow 및 관련 Research storage 통합 테스트와 façade caller 0건을 재확인한다.
 
 ## 향후 milestone
 

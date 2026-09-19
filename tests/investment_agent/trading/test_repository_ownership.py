@@ -13,6 +13,8 @@ RESEARCH_WRITE_METHODS = frozenset({
     "save_events",
     "save_rl_feature_snapshots",
     "save_rl_training_labels",
+    "save_training_sample_runs",
+    "save_training_samples",
     "save_valuation_observations",
 })
 
@@ -59,7 +61,7 @@ class RepositoryOwnershipTest(unittest.TestCase):
             "approve_model_promotion",
         } <= set(dir(ResearchStore)))
 
-    def test_feature_and_label_write_calls_stay_in_research_owner(self) -> None:
+    def test_research_artifact_write_calls_stay_in_research_owner(self) -> None:
         violations: list[str] = []
         owner_calls = 0
         for path in PACKAGE.rglob("*.py"):
@@ -78,7 +80,7 @@ class RepositoryOwnershipTest(unittest.TestCase):
         self.assertGreater(owner_calls, 0, "Research write ownership guard has no live subject")
         self.assertEqual(violations, [])
 
-    def test_feature_and_label_write_guard_rejects_a_trading_caller(self) -> None:
+    def test_research_artifact_write_guard_rejects_a_trading_caller(self) -> None:
         source = "def leak(repository):\n    repository.save_rl_feature_snapshots([])\n"
         self.assertEqual(
             _research_write_violations(Path("trading/injected.py"), source),
@@ -103,6 +105,15 @@ class RepositoryOwnershipTest(unittest.TestCase):
         self.assertEqual(
             _research_write_violations(Path("trading/injected.py"), event_source),
             [(2, "save_events"), (3, "save_event_features")],
+        )
+        sample_source = (
+            "def leak(repository):\n"
+            "    repository.save_training_samples([])\n"
+            "    repository.save_training_sample_runs([])\n"
+        )
+        self.assertEqual(
+            _research_write_violations(Path("trading/injected.py"), sample_source),
+            [(2, "save_training_samples"), (3, "save_training_sample_runs")],
         )
 
 
