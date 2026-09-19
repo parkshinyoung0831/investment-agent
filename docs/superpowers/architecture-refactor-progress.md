@@ -7,9 +7,9 @@
 - 기준 원격 `main`: `4181f6b53d84105f2b78d78c69e9119c1f55a6cf` (2026-09-20 세션 시작 시 로컬 HEAD와 일치 확인).
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
-- 현재 단계: Phase 2의 feature·label·valuation write 이관 완료, event·event feature write 이관 착수.
-- 현재 계획: `docs/superpowers/plans/2026-09-20-research-event-storage-boundary.md` (Task 1~3 미착수).
-- 완료 단계: Phase 1 조사와 Phase 2의 feature snapshot·training label write 직접 이관 및 두 façade 메서드 제거.
+- 현재 단계: Phase 2의 feature·label·valuation·event artifact write 이관과 관련 trading façade 제거 완료. 사용자 요청에 따라 다음 독립 단위 시작 전 일시 정지한다.
+- 현재 계획: `docs/superpowers/plans/2026-09-20-research-event-storage-boundary.md` (Task 1~3 완료).
+- 완료 단계: Phase 1 조사와 Phase 2의 feature snapshot·training label·valuation·event artifact write 직접 이관, 관련 façade 메서드 제거. 현재 `PENDING_DEPENDENCIES`는 68쌍이다.
 - maintenance 상태: 확인·설정하지 않았다. 하네스 또는 execution 코드를 수정하기 전에 `harness_switch --maintenance on`을 수행하고 상태를 확인한다. live flag는 변경하지 않는다.
 
 ## 검증 기준선
@@ -156,6 +156,18 @@
 - 제거된 debt: trading façade의 event·event feature write 책임.
 - 남은 debt: build_events의 trading contracts/cache/Supabase read imports와 다른 Research façade 메서드. `PENDING_DEPENDENCIES`는 68쌍이다.
 - 다음 독립 작업: 통합 검증 후 training sample/run manifest write를 재검증한다.
+
+#### Event Task 3 — 통합 검증과 일시 정지 지점
+
+- 변경 전·후 호출 관계: event write는 `research command → SupabaseRepository → ResearchStore`에서 `research command → ResearchStore`로 바뀌었다. operations의 on-demand refresh는 `SupabaseRepository.current_tracked_tickers()`로 ticker만 읽고 event store로 재사용하지 않는다. trading·operations·dashboard·notifications에서 `save_events`와 `save_event_features` façade caller는 0건이다.
+- 수정 파일 전체: `research/commands/build_events.py`, `operations/commands/event_reanalysis.py`, `trading/supabase_repository.py`, 직접 연결된 research·operations·trading·architecture 테스트 4개와 이 원장. 새 테스트 파일은 `tests/investment_agent/operations/commands/test_event_reanalysis.py`다.
+- 이동·삭제 파일: production/test 파일 이동·삭제와 schema 변경은 없다. command-local `EventRepository` Protocol, trading façade의 event write 메서드 2개와 더 이상 쓰지 않는 `Event` import만 삭제했다.
+- import·runtime 방향: event artifact write는 Research owner로 직접 향한다. 얕은 Protocol 제거와 함께 `build_events → trading.decision.contracts` import가 실제로 없어져 pending 1쌍을 삭제했다. `build_events`의 evidence cache·tracked ticker read 관련 trading import는 그대로 남겨 façade나 alias로 숨기지 않았다.
+- 테스트 결과: architecture·repo convention·workflow 100개와 event command·operations composition·event impact·ownership 18개가 통과했다. 두 write별 실제 임시 위반 주입에서도 ownership guard 실패를 확인했다.
+- 범위 확인: 계획 시작 HEAD `f84a2f8` 이후 제품·직접 테스트·원장 8개 파일, 101 insertions, 39 deletions이다. 기존 사용자 변경과 dirty graphify 산출물은 커밋에 섞지 않았다.
+- 제거된 debt: event·event feature write의 trading façade 경유, command-local pass-through Protocol, `PENDING_DEPENDENCIES` 1쌍(69→68).
+- 남은 debt: `build_events`의 trading cache/read import와 `SupabaseRepository`의 training sample/run, promotion·evaluation 및 여러 Research read façade가 남아 있다.
+- 다음 독립 작업: 재개 시 `build_training_samples.py`를 새 계획으로 분리한다. 현재 이 command는 `SupabaseRepository` 하나에서 membership·feature·label·기간별 scalar·run manifest를 읽고, `save_training_samples()` 성공 뒤에만 `save_training_sample_runs()`를 호출한다. `ResearchStore`에는 sample·run read/write 구현이 이미 있으므로 먼저 `tests/investment_agent/research/commands/test_training_samples.py`에서 read/write store 분리와 저장 실패 시 manifest 미기록, inserted count, 재시작 semantics를 고정한다. `tests/investment_agent/trading/test_training_sample_persistence.py`의 façade 직접 검증도 실제 owner 테스트로 이관할지 caller와 함께 판정한다.
 
 ## 향후 milestone
 
