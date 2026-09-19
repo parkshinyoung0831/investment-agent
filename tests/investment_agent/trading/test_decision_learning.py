@@ -46,25 +46,6 @@ class ExperienceTest(unittest.TestCase):
         case["final_decision"]["signal"]="open"
         self.assertAlmostEqual(build_experience(Prices(),case,as_of_at=datetime(2026,1,8,tzinfo=timezone.utc),horizon_days=5)["net_reward"],.048)
 
-    def test_store_preserves_first_observation_and_reader_cuts_future_labels(self):
-        from tempfile import TemporaryDirectory
-        from pathlib import Path
-        from unittest.mock import patch
-        from datetime import datetime, timezone
-        from investment_agent.research.storage.repository import ResearchStore
-        from investment_agent.trading.supabase_repository import SupabaseRepository
-        with TemporaryDirectory() as temp:
-            store=ResearchStore(Path(temp)/"research.duckdb")
-            first=dict(record_key="c",case_key="c",ticker="ABC",as_of_at="2026-01-01T00:00:00+00:00",available_at="2026-01-08T00:00:00+00:00",net_reward=.04)
-            with patch("investment_agent.research.adapters.trading.open_research_store",return_value=store):
-                repo=SupabaseRepository()
-                repo.save_decision_experiences([first])
-                repo.save_decision_experiences([{**first,"net_reward":99}])
-                self.assertEqual(repo.decision_experience_rows(),[first])
-                self.assertEqual(repo.decision_experience_rows(as_of_at=datetime(2026,1,7,tzinfo=timezone.utc)),[])
-            store.upsert_records("decision_experiences",[{**first,"net_reward":99}],key="record_key",ignore_existing=True)
-            self.assertEqual(store.records("decision_experiences"),[first])
-
     def test_split_does_not_create_fake_loss(self):
         from datetime import date, datetime, timedelta, timezone
         from investment_agent.research.commands.build_decision_experiences import build_experience

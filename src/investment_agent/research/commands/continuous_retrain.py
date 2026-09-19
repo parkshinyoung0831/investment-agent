@@ -90,9 +90,9 @@ def _training_set(
     label_lag_days: int,
     max_symbols: int,
 ) -> HistoricalTrainingSet:
-    if hasattr(repository, "decision_experience_rows"):
+    if hasattr(store, "decision_experience_rows"):
         from investment_agent.research.rl.decision_dataset import decision_training_set
-        return decision_training_set(repository.decision_experience_rows(as_of_at=as_of),
+        return decision_training_set(store.decision_experience_rows(as_of_at=as_of),
                                      as_of_at=as_of, max_symbols=max_symbols)
     end = as_of - timedelta(days=label_lag_days)
     start = end - timedelta(days=lookback_days)

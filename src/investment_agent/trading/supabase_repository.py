@@ -1335,18 +1335,6 @@ class SupabaseRepository:
         return [{**row, "ticker": tickers[int(row["security_id"])]}
                 for row in rows if int(row["security_id"]) in tickers]
 
-    def decision_experience_rows(self, *, as_of_at: datetime | None = None) -> list[dict]:
-        """라벨 관측 시각으로 제한한 가상 판단 경험을 읽는다."""
-        try:
-            rows = research_adapter.open_research_store(read_only=True).records("decision_experiences")
-        except FileNotFoundError:
-            return []
-        return [row for row in rows if as_of_at is None
-                or parse_datetime(row["available_at"]) <= as_of_at]
-
-    def save_decision_experiences(self, rows: Sequence[dict]) -> None:
-        self._research_store().save_decision_experiences(rows)
-
     def cases_for_evaluation(self, limit: int = 200) -> list[dict]:
         rows = self._trading_repository().evaluation_candidates(limit=limit)
         tickers = select_tickers_by_security_id([int(row["security_id"]) for row in rows])

@@ -7,8 +7,8 @@
 - 기준 원격 `main`: `4181f6b53d84105f2b78d78c69e9119c1f55a6cf` (2026-09-20 세션 시작 시 로컬 HEAD와 일치 확인).
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
-- 현재 단계: Phase 2의 Research artifact owner 이관을 마치고, Phase 3의 실제 Data read owner 이관을 caller별로 진행 중이다.
-- 현재 계획: `docs/superpowers/plans/2026-09-20-research-data-read-boundaries.md` (Task 1 완료, Task 2 조사 전).
+- 현재 단계: Phase 2의 Research artifact owner 이관을 계속 진행하며 decision experience read/write façade를 제거했다. 실제 Data read owner 이관도 caller별로 진행 중이다.
+- 현재 계획: `docs/superpowers/plans/2026-09-20-decision-experience-storage-boundary.md` (Task 1~4 완료).
 - 완료 단계: Phase 1 조사, Phase 2의 feature snapshot·training label·valuation·event·training sample write 및 training metadata read owner 이관, Phase 3 공통 serialization import 정리. 현재 `PENDING_DEPENDENCIES`는 44쌍이다.
 - maintenance 상태: 확인·설정하지 않았다. 하네스 또는 execution 코드를 수정하기 전에 `harness_switch --maintenance on`을 수행하고 상태를 확인한다. live flag는 변경하지 않는다.
 
@@ -376,6 +376,18 @@
 - 제거된 debt: `research/commands/build_events.py → trading/supabase_repository.py` pending 한 쌍. `PENDING_DEPENDENCIES` 44→43, 새 pending 없음.
 - 남은 debt: event command는 `LocalEvidenceCache`와 event 금융 계약 때문에 Trading imports 두 곳이 남는다. 이들은 ticker read와 다른 책임이므로 이번 단위에서 숨기지 않았다.
 - 다음 독립 작업: 각 Research command의 Supabase usage를 메서드 단위로 inventory하고, local mirror/PIT historical replay 의미가 없는 단순 Data owner read부터 선택한다.
+
+#### Decision experience Task 1~3 — owner read/write와 consumer 이관
+
+- 변경 전 실제 호출 관계: `build_decision_experiences`가 원본 decision·가격·기존 experience read·experience write를 모두 `SupabaseRepository`에서 수행했다. continuous retrain, Operations 성과 갱신, Reporting 알림도 façade의 `decision_experience_rows()`를 읽었다. façade는 실제로 ResearchStore records/save를 전달했다.
+- 변경 이유: decision experience는 원본 판단과 사후 가격으로 재계산하는 Research artifact다. Trading decision ledger와 달리 최초 관측 보존과 label availability cutoff를 ResearchStore가 소유해야 한다.
+- 수정 파일: `src/investment_agent/research/storage/repository.py`, `research/commands/build_decision_experiences.py`, `research/commands/continuous_retrain.py`, `operations/commands/update_performance.py`, `reporting/notifications/investment/performance.py`, `trading/supabase_repository.py`, Research owner/command 테스트, Trading ownership/decision 테스트, `tests/test_performance_service.py`, 현재 계획과 이 원장.
+- 이동·삭제: Trading façade의 `decision_experience_rows`·`save_decision_experiences` 두 메서드와 façade 직접 테스트를 삭제했다. owner 계약과 producer split 테스트를 Research tests에 추가했다. 파일 이동·schema 변경 없음.
+- import·runtime 방향: producer는 원본 decision·가격 reader와 ResearchStore를 분리한다. continuous retrain은 이미 주입된 store에서 경험을 읽고, Operations/Reporting은 `ResearchStore(read_only=True)`를 사용한다. Reporting/Operations는 허용된 read-only consumer이며 Trading에서 같은 메서드를 정의·호출하면 AST guard가 실패한다.
+- 테스트 결과: canonical read 테스트는 메서드 부재로 RED, producer split 테스트 2개는 store 인자 부재로 RED, ownership guard는 façade read/write를 정확히 검출해 RED였다. 구현·삭제 후 owner·producer·trainer·performance·architecture·workflow 105개 통과. 전체 suite 3,022개는 문서의 dotted path 오탐 1개를 발견해 slash 경로로 고친 뒤 docs·owner·performance·architecture 46개가 통과했다. 코드 회귀는 없고 기존 선택적 `lightgbm`/`xgboost` 미설치 오류 4개·skip 1개만 남았다. `git diff --check` 통과.
+- 제거된 debt: Decision experience read/write의 Trading God façade 책임과 consumer 결합. pending 43쌍은 build command의 원본 Trading read import가 실제 남아 있어 유지한다.
+- 남은 debt: 원본 decision cases는 Trading owner, price path는 Data market owner인데 producer가 아직 하나의 Supabase reader로 받는다. 이 read split은 별도 작업이다.
+- 다음 독립 작업: 전체 검증 후 decision experience 계획을 닫고, build command의 decision source와 market price source를 실제 owner API로 분리할지 조사한다.
 
 ## 향후 milestone
 

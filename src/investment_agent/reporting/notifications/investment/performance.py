@@ -15,11 +15,11 @@ def performance_reports():
         latest[(row["broker_account_hash"], row["execution_mode"], row["report_kind"], row["occurrence"])] = row
     reports = list(latest.values())
     from datetime import datetime, timezone
-    from investment_agent.trading.supabase_repository import SupabaseRepository
+    from investment_agent.research.storage.repository import ResearchStore
     from investment_agent.trading.performance.service import summarize_recommendations
     from investment_agent.platform.serialization import stable_id
     now = datetime.now(timezone.utc)
-    experiences = SupabaseRepository().decision_experience_rows(as_of_at=now)
+    experiences = ResearchStore(read_only=True).decision_experience_rows(as_of_at=now)
     comparison = summarize_recommendations(experiences, now)
     if comparison['horizons']:
         moment = max(row['available_at'] for row in experiences)

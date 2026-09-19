@@ -11,6 +11,7 @@ PACKAGE = Path(__file__).parents[3] / "src" / "investment_agent"
 RESEARCH_WRITE_METHODS = frozenset({
     "save_event_features",
     "save_events",
+    "save_decision_experiences",
     "save_rl_feature_snapshots",
     "save_rl_training_labels",
     "save_training_sample_runs",
@@ -18,10 +19,12 @@ RESEARCH_WRITE_METHODS = frozenset({
     "save_valuation_observations",
 })
 RESEARCH_READ_METHODS = frozenset({
+    "decision_experience_rows",
     "rl_feature_snapshot_rows",
     "rl_training_label_rows",
     "training_sample_period_inputs",
 })
+RESEARCH_READ_CONSUMERS = frozenset({"operations", "reporting"})
 
 
 def _research_write_violations(relative_path: Path, source: str) -> list[tuple[int, str]]:
@@ -40,18 +43,23 @@ def _research_write_violations(relative_path: Path, source: str) -> list[tuple[i
 
 def _research_read_violations(relative_path: Path, source: str) -> list[tuple[int, str]]:
     """Research artifact read의 owner 밖 정의·호출을 반환한다."""
-    if relative_path.parts and relative_path.parts[0] == "research":
+    owner = relative_path.parts[0] if relative_path.parts else ""
+    if owner == "research":
         return []
-    return [
-        (node.lineno, node.name if isinstance(node, ast.FunctionDef) else node.func.attr)
-        for node in ast.walk(ast.parse(source))
-        if (
-            isinstance(node, ast.FunctionDef) and node.name in RESEARCH_READ_METHODS
-        ) or (
+    violations: list[tuple[int, str]] = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.FunctionDef) and node.name in RESEARCH_READ_METHODS:
+            violations.append((node.lineno, node.name))
+        elif (
             isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
             and node.func.attr in RESEARCH_READ_METHODS
-        )
-    ]
+            and not (
+                node.func.attr == "decision_experience_rows"
+                and owner in RESEARCH_READ_CONSUMERS
+            )
+        ):
+            violations.append((node.lineno, node.func.attr))
+    return violations
 
 
 class RepositoryOwnershipTest(unittest.TestCase):
@@ -127,6 +135,13 @@ class RepositoryOwnershipTest(unittest.TestCase):
             _research_write_violations(Path("trading/injected.py"), event_source),
             [(2, "save_events"), (3, "save_event_features")],
         )
+        experience_source = (
+            "def leak(repository):\n    repository.save_decision_experiences([])\n"
+        )
+        self.assertEqual(
+            _research_write_violations(Path("trading/injected.py"), experience_source),
+            [(2, "save_decision_experiences")],
+        )
         sample_source = (
             "def leak(repository):\n"
             "    repository.save_training_samples([])\n"
@@ -163,11 +178,14 @@ class RepositoryOwnershipTest(unittest.TestCase):
     def test_full_read_guard_rejects_trading_definitions_and_callers(self) -> None:
         source = (
             "def rl_feature_snapshot_rows(self):\n    pass\n"
-            "def leak(reader):\n    reader.rl_training_label_rows()\n"
+            "def leak(reader):\n"
+            "    reader.rl_training_label_rows()\n"
+            "    reader.decision_experience_rows()\n"
         )
         self.assertEqual(
             _research_read_violations(Path("trading/injected.py"), source),
-            [(1, "rl_feature_snapshot_rows"), (4, "rl_training_label_rows")],
+            [(1, "rl_feature_snapshot_rows"), (4, "rl_training_label_rows"),
+             (5, "decision_experience_rows")],
         )
 
 

@@ -945,6 +945,19 @@ class ResearchStore:
     def save_decision_experiences(self, rows: Sequence[dict[str, Any]]) -> None:
         self.upsert_records("decision_experiences", rows, key="record_key", ignore_existing=True)
 
+    def decision_experience_rows(
+        self, *, as_of_at: datetime | None = None,
+    ) -> list[dict[str, Any]]:
+        """관측 완료 시각 이전의 가상 판단 경험만 반환한다."""
+        try:
+            rows = self.records("decision_experiences")
+        except FileNotFoundError:
+            return []
+        return [
+            row for row in rows
+            if as_of_at is None or parse_datetime(str(row["available_at"])) <= as_of_at
+        ]
+
     def model_evaluation_rows(self, artifact_id: str) -> list[dict[str, Any]]:
         artifact_id = str(artifact_id).strip()
         if not artifact_id:

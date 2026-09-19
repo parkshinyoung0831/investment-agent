@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from investment_agent.trading.decision.constants import SIGNAL_HORIZON_DAYS
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.serialization import parse_datetime, canonical_json
+from investment_agent.research.storage.repository import ResearchStore
 from investment_agent.trading.evidence.tools import total_return
 
 log = get_logger(__name__)
@@ -83,9 +84,13 @@ def build_experience(repository, case: dict, *, as_of_at: datetime, horizon_days
     }
 
 
-def run(repository, *, as_of_at: datetime, limit: int = 200, dry_run: bool = False) -> int:
+def run(
+    repository, *, as_of_at: datetime, limit: int = 200, dry_run: bool = False,
+    store: ResearchStore | None = None,
+) -> int:
     """이미 관측한 경험은 덮어쓰지 않고 신규 성숙 판단만 추가한다."""
-    existing = {row["case_key"] for row in repository.decision_experience_rows()
+    selected_store = store if store is not None else ResearchStore()
+    existing = {row["case_key"] for row in selected_store.decision_experience_rows()
                 if row.get("provenance", {}).get("version") == DATASET_VERSION}
     saved = 0
     for case in repository.decision_cases_for_experiences():
@@ -95,7 +100,7 @@ def run(repository, *, as_of_at: datetime, limit: int = 200, dry_run: bool = Fal
         if row is None:
             continue
         if not dry_run:
-            repository.save_decision_experiences([row])
+            selected_store.save_decision_experiences([row])
         saved += 1
         if saved >= limit:
             break

@@ -6,7 +6,7 @@
 
 ### Task 1 — build_events current universe (완료)
 
-CLI main의 현재 tracked ticker read만 `data.universe.persistence`의 기존 owner API로 연결한다. operations가 명시 tickers를 넘기는 `build_events()` 함수와 event 계산·저장은 바꾸지 않는다. 정확한 pending 한 쌍만 RED→GREEN으로 제거한다.
+CLI main의 현재 tracked ticker read만 `data/universe/persistence.py`의 기존 owner API로 연결한다. operations가 명시 tickers를 넘기는 `build_events()` 함수와 event 계산·저장은 바꾸지 않는다. 정확한 pending 한 쌍만 RED→GREEN으로 제거한다.
 
 ### Task 2 — 다음 Data read 후보 (조사 전)
 

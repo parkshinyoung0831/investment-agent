@@ -77,7 +77,7 @@ class PerformanceServiceTests(unittest.TestCase):
 
     def test_cli_as_of_is_passed_to_source_and_service(self):
         from investment_agent.operations.commands.update_performance import main
-        with patch("investment_agent.trading.supabase_repository.SupabaseRepository") as research, patch(
+        with patch("investment_agent.operations.commands.update_performance.ResearchStore") as research, patch(
             "investment_agent.operations.commands.update_performance.ExecutionRepository"), patch(
             "investment_agent.operations.commands.update_performance.update_performance", return_value={}) as service:
             self.assertEqual(main(["--as-of", "2026-09-02T20:00:00+00:00"]), 0)
@@ -118,7 +118,7 @@ class PerformanceServiceTests(unittest.TestCase):
     def test_original_decision_report_exists_without_any_account(self):
         from unittest.mock import patch
         from investment_agent.reporting.notifications.investment.performance import performance_reports
-        with patch('investment_agent.reporting.notifications.investment.performance.PerformanceRepository') as owner, patch('investment_agent.trading.supabase_repository.SupabaseRepository') as research:
+        with patch('investment_agent.reporting.notifications.investment.performance.PerformanceRepository') as owner, patch('investment_agent.research.storage.repository.ResearchStore') as research:
             owner.return_value.reports.return_value = []
             research.return_value.decision_experience_rows.return_value = [dict(available_at='2026-01-01T00:00:00+00:00', horizon_days=5, net_reward=.03)]
             reports = performance_reports()
