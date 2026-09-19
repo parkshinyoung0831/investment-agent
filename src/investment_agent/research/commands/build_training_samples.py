@@ -18,12 +18,11 @@ from investment_agent.platform.cli.runtime import run_log_payload
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.serialization import ContractError, canonical_json, parse_datetime
 from investment_agent.research.evaluation.costs import TransactionCostModel
-from investment_agent.trading.supabase_repository import SupabaseRepository
 from investment_agent.research.features.layer import FEATURE_VERSION, impute_cross_section
 from investment_agent.research.rl.contracts import FeatureSnapshot
 from investment_agent.research.evaluation.shadow_fill import round_trip_cost_rate, simulate_shadow_trade
 from investment_agent.research.datasets.contracts import TrainingSample
-from investment_agent.research.datasets.universe import members_over_window
+from investment_agent.research.datasets.universe import DataUniverseReader, UniverseRepository, members_over_window
 from investment_agent.research.storage.repository import ResearchStore
 
 log = get_logger(__name__)
@@ -106,13 +105,13 @@ def build_training_samples(
     feature_version: str = FEATURE_VERSION,
     cost_model: TransactionCostModel | None = None,
     dry_run: bool = False,
-    repository: SupabaseRepository | None = None,
+    repository: UniverseRepository | None = None,
     store: ResearchStore | None = None,
 ) -> dict[str, object]:
     """label이 확정된 (종목, 시점)마다 비용 반영 학습 표본을 하나씩 만든다."""
     started = time.monotonic()
     started_at = datetime.now(timezone.utc).isoformat()
-    selected = repository or SupabaseRepository()
+    selected = repository or DataUniverseReader()
     model = cost_model or TransactionCostModel()
     if model.minimum_commission > 0.0:
         raise ContractError(

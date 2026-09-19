@@ -7,9 +7,9 @@
 - 기준 원격 `main`: `4181f6b53d84105f2b78d78c69e9119c1f55a6cf` (2026-09-20 세션 시작 시 로컬 HEAD와 일치 확인).
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
-- 현재 단계: Phase 2의 Research artifact owner 이관을 계속 진행하며 decision experience read/write façade를 제거했다. 실제 Data read owner 이관도 caller별로 진행 중이다.
-- 현재 계획: `docs/superpowers/plans/2026-09-20-decision-experience-storage-boundary.md` (Task 1~4 완료).
-- 완료 단계: Phase 1 조사, Phase 2의 feature snapshot·training label·valuation·event·training sample write 및 training metadata read owner 이관, Phase 3 공통 serialization import 정리. 현재 `PENDING_DEPENDENCIES`는 44쌍이다.
+- 현재 단계: Phase 2~3의 Research artifact/Data read owner 이관을 caller별로 진행 중이다. decision experience read/write façade를 제거했고 세 Research command의 universe read를 Data owner로 직접 연결했다.
+- 현재 계획: `docs/superpowers/plans/2026-09-20-research-data-read-boundaries.md` (Task 1~2 완료, Task 3 조사 전).
+- 완료 단계: Phase 1 조사, Phase 2의 feature snapshot·training label·valuation·event·training sample·decision experience owner 이관, Phase 3 공통 serialization 및 일부 Data read 역방향 import 정리. 현재 `PENDING_DEPENDENCIES`는 40쌍이다.
 - maintenance 상태: 확인·설정하지 않았다. 하네스 또는 execution 코드를 수정하기 전에 `harness_switch --maintenance on`을 수행하고 상태를 확인한다. live flag는 변경하지 않는다.
 
 ## 검증 기준선
@@ -388,6 +388,18 @@
 - 제거된 debt: Decision experience read/write의 Trading God façade 책임과 consumer 결합. pending 43쌍은 build command의 원본 Trading read import가 실제 남아 있어 유지한다.
 - 남은 debt: 원본 decision cases는 Trading owner, price path는 Data market owner인데 producer가 아직 하나의 Supabase reader로 받는다. 이 read split은 별도 작업이다.
 - 다음 독립 작업: 전체 검증 후 decision experience 계획을 닫고, build command의 decision source와 market price source를 실제 owner API로 분리할지 조사한다.
+
+#### Data read Task 2 — training/export/retrain universe owner 직접 연결
+
+- 변경 전 실제 호출 관계: `build_training_samples`와 `export_dataset`은 feature/label을 이미 ResearchStore에서 읽었지만 universe membership만 `SupabaseRepository`에서 읽었다. `continuous_retrain`도 decision experience가 없을 때 현재 ticker와 historical membership을 위해 lazy Trading façade를 만들었다. façade는 local mirror가 없으면 Data universe owner의 현재 ticker·PIT snapshot 조회에 위임했다.
+- 변경 이유: 세 기본 live runtime이 요구하는 입력은 Data owner의 canonical universe read뿐이다. 반면 `backfill_research_history`는 기존 repository를 명시 주입하므로 historical replay local mirror를 그대로 보존할 수 있다. Trading façade를 유지할 구체 책임이 없는 세 import만 제거했다.
+- 수정 파일: `src/investment_agent/research/datasets/universe.py`, `research/commands/build_training_samples.py`, `research/commands/export_dataset.py`, `research/commands/continuous_retrain.py`, 새 `tests/investment_agent/research/test_universe_reader.py`, architecture test, Data read 계획과 이 원장.
+- 이동·삭제 파일: 없음. schema·계산·저장·CLI·harness·execution은 변경하지 않았다.
+- import·runtime 방향: 기본 경로는 `research → data/universe/persistence.py`로 현재 ticker와 PIT membership을 읽는다. concrete `DataUniverseReader`가 기존 정렬·대문자화와 RL membership row 형식을 보존한다. 명시 주입 repository 경로는 그대로라 historical replay mirror 의미가 바뀌지 않는다.
+- 테스트 결과: 새 reader가 없어 import error 1건, pending 세 쌍을 먼저 지운 architecture test에서 정확한 위반 3건으로 RED를 확인했다. 구현 후 universe reader·training sample·dataset export·continuous retrain·RL loader·architecture·workflow·docs 130개가 통과했다. 전체 suite 3,026개는 기준선과 같은 선택적 `lightgbm`/`xgboost` 미설치 오류 4개·skip 1개 외 새 실패가 없었다. caller 검색과 `git diff --check`도 통과했다.
+- 제거된 debt: 세 command의 `research → trading/supabase_repository.py` 역방향 import. `PENDING_DEPENDENCIES` 43→40, 새 pending 없음.
+- 남은 debt: `build_labels`, `build_features`, `build_valuations`, `build_decision_experiences` 등은 universe 외에도 price/fundamental/decision/local mirror 책임을 같은 façade에서 사용한다. 이름만 바꾸지 않고 각 read 계약과 replay cutoff를 먼저 분리해야 한다.
+- 다음 독립 작업: caller/import 0건과 전체 suite를 확인한 뒤 이 단위를 커밋한다. 다음에는 남은 Research command 중 owner API와 local mirror 의미를 안전하게 분리할 수 있는 최소 후보를 다시 조사한다.
 
 ## 향후 milestone
 

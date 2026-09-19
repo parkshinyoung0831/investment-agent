@@ -9,12 +9,61 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Protocol, Sequence
 
+from investment_agent.data.universe import persistence as universe_data
 from investment_agent.data.market.domain.calendar import MARKET_TIMEZONE
+from investment_agent.platform.serialization import parse_datetime
 
 
 class UniverseRepository(Protocol):
     def current_tracked_tickers(self) -> list[str]: ...
     def historical_sp500_membership(self, *, start_date: Any, end_date: Any) -> list[dict[str, Any]]: ...
+
+
+class DataUniverseReader:
+    """Research가 사용하는 universe 입력을 canonical Data owner에서 읽는다.
+
+    Historical replay가 명시적으로 repository를 주입하는 경로는 이 reader로 바꾸지 않는다.
+    기본 live command만 Data owner를 직접 소비해 Trading façade를 경유하지 않게 한다.
+    """
+
+    def current_tracked_tickers(self) -> list[str]:
+        return sorted({str(ticker).upper() for ticker in universe_data.select_tracked_tickers()})
+
+    def historical_sp500_membership(
+        self,
+        *,
+        start_date: date,
+        end_date: date,
+    ) -> list[dict[str, Any]]:
+        return universe_data.select_sp500_membership_snapshots(
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+    def rl_historical_membership_rows(
+        self,
+        *,
+        start_as_of: str,
+        end_as_of: str,
+    ) -> list[dict[str, Any]]:
+        """기존 RL MembershipTimeline 입력 계약으로 PIT snapshot을 변환한다."""
+        start = parse_datetime(start_as_of)
+        end = parse_datetime(end_as_of)
+        if end < start:
+            raise ValueError("membership end_as_of must not precede start_as_of")
+        snapshots = self.historical_sp500_membership(
+            start_date=start.date(),
+            end_date=end.date(),
+        )
+        return [
+            {
+                "effective_at": f"{row['effective_date']}T00:00:00+00:00",
+                "symbols": list(row["symbols"]),
+                "source_id": str(row.get("source_hash") or row.get("source") or ""),
+                "source_kind": "historical_point_in_time",
+            }
+            for row in snapshots
+        ]
 
 
 def research_universe(
@@ -49,4 +98,4 @@ def members_over_window(repository: UniverseRepository, *, start: date, end: dat
     return tuple(sorted(symbols))
 
 
-__all__ = ["members_over_window", "research_universe"]
+__all__ = ["DataUniverseReader", "members_over_window", "research_universe"]

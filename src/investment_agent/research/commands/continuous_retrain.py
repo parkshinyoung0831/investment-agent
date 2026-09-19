@@ -28,6 +28,7 @@ from investment_agent.research.rl.features import FeatureSpec, HistoricalTrainin
 from investment_agent.research.rl.pipeline import split_dataset, nonoverlapping_dataset
 from investment_agent.research.rl.bundle import load_policy_bundle, save_policy_bundle
 from investment_agent.research.features.layer import FEATURE_COLUMNS, FEATURE_VERSION
+from investment_agent.research.datasets.universe import DataUniverseReader
 from investment_agent.research.storage.repository import ResearchStore
 from investment_agent.platform.storage_paths import repository_root
 
@@ -143,9 +144,7 @@ def run_continuous_retrain(
     )
 
     if repository is None:
-        from investment_agent.trading.supabase_repository import SupabaseRepository
-
-        repository = SupabaseRepository()
+        repository = DataUniverseReader()
     selected_store = store if store is not None else ResearchStore(read_only=True)
 
     champion_score = None

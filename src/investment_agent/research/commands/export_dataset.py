@@ -18,7 +18,6 @@ from investment_agent.trading.decision.constants import SIGNAL_HORIZON_DAYS
 from investment_agent.platform.cli.runtime import run_log_payload
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.serialization import ContractError, parse_datetime
-from investment_agent.trading.supabase_repository import SupabaseRepository
 from investment_agent.research.features.layer import (
     FEATURE_COLUMNS,
     FEATURE_VERSION,
@@ -27,7 +26,7 @@ from investment_agent.research.features.layer import (
 )
 from investment_agent.research.rl.contracts import FeatureSnapshot
 from investment_agent.research.datasets import build_research_dataset
-from investment_agent.research.datasets.universe import members_over_window
+from investment_agent.research.datasets.universe import DataUniverseReader, UniverseRepository, members_over_window
 from investment_agent.research.storage.repository import ResearchStore
 from investment_agent.research.training.baseline import EXCESS_LABEL_PREFIX
 
@@ -76,13 +75,13 @@ def export_dataset(
     horizon_days: int = SIGNAL_HORIZON_DAYS,
     feature_version: str = FEATURE_VERSION,
     output: Path | None = None,
-    repository: SupabaseRepository | None = None,
+    repository: UniverseRepository | None = None,
     store: ResearchStore | None = None,
 ) -> dict[str, Any]:
     """원장을 읽어 label이 확정된 행만 학습 dataset으로 결합한다."""
     started = time.monotonic()
     started_at = datetime.now(timezone.utc).isoformat()
-    selected = repository or SupabaseRepository()
+    selected = repository or DataUniverseReader()
     symbols = members_over_window(
         selected, start=parse_datetime(start_as_of).date(), end=parse_datetime(end_as_of).date(),
     )
