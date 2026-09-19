@@ -180,6 +180,11 @@ LOCAL_STORE_REPOSITORIES = frozenset({
     "src/investment_agent/intelligence/repository.py",
     "src/investment_agent/research/storage/repository.py",
     "src/investment_agent/trading/repository.py",
+    "src/investment_agent/execution/approval/repository.py",
+    "src/investment_agent/execution/brokers/repository.py",
+    "src/investment_agent/execution/orders/repository.py",
+    "src/investment_agent/execution/reconciliation/repository.py",
+    "src/investment_agent/execution/safety/repository.py",
 })
 
 

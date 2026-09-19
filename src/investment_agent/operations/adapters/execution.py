@@ -1,7 +1,7 @@
 """Execution-owner harness stage adapters."""
 from __future__ import annotations
 
-from investment_agent.operations.adapters import _ID_PATTERNS, metadata_id
+from investment_agent.operations.adapters._metadata import _ID_PATTERNS, metadata_id
 from investment_agent.operations.harness.commands import PythonModuleCommand
 from investment_agent.operations.harness.contracts import StageContext, StageOutcome
 from investment_agent.platform.serialization import parse_datetime

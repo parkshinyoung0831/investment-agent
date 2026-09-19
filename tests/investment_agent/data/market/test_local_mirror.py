@@ -180,7 +180,7 @@ class RepositoryPrefersTheMirrorTest(unittest.TestCase):
         fake.covers.return_value = True
         fake.price_history_as_of.return_value = [{"from": "mirror"}]
         fake.tracked_tickers.return_value = ["AAA"]
-        repository._local_mirror = fake
+        repository._reader_cache().__dict__["_local_mirror"] = fake
         with mock.patch.object(module.market_db, "price_history_as_of", side_effect=AssertionError("remote read")), \
                 mock.patch.object(module, "select_tracked_tickers", side_effect=AssertionError("remote read")):
             self.assertEqual(repository.market_prices("AAA", NOW + timedelta(minutes=1)), [{"from": "mirror"}])

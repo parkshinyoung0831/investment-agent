@@ -115,7 +115,7 @@ class HistoricalReplayPrefetchTest(unittest.TestCase):
             repository.prepare_historical_replay(["AAA"], AS_OF)
             later = AS_OF.replace(day=24)
             repository.prepare_historical_replay(["AAA"], later)
-        keys = set(repository.__dict__["_memo_state"]["values"])
+        keys = set(repository._reader_cache().__dict__["_memo_state"]["values"])
         old_point = AS_OF.isoformat()
         self.assertFalse(any(old_point in key for key in keys))
         self.assertTrue(any(later.isoformat() in key for key in keys))

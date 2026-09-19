@@ -125,7 +125,7 @@ class RepositoryMemoTest(unittest.TestCase):
 
     def test_memo_expires(self):
         repository = self._repository()
-        with mock.patch.object(type(repository), "_MEMO_SECONDS", -1.0), \
+        with mock.patch.object(type(repository._reader_cache()), "_MEMO_SECONDS", -1.0), \
                 mock.patch("investment_agent.trading.supabase_repository.market_db.price_history_as_of",
                            return_value=[]) as read:
             repository.market_prices("AAA", AS_OF)
@@ -143,7 +143,7 @@ class RepositoryMemoTest(unittest.TestCase):
     def test_technical_snapshot_reads_all_tickers_once_with_the_same_contract(self):
         repository = self._repository()
         latest = {"AAA": {"ticker": "AAA", "trade_date": "2026-09-14", "rsi14": 55.0, "ingested_at": "x"}}
-        with mock.patch("investment_agent.trading.supabase_repository.features_db.latest_signals_as_of",
+        with mock.patch("investment_agent.trading.supabase_repository.latest_technical_signals_as_of",
                         return_value=latest) as read:
             self.assertEqual(repository.technical_snapshot("AAA", AS_OF), [latest["AAA"]])
             self.assertEqual(repository.technical_snapshot("BBB", AS_OF), [])

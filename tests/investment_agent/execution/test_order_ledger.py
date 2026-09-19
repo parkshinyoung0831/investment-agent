@@ -63,7 +63,7 @@ class OrderAttemptSchemaTest(unittest.TestCase):
         self.assertIn("REFERENCES order_attempts(attempt_id)", self.sql)
 
     def test_reservation_contract_requires_consumed_approval_and_exact_plan(self):
-        source = Path("src/investment_agent/execution/db.py").read_text(encoding="utf-8")
+        source = Path("src/investment_agent/execution/orders/repository.py").read_text(encoding="utf-8")
         for clause in (
             'approval[0] != "consumed"',
             "attempt.client_order_id",
