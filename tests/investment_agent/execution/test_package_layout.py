@@ -33,6 +33,19 @@ class ExecutionPackageLayoutTest(unittest.TestCase):
             with self.subTest(layer=name):
                 self.assertTrue((ROOT / name).is_dir())
 
+    def test_runtime_repository_delegates_lifecycle_persistence_to_owner_mixins(self) -> None:
+        from investment_agent.execution.db import ExecutionRepository
+
+        owners = {
+            "approval": "ApprovalRepository",
+            "orders": "OrderRepository",
+            "brokers": "BrokerRepository",
+            "reconciliation": "ReconciliationRepository",
+            "safety": "SafetyRepository",
+        }
+        found = {owner.__name__ for owner in ExecutionRepository.__mro__[1:]}
+        self.assertTrue(set(owners.values()) <= found)
+
     def test_only_contracts_and_the_ledger_stay_flat(self) -> None:
         """루트에 모듈이 늘어나면 다시 "어디에 둘지 모르겠으면 여기" 가 된다."""
         found = {p.stem for p in ROOT.glob("*.py") if p.stem != "__init__"}
