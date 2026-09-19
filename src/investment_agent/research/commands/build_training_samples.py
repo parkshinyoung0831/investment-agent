@@ -130,9 +130,10 @@ def build_training_samples(
     if not symbols:
         raise RuntimeError("no tracked ticker is available for training samples")
 
+    selected_store = store if store is not None else ResearchStore(read_only=True)
     lightweight_inputs = None
-    if hasattr(selected, "training_sample_period_inputs"):
-        lightweight_inputs = selected.training_sample_period_inputs(
+    if hasattr(selected_store, "training_sample_period_inputs"):
+        lightweight_inputs = selected_store.training_sample_period_inputs(
             symbols, start_as_of=window_start, end_as_of=window_end,
             feature_version=feature_version, label_cutoff_at=window_end,
         )
@@ -147,7 +148,7 @@ def build_training_samples(
             symbols, start_as_of=window_start, end_as_of=window_end,
             feature_version=feature_version, label_cutoff_at=window_end,
         )
-    run_rows = (store if store is not None else ResearchStore(read_only=True)).training_sample_run_rows(
+    run_rows = selected_store.training_sample_run_rows(
         start_as_of=window_start, end_as_of=window_end,
     )
     if not label_rows:

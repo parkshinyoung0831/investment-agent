@@ -219,20 +219,21 @@ class BuildTrainingSamplesTest(unittest.TestCase):
         self.assertEqual(changed["detail"]["already_sampled"], 4)
 
     def test_unchanged_manifest_avoids_full_feature_and_label_reads(self):
-        class LightweightRepository(_Repository):
-            def __init__(self):
-                super().__init__(periods=2)
-                self.full_feature_reads: list[tuple[str, ...] | None] = []
-                self.full_label_reads: list[tuple[str, ...] | None] = []
+        class LightweightStore(_ResearchStore):
+            def __init__(self, reader):
+                super().__init__()
+                self.reader = reader
+                self.metadata_calls = 0
 
             def training_sample_period_inputs(self, symbols, **kwargs):
-                snapshots = super().rl_feature_snapshot_rows(
-                    symbols,
+                self.metadata_calls += 1
+                snapshots = _Repository.rl_feature_snapshot_rows(
+                    self.reader, symbols,
                     start_as_of=kwargs["start_as_of"], end_as_of=kwargs["end_as_of"],
                     feature_version=kwargs["feature_version"],
                 )
-                labels = super().rl_training_label_rows(
-                    symbols,
+                labels = _Repository.rl_training_label_rows(
+                    self.reader, symbols,
                     start_as_of=kwargs["start_as_of"], end_as_of=kwargs["end_as_of"],
                     feature_version=kwargs["feature_version"],
                     label_cutoff_at=kwargs["label_cutoff_at"],
@@ -245,6 +246,15 @@ class BuildTrainingSamplesTest(unittest.TestCase):
                         key: row[key] for key in ("as_of_at", "ticker", "feature_version", "label_id")
                     } for row in labels],
                 }
+
+        class LightweightRepository(_Repository):
+            def __init__(self):
+                super().__init__(periods=2)
+                self.full_feature_reads: list[tuple[str, ...] | None] = []
+                self.full_label_reads: list[tuple[str, ...] | None] = []
+
+            def training_sample_period_inputs(self, symbols, **kwargs):
+                raise AssertionError("metadata must be read from the Research store")
 
             def rl_feature_snapshot_rows(self, symbols, *, as_of_values=None, **kwargs):
                 self.full_feature_reads.append(None if as_of_values is None else tuple(as_of_values))
@@ -261,6 +271,7 @@ class BuildTrainingSamplesTest(unittest.TestCase):
                 ]
 
         repository = LightweightRepository()
+        repository.store = LightweightStore(repository)
         self._run(repository)
         repository.full_feature_reads.clear()
         repository.full_label_reads.clear()
@@ -271,6 +282,7 @@ class BuildTrainingSamplesTest(unittest.TestCase):
         self.assertEqual(repeated["detail"]["already_sampled"], 4)
         self.assertEqual(repository.full_feature_reads, [])
         self.assertEqual(repository.full_label_reads, [])
+        self.assertEqual(repository.store.metadata_calls, 2)
 
     def test_window_includes_former_members_not_only_current_tracked_names(self):
         """과거 편출 종목 BBB를 조회 범위에서 빼면 학습 표본이 조용히 사라진다."""

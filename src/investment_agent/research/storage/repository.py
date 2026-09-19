@@ -17,7 +17,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 from investment_agent.platform.db import duckdb as duckdb_store
-from investment_agent.platform.serialization import canonical_json
+from investment_agent.platform.serialization import canonical_json, normalize_ticker, parse_datetime
 from investment_agent.platform.storage_paths import (
     RESEARCH_ROOT_ENV,
     repository_root,
@@ -29,7 +29,7 @@ from investment_agent.research.promotion.gate import (
     PromotionDecision,
     aggregate_evaluations,
 )
-from investment_agent.research.rl.contracts import FeatureSnapshot, ForwardReturnLabel
+from investment_agent.research.rl.contracts import FeatureSnapshot, ForwardReturnLabel, normalize_symbols
 
 DEFAULT_RESEARCH_ROOT = Path("data/local/research")
 DATABASE_NAME = "research.duckdb"
@@ -794,6 +794,44 @@ class ResearchStore:
 
     def training_sample_run_rows(self, *, start_as_of: str, end_as_of: str) -> list[dict[str, Any]]:
         return self.records("training_sample_runs", start_as_of=start_as_of, end_as_of=end_as_of)
+
+    def training_sample_period_inputs(
+        self,
+        symbols: Sequence[str],
+        *,
+        start_as_of: str,
+        end_as_of: str,
+        feature_version: str,
+        label_cutoff_at: str,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """완료 기간 판정에 필요한 scalar만 읽어 feature/label JSON 복원을 피한다."""
+        normalized = set(normalize_symbols(tuple(symbols)))
+        start = parse_datetime(start_as_of)
+        end = parse_datetime(end_as_of)
+        cutoff = parse_datetime(label_cutoff_at)
+        if end < start or cutoff < end:
+            raise ValueError("invalid training sample metadata window")
+        snapshots = self.records_with_payload_fields(
+            "rl_feature_snapshots", ("feature_version", "input_hash"),
+            start_as_of=start.isoformat(), end_as_of=end.isoformat(),
+        )
+        labels = self.records_with_payload_fields(
+            "rl_training_labels", ("feature_version", "label_available_at", "label_id"),
+            start_as_of=start.isoformat(), end_as_of=end.isoformat(),
+        )
+        return {
+            "snapshots": [
+                row for row in snapshots
+                if row.get("feature_version") == feature_version
+                and normalize_ticker(row.get("ticker")) in normalized
+            ],
+            "labels": [
+                row for row in labels
+                if row.get("feature_version") == feature_version
+                and normalize_ticker(row.get("ticker")) in normalized
+                and parse_datetime(str(row["label_available_at"])) <= cutoff
+            ],
+        }
 
     def save_training_sample_runs(self, rows: Sequence[dict[str, Any]]) -> int:
         if not rows:

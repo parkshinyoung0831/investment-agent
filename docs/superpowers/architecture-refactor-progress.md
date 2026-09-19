@@ -7,8 +7,8 @@
 - 기준 원격 `main`: `4181f6b53d84105f2b78d78c69e9119c1f55a6cf` (2026-09-20 세션 시작 시 로컬 HEAD와 일치 확인).
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
-- 현재 단계: Phase 2의 feature·label·valuation·event artifact 및 training sample/manifest 저장 경계 이관 완료. 다음 독립 단위는 Research feature/label read façade의 실제 caller·PIT 계약 조사다.
-- 현재 계획: `docs/superpowers/plans/2026-09-20-training-sample-storage-boundary.md` (Task 1~3 완료).
+- 현재 단계: Phase 2의 training sample metadata scalar read를 Research owner로 직접 이관 중이다. 나머지 feature/label full read façade는 유지하며 별도 판단한다.
+- 현재 계획: `docs/superpowers/plans/2026-09-20-training-sample-metadata-read-boundary.md` (Task 1 완료, Task 2 남음).
 - 완료 단계: Phase 1 조사와 Phase 2의 feature snapshot·training label·valuation·event artifact write 직접 이관, 관련 façade 메서드 제거. 현재 `PENDING_DEPENDENCIES`는 68쌍이다.
 - maintenance 상태: 확인·설정하지 않았다. 하네스 또는 execution 코드를 수정하기 전에 `harness_switch --maintenance on`을 수행하고 상태를 확인한다. live flag는 변경하지 않는다.
 
@@ -202,6 +202,18 @@
 - 제거된 debt: sample·run manifest의 trading façade read/write 3개와 잘못 소유된 직접 persistence 테스트. `PENDING_DEPENDENCIES`는 68쌍으로 유지하며 새 허용 항목은 없다.
 - 남은 debt: `rl_feature_snapshot_rows`, `rl_training_label_rows`, `training_sample_period_inputs`가 trading façade에 있고 `build_labels`, `build_training_samples`, `export_dataset`, `research/rl/features.py`, `research/ml_serving.py` 등이 사용한다.
 - 다음 독립 작업: read migration을 일괄 rename하지 않는다. 먼저 `build_training_samples.py`의 lightweight scalar metadata와 pending 기간의 full payload read를 기준으로 PIT/version/ticker/cutoff 필터와 JSON 복원 회피를 테스트로 고정하고, Research owner read API가 실제로 더 깊은 경계인지 판단한다. 이후 나머지 caller를 각각 조사한다.
+
+#### Training metadata read Task 1 — scalar projection owner 이관
+
+- 변경 전 호출 관계: `build_training_samples`의 lightweight branch가 `SupabaseRepository.training_sample_period_inputs()`를 호출했고, façade가 ResearchStore의 `records_with_payload_fields()` 두 번을 실행해 version·ticker·label cutoff를 필터했다. 해당 façade 메서드의 production caller는 이 command 한 곳뿐이었다.
+- 변경 이유: Research 산출물의 scalar projection과 cutoff 판정은 Research owner의 read 계약이며, Trading 구현을 경유할 이유가 없다. 완료 기간에서 full JSON payload를 읽지 않는 성능/재시작 의미를 보존해야 한다.
+- 수정 파일: `src/investment_agent/research/storage/repository.py`, `src/investment_agent/research/commands/build_training_samples.py`, `tests/investment_agent/research/commands/test_training_samples.py`, 새 `tests/investment_agent/research/test_training_sample_metadata.py`, 이 원장.
+- 이동·삭제 파일: 없음. façade는 다음 Task에서 caller 0건을 확인한 뒤 제거한다.
+- import·runtime 방향: command는 이미 manifest read에 쓰던 `ResearchStore` 인스턴스에서 metadata도 읽는다. 기본 경로는 read-only, 주입 경로는 같은 store를 사용하며, sample write만 별도 writable store를 연다. full feature/label row read와 universe read는 기존 reader에 남긴다.
+- 테스트 결과: 새 ResearchStore 계약 2개는 메서드 부재로 RED, command lightweight 계약은 기존 trading reader 호출로 RED였다. 구현 후 metadata·training command·record key·architecture 49개 통과. 실제 Parquet scalar projection 결과에 대형 `features`/`forward_return` payload가 없고 filter가 동작함을 확인했다.
+- 제거된 debt: lightweight metadata production read의 trading façade 경유 1곳. `PENDING_DEPENDENCIES`는 아직 68쌍이다.
+- 남은 debt: façade의 미사용 메서드 하나와 Research feature/label full row read façade, 일반 Research→Trading import.
+- 다음 독립 작업: façade 메서드 하나만 삭제하고 owner guard·통합 테스트를 확인한다.
 
 ## 향후 milestone
 
