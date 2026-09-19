@@ -36,6 +36,11 @@ class FakeRepository:
     def current_tracked_tickers(self):
         return {row["ticker"] for row in self.rows}
 
+
+class FakeStore:
+    def __init__(self, rows):
+        self.rows = rows
+
     def rl_feature_snapshot_rows(self, symbols, *, start_as_of, end_as_of, feature_version):
         return [row for row in self.rows if row["feature_version"] == feature_version]
 
@@ -54,13 +59,17 @@ class ChampionForecastTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.path = Path(self.tmp.name) / "active_ml_model.json"
-        self.repository = FakeRepository([_row("AAPL", 8.0), _row("MSFT", -8.0), _row("NVDA", 0.0)])
+        rows = [_row("AAPL", 8.0), _row("MSFT", -8.0), _row("NVDA", 0.0)]
+        self.repository = FakeRepository(rows)
+        self.store = FakeStore(rows)
 
     def write(self, payload):
         self.path.write_text(json.dumps(payload), encoding="utf-8")
 
     def forecast(self, tickers=("AAPL", "MSFT")):
-        return champion_forecast(self.repository, tickers, as_of_at=AS_OF, model_path=self.path)
+        return champion_forecast(
+            self.repository, tickers, as_of_at=AS_OF, model_path=self.path, store=self.store,
+        )
 
     def test_without_an_adopted_model_there_is_no_forecast(self):
         outcome = self.forecast()

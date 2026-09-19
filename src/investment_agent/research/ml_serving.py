@@ -33,6 +33,7 @@ from investment_agent.platform.serialization import ContractError, parse_datetim
 from investment_agent.research.features.layer import impute_cross_section
 from investment_agent.research.ml_inference import LoadedModel, load_model
 from investment_agent.research.rl.contracts import FeatureSnapshot, RLSafetyError
+from investment_agent.research.storage.repository import ResearchStore
 from investment_agent.trading.decision.constants import SIGNAL_HORIZON_DAYS
 
 log = get_logger(__name__)
@@ -131,6 +132,7 @@ def champion_forecast(
     as_of_at: str | datetime,
     model_path: Path | None = None,
     lookback_days: int = DEFAULT_SNAPSHOT_LOOKBACK_DAYS,
+    store: Any | None = None,
 ) -> ChampionForecast:
     """채택된 모델의 종목별 기대초과수익. 어떤 실패도 System 목표 생성을 멈추지 않는다."""
     wanted_tickers = sorted({str(ticker).upper() for ticker in tickers})
@@ -152,7 +154,8 @@ def champion_forecast(
         )
     point = parse_datetime(as_of_at)
     try:
-        rows = repository.rl_feature_snapshot_rows(
+        selected_store = store if store is not None else ResearchStore(read_only=True)
+        rows = selected_store.rl_feature_snapshot_rows(
             tuple(repository.current_tracked_tickers()),
             start_as_of=(point - timedelta(days=lookback_days)).isoformat(),
             end_as_of=point.isoformat(),

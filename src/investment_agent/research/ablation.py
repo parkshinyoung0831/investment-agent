@@ -271,7 +271,9 @@ def run_ablation(
                 nonlocal ml_forecasts_applied
                 if model_path is None:
                     return NO_FORECAST
-                result = champion_forecast(repo, tickers, as_of_at=as_of_at, model_path=model_path)
+                result = champion_forecast(
+                    repo, tickers, as_of_at=as_of_at, model_path=model_path, store=repo,
+                )
                 if result.is_available:
                     ml_forecasts_applied += 1
                 return result

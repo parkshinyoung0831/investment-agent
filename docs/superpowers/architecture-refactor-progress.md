@@ -344,6 +344,17 @@
 - 남은 debt: ML serving의 feature snapshot read가 마지막 production façade caller다. 테스트 direct caller도 owner 경계로 이동해야 한다.
 - 다음 독립 작업: `champion_forecast`의 tracked ticker provider와 Research feature store를 분리하고, Trading system 상위 caller에서 read-only store를 조립해 fail-closed 동작을 유지한다.
 
+#### Full read Task 3b — ML serving runtime 조립
+
+- 변경 전 실제 호출 관계: `champion_forecast`가 같은 repository에서 현재 tracked ticker와 feature snapshot을 읽었다. Trading system은 이 함수를 기본 forecast로 호출하고, Research ablation은 replay repository로 같은 경로를 재현했다.
+- 변경 이유: tracked ticker는 universe 입력이지만 feature snapshot은 Research artifact다. serving 함수 내부의 기본 owner까지 바꾸면 Trading system caller API를 흔들지 않고 실제 production read를 분리할 수 있다.
+- 수정 파일: `src/investment_agent/research/ml_serving.py`, `src/investment_agent/research/ablation.py`, `tests/investment_agent/research/test_ml_serving.py`, 이 원장. 모델 파일·계산·system target·schema 변경 없음.
+- import·runtime 방향: `champion_forecast`는 repository에서 ticker 목록만 읽고, 주입 store 또는 기본 `ResearchStore(read_only=True)`에서 feature를 읽는다. adopted model 부재·잘못된 label/horizon 경로는 store를 열기 전에 기존처럼 반환한다. ablation은 replay repository를 명시적 feature store로 주입해 historical replay 의미를 유지한다.
+- 테스트 결과: split fake와 store 인자를 먼저 적용해 기존 구현에서 5개 인자 오류로 RED, 구현 후 ML serving·ablation·Trading system portfolio·architecture 64개 통과.
+- 제거된 debt: ML serving의 마지막 production Trading façade feature read caller. source 검색상 façade 두 메서드의 남은 caller는 `SupabaseRepository` 자체와 호환 경계를 직접 검증하는 테스트뿐이다.
+- 남은 debt: façade와 직접 테스트, Trading 모듈의 Research adapter import가 남는다. Task 4에서 caller 0을 고정한 뒤 삭제한다.
+- 다음 독립 작업: Trading façade 두 메서드와 해당 직접 테스트를 제거하고, Research full reads가 Trading 밖에 정의·호출되지 못하도록 architecture ownership guard를 추가한다.
+
 ## 향후 milestone
 
 | 묶음 | 해당 phase | 독립 완료 조건 |
