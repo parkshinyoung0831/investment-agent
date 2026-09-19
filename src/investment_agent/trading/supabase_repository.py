@@ -54,8 +54,8 @@ from investment_agent.data.fundamentals.infrastructure.supabase import (
 )
 from investment_agent.data.market import persistence as market_db
 from investment_agent.data.universe.persistence import (
-    select_security_profiles,
     select_security_ids_by_ticker,
+    select_sp500_sector_map,
     select_sp500_membership_snapshots,
     select_tickers_by_security_id,
     select_tracked_tickers,
@@ -785,11 +785,7 @@ class SupabaseRepository:
         mirror = self._mirror()
         if mirror is not None:
             return mirror.sector_map(symbols)
-        rows = select_security_profiles(symbols, tracked_only=True)
-        return {
-            str(row["ticker"]).upper(): str(row["sic_division"])
-            for row in rows if row.get("sic_division")
-        }
+        return select_sp500_sector_map(symbols)
 
     def market_prices(self, ticker: str, as_of_at: datetime, limit: int = 260) -> list[dict]:
         """market 스키마의 owner에게 위임한다 — 조회 규칙을 두 곳에 두지 않는다.

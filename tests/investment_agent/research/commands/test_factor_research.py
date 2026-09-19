@@ -2,7 +2,12 @@
 from __future__ import annotations
 
 import unittest
+import tempfile
 from datetime import date, timedelta
+from pathlib import Path
+from unittest.mock import patch
+
+from investment_agent.research.commands import factor_research
 
 from investment_agent.research.commands.factor_research import (
     IcSummary,
@@ -143,6 +148,47 @@ class GroupSnapshotsTest(unittest.TestCase):
              "is_available": False},
         ]
         self.assertEqual(group_snapshots(rows, feature_version="v5"), {date(2024, 1, 5): {"AAPL": {"x": 1}}})
+
+
+class FactorResearchMainDataOwnerTest(unittest.TestCase):
+    def test_cli_composes_market_and_universe_owner_reads(self):
+        from investment_agent.research.features.layer import FEATURE_VERSION
+
+        rows = [{
+            "feature_version": FEATURE_VERSION,
+            "as_of_at": "2024-01-05T23:30:00+00:00",
+            "ticker": "AAPL",
+            "features": {"momentum_12_1": 0.1},
+            "provenance": {"source_kind": "historical_replay"},
+        }]
+        report = {"n_dates": 1, "best_horizon_by_signal": {}, "summary": {}, "per_date": []}
+        with tempfile.TemporaryDirectory() as temp:
+            with (
+                patch("investment_agent.research.storage.repository.ResearchStore") as store_type,
+                patch.object(
+                    factor_research.market_data,
+                    "trading_dates",
+                    return_value=[date(2024, 1, 5)],
+                ) as dates,
+                patch.object(factor_research.market_data, "closes_on_date") as closes,
+                patch.object(
+                    factor_research.universe_data,
+                    "select_sp500_sector_map",
+                    return_value={"AAPL": "Manufacturing"},
+                ) as sectors,
+                patch.object(factor_research, "research", return_value=report) as calculate,
+            ):
+                store_type.return_value.records.return_value = rows
+
+                exit_code = factor_research.main(["--output-dir", temp])
+                self.assertTrue((Path(temp) / "latest.json").exists())
+
+        self.assertEqual(0, exit_code)
+        dates.assert_called_once()
+        sectors.assert_called_once_with(["AAPL"])
+        kwargs = calculate.call_args.kwargs
+        self.assertIs(closes, kwargs["closes_on"])
+        self.assertEqual({"AAPL": "Manufacturing"}, kwargs["groups"])
 
 
 if __name__ == "__main__":

@@ -8,8 +8,8 @@
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
 - 현재 단계: Phase 2~3의 Research artifact/Data read owner 이관을 caller별로 진행 중이다. decision experience read/write façade를 제거했고 세 Research command의 universe read를 Data owner로 직접 연결했다.
-- 현재 계획: `docs/superpowers/plans/2026-09-20-research-data-read-boundaries.md` (Task 1~2 완료, Task 3 조사 전).
-- 완료 단계: Phase 1 조사, Phase 2의 feature snapshot·training label·valuation·event·training sample·decision experience owner 이관, Phase 3 공통 serialization 및 일부 Data read 역방향 import 정리. 현재 `PENDING_DEPENDENCIES`는 40쌍이다.
+- 현재 계획: `docs/superpowers/plans/2026-09-20-research-data-read-boundaries.md` (Task 1~3 완료, Task 4 조사 전).
+- 완료 단계: Phase 1 조사, Phase 2의 feature snapshot·training label·valuation·event·training sample·decision experience owner 이관, Phase 3 공통 serialization 및 일부 Data read 역방향 import 정리. 현재 `PENDING_DEPENDENCIES`는 39쌍이다.
 - maintenance 상태: 확인·설정하지 않았다. 하네스 또는 execution 코드를 수정하기 전에 `harness_switch --maintenance on`을 수행하고 상태를 확인한다. live flag는 변경하지 않는다.
 
 ## 검증 기준선
@@ -400,6 +400,18 @@
 - 제거된 debt: 세 command의 `research → trading/supabase_repository.py` 역방향 import. `PENDING_DEPENDENCIES` 43→40, 새 pending 없음.
 - 남은 debt: `build_labels`, `build_features`, `build_valuations`, `build_decision_experiences` 등은 universe 외에도 price/fundamental/decision/local mirror 책임을 같은 façade에서 사용한다. 이름만 바꾸지 않고 각 read 계약과 replay cutoff를 먼저 분리해야 한다.
 - 다음 독립 작업: caller/import 0건과 전체 suite를 확인한 뒤 이 단위를 커밋한다. 다음에는 남은 Research command 중 owner API와 local mirror 의미를 안전하게 분리할 수 있는 최소 후보를 다시 조사한다.
+
+#### Data read Task 3 — factor research Market/Universe owner 직접 연결
+
+- 변경 전 실제 호출 관계: factor research CLI가 `SupabaseRepository`를 만들고 `trading_dates`, `closes_on_date`, `sp500_sector_map`만 호출했다. 이 CLI는 historical mirror를 준비하지 않아 façade의 live fallback이 기존 Market/Universe persistence를 호출했다.
+- 변경 이유: factor IC 계산의 입력은 가격·거래일·분류 Data이며 Trading 판단이나 원장이 아니다. sector map 투영만 façade 안에 남아 있어 canonical Data owner API로 이동하고 두 runtime이 공유하게 했다.
+- 수정 파일: `src/investment_agent/data/universe/persistence.py`, `data/market/persistence.py`, `trading/supabase_repository.py`, `research/commands/factor_research.py`, Data universe·factor CLI·architecture 테스트, Data read 계획과 이 원장.
+- 이동·삭제 파일: 없음. factor 계산·artifact 형식·schema·harness·execution은 변경하지 않았다.
+- import·runtime 방향: factor CLI는 `research → data/market`과 `research → data/universe`로 직접 읽는다. Trading façade의 sector map 메서드는 replay mirror 분기를 유지하고 live fallback만 새 owner 함수에 위임한다. Market owner의 이미 존재하던 두 public read도 export 목록에 명시했다.
+- 테스트 결과: owner 함수 부재 1건과 pending 제거 후 정확한 architecture 위반 1건으로 RED를 확인했다. 구현 후 Data persistence·factor research·Trading system·architecture·workflow·docs 140개가 통과했고, CLI wiring 테스트가 세 owner 호출과 결과 파일 생성을 직접 검증한다. 전체 suite 3,028개는 기준선과 같은 선택적 `lightgbm`/`xgboost` 미설치 오류 4개·skip 1개 외 새 실패가 없었다. caller 검색과 `git diff --check`도 통과했다.
+- 제거된 debt: `research/commands/factor_research.py → trading/supabase_repository.py` 한 쌍. `PENDING_DEPENDENCIES` 40→39, 새 pending 없음.
+- 남은 debt: label·feature·valuation producer는 local mirror/PIT cutoff와 여러 owner를 함께 사용하며, decision/evaluation/promotion/ablation은 실제 Trading 원장 또는 알고리즘을 소비한다. 이들을 단순 Data read처럼 치환하지 않는다.
+- 다음 독립 작업: 관련/전체 suite와 caller 검색 후 커밋한다. 이후 남은 producer 중 explicit read interfaces를 분리해 historical replay를 보존할 수 있는 후보를 다시 설계한다.
 
 ## 향후 milestone
 

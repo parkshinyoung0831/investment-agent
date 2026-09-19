@@ -111,6 +111,19 @@ class PersistenceSecurityProfilesTrackedOnlyTest(unittest.TestCase):
         rows = db.select_security_profiles(["DEAD"], tracked_only=True)
         self.assertEqual([], rows)
 
+    def test_sector_map_is_owned_by_universe_and_excludes_missing_or_untracked_profiles(self) -> None:
+        self.fake.put(SCHEMA, T_ENTITIES, [
+            {"cik": "0000320193", "company_name": "Apple Inc.", "company_name_ko": None,
+             "sic_industry_name": "Electronic Computers", "sic_division_name": "Manufacturing"},
+            {"cik": "0000000003", "company_name": "Dead Inc.", "company_name_ko": None,
+             "sic_industry_name": "Services", "sic_division_name": "Services"},
+        ])
+
+        self.assertEqual(
+            {"AAPL": "Manufacturing"},
+            db.select_sp500_sector_map(["aapl", "MSFT", "DEAD"]),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

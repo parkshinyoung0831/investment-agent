@@ -136,6 +136,18 @@ def select_security_profiles(
     ]
 
 
+def select_sp500_sector_map(tickers: list[str] | tuple[str, ...]) -> dict[str, str]:
+    """현재 tracked universe의 SIC division을 factor grouping 계약으로 투영한다."""
+    symbols = sorted({str(ticker).upper() for ticker in tickers})
+    if not symbols:
+        return {}
+    return {
+        str(row["ticker"]).upper(): str(row["sic_division"])
+        for row in select_security_profiles(symbols, tracked_only=True)
+        if row.get("sic_division")
+    }
+
+
 def select_common_stock_tickers_by_cik(ciks: list[str] | None = None) -> dict[str, list[str]]:
     rows = [
         row for row in _security_rows()
@@ -570,7 +582,8 @@ def select_sp500_membership_snapshots(*, start_date: date, end_date: date) -> li
 __all__ = [
     "SCHEMA_UNIVERSE", "T_ENTITIES", "T_SECURITIES",
     "configure", "select_tracked_tickers",
-    "select_tracked_ciks", "select_security_profiles", "select_common_stock_tickers_by_cik",
+    "select_tracked_ciks", "select_security_profiles", "select_sp500_sector_map",
+    "select_common_stock_tickers_by_cik",
     "select_name_ko_pending", "select_entity_pending", "upsert_securities", "set_membership",
     "select_latest_sp500_symbols", "append_memberships", "apply_toss_names",
     "apply_entity_results", "select_sp500_membership_snapshots",

@@ -31,6 +31,8 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
+from investment_agent.data.market import persistence as market_data
+from investment_agent.data.universe import persistence as universe_data
 from investment_agent.platform.logging import get_logger
 from investment_agent.research.factors import (
     FACTOR_CATEGORIES,
@@ -314,7 +316,6 @@ def main(argv: list[str] | None = None) -> int:
 
     from investment_agent.research.features.layer import FEATURE_VERSION
     from investment_agent.research.storage.repository import ResearchStore
-    from investment_agent.trading.supabase_repository import SupabaseRepository
 
     rows = ResearchStore(read_only=True).records("rl_feature_snapshots")
     if args.source_kind:
@@ -323,17 +324,16 @@ def main(argv: list[str] | None = None) -> int:
     if not snapshots:
         log.warning("factor research has no %s snapshots", FEATURE_VERSION)
         return 1
-    repository = SupabaseRepository()
     tickers = sorted({ticker for day in snapshots.values() for ticker in day})
     first = min(snapshots)
-    calendar = repository.trading_dates(
+    calendar = market_data.trading_dates(
         REFERENCE_TICKER, start=first - timedelta(days=10), end=datetime.now(timezone.utc).date(),
     )
     report = research(
         snapshots_by_date=snapshots,
         calendar=calendar,
-        closes_on=repository.closes_on_date,
-        groups=repository.sp500_sector_map(tickers),
+        closes_on=market_data.closes_on_date,
+        groups=universe_data.select_sp500_sector_map(tickers),
         horizons=tuple(sorted(set(args.horizons))),
     )
     report.update({

@@ -387,5 +387,6 @@ __all__ = [
     "universe_tracked", "universe_company_tickers", "universe_missing_prices", "price_targets",
     "missing_price_targets", "targets_for_tickers", "latest_price_date", "prices_since",
     "upsert_prices", "merge_actions", "split_keys", "split_history", "price_history_as_of", "close_history_as_of",
+    "closes_on_date", "trading_dates",
     "forward_closes_after", "price_path_from", "monthly_close_history",
 ]
