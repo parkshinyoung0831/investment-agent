@@ -111,6 +111,18 @@
 - 남은 debt: `SupabaseRepository.save_valuation_observations` 메서드와 다른 Research façade 책임, research→trading read·계약 import, `PENDING_DEPENDENCIES` 69쌍.
 - 다음 독립 작업: valuation write owner guard를 확장하고 façade 메서드를 제거한다.
 
+#### Valuation Task 2 — façade 제거와 owner guard
+
+- 변경 전 호출 관계: direct write 이관 뒤 `SupabaseRepository.save_valuation_observations()`의 production caller는 0건이었지만 메서드 body가 ResearchStore에 계속 의존했다.
+- 변경 이유: 미사용 호환 write가 남으면 research command가 다시 trading façade로 회귀할 수 있으므로 actual caller 0건 뒤 제거하고 owner 규칙을 확장했다.
+- 수정 파일: `src/investment_agent/trading/supabase_repository.py`, `tests/investment_agent/trading/test_repository_ownership.py`, 이 원장.
+- 이동·삭제 파일: 파일 이동·삭제 없음. valuation write façade 메서드 1개를 삭제했다.
+- import·runtime 방향: `save_valuation_observations` 호출은 `src/investment_agent/research/**` 안에만 존재한다. AST guard가 feature·label과 함께 valuation write owner도 강제한다.
+- 테스트 결과: guard 확장 후 기존 façade 호출 1건으로 RED를 확인했다. 제거 후 관련 59개가 통과했고, 임시 trading 위반 1건 주입 시 guard 실패를 확인했다.
+- 제거된 debt: trading façade의 valuation write 책임.
+- 남은 debt: valuation read와 다른 Research artifact read/write, data read, trading·execution persistence가 façade에 남아 있으며 `PENDING_DEPENDENCIES`는 69쌍이다.
+- 다음 독립 작업: 통합 검증 후 event/event feature write caller를 재검증한다.
+
 ## 향후 milestone
 
 | 묶음 | 해당 phase | 독립 완료 조건 |

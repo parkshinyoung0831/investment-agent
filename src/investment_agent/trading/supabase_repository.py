@@ -1240,8 +1240,6 @@ class SupabaseRepository:
             ),
         )
         return [dict(row) for row in rows]
-    def save_valuation_observations(self, rows: list[dict]) -> None:
-        self._research_store().save_valuation_observations(rows)
 
     def valuation_observation_rows(
         self,
