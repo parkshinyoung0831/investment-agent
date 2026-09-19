@@ -6,8 +6,8 @@
 
 - 기준 원격 `main`: `53b232bb1547a57d53dd45fa940c2f135c742edc` (2026-09-19 확인).
 - 작업 브랜치: `codex/dependency-direction-refactor`.
-- 현재 단계: 설계 문서 승인 완료. 구현 계획 작성·검토 대기. 제품 코드 변경 없음.
-- 현재 계획: `docs/superpowers/plans/2026-09-19-repository-boundaries.md` (작성 중).
+- 현재 단계: 설계 문서 승인 완료. 첫 구현 계획 작성 완료·사용자 검토 대기. 제품 코드 변경 없음.
+- 현재 계획: `docs/superpowers/plans/2026-09-19-repository-boundaries.md` (Task 1~4 미착수).
 - 완료 단계: Phase 1의 최초 구조·runtime·import·기준 테스트 조사. Phase 2~10 구현은 시작 전.
 - maintenance 상태: 확인·설정하지 않았다. 하네스 또는 execution 코드를 수정하기 전에 `harness_switch --maintenance on`을 수행하고 상태를 확인한다. live flag는 변경하지 않는다.
 
@@ -36,7 +36,7 @@
 - 호출 관계: `operations.harness`가 research·trading·execution job을 조립한다. `research.commands.build_features`와 `trading.decision.analysis`가 `trading.supabase_repository.SupabaseRepository`를 사용한다. 승인 후 `operations.commands.create_execution_intent`가 `RiskGate`의 intent 생성 후 execution 원장에 저장하고, `execute_toss_live`가 Toss worker를 호출한다.
 - 채택 근거: `SupabaseRepository` 95개 메서드·여러 저장 owner; research→trading 역방향 69쌍 기준선; 실제 worker의 Toss 결합; dashboard의 남은 4개 직접 DB 호출 화면.
 - 보류 판단: data `persistence.py` 일괄 삭제, fundamentals 재작성, broker registry 신설, `ResearchStore` 크기만으로 분할은 하지 않는다.
-- 수정 파일: 문서 3개(설계·목표·이 원장). 제품 파일 없음.
+- 수정 파일: 문서 4개(설계·목표·첫 구현 계획·이 원장). 제품 파일 없음.
 - 이동·삭제 파일: 없음.
 - import 방향 변화: 없음.
 - 테스트: 위 기준선 참조.
