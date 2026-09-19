@@ -9,6 +9,8 @@ from pathlib import Path
 
 PACKAGE = Path(__file__).parents[3] / "src" / "investment_agent"
 RESEARCH_WRITE_METHODS = frozenset({
+    "save_event_features",
+    "save_events",
     "save_rl_feature_snapshots",
     "save_rl_training_labels",
     "save_valuation_observations",
@@ -92,6 +94,15 @@ class RepositoryOwnershipTest(unittest.TestCase):
         self.assertEqual(
             _research_write_violations(Path("trading/injected.py"), valuation_source),
             [(2, "save_valuation_observations")],
+        )
+        event_source = (
+            "def leak(repository):\n"
+            "    repository.save_events([])\n"
+            "    repository.save_event_features([])\n"
+        )
+        self.assertEqual(
+            _research_write_violations(Path("trading/injected.py"), event_source),
+            [(2, "save_events"), (3, "save_event_features")],
         )
 
 

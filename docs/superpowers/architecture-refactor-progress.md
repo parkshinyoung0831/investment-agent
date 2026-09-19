@@ -145,6 +145,18 @@
 - 남은 debt: façade의 두 event write 메서드와 `build_events`의 trading contracts/cache/Supabase read imports.
 - 다음 독립 작업: 두 façade 메서드를 제거하고 event write owner guard를 확장한다.
 
+#### Event Task 2 — façade 제거와 owner guard
+
+- 변경 전 호출 관계: Task 1 뒤 event write production caller는 Research command만 남았지만 trading façade의 두 forwarding method와 그 전용 Event 타입 import가 남아 있었다.
+- 변경 이유: caller 0인 event write façade를 제거하고 event artifact write가 Research owner 밖으로 다시 새지 않게 기존 AST guard를 확장한다.
+- 수정 파일: `src/investment_agent/trading/supabase_repository.py`, `tests/investment_agent/trading/test_repository_ownership.py`, 이 원장.
+- 이동·삭제 파일: 파일 이동·삭제 없음. `save_events`, `save_event_features` façade 메서드와 사용이 끝난 Event 타입 import를 삭제했다.
+- import·runtime 방향: 두 event write 호출은 `src/investment_agent/research/**`에만 남는다.
+- 테스트 결과: guard 확장 후 기존 façade 2건으로 RED를 확인했다. 제거 후 관련 31개가 통과했고 `save_events`, `save_event_features`를 각각 trading에 임시 주입했을 때 guard가 별도로 실패했다.
+- 제거된 debt: trading façade의 event·event feature write 책임.
+- 남은 debt: build_events의 trading contracts/cache/Supabase read imports와 다른 Research façade 메서드. `PENDING_DEPENDENCIES`는 68쌍이다.
+- 다음 독립 작업: 통합 검증 후 training sample/run manifest write를 재검증한다.
+
 ## 향후 milestone
 
 | 묶음 | 해당 phase | 독립 완료 조건 |

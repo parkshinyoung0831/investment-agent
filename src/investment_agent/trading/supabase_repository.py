@@ -46,7 +46,6 @@ from investment_agent.trading.portfolio.market_risk import estimate_betas
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.retry import transient_retry
 from investment_agent.platform.db.postgres import sb
-from investment_agent.trading.decision.contracts import Event, EventFeatureSnapshot
 from investment_agent.data.macro.repository import MacroRepository
 from investment_agent.platform.db.postgres import Database
 from investment_agent.data.macro.releases import db as econ_calendar_db
@@ -1204,12 +1203,6 @@ class SupabaseRepository:
 
     def save_model_artifact(self, row: dict) -> None:
         self._trading_repository().record_model_version(row)
-
-    def save_events(self, events: Sequence[Event]) -> None:
-        self._research_store().save_events(events)
-
-    def save_event_features(self, snapshots: Sequence[EventFeatureSnapshot]) -> None:
-        self._research_store().save_event_features(snapshots)
 
     def save_training_samples(self, samples: Sequence[TrainingSample]) -> int:
         return self._research_store().save_training_samples(samples)
