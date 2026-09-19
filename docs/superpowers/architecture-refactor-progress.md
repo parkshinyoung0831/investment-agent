@@ -7,8 +7,8 @@
 - 기준 원격 `main`: `4181f6b53d84105f2b78d78c69e9119c1f55a6cf` (2026-09-20 세션 시작 시 로컬 HEAD와 일치 확인).
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
-- 현재 단계: Phase 3의 Research 공통 serialization import 후속 정리 중. valuation 3곳과 command 7곳 완료, RL/backtest·ML 묶음이 남았다.
-- 현재 계획: `docs/superpowers/plans/2026-09-20-research-shared-serialization-imports.md` (Task 1~2 완료, Task 3~4 남음).
+- 현재 단계: Phase 3의 Research 공통 serialization import 후속 정리 중. valuation 3곳, command 7곳, RL·training·backtest 7곳 완료. ML 3곳과 최종 통합이 남았다.
+- 현재 계획: `docs/superpowers/plans/2026-09-20-research-shared-serialization-imports.md` (Task 1~3 완료, Task 4 남음).
 - 완료 단계: Phase 1 조사와 Phase 2의 feature snapshot·training label·valuation·event artifact write 직접 이관, 관련 façade 메서드 제거. 현재 `PENDING_DEPENDENCIES`는 68쌍이다.
 - maintenance 상태: 확인·설정하지 않았다. 하네스 또는 execution 코드를 수정하기 전에 `harness_switch --maintenance on`을 수행하고 상태를 확인한다. live flag는 변경하지 않는다.
 
@@ -267,6 +267,16 @@
 - 테스트 결과: pending 제거 직후 architecture test가 정확히 7개 위반으로 RED, 구현 후 command·feature·workflow·architecture·docs consistency 156개 통과, `git diff --check` 통과.
 - 남은 debt: RL·training·backtest·ML의 순수 serialization import와 Research의 Trading 금융/read/algorithm 역방향 의존성.
 - 다음 독립 작업: RL·training·backtest 일곱 곳을 같은 방식으로 검사한다.
+
+#### Shared serialization Task 3 — RL·training·backtest 일곱 곳
+
+- 변경 전 호출·import 관계: `research/rl/{baseline,features,leakage}.py`, `research/training/{baseline,walk_forward}.py`, `research/backtest/{contracts,engine}.py`는 공통 `ContractError`/`json_value`/`parse_datetime`를 Trading 계약 재수출에서 읽었다. 일부 파일의 Trading portfolio 금융 계약 import는 별도로 남아 있다.
+- 변경 이유: 공통 직렬화와 PIT 시각 파싱은 Platform owner이므로 Research 계산이 Trading 구현 모듈을 통과할 이유가 없다.
+- 수정 파일: 위 Research 7개, architecture test, 이 원장. 이동·삭제 파일과 알고리즘/schema 변경 없음.
+- dependency 방향: 공통 import만 Platform 직접 경로로 바꾸고 정확한 pending 7쌍을 제거했다(54→47). `trading/portfolio/` import는 그대로 유지했다.
+- 테스트 결과: pending 제거 직후 architecture test가 정확히 7개 위반으로 RED, 변경 후 RL·training·backtest·architecture·docs consistency 69개 통과, `git diff --check` 통과.
+- 남은 debt: ML 3곳의 공통 import, 실제 금융/portfolio 계약과 Trading algorithm/read 호출.
+- 다음 독립 작업: ML 세 파일의 정확한 심볼을 확인하고 선택적 ML 패키지 오류 기준선과 구분해 검증한다.
 
 ## 향후 milestone
 

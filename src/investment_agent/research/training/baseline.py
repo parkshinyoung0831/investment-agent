@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
-from investment_agent.trading.contracts import parse_datetime
+from investment_agent.platform.serialization import parse_datetime
 from investment_agent.research.models.baselines import ExpectedReturnModel, ModelArtifact, fit_baseline
 from investment_agent.research.datasets import ResearchDataset
 from investment_agent.research.evaluation.alpha import CrossSectionalAlphaScore, cross_sectional_alpha_metrics

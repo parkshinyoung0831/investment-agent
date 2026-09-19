@@ -326,9 +326,7 @@ class LayerDirectionTest(unittest.TestCase):
             ("src/investment_agent/research/ablation.py", "investment_agent.trading.system.engine"),
             ("src/investment_agent/research/ablation.py", "investment_agent.trading.system.store"),
             ("src/investment_agent/research/ablation.py", "investment_agent.trading.system.target"),
-            ("src/investment_agent/research/backtest/contracts.py", "investment_agent.trading.contracts"),
             ("src/investment_agent/research/backtest/contracts.py", "investment_agent.trading.portfolio.contracts"),
-            ("src/investment_agent/research/backtest/engine.py", "investment_agent.trading.contracts"),
             ("src/investment_agent/research/backtest/simulator.py", "investment_agent.trading.portfolio.contracts"),
             ("src/investment_agent/research/commands/adopt_ml_model.py", "investment_agent.trading.decision.constants"),
             ("src/investment_agent/research/commands/backfill_research_history.py", "investment_agent.trading.decision.constants"),
@@ -361,15 +359,10 @@ class LayerDirectionTest(unittest.TestCase):
             ("src/investment_agent/research/ml_serving.py", "investment_agent.trading.decision.constants"),
             ("src/investment_agent/research/models/baselines.py", "investment_agent.trading.contracts"),
             ("src/investment_agent/research/promotion/cli.py", "investment_agent.trading.supabase_repository"),
-            ("src/investment_agent/research/rl/baseline.py", "investment_agent.trading.contracts"),
             ("src/investment_agent/research/rl/baseline.py", "investment_agent.trading.portfolio.contracts"),
             ("src/investment_agent/research/rl/environment.py", "investment_agent.trading.portfolio.contracts"),
             ("src/investment_agent/research/rl/environment.py", "investment_agent.trading.portfolio.optimizer"),
             ("src/investment_agent/research/rl/environment.py", "investment_agent.trading.risk.gate"),
-            ("src/investment_agent/research/rl/features.py", "investment_agent.trading.contracts"),
-            ("src/investment_agent/research/rl/leakage.py", "investment_agent.trading.contracts"),
-            ("src/investment_agent/research/training/baseline.py", "investment_agent.trading.contracts"),
-            ("src/investment_agent/research/training/walk_forward.py", "investment_agent.trading.contracts"),
         }
     )
 

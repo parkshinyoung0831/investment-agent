@@ -8,8 +8,7 @@ from typing import Any, Mapping, Protocol, Sequence
 
 import numpy as np
 
-from investment_agent.trading.contracts import parse_datetime
-from investment_agent.platform.serialization import canonical_json
+from investment_agent.platform.serialization import canonical_json, parse_datetime
 from investment_agent.research.rl.contracts import (
     FeatureSnapshot,
     ForwardReturnLabel,

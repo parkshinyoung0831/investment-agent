@@ -12,8 +12,7 @@ from typing import Any, Mapping
 
 import numpy as np
 
-from investment_agent.trading.contracts import parse_datetime
-from investment_agent.platform.serialization import canonical_json
+from investment_agent.platform.serialization import canonical_json, parse_datetime
 from investment_agent.trading.portfolio.contracts import CASH_SYMBOL, PortfolioProposal
 from investment_agent.research.rl.environment import action_to_weights
 from investment_agent.research.rl.features import HistoricalTrainingSet, LiveInferenceFrame

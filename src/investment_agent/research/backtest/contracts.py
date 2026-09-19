@@ -8,8 +8,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import date
 from typing import Any, Iterable, Mapping
 
-from investment_agent.trading.contracts import json_value, parse_datetime
-from investment_agent.platform.serialization import canonical_json
+from investment_agent.platform.serialization import canonical_json, json_value, parse_datetime
 from investment_agent.trading.portfolio.contracts import CASH_SYMBOL, validated_weights
 
 _TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.-]{0,14}$")

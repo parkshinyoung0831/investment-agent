@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from investment_agent.trading.contracts import parse_datetime
+from investment_agent.platform.serialization import parse_datetime
 from investment_agent.research.rl.contracts import RLSafetyError
 from investment_agent.research.rl.features import HistoricalTrainingSet
 from investment_agent.research.training.splits import WalkForwardSplit

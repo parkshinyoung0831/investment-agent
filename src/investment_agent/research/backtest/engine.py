@@ -15,7 +15,7 @@ from investment_agent.research.backtest.contracts import (
 from investment_agent.research.evaluation.costs import TransactionCostModel
 from investment_agent.research.backtest.metrics import calculate_metrics
 from investment_agent.research.backtest.simulator import SimulatedBroker
-from investment_agent.trading.contracts import parse_datetime
+from investment_agent.platform.serialization import parse_datetime
 
 ENGINE_VERSION = "weight-backtest-v1"
 

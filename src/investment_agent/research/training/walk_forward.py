@@ -1,7 +1,7 @@
 """미래 label 구간을 purge하는 시계열 walk-forward 분할."""
 from __future__ import annotations
 
-from investment_agent.trading.contracts import ContractError, parse_datetime
+from investment_agent.platform.serialization import ContractError, parse_datetime
 from investment_agent.research.training.splits import (
     WalkForwardSplit,
     make_walk_forward_splits,
