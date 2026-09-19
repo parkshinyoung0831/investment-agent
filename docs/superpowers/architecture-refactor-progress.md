@@ -300,6 +300,17 @@
 - 남은 debt: 다섯 production caller 묶음이 Trading façade를 호출하며 façade의 두 호환 메서드가 남는다. RL membership과 ML serving의 상위 조립 caller는 owner 이관 전에 재확인해야 한다.
 - 다음 독립 작업: Task 2에서 `build_labels`의 feature/label read를 먼저 ResearchStore로 직접 연결하고, 명령의 가격·membership 조회와 쓰기 순서를 유지하는 테스트를 갱신한다.
 
+#### Full read Task 2a — build_labels read 이관
+
+- 변경 전 실제 호출 관계: `build_labels`가 membership·가격과 함께 feature snapshot·기존 label까지 `SupabaseRepository`에서 읽고, 새 label만 별도 ResearchStore에 저장했다. 테스트 대역도 Trading reader에 두 Research 조회를 구현했다.
+- 변경 이유: 기존 label 존재 여부와 snapshot payload는 Research DuckDB의 canonical read이며, 시장 가격·membership 조회와 변경 이유가 다르다.
+- 수정 파일: `src/investment_agent/research/commands/build_labels.py`, `tests/investment_agent/research/features/test_store.py`, 이 원장. 이동·삭제 파일과 schema·계산 변경 없음.
+- import·runtime 방향: command는 주입된 ResearchStore 또는 기본 `ResearchStore(read_only=True)`에서 feature/label을 읽는다. 기본 write는 기존처럼 writable store를 별도로 열고, 주입 store는 read/write를 함께 수행한다. `SupabaseRepository`는 membership과 가격 read에만 남는다.
+- 테스트 결과: Trading reader fake에서 두 메서드를 제거한 계약이 기존 구현에서 5개 오류로 RED였다. 구현 후 label/feature owner·architecture·workflow 101개 통과.
+- 제거된 debt: `build_labels`의 두 Trading façade read caller. `PENDING_DEPENDENCIES`는 해당 파일의 다른 실제 Trading imports 때문에 44쌍 유지.
+- 남은 debt: `build_training_samples`, `export_dataset`, RL training loader, ML serving이 두 façade 중 하나 이상을 사용한다. façade는 아직 삭제할 수 없다.
+- 다음 독립 작업: `build_training_samples`의 lightweight/full hydration 두 경로가 같은 ResearchStore를 사용하도록 테스트와 runtime을 이관한다.
+
 ## 향후 milestone
 
 | 묶음 | 해당 phase | 독립 완료 조건 |

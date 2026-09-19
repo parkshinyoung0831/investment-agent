@@ -10,7 +10,7 @@
 
 실제 Parquet와 read-only store로 version/ticker/window/as-of-value/availability/cutoff 및 hash/ID 변조 거부를 먼저 테스트한다. 현재 Trading façade의 두 조회 구현을 ResearchStore로 옮기고 façade는 기존 caller용으로 직접 전달만 한다. Research owner·기존 Trading 계약·architecture 테스트를 통과시키고 원장을 갱신한다.
 
-### Task 2 — Research commands (진행 전)
+### Task 2 — Research commands (진행 중: build_labels 완료)
 
 `build_labels`, `build_training_samples`, `export_dataset`가 membership/가격 read와 별도로 ResearchStore의 full read를 사용하게 한다. 각 command의 기존 호출 순서·dry-run·실패 계약을 검증하고 관련 테스트를 함께 갱신한다. 최소 독립 단위로 나눠 커밋한다.
 

@@ -307,16 +307,6 @@ class _LabelRepository:
     def current_tracked_tickers(self):
         return ["AAA"]
 
-    def rl_feature_snapshot_rows(self, symbols, *, start_as_of, end_as_of, feature_version):
-        return [{
-            "feature_version": feature_version,
-            "as_of_at": _AS_OF,
-            "ticker": "AAA",
-        }]
-
-    def rl_training_label_rows(self, symbols, *, start_as_of, end_as_of, feature_version, label_cutoff_at):
-        return []
-
     def market_prices(self, ticker, as_of_at, limit=260):
         return [{"ticker": ticker, "trade_date": "2026-08-20", "close": 100.0,
                  "ingested_at": "2026-08-20T21:30:00+00:00"}]
@@ -345,6 +335,19 @@ class _LabelStore:
     def __init__(self):
         self.saved: list[dict] = []
         self.save_calls = 0
+        self.read_calls: list[tuple[str, tuple[str, ...], dict]] = []
+
+    def rl_feature_snapshot_rows(self, symbols, **kwargs):
+        self.read_calls.append(("features", symbols, kwargs))
+        return [{
+            "feature_version": kwargs["feature_version"],
+            "as_of_at": _AS_OF,
+            "ticker": "AAA",
+        }]
+
+    def rl_training_label_rows(self, symbols, **kwargs):
+        self.read_calls.append(("labels", symbols, kwargs))
+        return []
 
     def save_rl_training_labels(self, rows):
         self.save_calls += 1
@@ -397,6 +400,9 @@ class BuildLabelsEntryTest(unittest.TestCase):
         self.assertEqual(payload["detail"]["built"], 1)
         self.assertEqual(repository.bulk_price_calls, 1)
         self.assertEqual(store.save_calls, 1)
+        self.assertEqual([call[0] for call in store.read_calls], ["features", "labels"])
+        self.assertEqual(store.read_calls[0][1], ("AAA",))
+        self.assertEqual(store.read_calls[1][2]["label_cutoff_at"], "2026-09-30T00:00:00+00:00")
 
     def test_dry_run_does_not_write_to_the_research_store(self):
         store = _LabelStore()

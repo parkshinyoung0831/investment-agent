@@ -95,7 +95,8 @@ def build_labels(
     if not symbols:
         raise RuntimeError("no tracked ticker is available for label building")
 
-    snapshots = selected.rl_feature_snapshot_rows(
+    selected_store = store if store is not None else ResearchStore(read_only=True)
+    snapshots = selected_store.rl_feature_snapshot_rows(
         symbols,
         start_as_of=window_start,
         end_as_of=window_end,
@@ -103,7 +104,7 @@ def build_labels(
     )
     labeled = {
         (str(row["as_of_at"]), str(row["ticker"]))
-        for row in selected.rl_training_label_rows(
+        for row in selected_store.rl_training_label_rows(
             symbols,
             start_as_of=window_start,
             end_as_of=window_end,
