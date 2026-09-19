@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from investment_agent.trading.supabase_repository import SupabaseRepository
 from investment_agent.research.promotion.gate import EvaluationSummary, ManualPromotionGate
-from investment_agent.research.rl.contracts import FeatureSnapshot, ForwardReturnLabel
+from investment_agent.research.rl.contracts import FeatureSnapshot
 from investment_agent.research.storage.repository import ResearchStore
 from investment_agent.platform.db.postgres import Database
 from investment_agent.platform.db.sqlite import runtime_connection
@@ -107,18 +107,6 @@ def _feature() -> FeatureSnapshot:
         features={"momentum": 0.2},
         source_ids=("market:AAPL:2026-01-01",),
         provenance={"dataset": "market.prices_daily", "point_in_time": True},
-    )
-
-
-def _label() -> ForwardReturnLabel:
-    return ForwardReturnLabel(
-        feature_version="rl-v1",
-        as_of_at="2026-01-01T21:00:00+00:00",
-        ticker="AAPL",
-        forward_end_at="2026-01-02T21:00:00+00:00",
-        label_available_at="2026-01-02T21:05:00+00:00",
-        forward_return=0.03,
-        benchmark_forward_return=0.01,
     )
 
 
@@ -233,36 +221,6 @@ class RLRepositoryTest(unittest.TestCase):
             SupabaseRepository().signal_batch_id_for_as_of(
                 "2026-08-22T12:00:00+00:00"
             )
-
-    def test_feature_and_label_queries_are_separate_and_cutoff_bound(self):
-        with patch(
-            "investment_agent.research.adapters.trading.open_research_store"
-        ) as research_store:
-            research_store.return_value.rl_feature_snapshot_rows.return_value = [
-                _feature().to_storage_row()
-            ]
-            research_store.return_value.rl_training_label_rows.return_value = [
-                _label().to_storage_row()
-            ]
-            features = SupabaseRepository().rl_feature_snapshot_rows(
-                ("AAPL",),
-                start_as_of="2026-01-01T00:00:00+00:00",
-                end_as_of="2026-01-02T00:00:00+00:00",
-                feature_version="rl-v1",
-            )
-            labels = SupabaseRepository().rl_training_label_rows(
-                ("AAPL",),
-                start_as_of="2026-01-01T00:00:00+00:00",
-                end_as_of="2026-01-02T00:00:00+00:00",
-                feature_version="rl-v1",
-                label_cutoff_at="2026-01-03T00:00:00+00:00",
-            )
-        self.assertNotIn("forward_return", features[0])
-        self.assertNotIn("features", labels[0])
-        self.assertEqual(research_store.call_args_list[0].kwargs, {"read_only": True})
-        self.assertEqual(research_store.return_value.rl_feature_snapshot_rows.call_count, 1)
-        self.assertEqual(research_store.return_value.rl_training_label_rows.call_count, 1)
-        research_store.return_value.records.assert_not_called()
 
     def test_tampered_feature_hash_is_rejected_before_write(self):
         row = _feature().to_storage_row()

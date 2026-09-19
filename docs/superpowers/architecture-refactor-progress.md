@@ -7,8 +7,8 @@
 - 기준 원격 `main`: `4181f6b53d84105f2b78d78c69e9119c1f55a6cf` (2026-09-20 세션 시작 시 로컬 HEAD와 일치 확인).
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
-- 현재 단계: Phase 2의 Research feature/label full read owner 이관. Phase 3의 순수 공통 serialization import 20곳은 완료했으며, 남은 두 Trading 계약 import는 실제 금융 계약을 포함한다.
-- 현재 계획: `docs/superpowers/plans/2026-09-20-research-full-read-boundary.md` (Task 1 완료, Task 2~4 대기).
+- 현재 단계: Phase 2의 Research feature/label full read owner 이관과 Trading 호환 façade 제거 완료. Phase 3의 순수 공통 serialization import 20곳도 완료했으며, 남은 두 Trading 계약 import는 실제 금융 계약을 포함한다.
+- 현재 계획: `docs/superpowers/plans/2026-09-20-research-full-read-boundary.md` (Task 1~4 완료).
 - 완료 단계: Phase 1 조사, Phase 2의 feature snapshot·training label·valuation·event·training sample write 및 training metadata read owner 이관, Phase 3 공통 serialization import 정리. 현재 `PENDING_DEPENDENCIES`는 44쌍이다.
 - maintenance 상태: 확인·설정하지 않았다. 하네스 또는 execution 코드를 수정하기 전에 `harness_switch --maintenance on`을 수행하고 상태를 확인한다. live flag는 변경하지 않는다.
 
@@ -354,6 +354,17 @@
 - 제거된 debt: ML serving의 마지막 production Trading façade feature read caller. source 검색상 façade 두 메서드의 남은 caller는 `SupabaseRepository` 자체와 호환 경계를 직접 검증하는 테스트뿐이다.
 - 남은 debt: façade와 직접 테스트, Trading 모듈의 Research adapter import가 남는다. Task 4에서 caller 0을 고정한 뒤 삭제한다.
 - 다음 독립 작업: Trading façade 두 메서드와 해당 직접 테스트를 제거하고, Research full reads가 Trading 밖에 정의·호출되지 못하도록 architecture ownership guard를 추가한다.
+
+#### Full read Task 4 — 호환 façade 제거와 최종 검증
+
+- 변경 전 실제 호출 관계: 모든 production caller 이관 뒤 `SupabaseRepository.rl_feature_snapshot_rows`와 `rl_training_label_rows`는 ResearchStore로 전달하는 호환 구현만 남았고, Research RL repository 테스트 한 곳이 이를 직접 호출했다.
+- 변경 이유: caller 0인 façade를 남기면 새 코드가 다시 God repository에 결합할 수 있고, 동일한 이름의 owner가 둘이라 AI와 개발자가 canonical 위치를 오판한다.
+- 수정 파일: `src/investment_agent/trading/supabase_repository.py`, `tests/investment_agent/research/rl/test_repository.py`, `tests/investment_agent/trading/test_repository_ownership.py`, 현재 계획과 이 원장. façade 메서드 2개와 façade 전용 label fixture/test를 삭제했다. 파일 이동과 schema 변경 없음.
+- import·runtime 방향: full feature/label read의 정의·호출은 `src/investment_agent/research/**`에만 존재한다. AST guard는 세 Research read 메서드의 owner 밖 정의와 호출을 모두 거부하며, 주입한 Trading 위반이 검출되는 테스트를 포함한다.
+- 테스트 결과: guard 확장 직후 기존 façade의 정의·호출 4곳을 정확히 검출해 RED, 제거 후 관련 owner·command·RL·ML serving·Trading system·architecture·workflow·docs 175개 통과. 전체 suite 3,020개에서 기준선과 같은 선택적 `lightgbm`/`xgboost` 미설치 오류 4개·skip 1개 외 새 실패 없음. caller 검색과 `git diff --check` 통과.
+- 제거된 debt: Trading God repository의 feature/label full-read 책임과 호환 façade 2개. write, metadata, full read 모두 이제 ResearchStore가 canonical owner다. `PENDING_DEPENDENCIES`는 실제 import 위반과 무관한 runtime façade 제거이므로 44쌍 유지한다.
+- 남은 debt: Research command의 구체 universe/price Trading reader imports, 실제 금융 계약·portfolio/risk imports, membership façade, Trading God repository의 다른 bounded-context 책임이 남는다.
+- 다음 독립 작업: 현재 pending 44쌍 중 일반 Research command의 `SupabaseRepository` import를 data/universe·market read owner별로 더 줄일지 caller와 기존 repository API를 조사한다. 실제 금융 알고리즘 검증은 별도 system_validation 경계로 판단한다.
 
 ## 향후 milestone
 

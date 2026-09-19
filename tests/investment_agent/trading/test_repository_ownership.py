@@ -17,7 +17,11 @@ RESEARCH_WRITE_METHODS = frozenset({
     "save_training_samples",
     "save_valuation_observations",
 })
-RESEARCH_READ_METHODS = frozenset({"training_sample_period_inputs"})
+RESEARCH_READ_METHODS = frozenset({
+    "rl_feature_snapshot_rows",
+    "rl_training_label_rows",
+    "training_sample_period_inputs",
+})
 
 
 def _research_write_violations(relative_path: Path, source: str) -> list[tuple[int, str]]:
@@ -35,7 +39,7 @@ def _research_write_violations(relative_path: Path, source: str) -> list[tuple[i
 
 
 def _research_read_violations(relative_path: Path, source: str) -> list[tuple[int, str]]:
-    """Research 전용 scalar read의 owner 밖 정의·호출을 반환한다."""
+    """Research artifact read의 owner 밖 정의·호출을 반환한다."""
     if relative_path.parts and relative_path.parts[0] == "research":
         return []
     return [
@@ -133,7 +137,7 @@ class RepositoryOwnershipTest(unittest.TestCase):
             [(2, "save_training_samples"), (3, "save_training_sample_runs")],
         )
 
-    def test_training_metadata_scalar_read_stays_in_research_owner(self) -> None:
+    def test_research_artifact_reads_stay_in_research_owner(self) -> None:
         from investment_agent.research.storage.repository import ResearchStore
 
         self.assertTrue(RESEARCH_READ_METHODS <= set(dir(ResearchStore)))
@@ -154,6 +158,16 @@ class RepositoryOwnershipTest(unittest.TestCase):
         self.assertEqual(
             _research_read_violations(Path("trading/injected.py"), source),
             [(1, "training_sample_period_inputs"), (4, "training_sample_period_inputs")],
+        )
+
+    def test_full_read_guard_rejects_trading_definitions_and_callers(self) -> None:
+        source = (
+            "def rl_feature_snapshot_rows(self):\n    pass\n"
+            "def leak(reader):\n    reader.rl_training_label_rows()\n"
+        )
+        self.assertEqual(
+            _research_read_violations(Path("trading/injected.py"), source),
+            [(1, "rl_feature_snapshot_rows"), (4, "rl_training_label_rows")],
         )
 
 

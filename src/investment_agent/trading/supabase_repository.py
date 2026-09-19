@@ -1227,44 +1227,6 @@ class SupabaseRepository:
         if mirror is not None:
             return mirror.closes_between(tickers, start=start, end=end)
         return market_db.close_window_for_labels(tickers, start=start, end=end)
-    def rl_feature_snapshot_rows(
-        self,
-        symbols: tuple[str, ...],
-        *,
-        start_as_of: str,
-        end_as_of: str,
-        feature_version: str,
-        as_of_values: Sequence[str] | None = None,
-    ) -> list[dict[str, Any]]:
-        """미래 라벨 컬럼을 전혀 조회하지 않는 point-in-time feature 경계다."""
-        return research_adapter.open_research_store(read_only=True).rl_feature_snapshot_rows(
-            symbols,
-            start_as_of=start_as_of,
-            end_as_of=end_as_of,
-            feature_version=feature_version,
-            as_of_values=as_of_values,
-        )
-
-    def rl_training_label_rows(
-        self,
-        symbols: tuple[str, ...],
-        *,
-        start_as_of: str,
-        end_as_of: str,
-        feature_version: str,
-        label_cutoff_at: str,
-        as_of_values: Sequence[str] | None = None,
-    ) -> list[dict[str, Any]]:
-        """학습 cutoff 전에 실제 생성된 미래 label만 별도로 반환한다."""
-        return research_adapter.open_research_store(read_only=True).rl_training_label_rows(
-            symbols,
-            start_as_of=start_as_of,
-            end_as_of=end_as_of,
-            feature_version=feature_version,
-            label_cutoff_at=label_cutoff_at,
-            as_of_values=as_of_values,
-        )
-
     def rl_historical_membership_rows(
         self,
         *,
