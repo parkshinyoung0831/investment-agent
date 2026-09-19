@@ -22,6 +22,7 @@ from investment_agent.trading.supabase_repository import SupabaseRepository
 from investment_agent.research.features.layer import FEATURE_VERSION, HORIZONS, FeatureLayer
 from investment_agent.research.rl.contracts import RLSafetyError
 from investment_agent.research.datasets.universe import members_over_window
+from investment_agent.research.storage.repository import ResearchStore
 
 log = get_logger(__name__)
 
@@ -77,6 +78,7 @@ def build_labels(
     benchmark: str = DEFAULT_BENCHMARK,
     dry_run: bool = False,
     repository: SupabaseRepository | None = None,
+    store: ResearchStore | None = None,
 ) -> dict[str, object]:
     """구간이 확정된 snapshot에만 label을 만들어 저장한다."""
     started = time.monotonic()
@@ -203,7 +205,7 @@ def build_labels(
     phase = time.monotonic()
     saved = 0
     if not dry_run and rows:
-        selected.save_rl_training_labels(rows)
+        (store or ResearchStore()).save_rl_training_labels(rows)
         saved = len(rows)
     write_sec = time.monotonic() - phase
 

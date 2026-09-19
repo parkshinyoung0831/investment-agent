@@ -302,9 +302,7 @@ class _LabelRepository:
 
     def __init__(self, *, forward_days: int):
         self.forward_days = forward_days
-        self.saved: list[dict] = []
         self.bulk_price_calls = 0
-        self.save_calls = 0
 
     def current_tracked_tickers(self):
         return ["AAA"]
@@ -342,6 +340,12 @@ class _LabelRepository:
             } for offset in range(1, self.forward_days + 1))
         return rows
 
+
+class _LabelStore:
+    def __init__(self):
+        self.saved: list[dict] = []
+        self.save_calls = 0
+
     def save_rl_training_labels(self, rows):
         self.save_calls += 1
         self.saved.extend(rows)
@@ -349,26 +353,30 @@ class _LabelRepository:
 
 class BuildLabelsEntryTest(unittest.TestCase):
     def _run(self, repository, horizon=5):
-        return build_labels(
+        store = _LabelStore()
+        payload = build_labels(
             as_of_at=datetime(2026, 9, 30, tzinfo=timezone.utc),
             horizon_days=horizon,
             lookback_days=90,
             repository=repository,
+            store=store,
         )
+        return payload, store
 
     def test_open_forward_window_is_left_pending_and_never_saved(self):
         repository = _LabelRepository(forward_days=3)
-        payload = self._run(repository, horizon=5)
-        self.assertEqual(repository.saved, [])
+        payload, store = self._run(repository, horizon=5)
+        self.assertEqual(store.saved, [])
+        self.assertEqual(store.save_calls, 0)
         self.assertEqual(payload["detail"]["pending_window_open"], 1)
         self.assertEqual(payload["detail"]["built"], 0)
 
     def test_closed_window_produces_a_label_available_after_the_window_end(self):
         repository = _LabelRepository(forward_days=8)
-        payload = self._run(repository, horizon=5)
+        payload, store = self._run(repository, horizon=5)
         self.assertEqual(payload["detail"]["built"], 1)
-        self.assertEqual(len(repository.saved), 1)
-        row = repository.saved[0]
+        self.assertEqual(len(store.saved), 1)
+        row = store.saved[0]
         self.assertEqual(row["feature_version"], FEATURE_VERSION)
         self.assertGreaterEqual(
             parse_datetime(row["label_available_at"]),
@@ -379,16 +387,30 @@ class BuildLabelsEntryTest(unittest.TestCase):
 
     def test_label_carries_no_feature_value(self):
         repository = _LabelRepository(forward_days=8)
-        self._run(repository, horizon=5)
-        stored = set(repository.saved[0])
+        _, store = self._run(repository, horizon=5)
+        stored = set(store.saved[0])
         self.assertFalse(stored & set(OPTIONAL_FEATURES))
 
     def test_price_window_is_loaded_once_and_labels_are_written_once(self):
         repository = _LabelRepository(forward_days=8)
-        payload = self._run(repository, horizon=5)
+        payload, store = self._run(repository, horizon=5)
         self.assertEqual(payload["detail"]["built"], 1)
         self.assertEqual(repository.bulk_price_calls, 1)
-        self.assertEqual(repository.save_calls, 1)
+        self.assertEqual(store.save_calls, 1)
+
+    def test_dry_run_does_not_write_to_the_research_store(self):
+        store = _LabelStore()
+        payload = build_labels(
+            as_of_at=datetime(2026, 9, 30, tzinfo=timezone.utc),
+            horizon_days=5,
+            lookback_days=90,
+            dry_run=True,
+            repository=_LabelRepository(forward_days=8),
+            store=store,
+        )
+        self.assertEqual(store.save_calls, 0)
+        self.assertEqual(store.saved, [])
+        self.assertEqual(payload["rows_upserted"], 0)
 
 
 if __name__ == "__main__":
