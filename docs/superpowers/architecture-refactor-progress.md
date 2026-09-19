@@ -164,7 +164,7 @@
 - 이동·삭제 파일: production/test 파일 이동·삭제와 schema 변경은 없다. command-local `EventRepository` Protocol, trading façade의 event write 메서드 2개와 더 이상 쓰지 않는 `Event` import만 삭제했다.
 - import·runtime 방향: event artifact write는 Research owner로 직접 향한다. 얕은 Protocol 제거와 함께 `build_events → trading.decision.contracts` import가 실제로 없어져 pending 1쌍을 삭제했다. `build_events`의 evidence cache·tracked ticker read 관련 trading import는 그대로 남겨 façade나 alias로 숨기지 않았다.
 - 테스트 결과: architecture·repo convention·workflow 100개와 event command·operations composition·event impact·ownership 18개가 통과했다. 두 write별 실제 임시 위반 주입에서도 ownership guard 실패를 확인했다.
-- 범위 확인: 계획 시작 HEAD `f84a2f8` 이후 제품·직접 테스트·원장 8개 파일, 101 insertions, 39 deletions이다. 기존 사용자 변경과 dirty graphify 산출물은 커밋에 섞지 않았다.
+- 범위 확인: 계획 시작 HEAD `f84a2f8` 이후 제품·직접 테스트·원장 8개 파일, 116 insertions, 42 deletions이다. 기존 사용자 변경과 dirty graphify 산출물은 커밋에 섞지 않았다.
 - 제거된 debt: event·event feature write의 trading façade 경유, command-local pass-through Protocol, `PENDING_DEPENDENCIES` 1쌍(69→68).
 - 남은 debt: `build_events`의 trading cache/read import와 `SupabaseRepository`의 training sample/run, promotion·evaluation 및 여러 Research read façade가 남아 있다.
 - 다음 독립 작업: 재개 시 `build_training_samples.py`를 새 계획으로 분리한다. 현재 이 command는 `SupabaseRepository` 하나에서 membership·feature·label·기간별 scalar·run manifest를 읽고, `save_training_samples()` 성공 뒤에만 `save_training_sample_runs()`를 호출한다. `ResearchStore`에는 sample·run read/write 구현이 이미 있으므로 먼저 `tests/investment_agent/research/commands/test_training_samples.py`에서 read/write store 분리와 저장 실패 시 manifest 미기록, inserted count, 재시작 semantics를 고정한다. `tests/investment_agent/trading/test_training_sample_persistence.py`의 façade 직접 검증도 실제 owner 테스트로 이관할지 caller와 함께 판정한다.
