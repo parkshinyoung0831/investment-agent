@@ -1,0 +1,136 @@
+"""Research-owner harness stage adapters."""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from investment_agent.operations.harness.commands import PythonModuleCommand
+from investment_agent.operations.harness.contracts import StageContext, StageOutcome
+
+
+class ResearchAdapters:
+    def build_valuations(self, context: StageContext) -> StageOutcome:
+        """PIT 밸류에이션 관측값을 원장에 적재한다.
+
+        live_shadow만 만든다 — 과거 시점은 가격 적재시각과 TTM vintage를 증명할 수
+        없어 진입점이 거부한다. feature 단계보다 먼저 둬서 이후 feature 세대가 이
+        관측값을 읽을 수 있게 한다.
+        """
+        self.command_runner.run(
+            PythonModuleCommand(
+                "investment_agent.research.commands.build_valuations",
+                ("--as-of", context.now.isoformat()),
+                self.timeouts.get("build_valuations", 60 * 60),
+            ),
+            stop_event=context.stop_event,
+        )
+        return StageOutcome.succeeded({"valued_at": self.now().isoformat()})
+    def build_features(self, context: StageContext) -> StageOutcome:
+        """tracked universe의 PIT feature snapshot을 ResearchStore에 적재한다.
+
+        주문이 아니라 데이터 생산이라 거래 kill switch·거래 창과 무관하게 돈다.
+        결과는 versioned `rl_feature_snapshots` dataset에 기록되고, 재실행은 같은 키를
+        upsert한다.
+        """
+        self.command_runner.run(
+            PythonModuleCommand(
+                "investment_agent.research.commands.build_features",
+                ("--as-of", context.now.isoformat()),
+                self.timeouts.get("build_features", 60 * 60),
+            ),
+            stop_event=context.stop_event,
+        )
+        return StageOutcome.succeeded({"built_at": self.now().isoformat()})
+    def build_training_samples(self, context: StageContext) -> StageOutcome:
+        """확정된 label을 비용 반영 학습 표본으로 바꿔 쌓는다.
+
+        label 단계 뒤에 붙는다. gross 수익률을 그대로 학습하면 모델이 회전율을
+        과대평가하므로, 여기서 왕복 수수료·슬리피지를 적용한 net label을 만든다.
+        """
+        self.command_runner.run(
+            PythonModuleCommand(
+                "investment_agent.research.commands.build_training_samples",
+                ("--as-of", context.now.isoformat()),
+                self.timeouts.get("build_training_samples", 60 * 60),
+            ),
+            stop_event=context.stop_event,
+        )
+        return StageOutcome.succeeded({"sampled_at": self.now().isoformat()})
+    def build_decision_experiences(self, context: StageContext) -> StageOutcome:
+        """승인 여부와 무관하게 원본 판단의 확정된 결과를 학습 원장에 기록한다."""
+        self.command_runner.run(PythonModuleCommand(
+            "investment_agent.research.commands.build_decision_experiences",
+            ("--as-of", context.now.isoformat()),
+            self.timeouts.get("build_decision_experiences", 60 * 60),
+        ), stop_event=context.stop_event)
+        return StageOutcome.succeeded({"experiences_built_at": self.now().isoformat()})
+    def run_ml_challengers(self, context: StageContext) -> StageOutcome:
+        """쌓인 feature·label로 ML 후보를 다시 학습하고 champion과 비교해 기록한다(채택은 사람)."""
+        self.command_runner.run(PythonModuleCommand(
+            "investment_agent.research.commands.ml_challengers",
+            ("--as-of", context.now.isoformat()),
+            self.timeouts.get("ml_challengers", 3 * 60 * 60),
+        ), stop_event=context.stop_event)
+        return StageOutcome.succeeded({"ml_challengers_run_at": self.now().isoformat()})
+    def evaluate_decisions(self, context: StageContext) -> StageOutcome:
+        """성숙한 과거 Shadow 판단을 SPY 대비 5·20·60 거래일로 채점한다.
+
+        주문이 아니라 채점이라 거래 kill switch와 무관하다. 이 결과가
+        `decision_evaluations`에 쌓여야 `CaseMemory`가 다음 판단에 과거 성적을
+        넘길 수 있다 — 돌지 않으면 학습 루프가 열린 채로 남는다.
+        같은 case의 같은 horizon은 다시 쓰지 않으므로 매일 돌려도 안전하다.
+        """
+        self.command_runner.run(
+            PythonModuleCommand(
+                "investment_agent.research.commands.evaluate",
+                (),
+                self.timeouts.get("evaluate_decisions", 30 * 60),
+            ),
+            stop_event=context.stop_event,
+        )
+        return StageOutcome.succeeded({"evaluated_at": self.now().isoformat()})
+    def build_events(self, context: StageContext) -> StageOutcome:
+        """로컬 뉴스·소셜 원문을 사건과 event feature로 압축해 원장에 남긴다.
+
+        원문은 Supabase로 가지 않는다. 올라가는 것은 사건 단위 요약뿐이라 이 단계가
+        없으면 Research local dataset `events`가 비고, 대시보드의 사건 패널도 빈 채로 남는다.
+        원천이 90일치 로컬 캐시라 실패해도 나중에 다시 만들 수 있어 맨 뒤에 둔다.
+        """
+        self.command_runner.run(
+            PythonModuleCommand(
+                "investment_agent.research.commands.build_events",
+                ("--as-of", context.now.isoformat()),
+                self.timeouts.get("build_events", 15 * 60),
+            ),
+            stop_event=context.stop_event,
+        )
+        return StageOutcome.succeeded({"events_built_at": self.now().isoformat()})
+    def build_labels(self, context: StageContext) -> StageOutcome:
+        """미래 구간이 끝난 snapshot에만 forward return label을 붙인다.
+
+        feature 적재 뒤에 이어 붙는다. 구간이 아직 열려 있는 snapshot은 건드리지
+        않으므로 매일 돌려도 같은 행을 다시 만들지 않는다.
+        """
+        self.command_runner.run(
+            PythonModuleCommand(
+                "investment_agent.research.commands.build_labels",
+                ("--as-of", context.now.isoformat()),
+                self.timeouts.get("build_labels", 60 * 60),
+            ),
+            stop_event=context.stop_event,
+        )
+        return StageOutcome.succeeded({"labeled_at": self.now().isoformat()})
+    def continuous_learning(self, context: StageContext) -> StageOutcome:
+        """자료 대기와 실제 후보 학습을 구분하고 채택 여부를 과장하지 않는다."""
+        with TemporaryDirectory() as directory:
+            result_path = Path(directory) / 'learning-result.json'
+            self.command_runner.run(PythonModuleCommand(
+                "investment_agent.research.commands.continuous_retrain",
+                ("--as-of", context.now.isoformat(), '--result-path', str(result_path)),
+                self.timeouts.get("continuous_learning", 60 * 60),
+            ), stop_event=context.stop_event)
+            if not result_path.exists():
+                raise RuntimeError('learning command did not report its actual status')
+            result = json.loads(result_path.read_text(encoding='utf-8'))
+        return StageOutcome.skipped(result) if result['status'] == 'pending' else StageOutcome.succeeded(result)

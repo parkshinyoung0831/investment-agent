@@ -15,6 +15,24 @@ from investment_agent.operations.harness.state import JsonStateStore
 
 
 class HarnessEntryBoundaryTest(unittest.TestCase):
+    def test_production_adapters_delegate_stage_handlers_to_owner_mixins(self):
+        """각 handler가 수명주기 owner를 떠나 단일 785줄 adapter로 되돌아가지 않는다."""
+        from investment_agent.operations.adapters.data import DataAdapters
+        from investment_agent.operations.adapters.execution import ExecutionAdapters
+        from investment_agent.operations.adapters.notifications import NotificationAdapters
+        from investment_agent.operations.adapters.research import ResearchAdapters
+        from investment_agent.operations.adapters.trading import TradingAdapters
+        from investment_agent.operations.harness_adapters import ProductionInvestmentAdapters
+
+        owners = {
+            DataAdapters,
+            ResearchAdapters,
+            TradingAdapters,
+            ExecutionAdapters,
+            NotificationAdapters,
+        }
+        self.assertTrue(owners <= set(ProductionInvestmentAdapters.__mro__[1:]))
+
     def test_default_is_dry_run_and_does_not_create_state(self):
         with tempfile.TemporaryDirectory() as temp:
             output = io.StringIO()
@@ -154,14 +172,21 @@ class HarnessModuleAllowlistTest(unittest.TestCase):
         from pathlib import Path
         from investment_agent.operations.harness_adapters import _MODULES
 
-        source = (
+        adapter_root = (
             Path(__file__).resolve().parents[4]
             / "src"
             / "investment_agent"
             / "operations"
-            / "harness_adapters.py"
-        ).read_text(encoding="utf-8")
-        called = set(re.findall(r'PythonModuleCommand\(\s*\n\s*"([\w.]+)"', source))
+            / "adapters"
+        )
+        called = {
+            module
+            for path in adapter_root.glob("*.py")
+            for module in re.findall(
+                r'PythonModuleCommand\(\s*\n\s*"([\w.]+)"',
+                path.read_text(encoding="utf-8"),
+            )
+        }
         self.assertTrue(called, "PythonModuleCommand 호출을 하나도 못 찾았다")
         self.assertEqual(sorted(called - _MODULES), [])
 
