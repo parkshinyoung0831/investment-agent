@@ -1,4 +1,4 @@
-# Research 저장 경계 첫 이관 Implementation Plan
+# Research 저장 경계 첫 이관 — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -187,7 +187,7 @@ with tempfile.TemporaryDirectory() as temporary:
         store.save_rl_feature_snapshots([row])
 ```
 
-- [ ] **Step 2: RED 확인.** Run: `python -m unittest tests.investment_agent.trading.test_repository_ownership -q`. Expected: 위 `assertFalse`가 두 기존 메서드에서 실패.
+- [ ] **Step 2: RED 확인.** Run: `python -m unittest tests/investment_agent/trading/test_repository_ownership.py -q`. Expected: 위 `assertFalse`가 두 기존 메서드에서 실패.
 - [ ] **Step 3: 최소 구현.** `SupabaseRepository`의 `save_rl_feature_snapshots`와 `save_rl_training_labels` 메서드 정의 전체만 삭제한다. `_research_store()`는 다른 메서드가 사용하므로 삭제하지 않는다. 테스트 파일에 필요한 `tempfile`, `Path`, `ResearchStore` import를 추가한다.
 
 ```python
@@ -198,7 +198,7 @@ assert not hasattr(SupabaseRepository, "save_rl_feature_snapshots")
 assert not hasattr(SupabaseRepository, "save_rl_training_labels")
 ```
 
-- [ ] **Step 4: 전체 호출자·GREEN 확인.** Run: `rg -n 'save_rl_(feature_snapshots|training_labels)' src/investment_agent tests/investment_agent --glob '*.py'`. Expected: ResearchStore 소유 메서드와 직접 호출, 새 가드만 남고 `SupabaseRepository` 호출은 0건. Run: `python -m unittest tests.investment_agent.research.commands.test_build_features_resilience tests.investment_agent.research.features.test_store tests.investment_agent.research.rl.test_repository tests.investment_agent.trading.test_repository_ownership tests.investment_agent.test_architecture -q`. Expected: 모두 통과.
+- [ ] **Step 4: 전체 호출자·GREEN 확인.** Run: `rg -n 'save_rl_(feature_snapshots|training_labels)' src/investment_agent tests/investment_agent --glob '*.py'`. Expected: ResearchStore 소유 메서드와 직접 호출, 새 가드만 남고 `SupabaseRepository` 호출은 0건. Run: `python -m unittest tests/investment_agent/research/commands/test_build_features_resilience.py tests/investment_agent/research/features/test_store.py tests/investment_agent/research/rl/test_repository.py tests/investment_agent/trading/test_repository_ownership.py tests/investment_agent/test_architecture.py -q`. Expected: 모두 통과.
 - [ ] **Step 5: 새 가드 위반 주입.** 테스트 전용 임시 파일 또는 mock class에 제거한 메서드 하나를 되살려 위 가드가 실패함을 확인하고 원복한다. 하나씩 주입한다. 최종 위 GREEN command를 다시 실행한다.
 - [ ] **Step 6: 커밋·인계.** `git commit -m "refactor: remove feature and label writes from trading facade"`. 원장에는 두 제거 메서드, 남은 `SupabaseRepository` 책임, `PENDING_DEPENDENCIES`가 아직 69쌍인 이유를 명시한다.
 

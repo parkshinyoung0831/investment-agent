@@ -1,11 +1,11 @@
-# 의존성 방향 리팩터링 진행 원장
+# 의존성 방향 리팩터링 — 진행 원장
 
 > 사용자가 요청한 새 세션 인계 문서다. 이것은 현재 아키텍처 SSOT가 아니다. 새 세션은 `AGENTS.md` → `CLAUDE.md` → `docs/superpowers/specs/2026-09-19-dependency-direction-design.md` → `docs/superpowers/architecture-target.md` → 이 파일 → 현재 계획 순서로 읽는다. 기록보다 Git·코드·테스트의 실제 상태가 우선한다.
 
 ## 식별과 현재 상태
 
 - 기준 원격 `main`: `53b232bb1547a57d53dd45fa940c2f135c742edc` (2026-09-19 확인).
-- 작업 브랜치: `codex/dependency-direction-refactor`.
+- 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 현재 단계: 설계 문서 승인 완료. 첫 구현 계획 작성 완료·사용자 검토 대기. 제품 코드 변경 없음.
 - 현재 계획: `docs/superpowers/plans/2026-09-19-repository-boundaries.md` (Task 1~4 미착수).
 - 완료 단계: Phase 1의 최초 구조·runtime·import·기준 테스트 조사. Phase 2~10 구현은 시작 전.
@@ -22,12 +22,18 @@
 
 ## 새 세션 재개 절차
 
-1. `git status --short --branch`, `git log -1 --oneline`, `git ls-remote origin refs/heads/main`으로 브랜치·미커밋 변경·원격 변화 확인. 원격 `main`이 달라졌으면 무조건 자동 rebase하지 말고 차이를 검토한다.
+1. `git status --short --branch`, `git branch --show-current`, `git log -1 --oneline`, `git ls-remote origin refs/heads/main`으로 `main` 여부·미커밋 변경·원격 변화를 확인한다. 원격 `main`이 달라졌으면 무조건 자동 rebase하지 말고 차이를 검토한다.
 2. 위 문서와 현재 계획을 읽고 마지막 완료 task/phase의 실제 커밋·테스트 출력을 확인한다. 이 파일의 기록만 믿고 이미 완료된 작업을 반복하지 않는다.
 3. 각 phase를 시작하기 전에 호출자·대상·삭제 조건을 다시 확인한다. 하네스/실행 코드에는 maintenance 선행.
 4. 단계별로 실패 테스트 → 최소 구현 → 대상 테스트 → import/architecture 테스트 → 가능한 전체 테스트를 수행하고 결과를 이 파일에 갱신한다.
 5. 각 완료 기록에 `수정 전 호출 관계 / 이유 / 수정 파일 / 이동·삭제 파일 / import 방향 / 테스트 결과 / 남은 부채 / 다음 단계`를 빠짐없이 적는다. 계획의 별도 실행 ledger가 생기면 해당 경로와 task 번호를 함께 적는다.
 6. `PENDING_DEPENDENCIES`의 정확한 남은 항목을 확인한다. 새 항목을 기준선에 추가하지 않는다.
+
+## 단일 실행 워크플로
+
+각 구현 묶음은 `현재 caller 재검증 → 실패 테스트 → 최소 이관 → 대상 테스트 → architecture/import 검증 → 가능한 전체 테스트 → 진행 원장 갱신 → 커밋` 순서로 진행한다. 한 단계가 끝나기 전에 다음 영역을 동시에 수정하지 않는다. 중단되면 마지막 커밋과 이 문서의 완료 task가 재개 지점이다.
+
+진행 상태는 이 문서와 현재 plan의 checkbox만 사용한다. 별도의 날짜별 상태 보고서를 늘리지 않는다. 새로운 계획은 이전 계획의 완료 범위와 남은 debt를 입력으로 삼고, 완료된 façade나 테스트를 다시 만들지 않는다.
 
 ## 단계 기록
 
