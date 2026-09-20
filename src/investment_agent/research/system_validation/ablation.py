@@ -43,7 +43,7 @@ from investment_agent.trading.system.accounting import performance_summary
 from investment_agent.trading.system.engine import run_system
 from investment_agent.trading.system.store import SystemPortfolioStore
 from investment_agent.trading.system.target import SystemPortfolioPolicy
-from investment_agent.trading.portfolio.contracts import CASH_SYMBOL
+from investment_agent.portfolio_weights import CASH_SYMBOL
 
 log = get_logger(__name__)
 

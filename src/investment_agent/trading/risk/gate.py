@@ -8,12 +8,8 @@ from datetime import datetime, timezone
 from typing import Callable, Mapping
 
 from investment_agent.trading.contracts import ContractError, parse_datetime
-from investment_agent.trading.portfolio.contracts import (
-    CASH_SYMBOL,
-    PortfolioProposal,
-    RiskDecision,
-    validated_weights,
-)
+from investment_agent.trading.portfolio.contracts import PortfolioProposal, RiskDecision
+from investment_agent.portfolio_weights import CASH_SYMBOL, validated_weights
 from investment_agent.trading.portfolio.optimizer import mandatory_base_weights
 from investment_agent.trading.portfolio.market_risk import MarketRiskMetrics
 from investment_agent.trading.risk.stress import scenario_losses

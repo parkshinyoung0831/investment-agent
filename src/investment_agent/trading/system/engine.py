@@ -32,7 +32,7 @@ from investment_agent.research.adapters.trading import (
 )
 from investment_agent.trading.contracts import ContractError
 from investment_agent.trading.decision.alpha import THESIS_BROKEN, AlphaPolicy, alpha_universe, is_valid_view
-from investment_agent.trading.portfolio.contracts import CASH_SYMBOL
+from investment_agent.portfolio_weights import CASH_SYMBOL
 from investment_agent.trading.portfolio.market_risk import estimate_trading_costs
 from investment_agent.trading.risk.budget import BENCHMARK_SYMBOL
 from investment_agent.trading.system.accounting import DailyMark, advance, first_session_after, session_price

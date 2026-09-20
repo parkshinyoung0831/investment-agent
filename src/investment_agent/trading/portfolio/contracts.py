@@ -10,9 +10,8 @@ from typing import Any, Mapping
 from investment_agent.platform.serialization import (
     ContractError, json_value, parse_datetime, stable_id,
 )
+from investment_agent.portfolio_weights import TICKER_RE, validated_weights
 
-CASH_SYMBOL = "CASH"
-_TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.-]{0,14}$")
 _SIGNALS = {"avoid", "watch", "open", "increase", "hold", "reduce", "exit"}
 # TradingAgents 논지 계약. 사고팔기 행동은 목표비중 변화에서 파생되므로 LLM이 정하지 않는다.
 THESES = ("positive", "neutral", "negative")
@@ -54,30 +53,6 @@ def _strings(value: Any, field_name: str, *, required: bool = False) -> tuple[st
     return result
 
 
-def validated_weights(weights: Mapping[str, Any], *, require_total: bool = True) -> dict[str, float]:
-    """long-only 비중을 검증하고 현금 항목을 포함한 정렬 사본을 반환한다."""
-    if not isinstance(weights, Mapping) or not weights:
-        raise ContractError("weights must be a non-empty mapping")
-    parsed: dict[str, float] = {}
-    for raw_symbol, raw_weight in weights.items():
-        symbol = str(raw_symbol).upper().strip()
-        if symbol != CASH_SYMBOL and not _TICKER_RE.fullmatch(symbol):
-            raise ContractError(f"invalid portfolio symbol: {symbol}")
-        if symbol in parsed:
-            raise ContractError(f"duplicate portfolio symbol: {symbol}")
-        if isinstance(raw_weight, bool) or not isinstance(raw_weight, (int, float)):
-            raise ContractError(f"weight for {symbol} must be numeric")
-        weight = float(raw_weight)
-        if not math.isfinite(weight) or weight < 0.0 or weight > 1.0:
-            raise ContractError(f"weight for {symbol} must be between 0 and 1")
-        parsed[symbol] = weight
-    parsed.setdefault(CASH_SYMBOL, 0.0)
-    total = math.fsum(parsed.values())
-    if require_total and not math.isclose(total, 1.0, abs_tol=1e-8):
-        raise ContractError(f"weights including CASH must sum to 1, got {total:.12f}")
-    return {symbol: parsed[symbol] for symbol in sorted(parsed)}
-
-
 @dataclass(frozen=True)
 class SecurityProposal:
     """종목 분석 결과다. 실제 주문 권한은 갖지 않는다."""
@@ -99,7 +74,7 @@ class SecurityProposal:
 
     def __post_init__(self) -> None:
         ticker = self.ticker.upper()
-        if not _TICKER_RE.fullmatch(ticker):
+        if not TICKER_RE.fullmatch(ticker):
             raise ContractError(f"invalid ticker: {ticker}")
         if self.signal not in _SIGNALS:
             raise ContractError(f"invalid signal: {self.signal}")

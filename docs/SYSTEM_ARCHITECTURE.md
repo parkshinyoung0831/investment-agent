@@ -1,4 +1,4 @@
-# 시스템 전체 아키텍처 (System Architecture)
+# 시스템 전체 아키텍처 — 수집에서 주문 실행까지의 구성과 흐름
 
 > 💡 **대화형 다이어그램 (Interactive Showcase)**  
 > 브라우저에서 확대/축소, 다크·라이트 테마 전환, 데이터 흐름 애니메이션 추적(Trace)이 가능한 인터랙티브 다이어그램은 아래 파일을 열어 확인하세요:  
@@ -19,7 +19,7 @@ flowchart TB
         SRC_PUB["공개 금융 데이터<br/>(SEC EDGAR · yfinance · FRED · ECOS · EIA)"]
         SRC_NEWS["뉴스 / 소셜 웹 수집"]
         EXT_BROKER["토스증권 (Toss Order API)<br/>*단일 브로커 경로"]
-        EXT_DISCORD["Discord API<br/>(#시스템-로그, 승인 채널, 알림 카드)"]
+        EXT_DISCORD["Discord API<br/>(시스템 로그·승인 채널, 알림 카드)"]
     end
 
     %% ==========================================

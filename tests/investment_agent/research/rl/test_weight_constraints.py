@@ -31,10 +31,14 @@ def _dataset(symbols: tuple[str, ...], *, periods: int = 2) -> FeatureDataset:
 
 
 class ConstraintSourceTest(unittest.TestCase):
-    """RL 한도가 optimizer/RiskGate보다 느슨해지면 여기서 잡는다."""
+    """RL 한도가 optimizer/RiskGate보다 느슨해지면 여기서 잡는다.
+
+    Research는 Trading 정책을 import하지 않고 자기 기본값을 가진다. 두 값이 어긋나면
+    이 테스트만이 그것을 알려 주므로, 정책을 바꾸는 사람은 여기서 멈춘다.
+    """
 
     def test_defaults_track_the_real_policies(self):
-        constraints = WeightConstraints.from_policies()
+        constraints = WeightConstraints()
         optimizer = OptimizerPolicy()
         risk = PortfolioRiskPolicy()
         self.assertLessEqual(constraints.max_symbol_weight, optimizer.max_symbol_weight)

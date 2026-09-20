@@ -345,7 +345,6 @@ class LayerDirectionTest(unittest.TestCase):
     # 모듈이나 같은 폴더의 새 파일로 예외가 자동 확장되지 않는다.
     SYSTEM_VALIDATION_DEPENDENCIES = frozenset({
         "investment_agent.trading.decision.alpha",
-        "investment_agent.trading.portfolio.contracts",
         "investment_agent.trading.risk.budget",
         "investment_agent.trading.system.accounting",
         "investment_agent.trading.system.engine",
@@ -357,8 +356,6 @@ class LayerDirectionTest(unittest.TestCase):
     # 잔류도 실패시켜 이후 phase에서 이 집합이 줄어들기만 하게 한다.
     PENDING_DEPENDENCIES = frozenset(
         {
-            ("src/investment_agent/research/backtest/contracts.py", "investment_agent.trading.portfolio.contracts"),
-            ("src/investment_agent/research/backtest/simulator.py", "investment_agent.trading.portfolio.contracts"),
             ("src/investment_agent/research/commands/backfill_research_history.py", "investment_agent.trading.supabase_repository"),
             ("src/investment_agent/research/commands/build_decision_experiences.py", "investment_agent.trading.supabase_repository"),
             ("src/investment_agent/research/commands/build_features.py", "investment_agent.trading.evidence.context"),
@@ -368,10 +365,6 @@ class LayerDirectionTest(unittest.TestCase):
             ("src/investment_agent/research/commands/evaluate.py", "investment_agent.trading.supabase_repository"),
             ("src/investment_agent/research/commands/system_ablation.py", "investment_agent.trading.supabase_repository"),
             ("src/investment_agent/research/promotion/cli.py", "investment_agent.trading.supabase_repository"),
-            ("src/investment_agent/research/rl/baseline.py", "investment_agent.trading.portfolio.contracts"),
-            ("src/investment_agent/research/rl/environment.py", "investment_agent.trading.portfolio.contracts"),
-            ("src/investment_agent/research/rl/environment.py", "investment_agent.trading.portfolio.optimizer"),
-            ("src/investment_agent/research/rl/environment.py", "investment_agent.trading.risk.gate"),
         }
     )
 

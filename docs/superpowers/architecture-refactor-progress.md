@@ -4,14 +4,14 @@
 
 ## 식별과 현재 상태
 
-- 기준 원격 `main`: `4181f6b53d84105f2b78d78c69e9119c1f55a6cf` (2026-09-20 세션 시작 시 로컬 HEAD와 일치 확인).
+- 기준 원격 `main`: `b0d0786ae64aa21579bdacb7e19e0d6d05b8368b` (2026-09-20 재개 세션 시작 시 로컬 HEAD·`origin/main`과 일치, 작업 트리 깨끗). 이전 원장이 적은 `4181f6b`는 이 HEAD의 조상이다. 재개 세션 프롬프트는 Task 1~4가 미착수라고 서술했으나 실제로는 모두 완료돼 있었고, 실제 상태를 따랐다.
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
-- 현재 단계: Research→Trading 잔여 의존성 16쌍을 남겨두고, 실제 runtime caller를 확인하며 조회·발송 및 실행 경계를 배치별로 정리한다.
+- 현재 단계: Research→Trading 잔여 의존성 11쌍(아래 '재개 세션 배치 A' 기준)을 남겨두고, 실제 runtime caller를 확인하며 조회·발송 및 실행 경계를 배치별로 정리한다.
 - 현재 작업 방식: 같은 책임 경계의 독립 변경 2~3개를 한 배치로 묶고, 관련·architecture/import 테스트를 배치 안에서 실행한다. 전체 suite는 배치 종료, 실행·승인·risk 안전 변경, 최종 통합 때 실행한다. 완료 task마다 별도 plan 문서를 만들지 않는다.
 - 완료 단계: Phase 1 조사, Phase 2의 feature snapshot·training label·valuation·event·training sample·decision experience owner 이관, Phase 3 공통 serialization·forecast·평가 계약 및 일부 Data read 역방향 import 정리, production Trading 알고리즘 검증의 명시적 경계 설정, Phase 4 RiskGate→ExecutionIntent 생성 책임 이관. Research 사건 feature·계약 배치까지 `PENDING_DEPENDENCIES`는 16쌍이다.
 - 단일 브랜치 통합 점검(2026-09-20): 로컬·GitHub의 실제 브랜치는 `main` 하나였다. 남아 있던 `phase-source/main` 추적 참조(`e9f6fc5`)의 10개 커밋은 `git range-diff 5801357..phase-source/main baf40e2..d2a0315`에서 `main`의 대응 커밋 10개와 일대일로 확인했다(8개 동일, 2개는 선행 Research factor 소유 경로에 맞춰 적용). 이전 코드를 재병합하지 않고 오래된 참조만 정리한다.
-- 단일 브랜치 통합 검증: `docs/GRAPHIFY_MCP.md` 제목 계약을 바로잡고, Git에서 생성 Graphify HTML 2개만 추적 해제해 `.gitignore`에 명시했다(로컬 파일은 보존). 관련 계약 2개 통과. 전체 오프라인 suite는 3,058개 중 실패 1개·skip 1개: 별도 미커밋 `docs/SYSTEM_ARCHITECTURE.md:22`가 선언되지 않은 `#시스템-로그` 채널을 언급한다. 해당 다른 작업 파일은 이 통합에서 수정·커밋하지 않는다. Architecture pending은 16쌍으로 변화 없다.
+- 단일 브랜치 통합 검증: `docs/GRAPHIFY_MCP.md` 제목 계약을 바로잡고, Git에서 생성 Graphify HTML 2개만 추적 해제해 `.gitignore`에 명시했다(로컬 파일은 보존). 관련 계약 2개 통과. 전체 오프라인 suite는 3,058개 중 실패 1개·skip 1개: 별도 미커밋 `docs/SYSTEM_ARCHITECTURE.md:22`가 선언되지 않은 시스템 로그 채널을 언급한다. 해당 다른 작업 파일은 이 통합에서 수정·커밋하지 않는다. Architecture pending은 16쌍으로 변화 없다.
 - maintenance 상태: `harness_switch --status`로 STOPPED·hold ON(reason=원본 사본 architecture refactor Phase 1-10 이식)·kill switch ON·Toss live FALSE를 확인했다. 이미 걸린 hold는 변경하지 않으며 임의로 해제/재기동하지 않는다.
 
 ## 검증 기준선
@@ -20,8 +20,8 @@
 |---|---|---|
 | `git ls-remote origin refs/heads/main` | 로컬 HEAD와 동일 SHA | 최신 `main` 기준 확인 |
 | `python -m unittest tests.investment_agent.test_architecture tests.test_repo_conventions tests.test_workflow_wiring -q` | 100개 통과 | 구조·관례·workflow 현재 기준선 |
-| `python -m unittest discover -s tests -t .` | 3,009개, 오류 4개, skip 1개 | 오류는 기준선과 동일한 `test_ml_inference`의 `lightgbm`·`xgboost` 미설치 4개 |
-| `tests/investment_agent/test_architecture.py` | `PENDING_DEPENDENCIES` 69쌍 | 줄여야 하는 현재 import 부채 |
+| `python -m unittest discover -s tests -t .` | 3,071개 통과, skip 1개 (재개 세션 배치 A 종료 시점) | 이 환경에서는 `lightgbm`·`xgboost` 오류도 재현되지 않았다. 최초 기준선은 3,009개 중 오류 4개(ML 미설치)였다 |
+| `tests/investment_agent/test_architecture.py` | `PENDING_DEPENDENCIES` 11쌍(최초 69쌍) | 줄여야 하는 현재 import 부채 |
 
 ## 새 세션 재개 절차
 
@@ -516,6 +516,21 @@
 - 변경 파일·방향: 두 dataclass와 기존 검증·PIT·직렬화·hash 식을 `research/features/event_contracts.py`로 이동하고 `event_intelligence.py`가 직접 import한다. Trading contracts의 원본·export 및 미사용 `_EVENT_TYPES`, native test의 미사용 import를 제거했다. 호환 alias·DB schema·사건 계산·Trading 재분석 계산 변경 없음. 새 Research owner test는 기존 고정 input hash, source 정렬과 시각 거절을 검증한다.
 - 검증: 새 owner import 오류와 pending 한 건의 정확한 위반으로 RED 확인. Research event·Trading 재분석·native·architecture 50개 통과. repo/packaging/architecture 62개 중 기존 Graphify 추적 파일 불일치 1건 외 새 실패 없음. 전체 suite 3,058개는 이전과 동일한 별도 문서/Graphify 실패 3건·skip 1건 외 새 실패가 없다. 이전 Trading 사건 계약 caller 검색 0건.
 - 남은 부채: `PENDING_DEPENDENCIES` 17→16쌍. Research 명령의 Trading Supabase façade 및 backtest/RL의 Trading portfolio/risk import는 별도 caller·행동 검증 후 이관해야 한다. 별도 문서/Graphify 통합 실패 3건도 남아 있다.
+
+#### 재개 세션 배치 A — 원장 보정 + 비중 벡터 계약 공유 + RL 경계 (2026-09-20)
+
+- 원장 보정: 이전 원장이 적지 않은 `f7efdb5`가 이미 evidence cache를 `trading/evidence`에서 `intelligence/evidence_cache.py`로 옮기고 `intelligence` 계층 금지 규칙을 추가했으며 pending 1쌍(`build_events → trading.evidence.cache`)을 제거했다(16→15). 같은 커밋이 추가한 `docs/SYSTEM_ARCHITECTURE.md`가 문서 형식 검사 2건(제목에 em dash 없음, 선언되지 않은 채널 언급)을 깨뜨리고 있어 제목과 채널 문구만 고쳤다(내용·다이어그램 불변). 이 원장의 같은 채널 문구도 함께 고쳤다.
+- 변경 전 호출 관계: research backtest·RL 4개 파일과 trading 8개 모듈이 `trading.portfolio.contracts`에서 `CASH_SYMBOL`·`validated_weights`를 가져왔다. execution과 reporting·notifications는 각자 사본을 이미 갖고 있다. execution의 `validated_weights`는 `IntentError`·티커 정규식 `{0,11}`·안전 주석이 다른 **의도된 별도 계약**이라 통합하지 않았다. `WeightConstraints.from_policies()`는 optimizer·RiskGate 기본 정책 인스턴스에서 min/max로 값을 만들어 기본값으로 쓰고 있었고, 이를 검사하던 테스트는 같은 정책에서 파생한 값을 그 정책과 비교해 실패할 수 없는 동어반복이었다. `BaselinePolicyModel.infer_proposal`의 production caller는 0개(테스트 1곳)였다.
+- Ruling 1 — 공유 계약 위치: Trading은 Research를 import할 수 없고(`FORBIDDEN["trading"]`, 어댑터 예외 제외) Platform은 금융 도메인을 몰라야 하므로, 비중 벡터 primitive는 선례인 `forecasting.py`와 같이 최상위 공유 모듈 `src/investment_agent/portfolio_weights.py`에 둔다(`CASH_SYMBOL`, `TICKER_RE`, `validated_weights`). trading 8개 모듈과 research 5개 파일이 직접 import하며 `trading.portfolio.contracts`에는 재수출이 없다. execution·reporting·notifications 사본은 건드리지 않았다.
+- Ruling 2 — `from_policies()` 제거: Research가 실제 정책을 import하는 대신 기존 리터럴 기본값(0.10/0.05/25/0.005, 현재 정책 값과 일치 확인)을 그대로 쓰고, 정책과의 일치는 테스트가 지킨다. 테스트는 `WeightConstraints()`를 실제 정책과 비교하도록 바꿔 처음으로 실패할 수 있게 됐다(RiskGate `max_symbol_weight`를 임시로 0.05로 바꾸면 실패함을 확인 후 원복). 런타임 자동 추종은 사라졌으므로, 정책을 바꾸는 사람은 이 테스트에서 멈춘다. RL 호출자 5곳은 전부 기본값을 쓰고 operations 주입 경로가 없어 인자 관통은 하지 않았다.
+- Ruling 3 — `infer_proposal` 이관: caller 0이지만 테스트가 `execution_eligible=False`·부분 coverage 불변식을 검증하므로 삭제하지 않고 `trading/portfolio/rl_challenger.py`의 `rl_challenger_proposal(...)`로 옮겼다. Trading 함수는 Research 타입을 받지 않고 값만 받는다. 기존 Research 테스트는 실제 baseline 비중을 이 함수에 통과시키는 연결 검증을 유지한다. **사용자 판단 대기: 이 경로는 production에서 쓰이지 않는 죽은 코드일 수 있어, 필요 없으면 함수·테스트를 함께 삭제하면 된다.**
+- 수정 파일: 새 `portfolio_weights.py`, 새 `trading/portfolio/rl_challenger.py`, 새 테스트 2개(`tests/investment_agent/test_portfolio_weights_contract.py`, `tests/investment_agent/trading/portfolio/test_rl_challenger.py`), trading 8개(`portfolio/contracts.py`, `market_risk.py`, `optimizer.py`, `risk/gate.py`, `risk/stress.py`, `system/accounting.py`, `system/engine.py`, `system/target.py`)와 `my_portfolio.py`, research 5개(`backtest/contracts.py`, `backtest/simulator.py`, `rl/baseline.py`, `rl/environment.py`, `system_validation/ablation.py`), `tests/investment_agent/test_architecture.py`, `test_contracts_hypothesis.py`, `research/rl/test_baseline.py`, `research/rl/test_weight_constraints.py`, 문서 2개.
+- 삭제·이동: 파일 삭제 없음. `trading/portfolio/contracts.py`의 `CASH_SYMBOL`·`validated_weights` 정의를 `portfolio_weights.py`로 옮겼고(본문 동일), `BaselinePolicyModel.infer_proposal`과 `WeightConstraints.from_policies`를 삭제했다.
+- import 방향 변화: research→trading 6쌍 제거(`backtest/contracts`, `backtest/simulator`, `rl/baseline`, `rl/environment`의 contracts·optimizer·risk.gate). 시스템 검증 예외 목록에서 `trading.portfolio.contracts`도 제거(7→6 import). 새 pending 없음. `PENDING_DEPENDENCIES` 15→11(같은 커밋 이전 16→15 포함 시 누적 16→11).
+- 테스트 결과: 계약 테스트는 모듈 부재로 RED, 소유권 guard는 `trading/portfolio/contracts.py`의 두 정의를 검출해 RED, 제거한 pending 세 쌍은 정확한 위반 세 건으로 RED, `rl_challenger` 테스트는 모듈 부재로 RED였다. 위반 주입: research에 `validated_weights` 재정의 파일 → 소유권 guard 실패, research가 `trading.portfolio.contracts` import → architecture 실패(둘 다 원복). 최종 전체 offline suite 3,071개 OK, skip 1개.
+- 남은 dependency debt(11쌍, 모두 Research→Trading): `commands/{backfill_research_history,build_decision_experiences,build_features(×2: evidence.context·supabase_repository),build_labels,build_valuations,evaluate,system_ablation}`과 `promotion/cli`가 `trading/supabase_repository.py`(또는 `trading/evidence/context.py`)를 가져온다. 대부분 CLI `main()`이 구체 `SupabaseRepository()`를 만드는 자리이므로 이것은 operations 조립 책임일 가능성이 크다. 다만 이 CLI 모듈 경로는 하네스·workflow가 호출하므로 경로 호환을 함께 검증하는 설계가 필요하다. 그 밖에 broker runtime(Phase 5), `dashboard/db.py` 잔여 화면 3개(Phase 6), ResearchStore 분리 판단(Phase 7), 최종 architecture guard 강화(Phase 10)가 남았다.
+- 다음 재개 지점: 위 11쌍을 메서드 단위로 분류한다. `build_labels`/`build_valuations`/`build_features`는 가격·재무·membership·local mirror(PIT replay)를 함께 읽으므로 read 계약을 먼저 고정하고, `evaluate`·`promotion/cli`·`system_ablation`·`backfill_research_history`·`build_decision_experiences`의 CLI 조립부는 operations로 옮길 수 있는지 workflow·하네스 호출 경로와 함께 재검증한다.
+- 관련 커밋: 이 배치의 코드·문서 커밋(아래 git log 참조).
 
 ## 향후 milestone
 

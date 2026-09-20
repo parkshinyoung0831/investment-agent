@@ -7,7 +7,7 @@ from typing import Any, Sequence
 
 import numpy as np
 
-from investment_agent.trading.portfolio.contracts import CASH_SYMBOL
+from investment_agent.portfolio_weights import CASH_SYMBOL
 from investment_agent.research.rl.contracts import RewardConfig
 
 
@@ -74,8 +74,8 @@ class WeightConstraints:
     """RL이 학습 중에 도달할 수 있는 비중 공간을 실제 실행 한도와 맞춘다.
 
     이 값이 optimizer/RiskGate보다 느슨하면 policy는 실행 불가능한 비중을 최적이라고
-    배우고, 실제로는 RiskGate가 그 제안을 거부한다. 기본값은
-    `from_policies()`로 실제 정책에서 가져오며, 어긋나면 테스트가 잡는다.
+    배우고, 실제로는 RiskGate가 그 제안을 거부한다. Research는 Trading 정책을 import하지
+    않으므로 기본값을 여기에 두고, 실제 정책과의 일치는 테스트가 지킨다.
     """
 
     max_symbol_weight: float = 0.10
@@ -96,21 +96,6 @@ class WeightConstraints:
             raise ValueError("max_symbol_weight must be positive")
         if self.min_cash_weight >= 1.0:
             raise ValueError("min_cash_weight must leave room for risky assets")
-
-    @classmethod
-    def from_policies(cls) -> "WeightConstraints":
-        """optimizer와 RiskGate의 현재 한도를 단일 기준으로 읽어온다."""
-        from investment_agent.trading.portfolio.optimizer import OptimizerPolicy
-        from investment_agent.trading.risk.gate import PortfolioRiskPolicy
-
-        optimizer = OptimizerPolicy()
-        risk = PortfolioRiskPolicy()
-        return cls(
-            max_symbol_weight=min(optimizer.max_symbol_weight, risk.max_symbol_weight),
-            min_cash_weight=max(optimizer.min_cash_weight, risk.min_cash_weight),
-            max_positions=risk.max_positions,
-            min_position_weight=risk.min_position_weight,
-        )
 
 
 def _project_to_constraints(
@@ -178,7 +163,7 @@ def action_to_weights(
         result[-1] = 1.0
         return result
     simplex = exp / total
-    limits = constraints or WeightConstraints.from_policies()
+    limits = constraints or WeightConstraints()
     risky = _project_to_constraints(simplex[:-1], availability, limits)
     result = np.zeros_like(simplex)
     result[:-1] = risky
@@ -193,7 +178,7 @@ class WeightEnvironmentCore:
 
     dataset: FeatureDataset
     reward_config: RewardConfig = field(default_factory=RewardConfig)
-    constraints: WeightConstraints = field(default_factory=WeightConstraints.from_policies)
+    constraints: WeightConstraints = field(default_factory=WeightConstraints)
     index: int = 0
     nav: float = 1.0
     peak_nav: float = 1.0

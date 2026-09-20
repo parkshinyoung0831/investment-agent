@@ -9,7 +9,7 @@ from datetime import date
 from typing import Any, Iterable, Mapping
 
 from investment_agent.platform.serialization import canonical_json, json_value, parse_datetime
-from investment_agent.trading.portfolio.contracts import CASH_SYMBOL, validated_weights
+from investment_agent.portfolio_weights import CASH_SYMBOL, validated_weights
 
 _TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.-]{0,14}$")
 _COHORT_MODES = {"point_in_time", "current_cohort"}

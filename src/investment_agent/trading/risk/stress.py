@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 from investment_agent.trading.contracts import ContractError
-from investment_agent.trading.portfolio.contracts import CASH_SYMBOL
+from investment_agent.portfolio_weights import CASH_SYMBOL
 from investment_agent.trading.portfolio.market_risk import estimate_betas
 
 

@@ -13,7 +13,7 @@ from typing import Any, Mapping
 import numpy as np
 
 from investment_agent.platform.serialization import canonical_json, parse_datetime
-from investment_agent.trading.portfolio.contracts import CASH_SYMBOL, PortfolioProposal
+from investment_agent.portfolio_weights import CASH_SYMBOL
 from investment_agent.research.rl.environment import action_to_weights
 from investment_agent.research.rl.features import HistoricalTrainingSet, LiveInferenceFrame
 from investment_agent.research.rl.contracts import normalize_symbols
@@ -199,33 +199,6 @@ class BaselinePolicyModel:
             scores / self.config.temperature,
             np.asarray([self.config.cash_logit], dtype=np.float64),
         ))
-
-    def infer_proposal(
-        self,
-        frame: LiveInferenceFrame,
-        *,
-        run_id: str,
-        stage: str = "shadow",
-    ) -> PortfolioProposal:
-        """baseline을 실행 권한 없는 RL challenger PortfolioProposal로 변환한다."""
-        return PortfolioProposal.create(
-            run_id=run_id,
-            source_type="rl",
-            source_version=MODEL_FORMAT_VERSION,
-            stage=stage,
-            as_of_at=frame.as_of_at,
-            weights=self.predict_weights(frame),
-            confidence=0.5,
-            reasoning=("point-in-time 선형 ridge baseline challenger 추론",),
-            model_artifact_id=self.artifact_id,
-            metadata={
-                "coverage": "partial_universe",
-                "execution_eligible": False,
-                "purpose": "rl_baseline_challenger",
-                "inference_input_hash": frame.input_hash,
-                "membership_hash": frame.membership_hash,
-            },
-        )
 
 
 @dataclass(frozen=True)

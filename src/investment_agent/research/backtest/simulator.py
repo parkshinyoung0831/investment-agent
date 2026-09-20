@@ -20,7 +20,7 @@ from investment_agent.research.backtest.contracts import (
     stable_hash,
 )
 from investment_agent.research.evaluation.costs import FillQuote, TransactionCostModel
-from investment_agent.trading.portfolio.contracts import CASH_SYMBOL
+from investment_agent.portfolio_weights import CASH_SYMBOL
 
 _EPSILON = 1e-10
 

@@ -11,7 +11,7 @@ import numpy as np
 
 from investment_agent.trading.contracts import ContractError
 from investment_agent.platform.serialization import canonical_json
-from investment_agent.trading.portfolio.contracts import CASH_SYMBOL, validated_weights
+from investment_agent.portfolio_weights import CASH_SYMBOL, validated_weights
 
 
 @dataclass(frozen=True)

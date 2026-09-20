@@ -20,7 +20,8 @@ from investment_agent.execution.contracts import AccountSnapshot, ExecutionLimit
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.serialization import canonical_json, parse_datetime, stable_id
 from investment_agent.trading.contracts import ContractError
-from investment_agent.trading.portfolio.contracts import CASH_SYMBOL, PortfolioProposal, RiskDecision, validated_weights
+from investment_agent.trading.portfolio.contracts import PortfolioProposal, RiskDecision
+from investment_agent.portfolio_weights import CASH_SYMBOL, validated_weights
 from investment_agent.trading.risk.gate import portfolio_turnover
 
 log = get_logger(__name__)

@@ -14,7 +14,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from investment_agent.platform.serialization import ContractError
-from investment_agent.trading.portfolio.contracts import CASH_SYMBOL, validated_weights
+from investment_agent.portfolio_weights import CASH_SYMBOL, validated_weights
 
 TICKERS = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META"]
 

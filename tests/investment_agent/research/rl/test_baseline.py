@@ -7,7 +7,9 @@ from pathlib import Path
 
 import numpy as np
 
+from investment_agent.trading.portfolio.rl_challenger import rl_challenger_proposal
 from investment_agent.research.rl.baseline import (
+    MODEL_FORMAT_VERSION,
     load_baseline_policy,
     save_baseline_policy,
     train_baseline_policy,
@@ -73,7 +75,12 @@ class BaselinePolicyTest(unittest.TestCase):
             row = artifact.to_model_artifact_row(code_commit="abc123")
             self.assertEqual(row["algorithm"], "rule")
             self.assertEqual(row["artifact_id"], model.artifact_id)
-            proposal = loaded.infer_proposal(frame, run_id="run-rl")
+            # 연구가 낸 실제 비중이 Trading의 실행 권한 없는 제안 계약을 통과하는지 잇는다.
+            proposal = rl_challenger_proposal(
+                run_id="run-rl", stage="shadow", as_of_at=frame.as_of_at, weights=weights,
+                source_version=MODEL_FORMAT_VERSION, model_artifact_id=loaded.artifact_id,
+                input_hash=frame.input_hash, membership_hash=frame.membership_hash,
+            )
             self.assertFalse(proposal.metadata["execution_eligible"])
             self.assertEqual(proposal.metadata["coverage"], "partial_universe")
 

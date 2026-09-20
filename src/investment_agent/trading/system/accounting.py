@@ -25,7 +25,7 @@ from typing import Mapping, Sequence
 
 from investment_agent.data.market.domain.calendar import MARKET_TIMEZONE, REGULAR_OPEN
 from investment_agent.trading.contracts import ContractError
-from investment_agent.trading.portfolio.contracts import CASH_SYMBOL, validated_weights
+from investment_agent.portfolio_weights import CASH_SYMBOL, validated_weights
 
 INITIAL_NAV = 100.0
 
