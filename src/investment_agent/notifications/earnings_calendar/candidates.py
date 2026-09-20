@@ -6,6 +6,7 @@ from datetime import date, timedelta
 from investment_agent.notifications.engine import Notice, fact_time, unsettled
 from investment_agent.notifications.topics import topic
 from investment_agent.reporting.notifications.earnings_calendar import EarningsCalendarStore
+from investment_agent.platform.clock import kst_today
 from investment_agent.platform.logging import get_logger
 from investment_agent.reporting.services.earnings import schedule as metrics
 
@@ -17,18 +18,20 @@ def _default_store() -> EarningsCalendarStore:
 
 
 def collect(store: EarningsCalendarStore, today: date | None = None) -> tuple[list[dict], date | None, str]:
-    today = today or date.today()
+    today = today or kst_today()
     tickers = [str(member["ticker"]) for member in store.watchlist_members()]
     week = metrics.iso_week(today)
     if not tickers:
         log.info("calendar: 활성 관심종목 없음 — 조회 생략")
         return [], None, week
-    snapshots = store.schedule_snapshots(tickers)
+    snapshots = store.schedule_snapshots(tickers, today=today)
     rows = metrics.build_rows(snapshots, store.prior_filings(tickers), store.load_names(tickers), today)
-    snapshot_dates = [
-        parsed for parsed in (metrics.as_date(row.get("snapshot_date")) for row in snapshots) if parsed
+    # 카드의 "기준일"은 일정을 마지막으로 확인한 날이다. 처음 본 날로 적으면 매일
+    # 확인되는 일정도 일주일 전 자료처럼 보인다.
+    observed_dates = [
+        parsed for parsed in (metrics.observed_date(row) for row in snapshots) if parsed
     ]
-    return rows, (max(snapshot_dates) if snapshot_dates else None), week
+    return rows, (max(observed_dates) if observed_dates else None), week
 
 
 WEEK_TOPIC = topic("earnings.week")
@@ -74,7 +77,7 @@ def pending_state(
 ) -> dict[str, int | bool | str]:
     """렌더 의존성 설치 전 사전 점검. 원장이 아직 보내지 않은 주간 카드·예정 안내를 센다."""
     store = store or _default_store()
-    today = today or date.today()
+    today = today or kst_today()
     rows, snapshot_date, week = collect(store, today)
     week_pending = bool(rows) and bool(
         unsettled(WEEK_TOPIC, [week_notice(rows, today, week, snapshot_date)], ledger=ledger)

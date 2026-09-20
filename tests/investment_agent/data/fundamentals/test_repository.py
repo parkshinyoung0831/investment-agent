@@ -192,6 +192,80 @@ class ScheduleTest(unittest.TestCase):
         self.assertEqual([2], [row["security_id"] for row in rows])
 
 
+class ScheduleSnapshotsTest(unittest.TestCase):
+    def test_last_seen_at_is_read_so_freshness_can_follow_reconfirmation(self) -> None:
+        """snapshot_date는 처음 본 날이다. 마지막 재확인은 last_seen_at에만 있다."""
+        db = FakeDatabase()
+        db.put(SCHEMA, T_SCHEDULE, [
+            {"security_id": 1, "target_fiscal_year": 2026, "target_fiscal_period": "Q4",
+             "target_period_end": "2026-08-30", "snapshot_date": "2026-09-13",
+             "expected_report_at": "2026-09-24T20:00:00+00:00", "expected_report_date": "2026-09-24",
+             "expected_session": "amc", "is_estimated": False,
+             "last_seen_at": "2026-09-19T01:31:09+00:00", "collected_at": "2026-09-13T01:00:00+00:00"},
+        ])
+
+        (row,) = FundamentalsRepository(db).schedule_snapshots([1])
+
+        self.assertEqual("2026-09-19T01:31:09+00:00", row["last_seen_at"])
+
+
+class LatestConsensusTest(unittest.TestCase):
+    def _repo(self, rows: list[dict]) -> FundamentalsRepository:
+        db = FakeDatabase()
+        db.put(SCHEMA, T_ESTIMATES, rows)
+        return FundamentalsRepository(db)
+
+    @staticmethod
+    def _estimate(security_id: int, period: str, snapshot: str, eps: float, *,
+                  kind: str = "captured_live", last_seen: str = "2026-09-19T01:00:00+00:00",
+                  year: int = 2026) -> dict:
+        return {"security_id": security_id, "target_fiscal_year": year,
+                "target_fiscal_period": period, "snapshot_kind": kind, "snapshot_date": snapshot,
+                "eps_avg": eps, "eps_analysts": 20, "revenue_avg": 100.0, "revenue_analysts": 18,
+                "last_seen_at": last_seen}
+
+    def test_the_newest_observation_per_target_period_wins(self) -> None:
+        repo = self._repo([
+            self._estimate(1, "Q4", "2026-09-13", 6.50),
+            self._estimate(1, "Q4", "2026-09-17", 6.53),
+            self._estimate(1, "Q1", "2026-09-13", 4.85, year=2027),
+        ])
+
+        latest = repo.latest_consensus([1], seen_since=date(2026, 9, 1))
+
+        self.assertEqual(6.53, latest[(1, 2026, "Q4")]["eps_avg"])
+        self.assertEqual(4.85, latest[(1, 2027, "Q1")]["eps_avg"])
+
+    def test_reconstructed_history_is_not_a_live_consensus(self) -> None:
+        """재구성값은 애널리스트 수·매출이 비어 있다. 예정 카드에 실으면 반쪽 숫자가 된다."""
+        repo = self._repo([
+            self._estimate(1, "Q4", "2026-09-06", 6.56, kind="reconstructed"),
+        ])
+
+        self.assertEqual({}, repo.latest_consensus([1], seen_since=date(2026, 9, 1)))
+
+    def test_observations_no_longer_seen_are_left_out(self) -> None:
+        """수집이 끊긴 지 오래된 값은 지금의 컨센서스가 아니다. 조회 범위도 이것으로 묶는다."""
+        repo = self._repo([
+            self._estimate(1, "Q4", "2026-06-01", 6.00, last_seen="2026-06-02T00:00:00+00:00"),
+        ])
+
+        self.assertEqual({}, repo.latest_consensus([1], seen_since=date(2026, 9, 1)))
+
+    def test_only_requested_securities_are_read(self) -> None:
+        repo = self._repo([
+            self._estimate(1, "Q4", "2026-09-13", 6.50),
+            self._estimate(2, "Q4", "2026-09-13", 9.99),
+        ])
+
+        latest = repo.latest_consensus([1], seen_since=date(2026, 9, 1))
+
+        self.assertEqual({(1, 2026, "Q4")}, set(latest))
+
+    def test_no_securities_reads_nothing(self) -> None:
+        self.assertEqual({}, self._repo([]).latest_consensus([], seen_since=date(2026, 9, 1)))
+
+
 class WriteTest(unittest.TestCase):
     def test_filings_upsert_does_not_send_available_at(self) -> None:
         db = FakeDatabase()

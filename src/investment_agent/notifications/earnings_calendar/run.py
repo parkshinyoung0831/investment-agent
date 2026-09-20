@@ -18,6 +18,7 @@ from investment_agent.notifications.earnings_calendar.render import render, shoo
 from investment_agent.notifications.engine import PublishContext, Rendered, publish
 from investment_agent.notifications.playwright import persist_png
 from investment_agent.notifications.subscriptions import discord_target
+from investment_agent.platform.clock import kst_today
 from investment_agent.platform.logging import configure_logging, get_logger
 from investment_agent.reporting.notifications.earnings_calendar import EarningsCalendarStore
 
@@ -75,7 +76,7 @@ def run(*, store: EarningsCalendarStore | None = None, target: str | None = None
     """
     config = load_config()
     store = store or EarningsCalendarStore.configured(config)
-    today = today or date.today()
+    today = today or kst_today()
     rows, snapshot_date, week = collect(store, today)
     if not rows:
         log.info("calendar: %s 주에 발표 예정 종목 없음 - 종료", week)

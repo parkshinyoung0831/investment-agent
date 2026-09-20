@@ -10,8 +10,22 @@ from investment_agent.platform.clock import (
     as_date,
     day_window,
     ensure_aware,
+    kst_today,
     to_utc_iso,
 )
+
+
+class KstTodayTest(unittest.TestCase):
+    def test_sunday_night_utc_is_already_monday_in_korea(self) -> None:
+        self.assertEqual(date(2026, 9, 21), kst_today(datetime(2026, 9, 20, 23, 10, tzinfo=timezone.utc)))
+
+    def test_the_day_turns_at_15_00_utc_not_at_utc_midnight(self) -> None:
+        self.assertEqual(date(2026, 9, 20), kst_today(datetime(2026, 9, 20, 14, 59, tzinfo=timezone.utc)))
+        self.assertEqual(date(2026, 9, 21), kst_today(datetime(2026, 9, 20, 15, 0, tzinfo=timezone.utc)))
+
+    def test_naive_datetime_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            kst_today(datetime(2026, 9, 20, 23, 10))
 
 
 class EnsureAwareTest(unittest.TestCase):

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import date
+from datetime import date, datetime, timezone
 
 from investment_agent.notifications.earnings_calendar import card
 from investment_agent.reporting.services.earnings import schedule as metrics
@@ -11,8 +11,11 @@ from investment_agent.reporting.services.earnings import schedule as metrics
 _MONDAY = date(2026, 8, 24)
 
 
-def _snap(ticker: str, expected: str, *, snapshot: str, target: str = "2026-07-31") -> dict:
-    return {
+def _snap(
+    ticker: str, expected: str, *, snapshot: str, target: str = "2026-07-31",
+    last_seen: str | None = None,
+) -> dict:
+    row = {
         "ticker": ticker,
         "snapshot_date": snapshot,
         "target_period_end": target,
@@ -21,6 +24,9 @@ def _snap(ticker: str, expected: str, *, snapshot: str, target: str = "2026-07-3
         "eps_analysts": 42,
         "revenue_avg": 46_500_000_000,
     }
+    if last_seen is not None:
+        row["last_seen_at"] = last_seen
+    return row
 
 
 class WeekWindowTest(unittest.TestCase):
@@ -63,6 +69,46 @@ class ConfidenceTest(unittest.TestCase):
 
         self.assertEqual(rows[0]["confidence"], "stale")
 
+    def test_a_state_first_seen_long_ago_but_reconfirmed_recently_is_not_stale(self):
+        # 예정 상태는 바뀔 때만 새 행이 생겨 snapshot_date는 "처음 본 날"에 머문다.
+        # 매일 다시 확인되는 일정을 처음 본 날로만 재면 8일째부터 항상 stale이 된다.
+        rows = metrics.build_rows(
+            [_snap("NVDA", "2026-08-26", snapshot="2026-08-01",
+                   last_seen="2026-08-23T01:30:00+00:00")],
+            [], {}, _MONDAY,
+        )
+
+        self.assertEqual(rows[0]["confidence"], "estimated")
+        self.assertEqual(rows[0]["last_seen_date"], date(2026, 8, 23))
+        # 처음 본 날은 그대로 남는다 — 다른 화면이 관측 이력으로 읽는다.
+        self.assertEqual(rows[0]["snapshot_date"], date(2026, 8, 1))
+
+    def test_a_state_not_reconfirmed_for_over_a_week_is_stale(self):
+        rows = metrics.build_rows(
+            [_snap("NVDA", "2026-08-26", snapshot="2026-08-01",
+                   last_seen="2026-08-10T01:30:00+00:00")],
+            [], {}, _MONDAY,
+        )
+
+        self.assertEqual(rows[0]["confidence"], "stale")
+
+    def test_missing_last_seen_falls_back_to_the_first_seen_date(self):
+        # last_seen_at을 못 읽는 경로(대시보드 등)도 기존 규칙 그대로 판정한다.
+        rows = metrics.build_rows(
+            [_snap("NVDA", "2026-08-26", snapshot="2026-08-23")], [], {}, _MONDAY
+        )
+
+        self.assertEqual(rows[0]["confidence"], "estimated")
+        self.assertEqual(rows[0]["last_seen_date"], date(2026, 8, 23))
+
+    def test_unreadable_last_seen_never_breaks_the_card(self):
+        rows = metrics.build_rows(
+            [_snap("NVDA", "2026-08-26", snapshot="2026-08-23", last_seen="not-a-time")],
+            [], {}, _MONDAY,
+        )
+
+        self.assertEqual(rows[0]["last_seen_date"], date(2026, 8, 23))
+
     def test_changed_expected_date_is_flagged_with_the_old_value(self):
         rows = metrics.build_rows(
             [
@@ -100,6 +146,55 @@ class PriorFilingTest(unittest.TestCase):
 
         self.assertEqual(rows[0]["prior_filed_at"], date(2025, 8, 27))
         self.assertEqual(rows[0]["prior_period"], "2025 Q2")
+
+    def test_estimated_target_period_end_still_finds_last_years_quarter(self):
+        # 일정의 target_period_end는 추정이다. COST는 실제 분기말(8/30)보다 20일 이른
+        # 8/10으로 들어와 작년 분기말(2025-08-31)과 21일 벌어졌고, 허용 폭 20일에 하루
+        # 모자라 "기록 없음"이 됐다.
+        filings = [{
+            "ticker": "COST",
+            "fiscal_year": 2025,
+            "fiscal_period": "Q4",
+            "period_end": "2025-08-31",
+            "filed_at": "2025-10-08",
+        }]
+        rows = metrics.build_rows(
+            [_snap("COST", "2026-08-26", snapshot="2026-08-23", target="2026-08-10")],
+            filings, {}, _MONDAY,
+        )
+
+        self.assertEqual(rows[0]["prior_filed_at"], date(2025, 10, 8))
+
+    def test_the_closest_quarter_wins_over_a_neighbouring_one(self):
+        # 허용 폭을 넓혀도 인접 분기(약 91일 간격)와 헷갈리면 안 된다.
+        filings = [
+            {"ticker": "NVDA", "fiscal_year": 2025, "fiscal_period": "Q1",
+             "period_end": "2025-04-30", "filed_at": "2025-05-28"},
+            {"ticker": "NVDA", "fiscal_year": 2025, "fiscal_period": "Q2",
+             "period_end": "2025-07-31", "filed_at": "2025-08-27"},
+            {"ticker": "NVDA", "fiscal_year": 2025, "fiscal_period": "Q3",
+             "period_end": "2025-10-31", "filed_at": "2025-11-20"},
+        ]
+        rows = metrics.build_rows(
+            [_snap("NVDA", "2026-08-26", snapshot="2026-08-23", target="2026-08-10")],
+            filings, {}, _MONDAY,
+        )
+
+        self.assertEqual(rows[0]["prior_period"], "2025 Q2")
+
+    def test_a_quarter_beyond_half_a_quarter_away_is_not_last_years_quarter(self):
+        # 넓힌 허용 폭에도 위쪽 경계가 있어야 한다. 멀리 있는 다른 분기를 "작년 같은
+        # 분기"로 내밀면 없는 것보다 나쁘다. 기준은 작년 같은 날(2025-08-10)이다.
+        for label, period_end in (("50일 뒤", "2025-09-29"), ("102일 앞", "2025-04-30")):
+            with self.subTest(label):
+                filings = [{"ticker": "NVDA", "fiscal_year": 2025, "fiscal_period": "Q1",
+                            "period_end": period_end, "filed_at": "2025-11-01"}]
+                rows = metrics.build_rows(
+                    [_snap("NVDA", "2026-08-26", snapshot="2026-08-23", target="2026-08-10")],
+                    filings, {}, _MONDAY,
+                )
+
+                self.assertIsNone(rows[0]["prior_filed_at"])
 
     def test_unrelated_period_is_not_matched(self):
         filings = [{
@@ -144,6 +239,69 @@ class CardTest(unittest.TestCase):
 
         self.assertIsNone(ctx["rows"][0]["eps_label"])
         self.assertIsNone(ctx["rows"][0]["revenue_avg"])
+
+
+class _Store:
+    """collect가 부르는 reader 계약만 갖춘 대역."""
+
+    def __init__(self, snapshots: list[dict]) -> None:
+        self._snapshots = snapshots
+        self.asked_today: date | None = None
+
+    def watchlist_members(self) -> list[dict]:
+        return [{"ticker": "NVDA"}]
+
+    def schedule_snapshots(self, tickers: list[str], *, today: date | None = None) -> list[dict]:
+        self.asked_today = today
+        return self._snapshots
+
+    def prior_filings(self, tickers: list[str]) -> list[dict]:
+        return []
+
+    def load_names(self, tickers: list[str]) -> dict:
+        return {}
+
+
+class CollectTest(unittest.TestCase):
+    def test_card_reference_date_is_when_the_schedule_was_last_confirmed(self):
+        from investment_agent.notifications.earnings_calendar import candidates
+
+        store = _Store([_snap("NVDA", "2026-08-26", snapshot="2026-08-01",
+                              last_seen="2026-08-23T01:30:00+00:00")])
+        rows, reference, week = candidates.collect(store, _MONDAY)
+
+        self.assertEqual([row["ticker"] for row in rows], ["NVDA"])
+        # 처음 본 날(8/1)이 아니라 마지막 재확인일이어야 카드의 "기준일"이 사실이다.
+        self.assertEqual(reference, date(2026, 8, 23))
+        self.assertEqual(week, "2026-W35")
+        # 소비 기한(7일 신선도)과 컨센서스 조회 창이 같은 today를 봐야 cron이 밀려도 재현된다.
+        self.assertEqual(store.asked_today, _MONDAY)
+
+    def _collect_at(self, instant: datetime):
+        from unittest import mock
+
+        from investment_agent.notifications.earnings_calendar import candidates
+
+        store = _Store([_snap("NVDA", "2026-09-22", snapshot="2026-09-01",
+                              last_seen="2026-09-20T01:30:00+00:00")])
+        with mock.patch("investment_agent.platform.clock.utc_now", return_value=instant):
+            return candidates.collect(store), store
+
+    def test_the_scheduled_sunday_night_utc_run_picks_the_week_that_is_starting(self):
+        """워크플로는 일요일 23:10 UTC(=월요일 08:10 KST)에 돈다. UTC 날짜로 주를 고르면
+        방금 끝난 주를 골라 이번 주 종목이 0건이 되는데, 예외도 로그도 없이 카드만 안 나간다."""
+        (rows, _, week), store = self._collect_at(datetime(2026, 9, 20, 23, 10, tzinfo=timezone.utc))
+
+        self.assertEqual(week, "2026-W39")
+        self.assertEqual([row["ticker"] for row in rows], ["NVDA"])
+        self.assertEqual(store.asked_today, date(2026, 9, 21))
+
+    def test_a_run_still_on_sunday_in_korea_keeps_the_ending_week(self):
+        """일요일 14:59 UTC는 아직 일요일 23:59 KST다 — 주 경계는 한국 날짜로만 넘어간다."""
+        (rows, _, week), _ = self._collect_at(datetime(2026, 9, 20, 14, 59, tzinfo=timezone.utc))
+
+        self.assertEqual(week, "2026-W38")
+        self.assertEqual(rows, [])
 
 
 class CustomWindowTest(unittest.TestCase):

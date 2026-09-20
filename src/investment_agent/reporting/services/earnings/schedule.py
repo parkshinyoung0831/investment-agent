@@ -16,16 +16,24 @@ Reporting 계약이 소유한다. DB에 접근하지 않으므로 픽스처만�
    그래서 카드는 "이 날 카드가 온다"가 아니라 "이 주에 발표가 있다"만 주장한다.
 
 셋째로 스냅샷 자체가 묵을 수 있다(`fundamentals_expectations`가 실패하면 갱신이 끊긴다).
-기준일이 `_STALE_DAYS`보다 오래됐으면 `stale`로 표시한다.
+**마지막으로 다시 확인한 날**이 `_STALE_DAYS`보다 오래됐으면 `stale`로 표시한다.
+예정 상태는 바뀔 때만 새 행이 생겨 `snapshot_date`는 "처음 본 날"에 머문다 — 그 날짜로
+재면 매일 확인되는 일정도 8일째부터 항상 묵은 것으로 보인다. 마지막 재확인은
+`last_seen_at`에 있다.
 
 판단할 근거를 카드가 숨기지 않도록, 작년 같은 분기의 **실제 제출일**을 함께 낸다.
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
-# 스냅샷이 이만큼 묵으면 예정일에 stale 표시를 단다.
+# 마지막 재확인이 이만큼 묵으면 예정일에 stale 표시를 단다.
 _STALE_DAYS = 7
+
+# 대상 분기말은 일정 출처가 추정한 값이라 실제 분기말과 3주쯤 어긋날 수 있다(COST는 8/30을
+# 8/10으로 잡았다). 작년 같은 분기를 찾는 허용 폭이다. 분기 간격이 약 91일이므로 반 분기
+# 안에서는 가장 가까운 것이 하나뿐이라 이웃 분기와 헷갈리지 않는다.
+_PRIOR_YEAR_TOLERANCE_DAYS = 45
 
 _WEEKDAYS = ("월", "화", "수", "목", "금", "토", "일")
 
@@ -37,6 +45,26 @@ def as_date(value: object) -> date | None:
         return date.fromisoformat(str(value))
     except (TypeError, ValueError):
         return None
+
+
+def observed_date(row: dict) -> date | None:
+    """이 일정 상태를 마지막으로 확인한 날(UTC).
+
+    `last_seen_at`을 못 읽거나 깨졌으면 처음 본 날(`snapshot_date`)로 대신한다 — 그 값을
+    싣지 않는 읽기 경로도 같은 규칙으로 판정하고, 깨진 시각 하나가 카드를 막지 않게 한다.
+    """
+    first_seen = as_date(row.get("snapshot_date"))
+    seen = row.get("last_seen_at")
+    last_seen: date | None = None
+    if isinstance(seen, datetime):
+        last_seen = seen.date()
+    elif seen:
+        try:
+            last_seen = datetime.fromisoformat(str(seen).replace("Z", "+00:00")).date()
+        except ValueError:
+            last_seen = None
+    candidates = [day for day in (first_seen, last_seen) if day is not None]
+    return max(candidates) if candidates else None
 
 
 def week_window(today: date) -> tuple[date, date]:
@@ -98,7 +126,7 @@ def _prior_year_filing(filings: list[dict], ticker: str, target: date) -> dict |
         if period_end is None:
             continue
         distance = abs((period_end - (target - timedelta(days=365))).days)
-        if distance <= 20 and (best is None or distance < best[0]):
+        if distance <= _PRIOR_YEAR_TOLERANCE_DAYS and (best is None or distance < best[0]):
             best = (distance, row)
     return best[1] if best else None
 
@@ -170,7 +198,8 @@ def build_rows_in_window(
             continue
 
         snapshot_date = as_date(latest.get("snapshot_date"))
-        stale = snapshot_date is None or (today - snapshot_date).days > stale_days
+        last_seen_date = observed_date(latest)
+        stale = last_seen_date is None or (today - last_seen_date).days > stale_days
 
         target = str(latest.get("target_period_end") or "")
         history = _shift_history(snapshots, ticker, target)
@@ -201,6 +230,7 @@ def build_rows_in_window(
             "confidence": "shifted" if previous else "stale" if stale else "estimated",
             "previous_expected": previous,
             "snapshot_date": snapshot_date,
+            "last_seen_date": last_seen_date,
             "observations": len(history),
             "eps_avg": latest.get("eps_avg"),
             "eps_analysts": latest.get("eps_analysts"),
@@ -221,5 +251,6 @@ __all__ = [
     "build_rows",
     "build_rows_in_window",
     "iso_week",
+    "observed_date",
     "week_window",
 ]

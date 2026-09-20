@@ -99,6 +99,16 @@ def day_window(end: date, days: int) -> tuple[date, date]:
     return end - timedelta(days=days - 1), end
 
 
+def kst_today(now: datetime | None = None) -> date:
+    """한국 사용자가 말하는 '오늘'. 알림·화면의 주·일 경계는 이 날짜로 정한다.
+
+    러너의 로컬 날짜(`date.today()`)는 UTC라서 KST 00~09시 동안 하루가 밀린다.
+    일요일 23:10 UTC(=월요일 08:10 KST)에 도는 주간 잡이 끝난 주를 고르는 것이
+    그 예다 — 예외 없이 그 주에 해당하는 종목이 0건으로 나온다.
+    """
+    return ensure_aware(now or utc_now()).astimezone(KST).date()
+
+
 def us_market_today(now: datetime | None = None) -> date:
     """뉴욕 시장이 관측하는 날짜를 반환한다."""
     return ensure_aware(now or utc_now()).astimezone(US_MARKET_TIMEZONE).date()
@@ -125,6 +135,7 @@ __all__ = [
     "day_window",
     "completed_us_daily_bar_cutoff",
     "ensure_aware",
+    "kst_today",
     "to_utc_iso",
     "us_market_today",
     "utc_now",
