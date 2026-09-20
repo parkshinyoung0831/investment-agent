@@ -7,7 +7,7 @@
 - 기준 원격 `main`: `b0d0786ae64aa21579bdacb7e19e0d6d05b8368b` (2026-09-20 재개 세션 시작 시 로컬 HEAD·`origin/main`과 일치, 작업 트리 깨끗). 이전 원장이 적은 `4181f6b`는 이 HEAD의 조상이다. 재개 세션 프롬프트는 Task 1~4가 미착수라고 서술했으나 실제로는 모두 완료돼 있었고, 실제 상태를 따랐다.
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
-- 현재 단계: Research→Trading 잔여 의존성 11쌍(아래 '재개 세션 배치 A' 기준)을 남겨두고, 실제 runtime caller를 확인하며 조회·발송 및 실행 경계를 배치별로 정리한다.
+- 현재 단계: Research→Trading 잔여 의존성 1쌍(`build_features`의 `ContextBuilder`)과 CLI 조립 예외 8개(아래 '재개 세션 배치 B')를 남겨두고, 실제 runtime caller를 확인하며 조회·발송 및 실행 경계를 배치별로 정리한다.
 - 현재 작업 방식: 같은 책임 경계의 독립 변경 2~3개를 한 배치로 묶고, 관련·architecture/import 테스트를 배치 안에서 실행한다. 전체 suite는 배치 종료, 실행·승인·risk 안전 변경, 최종 통합 때 실행한다. 완료 task마다 별도 plan 문서를 만들지 않는다.
 - 완료 단계: Phase 1 조사, Phase 2의 feature snapshot·training label·valuation·event·training sample·decision experience owner 이관, Phase 3 공통 serialization·forecast·평가 계약 및 일부 Data read 역방향 import 정리, production Trading 알고리즘 검증의 명시적 경계 설정, Phase 4 RiskGate→ExecutionIntent 생성 책임 이관. Research 사건 feature·계약 배치까지 `PENDING_DEPENDENCIES`는 16쌍이다.
 - 단일 브랜치 통합 점검(2026-09-20): 로컬·GitHub의 실제 브랜치는 `main` 하나였다. 남아 있던 `phase-source/main` 추적 참조(`e9f6fc5`)의 10개 커밋은 `git range-diff 5801357..phase-source/main baf40e2..d2a0315`에서 `main`의 대응 커밋 10개와 일대일로 확인했다(8개 동일, 2개는 선행 Research factor 소유 경로에 맞춰 적용). 이전 코드를 재병합하지 않고 오래된 참조만 정리한다.
@@ -21,7 +21,7 @@
 | `git ls-remote origin refs/heads/main` | 로컬 HEAD와 동일 SHA | 최신 `main` 기준 확인 |
 | `python -m unittest tests.investment_agent.test_architecture tests.test_repo_conventions tests.test_workflow_wiring -q` | 100개 통과 | 구조·관례·workflow 현재 기준선 |
 | `python -m unittest discover -s tests -t .` | 3,071개 통과, skip 1개 (재개 세션 배치 A 종료 시점) | 이 환경에서는 `lightgbm`·`xgboost` 오류도 재현되지 않았다. 최초 기준선은 3,009개 중 오류 4개(ML 미설치)였다 |
-| `tests/investment_agent/test_architecture.py` | `PENDING_DEPENDENCIES` 11쌍(최초 69쌍) | 줄여야 하는 현재 import 부채 |
+| `tests/investment_agent/test_architecture.py` | `PENDING_DEPENDENCIES` 1쌍(최초 69쌍) + `COMPOSITION_ROOTS` 8개 | 줄여야 하는 현재 import 부채와, 사용자가 승인한 좁은 조립 예외 |
 
 ## 새 세션 재개 절차
 
@@ -532,6 +532,16 @@
 - 다음 재개 지점: 위 11쌍을 메서드 단위로 분류한다. `build_labels`/`build_valuations`/`build_features`는 가격·재무·membership·local mirror(PIT replay)를 함께 읽으므로 read 계약을 먼저 고정하고, `evaluate`·`promotion/cli`·`system_ablation`·`backfill_research_history`·`build_decision_experiences`의 CLI 조립부는 operations로 옮길 수 있는지 workflow·하네스 호출 경로와 함께 재검증한다.
 - 관련 커밋: `088ed3a`(코드·테스트·문서). 로컬 `main`이 원격보다 앞서 있고 아직 push하지 않았다(원격 `b0d0786`).
 - 사용자 결정 대기(다음 배치 진입 전): 남은 pending 11쌍 중 `evaluate`·`promotion/cli`·`system_ablation`·`backfill_research_history`·`build_decision_experiences`·`build_features`·`build_labels`·`build_valuations`는 CLI `main()`이 구체 `SupabaseRepository()`를 조립하는 자리다. 이 모듈 경로는 `operations/harness_adapters.py`·`operations/adapters/research.py`(하네스 코드, maintenance 선행 필요)와 `docs/OPERATIONS.md`·research/trading README 여러 곳이 명령으로 호출한다. (A) 조립부를 operations 명령으로 옮기고 경로를 함께 바꾸거나, (B) system_validation처럼 조립 진입점만 좁은 예외로 선언하는 두 방향 중 무엇으로 갈지 정해야 한다.
+
+#### 재개 세션 배치 B — CLI 조립 진입점 예외 선언 (2026-09-20, 사용자 승인: 방향 B)
+
+- 변경 전 호출 관계: 남은 pending 11쌍 중 10쌍이 `trading/supabase_repository.py`의 구체 `SupabaseRepository`를 가져오는 자리였다. 8개 Research 모듈(`commands/{backfill_research_history,build_decision_experiences,build_features,build_labels,build_valuations,evaluate,system_ablation}`, `promotion/cli`)은 모두 `main()`을 가진 CLI 진입점이며 `repository or SupabaseRepository()`나 `main()`에서 구체 저장소를 만든다. 순수 계산은 이미 repository를 주입받는다. 이 모듈 경로를 `operations/harness_adapters.py`·`operations/adapters/research.py`가 하네스 명령으로, `docs/OPERATIONS.md`와 research·trading README 여러 곳이 사람이 실행하는 명령으로 호출한다.
+- 사용자 결정: 조립을 operations로 옮기면 하네스 코드와 명령 경로·문서가 함께 바뀌고 maintenance가 필요하다. 사용자가 이를 옮기지 않고, `system_validation`처럼 조립 진입점만 좁은 예외로 선언하기로 승인했다(방향 B). 이 예외는 완전한 해소가 아니라 **의도적으로 남긴 조립 경계**이며 최종 보고의 남은 debt에 포함한다.
+- 변경: `tests/investment_agent/test_architecture.py`에 `COMPOSITION_ROOTS`(8개 파일 경로)와 `COMPOSITION_REPOSITORY`(구체 저장소 모듈 하나)를 두고 `_is_allowed`가 두 값의 **정확한 일치**만 허용한다. 새 테스트 3개: 각 예외 모듈이 `main()`을 정의하고 실제로 그 저장소를 import하는지(쓰지 않는 예외 방지), 목록에 없는 새 Research 모듈이 같은 import를 하면 실패하는지, 예외 모듈이 다른 Trading 구현(`evidence.context` 등)이나 하위 경로로 넓어지지 않는지. 제품 코드·명령 경로·하네스·문서는 변경하지 않았다.
+- import 방향 변화: 없음(선언만 바뀜). `PENDING_DEPENDENCIES` 11→1.
+- 테스트 결과: 예외 없이 8쌍을 pending에서 지운 상태에서 architecture 4건 실패(RED), `_is_allowed` 추가 후 33개 통과. 위반 주입: 예외 모듈 `evaluate.py`에 `trading.evidence.tools` import를 추가하면 실패함을 확인하고 원복했다.
+- 남은 dependency debt: (1) `research/commands/build_features.py → trading/evidence/context.py`(`ContextBuilder`). Trading 판단(`trading/decision/analysis.py`)과 Research feature build가 함께 쓰는 PIT 증거 조립이며 `EvidenceBundle` 계약과 함께 소유권을 정해야 한다. 기계적으로 옮기지 않았다. (2) `COMPOSITION_ROOTS` 8개는 승인된 예외다. (3) 시스템 검증 예외 6개 import(`research/system_validation/ablation.py`). (4) broker runtime(Phase 5), `dashboard/db.py` 잔여 화면(Phase 6), ResearchStore 분리 판단(Phase 7), 최종 guard 강화(Phase 10).
+- 다음 재개 지점: Phase 5·6 조사. Phase 5는 하네스·execution 코드를 만지므로 시작 전에 `harness_switch --status`를 확인하고 정비 보류가 걸려 있는지 본다(이미 걸린 hold는 임의 해제하지 않는다). `ContextBuilder` 소유권은 별도 설계 결정으로 다룬다.
 
 ## 향후 milestone
 
