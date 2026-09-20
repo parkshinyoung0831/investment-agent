@@ -54,7 +54,7 @@ class EvidenceOwnershipTest(unittest.TestCase):
     def test_trading_repository_inherits_the_pit_reads_instead_of_redefining_them(self) -> None:
         tree = ast.parse((PACKAGE / "trading" / "supabase_repository.py").read_text(encoding="utf-8"))
         repository = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "SupabaseRepository")
-        self.assertEqual(["PitReader"], [base.id for base in repository.bases if isinstance(base, ast.Name)])
+        self.assertEqual(["PitReader", "CandidateSelection"], [base.id for base in repository.bases if isinstance(base, ast.Name)])
         redefined = sorted(n.name for n in repository.body if isinstance(n, ast.FunctionDef) and n.name in PIT_READ_METHODS)
         self.assertEqual([], redefined)
 

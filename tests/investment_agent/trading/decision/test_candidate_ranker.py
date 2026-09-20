@@ -12,10 +12,8 @@ from investment_agent.trading.decision.candidate_ranker import (
     validate_live_candidate_as_of,
 )
 from investment_agent.research.evidence.reader import guru_candidate_signals
-from investment_agent.trading.supabase_repository import (
-    SupabaseRepository,
-    _segment_candidate_signals,
-)
+from investment_agent.trading.decision.candidates import _segment_candidate_signals
+from investment_agent.trading.supabase_repository import SupabaseRepository
 from investment_agent.trading.decision import analysis
 
 _AS_OF = datetime(2026, 8, 21, 21, 0, tzinfo=timezone.utc)
@@ -230,7 +228,7 @@ class CandidateDomainSummaryTest(unittest.TestCase):
     def test_repository_loads_segment_signals_from_fundamentals_owner(self):
         repository = SupabaseRepository()
         with mock.patch(
-            "investment_agent.trading.supabase_repository.fundamentals_segments"
+            "investment_agent.trading.decision.candidates.fundamentals_segments"
         ) as segments:
             segments.segment_snapshots_as_of.return_value = {
                 "AAPL": {
@@ -331,7 +329,7 @@ class CandidateCoverageRepositoryTest(unittest.TestCase):
         trading.security_decision_attempts.return_value = ledger
         return (
             mock.patch.object(SupabaseRepository, "_trading_repository", return_value=trading),
-            mock.patch("investment_agent.trading.supabase_repository.select_tickers_by_security_id",
+            mock.patch("investment_agent.trading.decision.candidates.select_tickers_by_security_id",
                        side_effect=lambda ids: {i: reverse[i] for i in ids if i in reverse}),
         )
 

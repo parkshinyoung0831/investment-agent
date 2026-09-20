@@ -606,6 +606,13 @@
 - 결과: Research → Trading import 예외는 `research/system_validation/ablation.py`의 6개 import뿐이다. 조립 예외는 0개다.
 - 남은 일: 후보 선정·Trading 원장 위임 분리, `dashboard/db.py` 이동.
 
+#### 배치 G4 — 후보 선정을 `trading/decision/candidates.py`로 (2026-09-20)
+
+- 변경 전: G2 뒤에도 `SupabaseRepository`(781줄)에 Trading 판단 로직인 후보 선정(약 360줄)과 판단 원장 위임이 섞여 있었다. 배치 F는 `run_system` 인자와 replay 의미를 바꿔야 한다고 보류했다.
+- 변경: 호출자 API를 바꾸지 않는 방식으로 후보 선정 16개 메서드(`candidate_tickers`, `event_reanalysis_priorities`, `factor_cross_section`, `thesis_views`, 마지막 분석·시도 시각, 판단 시도 행 ticker 해석 등)와 helper 2개를 `trading/decision/candidates.py`의 `CandidateSelection`으로 이동했다. `SupabaseRepository`는 `PitReader`(Research)와 `CandidateSelection`(Trading 판단)을 합성하고 Trading 원장 위임 메서드만 직접 가진다. 그 결과 `supabase_repository.py`는 약 1,340줄에서 300줄이 됐고, `run_system`·ablation replay 어댑터·operations 호출자는 바뀌지 않았다.
+- 테스트: 소유권 가드(`test_repository_ownership.py`)가 후보 선정 메서드의 정의가 `CandidateSelection`에만 있고 `SupabaseRepository`가 재정의하지 않음을 강제하며, 재정의를 넣으면 실패함을 확인하고 원복했다. 옛 모듈을 patch하던 테스트 5개는 새 위치를 가리키게 고쳤고 `research_store_read_paths` 가드는 `reader.py`·`candidates.py`·`supabase_repository.py`를 모두 검사한다. 전체 suite 3,110 중 실패 1건은 사용자 동시 작업 `data/news/`를 금지하는 intelligence 가드다.
+- 남은 일: `dashboard/db.py` 이동, Trading 원장 위임 15개를 호출자가 `TradingRepository`를 직접 쓰게 하는 정리(호출자가 데이터 읽기와 같은 객체를 받으므로 별도 배치).
+
 ## 향후 milestone
 
 | 묶음 | 해당 phase | 독립 완료 조건 |

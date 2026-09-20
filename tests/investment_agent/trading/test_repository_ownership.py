@@ -73,6 +73,24 @@ class RepositoryOwnershipTest(unittest.TestCase):
         self.assertIs(PitReader._memo, SupabaseRepository._memo)
         self.assertIs(PitReader.market_prices, SupabaseRepository.market_prices)
 
+    def test_candidate_selection_is_owned_by_decision_and_not_redefined_on_the_repository(self) -> None:
+        import ast
+        from pathlib import Path
+
+        package = Path(__file__).resolve().parents[3] / "src" / "investment_agent" / "trading"
+        selection = {
+            "candidate_tickers", "event_reanalysis_priorities", "factor_cross_section", "thesis_views",
+            "_candidate_last_analyzed", "_last_attempted", "_decision_attempts",
+        }
+
+        def methods(path: Path, class_name: str) -> set[str]:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == class_name)
+            return {n.name for n in cls.body if isinstance(n, ast.FunctionDef)}
+
+        self.assertTrue(selection <= methods(package / "decision" / "candidates.py", "CandidateSelection"))
+        self.assertEqual(set(), selection & methods(package / "supabase_repository.py", "SupabaseRepository"))
+
     def test_research_store_owns_recalculable_artifact_writes(self) -> None:
         from investment_agent.research.storage.repository import ResearchStore
 

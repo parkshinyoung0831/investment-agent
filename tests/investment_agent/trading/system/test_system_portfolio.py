@@ -351,7 +351,7 @@ class BoundaryTest(unittest.TestCase):
         self.assertEqual(declared, {"47_system_portfolio.sql"})
 
     def test_candidate_and_event_priorities_read_system_holdings(self):
-        source = (ROOT / "src/investment_agent/trading/supabase_repository.py").read_text(encoding="utf-8")
+        source = (ROOT / "src/investment_agent/trading/decision/candidates.py").read_text(encoding="utf-8")
         self.assertNotIn("latest_live_position_tickers", source)
         self.assertIn("SystemPortfolioStore().held_tickers()", source)
 

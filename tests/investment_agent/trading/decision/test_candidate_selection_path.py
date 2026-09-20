@@ -35,12 +35,12 @@ class CandidateSelectionPathTest(unittest.TestCase):
             "CCC": FactorScore("CCC", {"quality": 0.1}, 0.95, False, "quality_below_floor"),
         }
         priority = (PriorityCandidate("EVT", 1, "high_impact_event", 0.9),)
-        with mock.patch("investment_agent.trading.supabase_repository.priority_candidates", return_value=priority):
+        with mock.patch("investment_agent.trading.decision.candidates.priority_candidates", return_value=priority):
             selected = _repository(("2026-09-14T22:00:00+00:00", scores)).candidate_tickers(10, as_of_at=AS_OF)
         self.assertEqual(selected, ["EVT", "BBB", "AAA"])
 
     def test_missing_cross_section_falls_back_to_the_rotation_ranker(self):
-        with mock.patch("investment_agent.trading.supabase_repository.priority_candidates", return_value=()):
+        with mock.patch("investment_agent.trading.decision.candidates.priority_candidates", return_value=()):
             selected = _repository(None).candidate_tickers(10, as_of_at=AS_OF)
         self.assertEqual(sorted(selected), ["AAA", "BBB", "CCC", "EVT"])
 

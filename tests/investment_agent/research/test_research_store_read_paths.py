@@ -17,7 +17,10 @@ from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-TARGET = ROOT / "src" / "investment_agent" / "trading" / "supabase_repository.py"
+TARGETS = tuple(
+    ROOT / "src" / "investment_agent" / relative
+    for relative in ("research/evidence/reader.py", "trading/decision/candidates.py", "trading/supabase_repository.py")
+)
 
 #: 읽기 전용 연결로 충분한 호출. 나머지(upsert_*)는 쓰기라 잠금이 필요하다.
 READ_METHODS = frozenset({"records", "features_for_ticker", "allocations"})
@@ -31,9 +34,9 @@ def _read_only_kwarg(node: ast.Call) -> bool:
 
 
 def _offenders() -> list[str]:
-    tree = ast.parse(TARGET.read_text(encoding="utf-8"))
     found = []
-    for node in ast.walk(tree):
+    trees = [ast.parse(target.read_text(encoding="utf-8")) for target in TARGETS]
+    for node in (node for tree in trees for node in ast.walk(tree)):
         if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
             continue
         if node.func.attr not in READ_METHODS:
@@ -63,9 +66,9 @@ class ResearchStoreReadPathTest(unittest.TestCase):
 
     def test_there_are_read_calls_to_check(self) -> None:
         """호출이 없으면 아래 검사는 아무것도 보증하지 않는다."""
-        tree = ast.parse(TARGET.read_text(encoding="utf-8"))
+        trees = [ast.parse(target.read_text(encoding="utf-8")) for target in TARGETS]
         calls = [
-            node for node in ast.walk(tree)
+            node for tree in trees for node in ast.walk(tree)
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
             and node.func.attr in READ_METHODS
         ]
