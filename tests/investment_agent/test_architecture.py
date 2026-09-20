@@ -368,8 +368,6 @@ class LayerDirectionTest(unittest.TestCase):
             ("src/investment_agent/research/commands/evaluate.py", "investment_agent.trading.supabase_repository"),
             ("src/investment_agent/research/commands/system_ablation.py", "investment_agent.trading.supabase_repository"),
             ("src/investment_agent/research/features/event_intelligence.py", "investment_agent.trading.decision.contracts"),
-            ("src/investment_agent/research/features/event_intelligence.py", "investment_agent.trading.decision.event_impact"),
-            ("src/investment_agent/research/features/layer.py", "investment_agent.trading.contracts"),
             ("src/investment_agent/research/promotion/cli.py", "investment_agent.trading.supabase_repository"),
             ("src/investment_agent/research/rl/baseline.py", "investment_agent.trading.portfolio.contracts"),
             ("src/investment_agent/research/rl/environment.py", "investment_agent.trading.portfolio.contracts"),

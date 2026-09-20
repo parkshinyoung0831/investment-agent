@@ -6,8 +6,9 @@ from datetime import date, datetime, timedelta, timezone
 
 from investment_agent.operations.commands.event_reanalysis import run_event_reanalysis
 from investment_agent.research.features.event_intelligence import extract_events
+from investment_agent.research.features.themes import GLOBAL_THEMES, tag_themes
 from investment_agent.trading.decision.candidate_ranker import PriorityCandidate
-from investment_agent.trading.decision.event_impact import global_event_priorities, market_confirms, tag_themes
+from investment_agent.trading.decision.event_impact import PROXY_BY_THEME, global_event_priorities, market_confirms
 
 AS_OF = datetime(2026, 9, 16, 22, tzinfo=timezone.utc)
 EVENT_AT = datetime(2026, 9, 14, 23, tzinfo=timezone.utc)
@@ -32,6 +33,9 @@ def _event(*, providers=("reuters", "bloomberg"), importance=0.9, themes=("energ
 
 
 class ThemeTaggingTest(unittest.TestCase):
+    def test_each_research_theme_has_a_trading_proxy(self):
+        self.assertEqual(set(PROXY_BY_THEME), {theme.name for theme in GLOBAL_THEMES})
+
     def test_keywords_map_to_themes_without_partial_word_matches(self):
         self.assertEqual(tag_themes("OPEC agrees to cut crude output"), ("energy_oil",))
         self.assertEqual(tag_themes("Warner Bros reports"), ())  # "war"가 단어 일부로 걸리지 않는다

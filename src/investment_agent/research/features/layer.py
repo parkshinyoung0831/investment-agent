@@ -6,11 +6,30 @@ import math
 import statistics
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Protocol, Sequence
 
-from investment_agent.trading.contracts import EvidenceBundle, parse_datetime
-from investment_agent.platform.serialization import canonical_json
+from investment_agent.platform.serialization import canonical_json, parse_datetime
 from investment_agent.research.rl.contracts import FeatureSnapshot, ForwardReturnLabel, RLSafetyError
+
+
+class FeatureEvidence(Protocol):
+    """PIT feature 계산에 필요한 증거 행의 최소 입력."""
+
+    evidence_id: str
+    domain: str
+    available_at: str | None
+    payload: Mapping[str, Any]
+
+
+class FeatureEvidenceBundle(Protocol):
+    """Trading 구현체와 무관하게 feature 계산이 읽는 증거 묶음."""
+
+    ticker: str
+    as_of_at: str
+    source_kind: str
+    evidence: Sequence[FeatureEvidence]
+    missing_data: Sequence[str]
+
 
 # feature 계약 세대. `rl_feature_snapshots`의 identity 구성요소이며, 컬럼 계약이
 # 바뀌면 snapshot과 label이 다른 세대로 분리된다.
@@ -282,7 +301,7 @@ class FeatureLayer:
 
     def build(
         self,
-        bundle: EvidenceBundle,
+        bundle: FeatureEvidenceBundle,
         *,
         valuation: Mapping[str, Any] | None = None,
     ) -> FeatureBundle:

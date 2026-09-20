@@ -501,6 +501,13 @@
 - 검증: legacy reader guard RED→GREEN, 합성 alias 위반 검출. Dashboard·Reporting guard·architecture·page wiring 66개 통과, import/legacy caller 검색 0건. 전체 suite 3,054개 중 이전과 동일한 별도 문서/Graphify 실패 3건·skip 1건 외 새 실패가 없다.
 - 남은 부채: `PENDING_DEPENDENCIES` 19쌍 불변. `dashboard/db.py`는 earnings와 canonical identity가 필요한 AI 화면 caller가 남아 유지한다. 서로 의미가 다른 execution/guru/price/strategy 동명 read도 자동 삭제하지 않는다. broker runtime·ResearchStore/Operations 및 외부 문서/Graphify 실패 3건은 별도 후속이다.
 
+#### Research feature 입력 배치 — 테마 taxonomy와 PIT 증거 입력
+
+- 근거·변경 전 caller: `research.features.event_intelligence`가 Trading의 `tag_themes`를 호출했지만 분류 결과는 Research event metadata로 저장됐다. Trading의 재분석은 별도 ETF proxy 선택·시장확인·민감도 계산을 수행한다. `FeatureLayer.build`는 Trading `EvidenceBundle`을 타입으로만 import하고 실제로는 정해진 증거 필드만 읽었다.
+- 변경 파일·방향: `research/features/themes.py`가 기존 키워드·순서·테마 이름의 원본을 소유하고, `trading/decision/event_impact.py`는 기존 ETF 매핑만 소유한다. `trading/supabase_repository.py`도 해당 매핑을 읽는다. `research/features/layer.py`는 읽는 필드만 기술한 입력 Protocol과 Platform 시간 파서를 사용한다. 관련 Research/Trading 테스트는 분류-ETF 대응 및 Trading 클래스가 아닌 구조적 입력의 동일 snapshot ID를 검증한다. Trading의 미사용 `tag_themes`/`GlobalTheme`/`THEME_BY_NAME` API는 caller 0건 확인 후 제거했다. DB schema·PIT cutoff·event ID·feature hash·재분석 판단은 변경하지 않았다.
+- 검증: pending 두 항목 제거 시 정확한 architecture 위반 2건과 새 owner 모듈 import 오류로 RED 확인. 관련 Research·Operations·Trading·native·architecture 81개 통과. 전체 오프라인 suite 3,056개는 이전과 동일한 별도 문서/Graphify 실패 3건·skip 1건 외 새 실패가 없다. 두 이전 production import 및 사용처 검색 0건.
+- 남은 부채: `PENDING_DEPENDENCIES` 19→17쌍. `event_intelligence`의 Event 계약은 아직 Trading 소유라 별도 검증이 필요하다. Broker runtime, Dashboard의 earnings/AI read, ResearchStore·Operations 소유권 및 별도 문서/Graphify 실패 3건이 남는다. 다음 배치는 Event 계약과 나머지 Research import를 실제 caller·검증 helper 사용 범위부터 다시 조사한다.
+
 ## 향후 milestone
 
 | 묶음 | 해당 phase | 독립 완료 조건 |

@@ -36,7 +36,7 @@ from investment_agent.research.adapters.trading import (
 )
 from investment_agent.trading.portfolio.signal_book import SignalBatch, SignalRecord
 from investment_agent.trading.decision.universe import normalize_ticker
-from investment_agent.trading.decision.event_impact import THEME_BY_NAME, global_event_priorities
+from investment_agent.trading.decision.event_impact import PROXY_BY_THEME, global_event_priorities
 from investment_agent.trading.portfolio.market_risk import estimate_betas
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.retry import transient_retry
@@ -658,7 +658,7 @@ class SupabaseRepository:
         )
         global_events = self._recent_global_events(as_of_at, hours=global_event_hours) if held else []
         themes = {theme for event in global_events for theme in (event.get("metadata") or {}).get("themes") or ()}
-        proxies = sorted({THEME_BY_NAME[name].proxy for name in themes if name in THEME_BY_NAME})
+        proxies = sorted({PROXY_BY_THEME[name] for name in themes if name in PROXY_BY_THEME})
         sensitivities: dict[str, dict[str, float]] = {}
         proxy_rows: dict[str, list[dict]] = {}
         if proxies:

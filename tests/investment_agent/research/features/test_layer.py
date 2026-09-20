@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
 
-from investment_agent.trading.contracts import EvidenceBundle, EvidenceItem
 from investment_agent.research.features.layer import FeatureLayer
+from investment_agent.trading.contracts import EvidenceBundle, EvidenceItem
 
 
 class FeatureLayerTest(unittest.TestCase):
@@ -30,6 +31,22 @@ class FeatureLayerTest(unittest.TestCase):
         self.assertAlmostEqual(first.snapshot.features["price_return_1d"], 0.1)
         self.assertNotIn("forward_return", first.snapshot.features)
         self.assertFalse(first.snapshot.provenance["news_social_enabled"])
+
+    def test_feature_input_is_structural_not_a_trading_class(self):
+        original = self._bundle()
+        item = original.evidence[0]
+        incoming = SimpleNamespace(
+            ticker=original.ticker, as_of_at=original.as_of_at,
+            source_kind=original.source_kind, missing_data=original.missing_data,
+            evidence=(SimpleNamespace(
+                evidence_id=item.evidence_id, domain=item.domain,
+                available_at=item.available_at, payload=item.payload,
+            ),),
+        )
+        self.assertEqual(
+            FeatureLayer().build(original).snapshot.snapshot_id,
+            FeatureLayer().build(incoming).snapshot.snapshot_id,
+        )
 
 
 if __name__ == "__main__":

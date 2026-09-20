@@ -20,8 +20,6 @@
 from __future__ import annotations
 
 import math
-import re
-from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import Any, Mapping, Sequence
 
@@ -32,35 +30,15 @@ MIN_PROVIDERS = 2
 MIN_SENSITIVITY = 0.5
 
 
-@dataclass(frozen=True)
-class GlobalTheme:
-    name: str
-    proxy: str
-    keywords: tuple[str, ...]
-
-
-GLOBAL_THEMES: tuple[GlobalTheme, ...] = (
-    GlobalTheme("energy_oil", "XLE", ("oil", "opec", "crude", "brent", "wti", "gasoline", "pipeline")),
-    GlobalTheme("rates_fed", "TLT", ("fed", "fomc", "powell", "rate hike", "rate cut", "treasury yield",
-                                     "inflation", "cpi", "interest rate")),
-    GlobalTheme("trade_tariff", "QQQ", ("tariff", "trade war", "export control", "sanction", "import ban")),
-    GlobalTheme("semiconductors_ai", "XLK", ("semiconductor", "chip", "chips", "gpu", "foundry", "ai model")),
-    GlobalTheme("banking_credit", "XLF", ("bank run", "credit crunch", "default", "bank failure", "liquidity crisis")),
-    GlobalTheme("geopolitical", "SPY", ("war", "missile", "invasion", "military", "ceasefire", "nuclear")),
-    GlobalTheme("commodities", "DBC", ("commodity", "commodities", "copper", "wheat", "supply shock")),
-)
-THEME_BY_NAME = {theme.name: theme for theme in GLOBAL_THEMES}
-_WORD = re.compile(r"[a-z0-9]+")
-
-
-def tag_themes(text: str) -> tuple[str, ...]:
-    """원문에서 테마 이름만 뽑는다. 원문 자체는 저장하지 않는다."""
-    lowered = " ".join(_WORD.findall(str(text or "").lower()))
-    padded = f" {lowered} "
-    return tuple(
-        theme.name for theme in GLOBAL_THEMES
-        if any(f" {keyword} " in padded for keyword in theme.keywords)
-    )
+PROXY_BY_THEME = {
+    "energy_oil": "XLE",
+    "rates_fed": "TLT",
+    "trade_tariff": "QQQ",
+    "semiconductors_ai": "XLK",
+    "banking_credit": "XLF",
+    "geopolitical": "SPY",
+    "commodities": "DBC",
+}
 
 
 def _daily_returns(rows: Sequence[Mapping[str, Any]]) -> list[tuple[str, float]]:
@@ -107,15 +85,15 @@ def global_event_priorities(
         if importance < HIGH_IMPACT_EVENT_IMPORTANCE or len(providers) < MIN_PROVIDERS:
             continue
         for theme_name in (event.get("metadata") or {}).get("themes") or ():
-            theme = THEME_BY_NAME.get(theme_name)
-            if theme is None or not market_confirms(proxy_rows.get(theme.proxy) or (), available_at=available):
+            proxy = PROXY_BY_THEME.get(theme_name)
+            if proxy is None or not market_confirms(proxy_rows.get(proxy) or (), available_at=available):
                 continue
             for ticker in sorted(held):
-                sensitivity = float((sensitivities.get(theme.proxy) or {}).get(ticker, 0.0))
+                sensitivity = float((sensitivities.get(proxy) or {}).get(ticker, 0.0))
                 previous = last_analyzed_at.get(ticker)
                 if abs(sensitivity) < MIN_SENSITIVITY or (previous is not None and previous >= available):
                     continue
-                candidate = PriorityCandidate(ticker, 0, f"held_global_event:{theme.name}",
+                candidate = PriorityCandidate(ticker, 0, f"held_global_event:{theme_name}",
                                               min(1.0, importance * abs(sensitivity)))
                 if ticker not in best or candidate.importance > best[ticker].importance:
                     best[ticker] = candidate
@@ -123,11 +101,9 @@ def global_event_priorities(
 
 
 __all__ = [
-    "GLOBAL_THEMES",
-    "GlobalTheme",
     "MIN_PROVIDERS",
     "MIN_SENSITIVITY",
+    "PROXY_BY_THEME",
     "global_event_priorities",
     "market_confirms",
-    "tag_themes",
 ]

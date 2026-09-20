@@ -9,8 +9,8 @@ from datetime import timedelta
 from typing import Any, Mapping, Sequence
 
 from investment_agent.platform.serialization import canonical_json, canonicalize_url, parse_datetime
+from investment_agent.research.features.themes import tag_themes
 from investment_agent.trading.decision.contracts import Event, EventFeatureSnapshot
-from investment_agent.trading.decision.event_impact import tag_themes
 
 _TOKEN_RE = re.compile(r"[a-z0-9][a-z0-9_-]{2,}")
 _POSITIVE_WORDS = frozenset({
