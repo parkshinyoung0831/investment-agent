@@ -544,6 +544,15 @@
 - Phase 6 사전 조사(코드 수정 없음): `dashboard/db.py`는 1,772줄이며 화면 caller는 `app_pages/ai_approval.py`·`intelligence.py`의 `load_ai_data`와 `app_pages/earnings.py`의 earnings 로더 묶음(`load_earnings_data`·`load_earnings_discord_support`·`load_earnings_extended`, 합쳐 약 500줄)뿐이다. `calculations/strategy.py`는 `load_price_history` 계약을 주석으로만 언급한다. 파일에는 SELECT 전용 안전 경계(`SelectOnlyGateway`, RPC 전부 거부)와 canonical 재무·처리·segment·주식수·가격 행 정규화 helper가 함께 있다. 옮길 때는 (1) gateway 경계와 helper의 동등한 보존 위치를 먼저 정하고, (2) earnings 로더를 화면 단위로 나눠 reporting reader/service 계약 테스트를 먼저 고정하며, (3) `load_ai_data`는 로컬 decision과 canonical security identity 결합이라 단순 이관 대상이 아니다.
 - 다음 재개 지점: Phase 5·6 조사. Phase 5는 하네스·execution 코드를 만지므로 시작 전에 `harness_switch --status`를 확인하고 정비 보류가 걸려 있는지 본다(이미 걸린 hold는 임의 해제하지 않는다). `ContextBuilder` 소유권은 별도 설계 결정으로 다룬다.
 
+#### 재개 세션 배치 C — pending 0쌍, broker 계약 판단 (2026-09-20, 사용자 지시: 권장 방향으로 전부 진행)
+
+- `ContextBuilder`(마지막 pending 1쌍): Trading 판단(`trading/decision/analysis.py`)과 Research feature build가 같은 PIT 증거 조립기를 써서 학습·서빙 일관성을 만든다. 조립기 안에는 LLM 프롬프트 공시 행 수 상한(`FILING_ROWS_IN_PROMPT`) 같은 Trading 정책이 있어 Research로 통째로 옮기면 그 정책이 딸려 간다. Ruling: `build_features`는 이미 저장소를 만드는 조립 진입점이므로 `COMPOSITION_ROOTS`를 "파일 → 허용 모듈 집합" 정확 매핑으로 일반화하고 이 파일에만 `trading/evidence/context.py`를 추가했다. 새 파라미터·추상화는 만들지 않았다. 다른 진입점은 이 예외를 물려받지 않으며(`build_labels`에 주입해 실패 확인 후 원복), 예외 모듈이 실제로 그 import를 쓰는지도 검사한다. **`PENDING_DEPENDENCIES`는 0쌍이 됐다.** 다만 이는 해소가 아니라 승인된 조립 예외 8개(+ `ContextBuilder` 1개)와 시스템 검증 예외로 남은 것이다. 증거 조립기·`EvidenceBundle` 계약의 소유권은 아직 Trading에 있다.
+- Phase 5(broker 계약): `execution/brokers/contracts.py`의 9개 이름(`BrokerAdapter`, `CanonicalOrderRequest`, `BrokerOrder` 등)은 패키지 `__init__` 재수출 외에 production·test 호출자가 0개였고 구현체도 없었다. 실주문 worker는 `TossOrderApi`·`TossOrderCommand`·`TossManualSnapshot`으로 수량·수수료·매수 가능액·정규장·수동 handoff를 검증하며 이 의미가 전부 Toss 전용이다. `test_toss_only.py`는 이미 KIS 어댑터·`BrokerRouter`가 없음을 강제하고 있다. Ruling: 실주문 worker를 broker 중립 계약으로 바꾸는 것은 broker가 하나인 지금 위험만 늘리므로 하지 않고, 호출자 0인 broker 중립 계약 파일을 삭제했다. 두 번째 broker가 실제로 생기면 그때 worker의 공통 부분을 나눈다(execution README에 명시).
+- 수정 파일: `tests/investment_agent/test_architecture.py`(조립 예외 일반화·pending 0), `tests/investment_agent/execution/test_toss_only.py`(broker 중립 계약 부재 테스트), `src/investment_agent/execution/brokers/__init__.py`, `src/investment_agent/execution/README.md`.
+- 삭제: `src/investment_agent/execution/brokers/contracts.py`(호출자 0 확인). worker·주문 원장·reconciliation·`TOSS_LIVE_ENABLED`·maintenance hold는 변경하지 않았다. hold(정비 보류·kill switch ON·lockdown)는 그대로다.
+- 테스트: 새 broker 중립 계약 부재 테스트는 삭제 전 RED, 삭제 후 통과. execution 전체 211개, architecture·docs 통과.
+- 남은 debt: Phase 6(dashboard read 이관), Phase 7(ResearchStore), Phase 9(`SupabaseRepository` God façade 1,344줄 분해: 데이터 읽기 조립·후보 선정·Trading 원장 쓰기·모델 승격·research 읽기가 섞임), Phase 10(가드 강화).
+
 ## 향후 milestone
 
 | 묶음 | 해당 phase | 독립 완료 조건 |

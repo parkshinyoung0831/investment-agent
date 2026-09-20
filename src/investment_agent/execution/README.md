@@ -34,8 +34,7 @@ EvidenceBundle이나 LLM prompt를 수정하지 않습니다.
 |---|---|---|
 | `ExecutionIntent` | `intents.py` | 목표 비중과 risk/proposal identity, TTL |
 | `OrderPlan` | `planning.py` | broker mutation 전 주문 계획 |
-| `CanonicalOrderRequest` | `brokers/contracts.py` | broker 공통 submit 계약 |
-| `BrokerOrder` / `BrokerFill` | 같은 파일 | broker별 응답의 내부 표준형 |
+| `TossOrderCommand` / `TossOrderReceipt` | `brokers/toss/orders.py` | Toss 주문 제출·응답 계약 (결과 불명은 `TossOrderOutcomeUnknown`) |
 | `ApprovalRequest` | `approvals.py` | HMAC button과 account/manifest/TTL 결박 |
 | `OrderAttempt` | `ledger.py` | mutation 전 client ID/payload 예약 |
 | `DurableControlState` | `control_state.py` | DB kill switch/lockdown/live flags |
@@ -43,8 +42,9 @@ EvidenceBundle이나 LLM prompt를 수정하지 않습니다.
 ## Toss 단일 실행 경로
 
 실주문은 `orders/live_worker.py`에서 `TossOrderApi`를 직접 호출합니다.
-계좌·시세·주문·체결 API는 `brokers/toss/`가 소유하며, 공통 반환 계약은
-`brokers/contracts.py`에 둡니다. 주문 제출 전 승인·위험 제한·durable control을 검증합니다.
+계좌·시세·주문·체결 API와 그 계약은 `brokers/toss/`가 소유합니다. 주문 제출 전 승인·위험 제한·
+durable control을 검증합니다. 수량·수수료·매수 가능액·정규장·수동 handoff 절차가 모두 Toss 전용이라
+broker 중립 계약은 두지 않습니다. 두 번째 broker가 실제로 생기면 그때 worker의 공통 부분을 나눕니다.
 
 ## Live Manual 흐름
 

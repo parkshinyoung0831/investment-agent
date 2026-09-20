@@ -352,27 +352,28 @@ class LayerDirectionTest(unittest.TestCase):
         "investment_agent.trading.system.target",
     })
 
-    # Research CLI 진입점은 구체 `SupabaseRepository`를 조립한다. 조립은 operations 책임이지만
-    # 이 명령의 모듈 경로를 하네스·workflow·문서가 직접 호출하므로, 진입점 모듈과 그 구체
-    # 저장소 하나만 예외로 선언한다. 순수 로직은 이미 repository를 주입받는다. 목록에 없는
-    # 모듈이나 다른 Trading 구현으로 예외가 넓어지지 않으며 `main()`이 없는 모듈은 실패한다.
-    COMPOSITION_ROOTS = frozenset({
-        "src/investment_agent/research/commands/backfill_research_history.py",
-        "src/investment_agent/research/commands/build_decision_experiences.py",
-        "src/investment_agent/research/commands/build_features.py",
-        "src/investment_agent/research/commands/build_labels.py",
-        "src/investment_agent/research/commands/build_valuations.py",
-        "src/investment_agent/research/commands/evaluate.py",
-        "src/investment_agent/research/commands/system_ablation.py",
-        "src/investment_agent/research/promotion/cli.py",
-    })
+    # Research CLI 진입점은 구체 Trading 협력자를 조립한다. 조립은 operations 책임이지만
+    # 이 명령의 모듈 경로를 하네스·workflow·문서가 직접 호출하므로, 진입점 모듈과 그가
+    # 만드는 구체 협력자만 파일별로 정확히 선언한다. 순수 계산은 이미 repository를 주입받는다.
+    # 목록에 없는 모듈이나 다른 Trading 구현으로 예외가 넓어지지 않으며 `main()`이 없는
+    # 모듈은 실패한다. `build_features`는 저장소와 같은 PIT 증거 조립기(`ContextBuilder`)를 만든다.
     COMPOSITION_REPOSITORY = "investment_agent.trading.supabase_repository"
+    COMPOSITION_EVIDENCE = "investment_agent.trading.evidence.context"
+    COMPOSITION_ROOTS = {
+        "src/investment_agent/research/commands/backfill_research_history.py": frozenset({COMPOSITION_REPOSITORY}),
+        "src/investment_agent/research/commands/build_decision_experiences.py": frozenset({COMPOSITION_REPOSITORY}),
+        "src/investment_agent/research/commands/build_features.py": frozenset({COMPOSITION_REPOSITORY, COMPOSITION_EVIDENCE}),
+        "src/investment_agent/research/commands/build_labels.py": frozenset({COMPOSITION_REPOSITORY}),
+        "src/investment_agent/research/commands/build_valuations.py": frozenset({COMPOSITION_REPOSITORY}),
+        "src/investment_agent/research/commands/evaluate.py": frozenset({COMPOSITION_REPOSITORY}),
+        "src/investment_agent/research/commands/system_ablation.py": frozenset({COMPOSITION_REPOSITORY}),
+        "src/investment_agent/research/promotion/cli.py": frozenset({COMPOSITION_REPOSITORY}),
+    }
 
     # 허용 목록이 아니라 현재 의존성 부채의 기준선이다. 새 항목도, 해소된 항목의
     # 잔류도 실패시켜 이후 phase에서 이 집합이 줄어들기만 하게 한다.
     PENDING_DEPENDENCIES = frozenset(
         {
-            ("src/investment_agent/research/commands/build_features.py", "investment_agent.trading.evidence.context"),
         }
     )
 
@@ -381,7 +382,7 @@ class LayerDirectionTest(unittest.TestCase):
         if (path == PACKAGE / "research" / "system_validation" / "ablation.py"
                 and name in cls.SYSTEM_VALIDATION_DEPENDENCIES):
             return True
-        if path.relative_to(ROOT).as_posix() in cls.COMPOSITION_ROOTS and name == cls.COMPOSITION_REPOSITORY:
+        if name in cls.COMPOSITION_ROOTS.get(path.relative_to(ROOT).as_posix(), frozenset()):
             return True
         if name == "investment_agent.execution.contracts":
             return True
@@ -453,13 +454,14 @@ class LayerDirectionTest(unittest.TestCase):
         )
 
     def test_composition_roots_are_cli_entry_modules_that_use_the_repository(self) -> None:
-        for relative in sorted(self.COMPOSITION_ROOTS):
+        for relative, allowed in sorted(self.COMPOSITION_ROOTS.items()):
             with self.subTest(module=relative):
                 path = ROOT / relative
                 tree = ast.parse(path.read_text(encoding="utf-8"))
                 entry_points = [node.name for node in tree.body if isinstance(node, ast.FunctionDef)]
                 self.assertIn("main", entry_points, "예외는 CLI 진입점에만 준다")
-                self.assertIn(self.COMPOSITION_REPOSITORY, _imported_names(path), "쓰지 않는 예외는 지운다")
+                self.assertIn(self.COMPOSITION_REPOSITORY, allowed)
+                self.assertEqual(set(), allowed - _imported_names(path), "쓰지 않는 예외는 지운다")
 
     def test_a_new_research_module_cannot_import_the_concrete_trading_repository(self) -> None:
         with tempfile.TemporaryDirectory(dir=PACKAGE / "research" / "commands") as temporary:
@@ -472,8 +474,12 @@ class LayerDirectionTest(unittest.TestCase):
     def test_composition_roots_may_not_import_other_trading_implementations(self) -> None:
         path = ROOT / "src/investment_agent/research/commands/build_features.py"
         self.assertTrue(self._is_allowed(path, self.COMPOSITION_REPOSITORY))
-        self.assertFalse(self._is_allowed(path, "investment_agent.trading.evidence.context"))
+        self.assertTrue(self._is_allowed(path, self.COMPOSITION_EVIDENCE))
+        self.assertFalse(self._is_allowed(path, "investment_agent.trading.evidence.tools"))
         self.assertFalse(self._is_allowed(path, self.COMPOSITION_REPOSITORY + ".private"))
+        # 다른 진입점은 증거 조립기 예외를 물려받지 않는다.
+        other = ROOT / "src/investment_agent/research/commands/build_labels.py"
+        self.assertFalse(self._is_allowed(other, self.COMPOSITION_EVIDENCE))
 
     def test_the_rule_covers_layers_that_exist(self) -> None:
         """검사 대상이 하나도 없으면 위 검사는 아무것도 지키지 않는다."""

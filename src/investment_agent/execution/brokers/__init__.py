@@ -1,19 +1,2 @@
-"""Broker-independent execution ports and adapters."""
+"""Toss 단일 broker의 API 어댑터와 주문 원장 저장소."""
 from __future__ import annotations
-
-
-from investment_agent.execution.brokers.contracts import (
-    BrokerAccount,
-    BrokerAdapter,
-    BrokerFill,
-    BrokerOrder,
-    BrokerOutcomeUnknown,
-    BrokerPosition,
-    BrokerQuote,
-    CanonicalOrderRequest,
-)
-
-__all__ = [
-    "BrokerAccount", "BrokerAdapter", "BrokerFill", "BrokerOrder",
-    "BrokerOutcomeUnknown", "BrokerPosition", "BrokerQuote", "CanonicalOrderRequest",
-]

@@ -20,3 +20,10 @@ class TossOnlyTest(unittest.TestCase):
         for name in ("KISPaperBrokerAdapter", "KISLiveBrokerAdapter", "BrokerRouter"):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(brokers, name))
+
+    def test_no_broker_neutral_contract_exists_without_an_implementation(self):
+        """구현체도 호출자도 없는 broker 중립 계약은 두 번째 broker의 근거가 아니라 오해의 근거다."""
+        self.assertIsNone(importlib.util.find_spec("investment_agent.execution.brokers.contracts"))
+        for name in ("BrokerAdapter", "CanonicalOrderRequest", "BrokerOrder", "BrokerFill"):
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(brokers, name))
