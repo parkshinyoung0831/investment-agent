@@ -191,7 +191,7 @@ universe/data → context/contracts → agents/models → optimizer/risk
              → backtest/evaluation → promotion → execution → broker
 ```
 
-- `context.py`: point-in-time EvidenceBundle 조립
+- `research/evidence/context.py`: point-in-time EvidenceBundle 조립(Research가 소유하고 Trading은 공개 계약으로 소비)
 - `agents/`: LLM 역할 실행과 구조화 제안
 - `feature_layer.py`: 학습과 live inference가 공유하는 feature definition/hash
 - `portfolio/`: 공통 signal·optimizer·비중 계약·Champion·Risk Gate

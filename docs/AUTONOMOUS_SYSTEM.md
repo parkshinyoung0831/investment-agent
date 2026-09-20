@@ -10,15 +10,17 @@ Toss execution ledger/reconciliation은 canonical package와 `db/postgres/v1/` �
 `src/investment_agent/data/fundamentals`, `src/investment_agent/data/macro`,
 `src/investment_agent/data/macro/releases`, `src/investment_agent/data/institutional`이 각각의
 Supabase source schema에 기록한다. `src/investment_agent/research/features`는 저장된
-market 원장으로 feature를 계산해 ResearchStore에 기록한다. `src/investment_agent/trading`은 현재 EvidenceBundle,
+market 원장으로 feature를 계산해 ResearchStore에 기록한다. `src/investment_agent/research/evidence`가 EvidenceBundle과 PIT 조립을, `src/investment_agent/trading`이
 TradingAgents 선택 adapter와 portfolio/risk를 소유하며
 `src/investment_agent/execution`은 승인된 ExecutionIntent 이후의 broker 경계를 소유한다.
 
 주요 공개 경계는 다음 package가 소유한다.
 
 ```text
+src/investment_agent/research/evidence/contracts.py
+  └─ Evidence 계약
 src/investment_agent/trading/contracts.py
-  └─ Evidence/Portfolio 계약
+  └─ 판단·포트폴리오 계약
 src/investment_agent/research/contracts.py
   └─ Research artifact 계약
 src/investment_agent/execution/contracts.py

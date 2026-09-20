@@ -41,8 +41,8 @@ ExecutionIntent                 이 지점부터 `investment_agent.execution`이
 
 | 계약 | 정의 | 의미 |
 |---|---|---|
-| `EvidenceItem` | `contracts.py` | domain별 payload와 observed/available time, source, stable ID |
-| `EvidenceBundle` | `contracts.py` | 하나의 ticker·cutoff·source kind에 대한 근거와 결측 목록 |
+| `EvidenceItem` | `research/evidence/contracts.py` | domain별 payload와 observed/available time, source, stable ID |
+| `EvidenceBundle` | `research/evidence/contracts.py` | 하나의 ticker·cutoff·source kind에 대한 근거와 결측 목록 |
 | `FeatureBundle` | `feature_layer.py` | 학습과 inference가 공유하는 feature version/hash |
 | `FeatureSnapshot` | `rl/contracts.py` | 저장 가능한 종목×시점 feature row |
 | `SecurityProposal` | `portfolio/contracts.py` | LLM의 종목별 정성 판단. 주문 권한 없음 |
@@ -78,8 +78,9 @@ factor 점수는 가장 최근의 온전한 live feature 횡단면에서 `resear
 
 ## 2. Context와 PIT 경계
 
-`ContextBuilder.build(ticker, as_of_at, source_kind=...)`는 각 domain repository를 호출해 bundle을
-만듭니다.
+`ContextBuilder.build(ticker, as_of_at, source_kind=...)`(`research/evidence/context.py`)는 각 domain repository를
+호출해 bundle을 만듭니다. 계약·조립기·통계와 PIT 읽기(`PitReader`)는 Research가 소유하고 Trading은
+`research/adapters/trading.py`로만 가져옵니다.
 
 | Domain | live Shadow | historical replay |
 |---|---|---|
@@ -230,9 +231,10 @@ execution의 5단계 lifecycle과 model artifact의 3단계 저장 stage는 서�
 src/investment_agent/trading/
   decision/analysis.py         TradingAgents 논지 분석 진입점(비중을 정하지 않음)
   decision/alpha.py            factor 사전값 + champion ML + 논지 검증 → 기대초과수익·제약
-  decision/candidate_ranker.py 분석 후보 선정(System 보유·새 정보·factor 상위)
+  decision/candidate_ranker.py 분석 후보 순위 계산(System 보유·새 정보·factor 상위)
+  decision/candidates.py       후보 선정 판단 로직(`CandidateSelection`: 후보·재분석 우선순위·factor 횡단면·논지)
   decision/universe.py         tracked universe 검증
-  evidence/                    PIT EvidenceBundle 조립·보관
+  evidence/                    dossier·renderer·history(근거 보관·설명). PIT 조립은 research/evidence
   portfolio/optimizer.py       CVXPY 목표비중
   portfolio/market_risk.py     공분산·베타·거래비용·시장위험 재료
   portfolio/signal_book.py     분석 배치·논지 기록 계약
@@ -242,7 +244,7 @@ src/investment_agent/trading/
   my_portfolio.py              System 목표를 따라가는 실계좌 추종 제안
   performance/                 My Portfolio 성과(입출금 반영 시간가중 수익률)
   repository.py                trading 원장 repository
-  supabase_repository.py       trading Supabase reader/writer
+  supabase_repository.py       Trading 원장 게이트웨이(`PitReader` + `CandidateSelection` 합성, ticker↔security_id 변환)
 ```
 
 ## 주요 CLI

@@ -37,15 +37,16 @@ src/investment_agent/
                             해당 도메인의 Supabase read/write 경계
     commands/             증분·backfill CLI 진입점
   intelligence/           뉴스·소셜 (같은 4계층, 저장소는 로컬 DuckDB·Parquet)
-  research/               features · datasets · models · backtest · RL
-  trading/                decision · evidence · portfolio · risk · performance
+  research/               features · datasets · models · backtest · RL · evidence(PIT 증거 계약·조립기·
+                           reader — Research feature와 Trading 판단이 같은 사실을 읽는다)
+  trading/                decision(후보 선정 포함) · evidence(dossier) · portfolio · risk · performance
   notifications/          engine(원장·발송) · producers · Discord · discord_admin
   operations/              harness(로컬 오케스트레이터) · monitoring(예정된 것이 실제로
                            돌았는지) · commands(CLI). 실행 단계는 harness의 mode가 정한다 —
                            `shadow/paper/live`라는 파일로 나누지 않는다(규칙 14의 3축).
   execution/              폴더가 주문 lifecycle 순서다 — approval → orders → brokers
                            → reconciliation, 그 옆에서 safety가 감시한다.
-  reporting/               readers(저장소별 읽기) · notifications(알림 read model)
+  reporting/               readers(저장소별 읽기, SELECT 전용 gateway 포함) · notifications(알림 read model)
                            · services(주제별 조립). 저장소를 여는 곳은 앞의 둘뿐이다.
   platform/                공통 DB · clock · logging · retry · serialization · cache · usage ledger
   dashboard/               읽기 전용 Streamlit UI. app_pages(화면) · components(조각)
@@ -102,8 +103,8 @@ Supabase 쿼리 빌더는 `src/investment_agent/data/fundamentals/infrastructure
 
 도메인은 서로의 내부 구현을 직접 소유하지 않습니다. 수집·적재는 각 data owner의
 `repository.py`·`persistence.py`·`db.py` 경계가 담당하고, `reporting`과 `trading`은 공개된
-읽기 계약으로 필요한 결과를 조립합니다. `universe`가 tracked 종목 gate이고, `trading`이
-여러 data owner의 결과를 evidence로 읽어 모읍니다.
+읽기 계약으로 필요한 결과를 조립합니다. `universe`가 tracked 종목 gate이고, `research/evidence`의 `PitReader`가
+여러 data owner의 결과를 판단 시각 기준 evidence로 읽어 모읍니다(Trading은 어댑터로 소비).
 
 ```mermaid
 flowchart LR

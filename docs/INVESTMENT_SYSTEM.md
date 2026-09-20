@@ -45,7 +45,7 @@ AI/ML/RL은 risk policy, broker credential과 durable safety control을 수정�
 Supabase는 가격·재무·공시·거시·13F 같은 **원본 금융데이터 창고**다. Feature·Factor·ML·RL·Backtest와
 System Portfolio는 로컬에서 계산하고, 판단·승인·주문 원장도 로컬 runtime SQLite에 둔다. 판단이 종목마다
 Supabase를 읽지 않게 가격·기업행위·유니버스·멤버십은 `data/market/local_mirror`가 2시간마다 로컬 Parquet 사본으로
-동기화하고, `trading/supabase_repository.py`가 사본을 먼저 읽는다. 사본이 없거나 30시간보다 오래되면 Supabase로
+동기화하고, `research/evidence/reader.py`의 `PitReader`가 사본을 먼저 읽는다. 사본이 없거나 30시간보다 오래되면 Supabase로
 돌아간다 — 오래된 사본으로 조용히 판단하지 않는다.
 
 ## 두 세계의 경계
@@ -147,7 +147,7 @@ S&P 500 전체를 매일 LLM에 보내지 않는다.
 |---|---|---|
 | Universe 확인 | `universe.py::select_tracked_tickers` | 허용 member와 제외 사유 |
 | 후보 선정 | `candidate_ranker.py::select_factor_candidates` (횡단면이 없으면 `rank_candidate_features`) | 품질 기준 통과 factor 상위 명단 중 판단이 오래된 종목 |
-| 근거 생성 | `context.py::ContextBuilder.build` | PIT `EvidenceBundle`, missing/warnings |
+| 근거 생성 | `research/evidence/context.py::ContextBuilder.build` | PIT `EvidenceBundle`, missing/warnings |
 | Agent 실행 | `TradingAgentsDecisionEngine.run` | role output와 외부 evidence manifest |
 | 계약 검증 | `SecurityProposal.from_dict` | ticker/as-of/range/evidence ID 검증 |
 | 논지 보관 | `SignalBatch`·`SignalRecord` | batch, 성공·실패 ticker, ML 보정 반영 논지 |
@@ -406,7 +406,7 @@ python -m unittest tests.investment_agent.research.rl.test_baseline
 ### 사건 기반 즉시 재분석
 
 하네스 `event_reanalysis` job(10분 주기, `operations/commands/event_reanalysis.py`)은 로컬 뉴스·소셜을 사건으로
-다시 압축한 뒤 `SupabaseRepository.event_reanalysis_priorities`로 지금 다시 볼 종목을 고른다 — 보유
+다시 압축한 뒤 `trading/decision/candidates.py`의 `CandidateSelection.event_reanalysis_priorities`로 지금 다시 볼 종목을 고른다 — 보유
 종목의 새 공시·고영향 사건(위 우선 레인)과, 검증된 **글로벌 사건**(ticker 없음)에 민감한 보유 종목이다.
 한 번에 3종목만 `trading.decision.analysis`로 분석하고, 그 사건 뒤에 이미 분석한 종목은 다시 고르지 않는다.
 결과는 보통의 논지 기록이고, 깨진 논지는 System 목표를 주기와 무관하게 다시 만든다.

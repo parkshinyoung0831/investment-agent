@@ -2,6 +2,17 @@
 
 > 사용자 요청에 따라 보존하는 목표 설계다. **현재 파일 트리나 이미 달성된 의존성 규칙이 아니다.** 실제 현재 구조의 SSOT는 `CLAUDE.md`와 코드·테스트다. 구현은 `specs/2026-09-19-dependency-direction-design.md`의 판정 조건을 따른다.
 
+## 실제 결과와 후보 지도의 차이 (리팩터링 종료 시점)
+
+아래 "후보 지도"는 출발점이었고 다음 결정으로 달라졌다. 현재 구조의 기준은 코드와 `CLAUDE.md`다.
+
+- 증거 계약·조립기·통계와 PIT 읽기 조립은 `trading/evidence`가 아니라 `research/evidence/`(`contracts.py`·`context.py`·`statistics.py`·`reader.py`)가 소유한다. Trading은 `research/adapters/trading.py`로만 가져온다.
+- `dashboard/db.py`는 없다. 저장소 접근은 `reporting/readers/{select_only,earnings,ai}.py`이고 RPC 경로는 코드에 없다.
+- broker 중립 계약(`execution/brokers/contracts.py`)은 만들지 않고 삭제했다. 시스템은 Toss 단일 broker다.
+- `ResearchStore`는 한 저장소로 유지했다. `SupabaseRepository`는 `PitReader`와 `CandidateSelection`(`trading/decision/candidates.py`)을 합성한 Trading 원장 게이트웨이다.
+- Trading 원장을 다루는 CLI 진입점은 `operations/commands`에 있다. Research가 Trading을 import하는 유일한 예외는 `research/system_validation/ablation.py`다.
+- `notifications/channels/`(최소 channel 계약)와 `notifications/context.py`(조립)가 engine과 Discord 구현을 분리한다.
+
 ## 불변 목표
 
 ```text
