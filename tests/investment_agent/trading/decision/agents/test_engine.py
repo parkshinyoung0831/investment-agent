@@ -10,7 +10,8 @@ from unittest import mock
 from investment_agent.trading.decision.agents.engine import TradingAgentsDecisionEngine
 from investment_agent.trading.decision.llm import runtime as adapter
 from investment_agent.trading.decision.llm import social_source
-from investment_agent.trading.contracts import ContractError, EvidenceBundle, EvidenceItem
+from investment_agent.trading.contracts import ContractError
+from investment_agent.research.evidence.contracts import EvidenceBundle, EvidenceItem
 
 
 def _bundle() -> EvidenceBundle:

@@ -13,7 +13,8 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 
-from investment_agent.trading.contracts import EvidenceBundle, parse_datetime
+from investment_agent.trading.contracts import parse_datetime
+from investment_agent.research.adapters.trading import EvidenceBundle
 from investment_agent.platform.serialization import canonical_json
 from investment_agent.platform.external_usage import (
     ExternalUsageError,

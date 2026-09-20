@@ -9,6 +9,14 @@ from typing import Any
 
 from investment_agent.research.datasets.contracts import TrainingSample
 from investment_agent.research.evaluation.constants import EVALUATION_HORIZONS
+from investment_agent.research.evidence.context import FILING_ROWS_IN_PROMPT, ContextBuilder
+from investment_agent.research.evidence.contracts import EvidenceBundle, EvidenceItem
+from investment_agent.research.evidence.statistics import (
+    estimate_statistics,
+    fundamental_statistics,
+    price_statistics,
+    quality_statistics,
+)
 from investment_agent.research.evaluation.costs import TransactionCostModel
 from investment_agent.research.features import db as features_db
 from investment_agent.research.factors import (
@@ -47,7 +55,11 @@ def latest_technical_signals_as_of(as_of_at: datetime) -> dict[str, dict[str, An
 
 
 __all__ = [
+    "ContextBuilder",
     "EVALUATION_HORIZONS",
+    "EvidenceBundle",
+    "EvidenceItem",
+    "FILING_ROWS_IN_PROMPT",
     "FEATURE_VERSION",
     "NO_FORECAST",
     "REQUIRED_BARS",
@@ -59,11 +71,15 @@ __all__ = [
     "TrainingSample",
     "TransactionCostModel",
     "champion_forecast",
+    "estimate_statistics",
+    "fundamental_statistics",
     "latest_cross_section",
     "latest_technical_signals_as_of",
     "normalize_symbols",
     "open_research_store",
     "percentile_ranks",
+    "price_statistics",
+    "quality_statistics",
     "score_cross_section",
     "technical_features_since",
 ]

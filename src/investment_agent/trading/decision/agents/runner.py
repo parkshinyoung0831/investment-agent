@@ -5,7 +5,8 @@ import os
 from typing import Any
 
 from investment_agent.platform.logging import get_logger
-from investment_agent.trading.contracts import EvidenceBundle, parse_datetime
+from investment_agent.trading.contracts import parse_datetime
+from investment_agent.research.adapters.trading import EvidenceBundle
 from investment_agent.trading.decision.agents import orchestrator
 from investment_agent.trading.decision.llm import runtime
 from investment_agent.trading.decision.llm.client import OpenAICompatibleClient

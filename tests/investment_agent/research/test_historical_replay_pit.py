@@ -10,7 +10,7 @@ from investment_agent.research.commands.build_valuations import build_valuations
 from investment_agent.research.datasets.universe import research_universe
 from investment_agent.research.features.layer import _close_returns, _fundamental
 from investment_agent.research.valuation.inputs import price_scalar, shares_scalar
-from investment_agent.trading.evidence.tools import fundamental_statistics
+from investment_agent.research.evidence.statistics import fundamental_statistics
 
 
 class PriceAvailabilityTest(unittest.TestCase):

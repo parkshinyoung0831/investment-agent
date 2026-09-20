@@ -5,7 +5,8 @@ import math
 import unittest
 from datetime import datetime, timezone
 
-from investment_agent.trading.contracts import EvidenceBundle, EvidenceItem, parse_datetime
+from investment_agent.trading.contracts import parse_datetime
+from investment_agent.research.evidence.contracts import EvidenceBundle, EvidenceItem
 from investment_agent.research.commands.build_features import build_features
 from investment_agent.research.commands.build_labels import build_labels
 from investment_agent.research.features.layer import (

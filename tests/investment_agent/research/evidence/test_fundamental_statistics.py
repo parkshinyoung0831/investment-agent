@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import unittest
 
-from investment_agent.trading.evidence.tools import fundamental_statistics
+from investment_agent.research.evidence.statistics import fundamental_statistics
 from investment_agent.trading.decision import candidate_ranker
 
 

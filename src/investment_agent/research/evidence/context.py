@@ -8,10 +8,10 @@ from typing import Any, Protocol
 
 from investment_agent.data.fundamentals.domain.filing import filing_available_at
 from investment_agent.data.market.domain.calendar import bar_available_at
-from investment_agent.trading.contracts import EvidenceBundle, EvidenceItem, parse_datetime
-from investment_agent.platform.serialization import canonical_json
-from investment_agent.research.adapters.trading import REQUIRED_BARS
-from investment_agent.trading.evidence.tools import (
+from investment_agent.platform.serialization import canonical_json, parse_datetime
+from investment_agent.research.evidence.contracts import EvidenceBundle, EvidenceItem
+from investment_agent.research.features.layer import REQUIRED_BARS
+from investment_agent.research.evidence.statistics import (
     estimate_statistics,
     fundamental_statistics,
     price_statistics,

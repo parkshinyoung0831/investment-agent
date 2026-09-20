@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from investment_agent.trading.contracts import EvidenceBundle
+from investment_agent.research.adapters.trading import EvidenceBundle
 from investment_agent.trading.portfolio.contracts import SecurityProposal
 
 

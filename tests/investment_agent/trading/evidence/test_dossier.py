@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import unittest
 
-from investment_agent.trading.contracts import ContractError, EvidenceBundle, EvidenceItem
+from investment_agent.trading.contracts import ContractError
+from investment_agent.research.evidence.contracts import EvidenceBundle, EvidenceItem
 from investment_agent.trading.evidence.builder import DossierBuilder
 from investment_agent.trading.evidence.contracts import SECTION_IDS, DossierSection
 from investment_agent.trading.evidence.renderer import render_markdown, render_prompt_payload

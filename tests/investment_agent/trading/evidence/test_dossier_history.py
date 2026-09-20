@@ -4,7 +4,7 @@ from __future__ import annotations
 import unittest
 from datetime import date, timedelta
 
-from investment_agent.trading.contracts import EvidenceBundle, EvidenceItem
+from investment_agent.research.evidence.contracts import EvidenceBundle, EvidenceItem
 from investment_agent.trading.evidence.builder import DossierBuilder
 from investment_agent.trading.evidence.history import (
     PRICE_WINDOWS,

@@ -400,13 +400,12 @@ class LayerDirectionTest(unittest.TestCase):
     # 이 명령의 모듈 경로를 하네스·workflow·문서가 직접 호출하므로, 진입점 모듈과 그가
     # 만드는 구체 협력자만 파일별로 정확히 선언한다. 순수 계산은 이미 repository를 주입받는다.
     # 목록에 없는 모듈이나 다른 Trading 구현으로 예외가 넓어지지 않으며 `main()`이 없는
-    # 모듈은 실패한다. `build_features`는 저장소와 같은 PIT 증거 조립기(`ContextBuilder`)를 만든다.
+    # 모듈은 실패한다.
     COMPOSITION_REPOSITORY = "investment_agent.trading.supabase_repository"
-    COMPOSITION_EVIDENCE = "investment_agent.trading.evidence.context"
     COMPOSITION_ROOTS = {
         "src/investment_agent/research/commands/backfill_research_history.py": frozenset({COMPOSITION_REPOSITORY}),
         "src/investment_agent/research/commands/build_decision_experiences.py": frozenset({COMPOSITION_REPOSITORY}),
-        "src/investment_agent/research/commands/build_features.py": frozenset({COMPOSITION_REPOSITORY, COMPOSITION_EVIDENCE}),
+        "src/investment_agent/research/commands/build_features.py": frozenset({COMPOSITION_REPOSITORY}),
         "src/investment_agent/research/commands/build_labels.py": frozenset({COMPOSITION_REPOSITORY}),
         "src/investment_agent/research/commands/build_valuations.py": frozenset({COMPOSITION_REPOSITORY}),
         "src/investment_agent/research/commands/evaluate.py": frozenset({COMPOSITION_REPOSITORY}),
@@ -460,7 +459,7 @@ class LayerDirectionTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=PACKAGE / "intelligence") as temporary:
             probe = Path(temporary) / "probe.py"
             probe.write_text(
-                "from investment_agent.trading.evidence.context import ContextBuilder\n",
+                "from investment_agent.trading.risk.gate import DeterministicRiskGate\n",
                 encoding="utf-8",
             )
             with self.assertRaises(AssertionError) as caught:
@@ -515,12 +514,8 @@ class LayerDirectionTest(unittest.TestCase):
     def test_composition_roots_may_not_import_other_trading_implementations(self) -> None:
         path = ROOT / "src/investment_agent/research/commands/build_features.py"
         self.assertTrue(self._is_allowed(path, self.COMPOSITION_REPOSITORY))
-        self.assertTrue(self._is_allowed(path, self.COMPOSITION_EVIDENCE))
-        self.assertFalse(self._is_allowed(path, "investment_agent.trading.evidence.tools"))
+        self.assertFalse(self._is_allowed(path, "investment_agent.trading.risk.gate"))
         self.assertFalse(self._is_allowed(path, self.COMPOSITION_REPOSITORY + ".private"))
-        # 다른 진입점은 증거 조립기 예외를 물려받지 않는다.
-        other = ROOT / "src/investment_agent/research/commands/build_labels.py"
-        self.assertFalse(self._is_allowed(other, self.COMPOSITION_EVIDENCE))
 
     def test_the_rule_covers_layers_that_exist(self) -> None:
         """검사 대상이 하나도 없으면 위 검사는 아무것도 지키지 않는다."""

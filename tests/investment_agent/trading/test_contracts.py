@@ -3,12 +3,8 @@ from __future__ import annotations
 
 import unittest
 
-from investment_agent.trading.contracts import (
-    ContractError,
-    EvidenceBundle,
-    EvidenceItem,
-    InvestmentDecision,
-)
+from investment_agent.trading.contracts import ContractError, InvestmentDecision
+from investment_agent.research.evidence.contracts import EvidenceBundle, EvidenceItem
 
 
 def _evidence(available_at: str = "2026-08-20T22:00:00+00:00") -> EvidenceItem:

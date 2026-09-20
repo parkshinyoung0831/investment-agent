@@ -9,7 +9,7 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from investment_agent.trading.evidence.context import FILING_ROWS_IN_PROMPT, ContextBuilder
+from investment_agent.research.evidence.context import FILING_ROWS_IN_PROMPT, ContextBuilder
 
 
 BASE = datetime(2026, 8, 1, tzinfo=timezone.utc)

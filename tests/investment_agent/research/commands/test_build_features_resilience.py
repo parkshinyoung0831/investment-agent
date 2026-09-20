@@ -5,8 +5,8 @@ import unittest
 from datetime import datetime, timedelta, timezone
 
 from investment_agent.research.commands.build_features import build_features
-from investment_agent.trading.evidence.context import ContextBuilder
-from tests.investment_agent.trading.evidence.test_context_point_in_time import _Repository as _ContextRepository
+from investment_agent.research.evidence.context import ContextBuilder
+from tests.investment_agent.research.evidence.test_context_point_in_time import _Repository as _ContextRepository
 
 AS_OF = datetime(2025, 1, 6, tzinfo=timezone.utc)
 

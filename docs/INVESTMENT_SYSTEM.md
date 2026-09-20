@@ -321,7 +321,7 @@ flowchart TD
 | 과거 시가총액이 이후 분할만큼 작아짐 | 저장 종가는 현재 분할 기준이므로(새 분할마다 전체 이력 재수집) 수익률은 그대로 쓰고, 과거 공시 주식 수에 표지 기준일 이후 분할 비율을 곱한다 | `research/valuation/inputs.py` |
 | 살아남은 기업만으로 학습 | 과거 시점 종목은 그때의 S&P 500 멤버. 멤버십을 모르면 현재 목록으로 대체하지 않고 실패 | `research/datasets/universe.py` |
 | 정정 공시를 과거에 적용 | cutoff까지 공개된 가장 늦은 공시 버전(`financial_versions`) | `fundamentals` 읽기 경계 |
-| 계절성이 성장률로 들어감 | 성장률은 같은 회계기간 전년 대비 | `trading/evidence/tools.py` |
+| 계절성이 성장률로 들어감 | 성장률은 같은 회계기간 전년 대비 | `research/evidence/statistics.py` |
 
 과거 재현에서 비는 것도 있다. 뉴스·소셜, 수집 전 애널리스트 추정치(`captured_live` 이전),
 시점 이력이 없는 거시 관측, 적재 시각이 늦은 기술지표는 결측이고, 상장폐지 종목은 가격 원천에

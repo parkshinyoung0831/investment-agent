@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 from datetime import datetime, timezone
 
-from investment_agent.trading.evidence.context import ContextBuilder
+from investment_agent.research.evidence.context import ContextBuilder
 
 
 class _Repository:

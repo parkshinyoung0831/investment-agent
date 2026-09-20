@@ -24,7 +24,7 @@ from investment_agent.trading.decision.llm.runtime import (
 )
 from investment_agent.trading.decision.llm.social_source import enabled_social_vendors
 from investment_agent.trading.decision.candidate_ranker import validate_live_candidate_as_of
-from investment_agent.trading.evidence.context import ContextBuilder
+from investment_agent.research.adapters.trading import ContextBuilder
 from investment_agent.trading.contracts import parse_datetime
 from investment_agent.platform.serialization import canonical_json
 from investment_agent.trading.supabase_repository import SupabaseRepository

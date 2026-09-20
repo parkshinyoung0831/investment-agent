@@ -4,7 +4,7 @@ from __future__ import annotations
 import unittest
 
 from investment_agent.research.features.layer import _momentum, _revisions, _valuation
-from investment_agent.trading.evidence.tools import estimate_statistics, quality_statistics
+from investment_agent.research.evidence.statistics import estimate_statistics, quality_statistics
 
 
 def _quarter(year: int, period: int, **values) -> dict:

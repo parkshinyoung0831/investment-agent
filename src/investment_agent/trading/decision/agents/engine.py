@@ -5,7 +5,8 @@ from dataclasses import replace
 from typing import Any
 
 from investment_agent.platform.serialization import canonical_json
-from investment_agent.trading.contracts import ContractError, EvidenceBundle
+from investment_agent.trading.contracts import ContractError
+from investment_agent.research.adapters.trading import EvidenceBundle
 from investment_agent.trading.decision.agents.base import AgentEngineResult
 from investment_agent.trading.decision.agents.runner import TradingAgentsRunner
 from investment_agent.forecasting import SIGNAL_HORIZON_DAYS

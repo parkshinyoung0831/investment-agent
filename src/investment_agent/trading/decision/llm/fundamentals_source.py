@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from typing import Callable
 
-from investment_agent.trading.contracts import EvidenceBundle, parse_datetime
+from investment_agent.trading.contracts import parse_datetime
+from investment_agent.research.adapters.trading import EvidenceBundle
 from investment_agent.platform.serialization import canonical_json
 
 

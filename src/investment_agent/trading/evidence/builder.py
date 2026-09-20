@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Sequence
 
-from investment_agent.trading.contracts import EvidenceBundle, EvidenceItem, parse_datetime
+from investment_agent.trading.contracts import parse_datetime
+from investment_agent.research.adapters.trading import EvidenceBundle, EvidenceItem
 from investment_agent.trading.evidence.contracts import (
     DOSSIER_VERSION,
     DossierSection,

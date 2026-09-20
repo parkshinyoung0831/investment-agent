@@ -4,7 +4,7 @@ import unittest
 from types import SimpleNamespace
 
 from investment_agent.research.features.layer import FeatureLayer
-from investment_agent.trading.contracts import EvidenceBundle, EvidenceItem
+from investment_agent.research.evidence.contracts import EvidenceBundle, EvidenceItem
 
 
 class FeatureLayerTest(unittest.TestCase):

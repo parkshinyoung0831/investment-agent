@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from statistics import median
 from typing import Any, Mapping, Sequence
 
-from investment_agent.trading.evidence.tools import fundamental_statistics
+from investment_agent.research.adapters.trading import fundamental_statistics
 
 from investment_agent.platform.serialization import (
     finite_float as _finite,

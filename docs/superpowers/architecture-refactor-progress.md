@@ -582,6 +582,14 @@
 - dashboard earnings 화면의 `notifications/earnings_report/` import(유지): 이 화면은 Discord 카드 미리보기이며 `card`·`charts`·`candidates`를 그대로 써서 "화면에 보이는 것이 실제로 발송되는 카드"를 보장한다. 계산을 reporting으로 복제하면 미리보기와 발송이 어긋날 수 있다.
 - 다음 재개 지점: 사용자가 (B) 증거 조립 소유권을 정하면 그에 따라 Research 조립 예외 8개(`COMPOSITION_ROOTS`)를 줄일 수 있다. 그 결정이 없으면 이 문서의 나머지는 응집도 개선 후보로만 남는다.
 
+#### 배치 G1 — PIT 증거 계약·조립기·통계를 Research로 (2026-09-20, 사용자 지시: 전 권한 위임, 남은 항목 전부 진행)
+
+- 결정: 사용자가 전 권한을 위임해 배치 F가 보류한 "증거 조립 소유권"을 Research로 확정한다. 근거: Research feature와 Trading 판단이 같은 PIT 사실을 읽는 것이 학습·서빙 일관성의 핵심이고, 방향은 data → research → trading이므로 두 소비자의 공통 원천은 위쪽(Research)이 갖는 것이 맞다. 이것은 `architecture-target.md`가 `trading/evidence`에 적었던 후보를 뒤집는 결정이다. Trading 전용인 dossier·renderer·history·builder는 `trading/evidence`에 남는다.
+- 이동: `EvidenceItem`·`EvidenceBundle`(`trading/contracts.py`) → `research/evidence/contracts.py`, `trading/evidence/context.py`(`ContextBuilder`) → `research/evidence/context.py`, `trading/evidence/tools.py`(가격·재무·품질·추정 통계) → `research/evidence/statistics.py`. `ContextBuilder`가 쓰던 `REQUIRED_BARS`는 어댑터가 아니라 `research/features/layer.py`에서 직접 읽는다. 호환 재수출은 만들지 않았다.
+- 소비 방식: Trading 파일 11개는 기존 공개 계약 `research/adapters/trading.py`(exact 예외)에서만 새 이름을 가져온다(`ContextBuilder`, `EvidenceBundle`, `EvidenceItem`, `FILING_ROWS_IN_PROMPT`, 통계 4종). 그 밖의 소비자는 새 모듈을 직접 가리킨다. 재작성된 import 파일은 24개다.
+- 테스트: `tests/investment_agent/research/evidence/test_evidence_ownership.py`가 세 클래스의 정의가 새 위치에만 있고 옛 Trading 모듈이 없음을 AST로 강제한다(RED 6건 후 통과, 합성 중복 정의 검출 포함). 증거 테스트 4개는 Trading 테스트 폴더에서 Research로 옮겼다. `COMPOSITION_ROOTS`에서 `build_features`의 `ContextBuilder` 예외를 제거했다. 전체 suite 3,110 OK(skip 1).
+- 남은 일: 조립기가 쓰는 데이터 읽기 조립(`SupabaseRepository`의 market·fundamentals·macro·segment·guru·econ·replay mirror)을 Research reader로 옮기는 G2, Trading 원장을 다루는 CLI 진입점을 operations로 옮기는 G3.
+
 ## 향후 milestone
 
 | 묶음 | 해당 phase | 독립 완료 조건 |

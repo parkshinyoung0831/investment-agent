@@ -87,7 +87,7 @@ _MACRO_FEATURES = tuple(f"macro_{series.lower()}" for series in MACRO_SERIES)
 # 중장기 선별 factor. 가격 모멘텀은 최근 1개월 반전을 빼고 6·12개월 추세를 잰다 — 1·5·20일 수익률은
 # 단기 반전·잡음이 커서 보유형 선별의 근거가 되지 못한다.
 _MOMENTUM_FEATURES = ("momentum_12_1", "momentum_6_1", "price_drawdown_252d", "price_volatility_252d")
-# TTM(최근 4분기 합) 기반 품질·재무건전성·성장. 계산은 trading.evidence.tools가 소유해 LLM 입력과 같다.
+# TTM(최근 4분기 합) 기반 품질·재무건전성·성장. 계산은 research/evidence/statistics.py가 소유해 LLM 입력과 같다.
 _QUALITY_FIELDS = (
     "roe_ttm", "roa_ttm", "gross_margin_ttm", "operating_margin_ttm", "fcf_margin_ttm",
     "interest_coverage_ttm", "accruals_ttm", "operating_margin_volatility", "debt_to_equity",
