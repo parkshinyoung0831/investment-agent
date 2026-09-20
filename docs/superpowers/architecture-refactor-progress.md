@@ -8,8 +8,8 @@
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
 - 현재 단계: Phase 2~3의 Research artifact/Data read owner 이관과 실제 caller 기준 역방향 import 제거를 독립 단위로 진행 중이다.
-- 현재 계획: `docs/superpowers/plans/2026-09-20-shadow-outcome-ownership.md` (Task 1~3 완료). 다음 독립 단위는 현재 source caller를 다시 조사해 선택한다.
-- 완료 단계: Phase 1 조사, Phase 2의 feature snapshot·training label·valuation·event·training sample·decision experience owner 이관, Phase 3 공통 serialization·forecast 계약 및 일부 Data read 역방향 import 정리. Shadow outcome 이관 후 `PENDING_DEPENDENCIES`는 32쌍이다.
+- 현재 계획: `docs/superpowers/plans/2026-09-20-research-evaluation-ownership.md` (Task 1~3 완료). 다음 독립 단위는 현재 caller·replay 의미를 다시 조사해 선택한다.
+- 완료 단계: Phase 1 조사, Phase 2의 feature snapshot·training label·valuation·event·training sample·decision experience owner 이관, Phase 3 공통 serialization·forecast·평가 계약 및 일부 Data read 역방향 import 정리. 평가 계약 이관 후 `PENDING_DEPENDENCIES`는 29쌍이다.
 - maintenance 상태: 확인·설정하지 않았다. 하네스 또는 execution 코드를 수정하기 전에 `harness_switch --maintenance on`을 수행하고 상태를 확인한다. live flag는 변경하지 않는다.
 
 ## 검증 기준선
@@ -436,6 +436,18 @@
 - 제거된 debt: `research/evaluation/shadow_fill.py → trading/performance/pnl.py` 한 쌍. `PENDING_DEPENDENCIES` 33→32, 새 pending 없음.
 - 남은 debt: 32쌍 중 일반 Research→Trading 29쌍, Trading→Execution 3쌍. 숫자에는 아직 phase가 완료되지 않은 broker runtime·dashboard read·notification engine·ResearchStore/operations ownership 같은 구조 작업이 포함되지 않는다.
 - 다음 독립 작업: Research의 남은 façade·알고리즘/계약 imports를 실제 caller와 replay/PIT 의미에 따라 분류한다. 안전한 owner 직접 read부터 선택하고 production Trading 알고리즘 검증은 별도 경계로 판정한다.
+
+#### Research evaluation Task 1~3 — 결과·가격 경로 계산 owner 이관
+
+- 변경 전 실제 호출 관계: `research.evaluation.evaluator`만 Trading `contracts.EvaluationResult`를 생성했다. Trading `evidence.tools.total_return`은 Research evaluator와 decision experience producer 두 곳만 호출했다. 기존 evaluator test는 Trading portfolio 테스트 폴더에 있었다.
+- 변경 이유: 두 계약의 production 계산·소비자는 Research 평가이며 Trading 의사결정·LLM용 계산의 일부로 둘 필요가 없다. 실제 Trading caller가 없는 정의를 옮겨 일반 Research→Trading 역방향 세 쌍을 제거한다.
+- 수정 파일: `src/investment_agent/research/evaluation/outcomes.py`, `research/evaluation/evaluator.py`, `research/commands/build_decision_experiences.py`, `trading/contracts.py`, `trading/evidence/tools.py`, architecture test, 새 평가 ownership 계획과 이 원장.
+- 이동·삭제 파일: 새 `research/evaluation/returns.py`를 만들고 Trading tools의 사용되지 않는 `total_return` 정의를 삭제했다. Trading contracts의 `EvaluationResult` 정의를 Research outcomes로 이동했다. `tests/investment_agent/trading/portfolio/test_evaluator.py`를 `tests/investment_agent/research/evaluation/test_evaluator.py`로 이동해 분할·배당 계약을 추가했다. schema·실행·수치 계산은 그대로다.
+- import·runtime 방향: evaluator와 decision experience producer가 Research owner를 직접 호출한다. 결과 직렬화·기본 평가 시각, 가격 path의 split ratio·dividend 처리 및 기존 예외 메시지를 유지하고 호환 re-export는 만들지 않았다.
+- 테스트 결과: 새 owner import error와 제거한 pending의 정확한 위반 3건으로 RED였다. 구현 후 Research evaluation·decision experience·training sample·Trading evidence·architecture·workflow·docs 132개 통과. 전체 offline suite 3,032개는 이전과 동일한 선택적 `lightgbm`/`xgboost` 미설치 오류 4개·skip 1개 외 새 실패가 없다. old import·old definition 검색은 0건이다.
+- 제거된 debt: Research→Trading 3쌍. `PENDING_DEPENDENCIES` 32→29, 새 pending 없음.
+- 남은 debt: 일반 Research→Trading 26쌍과 Trading→Execution 3쌍. `evaluate` command의 decision case/read-write façade는 실제 Trading 원장과 연관돼 별도 read/write 경계 검증이 필요하다. broker/dashboard/notification 등 숫자 밖의 phase도 남았다.
+- 다음 독립 작업: remaining Research import 중 단순 계약과 실제 Trading 알고리즘 검증을 구별한다. 특히 `trading.evidence.cache`는 Research event builder가 읽지만 별도 Intelligence Parquet 저장소와 생명주기가 달라 이름만 보고 합치지 않는다.
 
 ## 향후 milestone
 

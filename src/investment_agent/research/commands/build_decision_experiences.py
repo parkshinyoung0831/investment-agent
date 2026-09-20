@@ -11,7 +11,7 @@ from investment_agent.forecasting import SIGNAL_HORIZON_DAYS
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.serialization import parse_datetime, canonical_json
 from investment_agent.research.storage.repository import ResearchStore
-from investment_agent.trading.evidence.tools import total_return
+from investment_agent.research.evaluation.returns import total_return
 
 log = get_logger(__name__)
 DATASET_VERSION = "decision_experience_v1"

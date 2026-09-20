@@ -5,8 +5,8 @@ from datetime import date, datetime, timezone
 from typing import Protocol
 
 from investment_agent.research.evaluation.constants import EVALUATION_HORIZONS
-from investment_agent.trading.contracts import EvaluationResult
-from investment_agent.trading.evidence.tools import total_return
+from investment_agent.research.evaluation.outcomes import EvaluationResult
+from investment_agent.research.evaluation.returns import total_return
 
 
 class EvaluationRepository(Protocol):

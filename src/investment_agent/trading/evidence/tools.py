@@ -239,23 +239,3 @@ def estimate_statistics(rows_desc: Iterable[Mapping[str, Any]]) -> dict[str, Any
         output["revision_breadth_30d"] = (up - down) / (up + down)
     return output
 
-
-def total_return(rows_asc: list[Mapping[str, Any]], end_index: int) -> float:
-    """시작 종가 이후 배당을 포함한 단순 총수익률을 계산한다."""
-    if not rows_asc or end_index >= len(rows_asc) or end_index < 1:
-        raise ValueError("insufficient price path")
-    start = _finite(rows_asc[0].get("close"))
-    end = _finite(rows_asc[end_index].get("close"))
-    if start is None or end is None or start <= 0:
-        raise ValueError("invalid close in price path")
-    shares = 1.0
-    dividends = 0.0
-    for row in rows_asc[1:end_index + 1]:
-        ratio = _finite(row.get("split_ratio"))
-        if ratio is not None:
-            if ratio <= 0:
-                raise ValueError("invalid split ratio in price path")
-            shares *= ratio
-        dividends += shares * (_finite(row.get("div_amount")) or 0.0)
-    return (end * shares + dividends) / start - 1
-

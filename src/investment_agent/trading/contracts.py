@@ -2,8 +2,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from dataclasses import asdict, dataclass
 from typing import Any, Mapping
 
 from investment_agent.platform.serialization import (
@@ -225,25 +224,6 @@ class InvestmentDecision:
             evidence_ids=ids,
             missing_data=tuple(_text_list(data["missing_data"], "missing_data")),
         )
-
-    def to_dict(self) -> dict[str, Any]:
-        return json_value(asdict(self))
-
-
-@dataclass(frozen=True)
-class EvaluationResult:
-    case_key: str
-    horizon_days: int
-    start_trade_date: str
-    end_trade_date: str
-    asset_return: float
-    benchmark_return: float
-    excess_return: float
-    max_adverse_excursion: float
-    max_favorable_excursion: float
-    direction_correct: bool | None
-    brier_score: float
-    evaluated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def to_dict(self) -> dict[str, Any]:
         return json_value(asdict(self))

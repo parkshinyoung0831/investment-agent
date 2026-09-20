@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import math
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 from investment_agent.platform.serialization import ContractError, canonical_json, json_value, parse_datetime
@@ -127,4 +128,23 @@ def make_trade_outcome(
     )
 
 
-__all__ = ["TradeOutcome", "make_trade_outcome"]
+@dataclass(frozen=True)
+class EvaluationResult:
+    case_key: str
+    horizon_days: int
+    start_trade_date: str
+    end_trade_date: str
+    asset_return: float
+    benchmark_return: float
+    excess_return: float
+    max_adverse_excursion: float
+    max_favorable_excursion: float
+    direction_correct: bool | None
+    brier_score: float
+    evaluated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    def to_dict(self) -> dict[str, Any]:
+        return json_value(asdict(self))
+
+
+__all__ = ["EvaluationResult", "TradeOutcome", "make_trade_outcome"]
