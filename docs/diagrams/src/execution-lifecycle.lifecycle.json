@@ -1,0 +1,253 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "주문 수명주기 — 의도 선점에서 결과 불명 복구까지",
+    "output": "execution-lifecycle.html",
+    "viewBox": [
+      1040,
+      680
+    ],
+    "animation": "trace",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "happy-path",
+        "label": "정상 체결 경로",
+        "focus": [
+          "approved",
+          "claimed",
+          "reserved",
+          "submitting",
+          "submitted",
+          "filled"
+        ],
+        "note": "승인된 의도를 워커가 선점하고, 보내기 전에 시도를 예약한 뒤 전송해 체결까지 갑니다."
+      },
+      {
+        "id": "unknown-outcome",
+        "label": "결과 불명 복구",
+        "focus": [
+          "submitting",
+          "outcome_unknown",
+          "reconciling"
+        ],
+        "note": "보냈는지 모르는 상태를 실패로 적지 않습니다. 실패로 적으면 다시 보내게 되기 때문입니다."
+      },
+      {
+        "id": "terminal",
+        "label": "종료 상태",
+        "focus": [
+          "filled",
+          "rejected",
+          "failed"
+        ],
+        "note": "시도가 끝나는 자리입니다. 자동 재주문은 어느 경로에서도 일어나지 않습니다."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "main",
+      "label": "정상 경로 — 의도 선점에서 접수까지"
+    },
+    {
+      "id": "recovery",
+      "label": "결과 불명 복구 (order_attempts)"
+    },
+    {
+      "id": "terminal",
+      "label": "종료 상태"
+    }
+  ],
+  "states": [
+    {
+      "id": "approved",
+      "type": "start",
+      "label": "approved",
+      "sublabel": "사람 승인 완료",
+      "lane": "main",
+      "col": 0,
+      "step": "01",
+      "tag": "intents"
+    },
+    {
+      "id": "claimed",
+      "type": "active",
+      "label": "claimed",
+      "sublabel": "워커가 멱등 선점",
+      "lane": "main",
+      "col": 1,
+      "step": "02",
+      "tag": "intents"
+    },
+    {
+      "id": "reserved",
+      "type": "active",
+      "label": "reserved",
+      "sublabel": "보내기 전에 예약",
+      "lane": "main",
+      "col": 2,
+      "step": "03",
+      "tag": "attempts"
+    },
+    {
+      "id": "submitting",
+      "type": "active",
+      "label": "submitting",
+      "sublabel": "브로커 전송 중",
+      "lane": "main",
+      "col": 3,
+      "step": "04",
+      "tag": "attempts"
+    },
+    {
+      "id": "submitted",
+      "type": "active",
+      "label": "submitted",
+      "sublabel": "접수 확인",
+      "lane": "main",
+      "col": 4,
+      "step": "05",
+      "tag": "attempts"
+    },
+    {
+      "id": "outcome_unknown",
+      "type": "decision",
+      "label": "outcome_unknown",
+      "sublabel": "보냈는지 모른다",
+      "lane": "recovery",
+      "col": 0,
+      "step": "A1",
+      "tag": "불명"
+    },
+    {
+      "id": "reconciling",
+      "type": "waiting",
+      "label": "reconciling",
+      "sublabel": "브로커에 되물음",
+      "lane": "recovery",
+      "col": 1,
+      "step": "A2",
+      "tag": "대사",
+      "yOffset": 50
+    },
+    {
+      "id": "failed",
+      "type": "failure",
+      "label": "failed",
+      "sublabel": "전송 실패 · 재주문 없음",
+      "lane": "terminal",
+      "col": 0,
+      "step": "T1",
+      "tag": "실패"
+    },
+    {
+      "id": "rejected",
+      "type": "failure",
+      "label": "rejected",
+      "sublabel": "브로커 거절",
+      "lane": "terminal",
+      "col": 1,
+      "step": "T2",
+      "tag": "거절"
+    },
+    {
+      "id": "filled",
+      "type": "success",
+      "label": "filled",
+      "sublabel": "체결 완료",
+      "lane": "terminal",
+      "col": 2,
+      "step": "T3",
+      "tag": "성공"
+    }
+  ],
+  "transitions": [
+    {
+      "id": "approve-claim",
+      "from": "approved",
+      "to": "claimed",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "claim-reserve",
+      "from": "claimed",
+      "to": "reserved",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "reserve-submit",
+      "from": "reserved",
+      "to": "submitting",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "submit-ok",
+      "from": "submitting",
+      "to": "submitted",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "submitted-filled",
+      "from": "submitted",
+      "to": "filled",
+      "variant": "emphasis"
+    },
+    {
+      "id": "submit-unknown",
+      "from": "submitting",
+      "to": "outcome_unknown",
+      "variant": "security"
+    },
+    {
+      "id": "unknown-recon",
+      "from": "outcome_unknown",
+      "to": "reconciling",
+      "variant": "security"
+    },
+    {
+      "id": "recon-filled",
+      "from": "reconciling",
+      "to": "filled",
+      "variant": "security"
+    },
+    {
+      "id": "recon-rejected",
+      "from": "reconciling",
+      "to": "rejected",
+      "variant": "security"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "보내기 전에 기록한다",
+      "items": [
+        "워커는 승인된 의도를 claimed로 멱등 선점한 뒤에만 전송합니다 — 같은 의도를 두 워커가 잡지 못합니다",
+        "주문 시도는 전송 전에 reserved로 먼저 적힙니다. 보낸 뒤 기록하면 이미 나간 주문을 되돌릴 수 없습니다"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "보냈는지 모르는 상태를 표현한다",
+      "items": [
+        "타임아웃·5xx는 실패가 아니라 outcome_unknown입니다. 실패로 적으면 다시 보내게 되기 때문입니다",
+        "되물어 확인(reconciling)한 뒤에만 접수·거절이 확정되고, 확인 전에는 어떤 경로로도 재전송하지 않습니다"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "상태 목록의 출처",
+      "items": [
+        "의도 상태는 execution/orders/intents.py 의 INTENT_STATUSES 가 갖습니다",
+        "시도 상태와 허용 전이는 execution/orders/ledger.py 의 EVENT_STATUSES 와 repository.py 의 전이 맵이 갖습니다",
+        "그림은 주요 경로만 그립니다 — 일부 체결(partially_filled)·정정 주문(replacement_created)·되물어보니 거절(reconciled_rejected)과 reconciling→failed 전이는 생략했습니다. 허용 전이 전체는 execution/orders/repository.py 의 transitions 맵이 갖습니다"
+      ]
+    }
+  ]
+}

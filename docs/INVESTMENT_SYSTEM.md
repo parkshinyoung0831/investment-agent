@@ -6,11 +6,11 @@
 
 ## 전체 흐름
 
-![분석: 후보 선정에서 신호 배치까지](diagrams/trading-analysis.svg)
+![분석: 후보 선정에서 신호 배치까지](diagrams/svg/trading-analysis.svg)
 
 어떤 근거가 어떤 순서로 신호가 되는지.
 
-*소스: `docs/diagrams/trading-analysis.dataflow.json` — 그림을 고치려면 이 파일을 고치고 `python scripts/build_diagrams.py`.*
+*소스: `docs/diagrams/src/trading-analysis.dataflow.json` — 그림을 고치려면 이 파일을 고치고 `python scripts/build_diagrams.py`.*
 
 ```text
 DATA (재무·가격·밸류에이션·추정치·거시·공시·사건)
@@ -542,11 +542,11 @@ ML/RL/TradingAgents output은 다음 계약으로 정규화한다.
 
 ## Portfolio Optimizer
 
-![목표 비중: 신호에서 실행 의도까지](diagrams/trading-target.svg)
+![목표 비중: 신호에서 실행 의도까지](diagrams/svg/trading-target.svg)
 
 신호가 위험예산·optimizer·RiskGate를 지나 목표 비중이 되는 경로.
 
-*소스: `docs/diagrams/trading-target.dataflow.json` — 그림을 고치려면 이 파일을 고치고 `python scripts/build_diagrams.py`.*
+*소스: `docs/diagrams/src/trading-target.dataflow.json` — 그림을 고치려면 이 파일을 고치고 `python scripts/build_diagrams.py`.*
 
 `RiskAwareOptimizer`는 CVXPY로 다음 목적을 결정론적으로 최적화한다.
 

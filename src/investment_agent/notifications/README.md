@@ -10,19 +10,7 @@
 
 ---
 
-## 0. 관련 문서 및 전체 위치
-
-* **상위 문서**: [루트 README.md](../../../README.md) · [개발 가이드 CLAUDE.md](../../../CLAUDE.md)
-* **디자인 토큰 SSOT**: [DESIGN-system.md](../../../DESIGN-system.md)
-* **서버 채널 선언**: [Discord Admin 채널 관리](discord_admin/README.md)
-* **상류 데이터 제공 파이프라인**:
-  * [Macro](../data/macro/README.md) · [Econ Calendar](../data/macro/releases/README.md)
-  * [Fundamentals](../data/fundamentals/README.md) — 기업 전체·차원 재무, 시장 예상치, 실적 이벤트
-  * [Institutional](../data/institutional/README.md) · [Strategy](../research/strategies/README.md)
-
----
-
-## 1. 전체 알림 렌더링 & 라우팅 아키텍처
+## 전체 알림 렌더링 & 라우팅 아키텍처
 
 ```mermaid
 flowchart TD
@@ -48,7 +36,7 @@ flowchart TD
 
 ---
 
-## 2. 핵심 개념 (초보자 가이드)
+## 핵심 개념
 
 ### Playwright Headless Chromium 렌더링
 * **한 줄 설명**: 브라우저 화면을 띄우지 않고 백그라운드(Headless)에서 HTML+CSS 템플릿을 렌더링하여 고해상도 PNG 이미지로 캡처하는 방식.
@@ -78,7 +66,7 @@ producer는 `discord_target(kind)`로 채널 하나를 받아 발송 목적지�
 
 ---
 
-## 3. 8대 알림 카드 명세 및 전송 포맷
+## 8대 알림 카드 명세 및 전송 포맷
 
 | KIND | 담당 모듈 | 전송 형태 | 대상 채널 및 발송 주기 | 주요 포함 내용 |
 |---|---|---|---|---|
@@ -97,7 +85,7 @@ producer는 `discord_target(kind)`로 채널 하나를 받아 발송 목적지�
 
 ---
 
-## 4. 관련 코드 및 디렉토리 구조
+## 관련 코드 및 디렉토리 구조
 
 ### 주요 파일 구조
 ```text
@@ -136,7 +124,7 @@ operations/commands/notify.py::main(--kind fundamentals_earnings) ──> KINDS 
 
 ---
 
-## 5. 실행 및 로컬 테스트 가이드
+## 실행 및 로컬 테스트 가이드
 
 ```bash
 # 1. 매일 아침 매크로 종합 대시보드 카드 테스트
@@ -166,9 +154,7 @@ python -m investment_agent.operations.commands.notify --kind investment_candidat
 python -m investment_agent.operations.commands.notify --kind investment_trades
 ```
 
----
-
-## 6. 수정할 때 확인할 곳
+## 고칠 때 함께 볼 곳
 
 | 수정 목적 | 확인할 파일 및 함수 | 주의사항 |
 |---|---|---|
@@ -176,3 +162,12 @@ python -m investment_agent.operations.commands.notify --kind investment_trades
 | Playwright 뷰포트 크기 조정 | 각 PNG 카드 패키지의 `render.py` (`shoot_png`의 `viewport_width`, 기본 1080) | 모바일 가독성 유지 |
 | Discord 채널 라우팅 변경 | `subscriptions.py`의 `KIND_ENV`와 그 env 값 | `discord_admin` manifest는 채널 **구조**를, `KIND_ENV`는 **목적지**를 소유한다 |
 | 중복 방지 규칙 수정 | topic 선언은 `notifications/topics.py`, 정체성·basis는 각 producer의 Notice 조립 | basis에 표시와 무관한 값(수집 시각 등)을 넣으면 매 실행이 새 revision이 된다. SQL 규칙은 `db/postgres/v1/60_notifications.sql`, 테스트용 동작 사본은 `ledger.py`의 `MemoryLedger` — 둘을 함께 고치고 `scripts/verify_notification_ledger.py`로 대조한다 |
+
+함께 움직이는 곳:
+
+* **디자인 토큰 SSOT**: [DESIGN-system.md](../../../DESIGN-system.md)
+* **서버 채널 선언**: [Discord Admin 채널 관리](discord_admin/README.md)
+* **상류 데이터 제공 파이프라인**:
+  * [Macro](../data/macro/README.md) · [Econ Calendar](../data/macro/releases/README.md)
+  * [Fundamentals](../data/fundamentals/README.md) — 기업 전체·차원 재무, 시장 예상치, 실적 이벤트
+  * [Institutional](../data/institutional/README.md) · [Strategy](../research/strategies/README.md)

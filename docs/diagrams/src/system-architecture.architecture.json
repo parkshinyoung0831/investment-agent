@@ -1,0 +1,610 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Investment Agent 시스템 전체 아키텍처",
+    "output": "system-architecture.html",
+    "quality_profile": "showcase",
+    "animation": "trace",
+    "viewBox": [
+      1240,
+      700
+    ],
+    "views": [
+      {
+        "id": "full-pipeline",
+        "label": "엔드투엔드 파이프라인",
+        "focus": [
+          "sources",
+          "ingest",
+          "supabase",
+          "research",
+          "decide",
+          "risk",
+          "approval",
+          "execution",
+          "broker"
+        ],
+        "note": "외부 원천 수집에서 사람 승인을 거쳐 토스 실주문까지 이어지는 핵심 경로입니다."
+      },
+      {
+        "id": "ai-safety",
+        "label": "AI 판단과 결정론적 게이트",
+        "focus": [
+          "research",
+          "ml",
+          "agents",
+          "decide",
+          "risk",
+          "approval"
+        ],
+        "note": "LLM과 ML의 분석은 결정론적 RiskGate와 사람 승인을 통과해야 합니다. LLM에는 비중 결정 권한이 없습니다."
+      },
+      {
+        "id": "read-model",
+        "label": "읽기 모델과 표시",
+        "focus": [
+          "supabase",
+          "duckdb",
+          "sqlite",
+          "reporting",
+          "display"
+        ],
+        "note": "화면과 알림은 저장소를 직접 열지 않고 reporting 읽기 모델만 소비합니다. 이 방향은 테스트가 강제합니다."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "sources",
+      "type": "external",
+      "label": "공개 금융 데이터",
+      "sublabel": "SEC · yfinance · FRED",
+      "pos": [
+        24,
+        210
+      ],
+      "size": [
+        168,
+        64
+      ],
+      "tag": "외부"
+    },
+    {
+      "id": "ingest",
+      "type": "cloud",
+      "label": "Actions & 하네스",
+      "sublabel": "cron 36개 · 수집 실행",
+      "pos": [
+        232,
+        70
+      ],
+      "size": [
+        168,
+        64
+      ],
+      "tag": "스케줄러"
+    },
+    {
+      "id": "supabase",
+      "type": "database",
+      "label": "Supabase",
+      "sublabel": "PIT 원천 · 알림 원장",
+      "pos": [
+        232,
+        210
+      ],
+      "size": [
+        168,
+        64
+      ],
+      "tag": "SSOT"
+    },
+    {
+      "id": "duckdb",
+      "type": "database",
+      "label": "로컬 DuckDB ×2",
+      "sublabel": "research 파생 · 원문 90일",
+      "pos": [
+        24,
+        350
+      ],
+      "size": [
+        168,
+        64
+      ],
+      "tag": "로컬"
+    },
+    {
+      "id": "agents",
+      "type": "cloud",
+      "label": "TradingAgents",
+      "sublabel": "논지 · 토론 · 거부권",
+      "pos": [
+        440,
+        70
+      ],
+      "size": [
+        168,
+        64
+      ],
+      "tag": "LLM"
+    },
+    {
+      "id": "research",
+      "type": "backend",
+      "label": "Research 근거",
+      "sublabel": "PitReader · Feature · 팩터",
+      "pos": [
+        440,
+        210
+      ],
+      "size": [
+        168,
+        64
+      ],
+      "tag": "리서치"
+    },
+    {
+      "id": "ml",
+      "type": "backend",
+      "label": "ML Champion",
+      "sublabel": "기대초과수익 예측",
+      "pos": [
+        440,
+        350
+      ],
+      "size": [
+        168,
+        64
+      ],
+      "tag": "예측"
+    },
+    {
+      "id": "decide",
+      "type": "backend",
+      "label": "ALPHA & Optimizer",
+      "sublabel": "신호 융합 · 목표 비중",
+      "pos": [
+        648,
+        210
+      ],
+      "size": [
+        168,
+        64
+      ],
+      "tag": "판단"
+    },
+    {
+      "id": "risk",
+      "type": "security",
+      "label": "RiskGate",
+      "sublabel": "절대 한도 · RiskDecision",
+      "pos": [
+        856,
+        210
+      ],
+      "size": [
+        168,
+        64
+      ],
+      "tag": "결정론"
+    },
+    {
+      "id": "approval",
+      "type": "security",
+      "label": "Discord 승인",
+      "sublabel": "HMAC · durable permit",
+      "pos": [
+        1048,
+        210
+      ],
+      "size": [
+        168,
+        64
+      ],
+      "tag": "사람"
+    },
+    {
+      "id": "execution",
+      "type": "security",
+      "label": "Toss 실행 워커",
+      "sublabel": "예약 후 전송 · 락다운",
+      "pos": [
+        1048,
+        350
+      ],
+      "size": [
+        168,
+        64
+      ],
+      "tag": "실행"
+    },
+    {
+      "id": "broker",
+      "type": "external",
+      "label": "토스증권 주문 API",
+      "sublabel": "단일 broker 경로",
+      "pos": [
+        1048,
+        490
+      ],
+      "size": [
+        168,
+        64
+      ],
+      "tag": "브로커"
+    },
+    {
+      "id": "sqlite",
+      "type": "database",
+      "label": "로컬 SQLite 원장",
+      "sublabel": "승인 · 주문 · 체결 · 성과",
+      "pos": [
+        856,
+        350
+      ],
+      "size": [
+        168,
+        64
+      ],
+      "tag": "런타임"
+    },
+    {
+      "id": "reporting",
+      "type": "backend",
+      "label": "Reporting",
+      "sublabel": "SELECT 전용 읽기 모델",
+      "pos": [
+        648,
+        490
+      ],
+      "size": [
+        168,
+        64
+      ],
+      "tag": "읽기 전용"
+    },
+    {
+      "id": "display",
+      "type": "frontend",
+      "label": "대시보드 & 알림",
+      "sublabel": "Streamlit 화면 · Discord 카드",
+      "pos": [
+        440,
+        490
+      ],
+      "size": [
+        168,
+        64
+      ],
+      "tag": "소비자"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "수집 & 원천 저장",
+      "wraps": [
+        "ingest",
+        "supabase"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "리서치 & 판단",
+      "wraps": [
+        "agents",
+        "research",
+        "ml",
+        "decide"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "읽기 모델 & 표시",
+      "wraps": [
+        "display",
+        "reporting"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "security-group",
+      "label": "안전 경계",
+      "wraps": [
+        "risk",
+        "approval",
+        "execution",
+        "sqlite"
+      ],
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "id": "src-ingest",
+      "from": "sources",
+      "to": "ingest",
+      "label": "원천 수집",
+      "variant": "emphasis",
+      "fromSide": "top",
+      "toSide": "left",
+      "labelAt": [
+        204,
+        150
+      ]
+    },
+    {
+      "id": "ingest-pg",
+      "from": "ingest",
+      "to": "supabase",
+      "label": "증분 적재",
+      "variant": "emphasis",
+      "route": "straight",
+      "labelAt": [
+        380,
+        182
+      ]
+    },
+    {
+      "id": "src-duck",
+      "from": "sources",
+      "to": "duckdb",
+      "label": "뉴스·소셜 원문",
+      "variant": "dashed",
+      "route": "straight",
+      "labelAt": [
+        172,
+        322
+      ]
+    },
+    {
+      "id": "pg-research",
+      "from": "supabase",
+      "to": "research",
+      "label": "PIT 읽기",
+      "variant": "emphasis",
+      "route": "straight",
+      "labelAt": [
+        420,
+        192
+      ]
+    },
+    {
+      "id": "research-agents",
+      "from": "research",
+      "to": "agents",
+      "label": "근거 묶음",
+      "variant": "default",
+      "route": "straight",
+      "labelAt": [
+        560,
+        172
+      ]
+    },
+    {
+      "id": "duck-reporting",
+      "from": "duckdb",
+      "to": "reporting",
+      "label": "뉴스 언급 read model",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "bottom",
+      "via": [
+        [
+          108,
+          650
+        ],
+        [
+          732,
+          650
+        ]
+      ],
+      "labelAt": [
+        380,
+        670
+      ]
+    },
+    {
+      "id": "research-ml",
+      "from": "research",
+      "to": "ml",
+      "label": "피처 입력",
+      "variant": "default",
+      "route": "straight",
+      "labelAt": [
+        560,
+        312
+      ]
+    },
+    {
+      "id": "research-decide",
+      "from": "research",
+      "to": "decide",
+      "label": "adapters/trading.py",
+      "variant": "emphasis",
+      "route": "straight",
+      "labelAt": [
+        628,
+        192
+      ]
+    },
+    {
+      "id": "agents-decide",
+      "from": "agents",
+      "to": "decide",
+      "label": "논지 · 거부권",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "top",
+      "labelAt": [
+        700,
+        140
+      ]
+    },
+    {
+      "id": "ml-decide",
+      "from": "ml",
+      "to": "decide",
+      "label": "ML 예측치",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "labelAt": [
+        700,
+        400
+      ]
+    },
+    {
+      "id": "decide-risk",
+      "from": "decide",
+      "to": "risk",
+      "label": "목표 비중",
+      "variant": "emphasis",
+      "route": "straight",
+      "labelAt": [
+        836,
+        180
+      ]
+    },
+    {
+      "id": "risk-approval",
+      "from": "risk",
+      "to": "approval",
+      "label": "ExecutionIntent",
+      "variant": "security",
+      "route": "straight",
+      "labelAt": [
+        1030,
+        180
+      ]
+    },
+    {
+      "id": "approval-exec",
+      "from": "approval",
+      "to": "execution",
+      "label": "승인된 의도만",
+      "variant": "security",
+      "route": "straight",
+      "labelAt": [
+        1200,
+        312
+      ]
+    },
+    {
+      "id": "exec-broker",
+      "from": "execution",
+      "to": "broker",
+      "label": "실주문 전송",
+      "variant": "security",
+      "route": "straight",
+      "labelAt": [
+        1200,
+        452
+      ]
+    },
+    {
+      "id": "exec-sqlite",
+      "from": "execution",
+      "to": "sqlite",
+      "label": "주문 · 체결 기록",
+      "variant": "security",
+      "route": "straight",
+      "labelAt": [
+        1036,
+        332
+      ]
+    },
+    {
+      "id": "pg-reporting",
+      "from": "supabase",
+      "to": "reporting",
+      "label": "SELECT 전용",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "bottom",
+      "via": [
+        [
+          316,
+          586
+        ],
+        [
+          732,
+          586
+        ]
+      ],
+      "labelAt": [
+        500,
+        606
+      ]
+    },
+    {
+      "id": "sqlite-reporting",
+      "from": "sqlite",
+      "to": "reporting",
+      "label": "실행 · 성과 원장",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "right",
+      "via": [
+        [
+          940,
+          522
+        ]
+      ],
+      "labelAt": [
+        900,
+        502
+      ]
+    },
+    {
+      "id": "reporting-display",
+      "from": "reporting",
+      "to": "display",
+      "label": "읽기 모델만 소비",
+      "variant": "emphasis",
+      "route": "straight",
+      "labelAt": [
+        628,
+        472
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "데이터 무결성과 PIT",
+      "items": [
+        "과거 cutoff t 에서는 available_at <= t 인 데이터만 씁니다. 증명할 수 없으면 현재 값을 과거로 소급하지 않습니다",
+        "뉴스·소셜 원문은 Supabase가 아니라 로컬 DuckDB에 최대 90일만 두고 재계산 가능한 파생물만 남깁니다"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "AI 권한의 분리",
+      "items": [
+        "LLM은 논지·설명·거부권만 행사하고 최종 비중과 hard risk limit을 정하지 않습니다",
+        "optimizer가 목표 비중을 계산하면 RiskGate가 절대 한도를 다시 강제하고, 그 뒤에도 사람이 승인해야 주문이 나갑니다"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "읽기 경로는 하나뿐",
+      "items": [
+        "대시보드와 알림은 저장소를 직접 열지 않고 reporting 읽기 모델만 소비합니다",
+        "Supabase에 닿는 읽기 전용 경로는 SelectOnlyGateway이고 RPC 경로는 코드에 존재하지 않습니다"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "실주문 안전",
+      "items": [
+        "Live는 기본 차단이고 LIVE_ENABLED·TOSS_LIVE_ENABLED는 사람이 명시적으로 켭니다",
+        "예약 후 전송을 쓰고, 결과가 불명확하면 자동 재주문 없이 불일치 락다운에 들어갑니다"
+      ]
+    }
+  ]
+}

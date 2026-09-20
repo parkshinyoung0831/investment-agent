@@ -5,11 +5,11 @@
 
 ## 전체 데이터 흐름
 
-![투자 에이전트 데이터 흐름](diagrams/pipeline.svg)
+![투자 에이전트 데이터 흐름](diagrams/svg/pipeline.svg)
 
 수집 원천에서 네 저장소까지, 무엇이 어디로 들어가는지.
 
-*소스: `docs/diagrams/pipeline.dataflow.json` — 그림을 고치려면 이 파일을 고치고 `python scripts/build_diagrams.py`.*
+*소스: `docs/diagrams/src/pipeline.dataflow.json` — 그림을 고치려면 이 파일을 고치고 `python scripts/build_diagrams.py`.*
 
 ```mermaid
 flowchart LR

@@ -14,17 +14,7 @@ Production Supabase에는 Research schema를 만들지 않습니다.
 
 ---
 
-## 0. 관련 문서 및 전체 위치
-
-* **상위 문서**: [루트 README.md](../../../../README.md) · [개발 가이드 CLAUDE.md](../../../../CLAUDE.md)
-* **상류 파이프라인**: [Market (일별 시세)](../../data/market/README.md)
-* **하류 파이프라인**:
-  * [Trading (후보 종목 랭킹 및 가격 특징량)](../../trading/README.md)
-  * [Notifications (차트 지표 및 모멘텀)](../../notifications/README.md)
-
----
-
-## 1. 전체 데이터 파이프라인 아키텍처
+## 전체 데이터 파이프라인 아키텍처
 
 ```mermaid
 flowchart TD
@@ -49,7 +39,7 @@ flowchart TD
 
 ---
 
-## 2. 핵심 개념 (초보자 가이드)
+## 핵심 개념
 
 ### 일간 기술지표와 PIT feature snapshot
 * **일간 기술지표**: RSI(14), MACD(12, 26, 9)를 `feature_signals_daily`에 저장합니다. 이 표는
@@ -64,7 +54,7 @@ flowchart TD
 
 ---
 
-## 3. 주요 기술지표 및 계산 정의
+## 주요 기술지표 및 계산 정의
 
 | 구분 | 지표명 | 계산 파라미터 및 산출 공식 | 제공 위치 |
 |---|---|---|---|
@@ -77,7 +67,7 @@ flowchart TD
 
 ---
 
-## 4. 관련 코드 및 데이터 흐름
+## 관련 코드 및 데이터 흐름
 
 ### 주요 파일 구조
 ```text
@@ -108,7 +98,7 @@ build_features.py::main()
 
 ---
 
-## 5. 실행 및 검증 가이드
+## 실행 및 검증 가이드
 
 ```bash
 # 1. 일일 증분 계산 (Market Daily 완료 후 새 거래일 지표 계산)
@@ -125,17 +115,7 @@ python -m investment_agent.research.commands.build_features --dry-run
 
 ---
 
-## 6. 수정할 때 확인할 곳
-
-| 수정 목적 | 확인할 파일 및 함수 | 주의사항 |
-|---|---|---|
-| RSI / MACD 계산 알고리즘 수정 | `src/investment_agent/research/features/compute.py` (`rsi`, `macd`) | 저장값의 재현성을 위해 750거래일 워밍업 유지 |
-| feature 추가 | `compute.py`, `layer.py` | `FEATURE_COLUMNS`, missing 표식, feature version을 함께 검토 |
-| 보존 기간 변경 | `src/investment_agent/research/features/retention.py` (`prune_history`) | ResearchStore의 저장 정책과 일관되게 조정 |
-
----
-
-## 7. 유용한 SQL 점검 쿼리
+## 유용한 SQL 점검 쿼리
 
 저장형 RSI·MACD는 로컬 DuckDB의 `feature_signals_daily`에서 ticker와 날짜로 읽습니다.
 모델 입력은 `rl_feature_snapshots`에서 feature version과 `as_of_at`을 함께 확인합니다.
@@ -157,3 +137,18 @@ where rsi14 < 30 or rsi14 > 70
 order by trade_date desc, ticker;
 -- Python에서 DuckDB feature_signals_daily를 읽어 스크리닝한다.
 ```
+
+## 고칠 때 함께 볼 곳
+
+| 수정 목적 | 확인할 파일 및 함수 | 주의사항 |
+|---|---|---|
+| RSI / MACD 계산 알고리즘 수정 | `src/investment_agent/research/features/compute.py` (`rsi`, `macd`) | 저장값의 재현성을 위해 750거래일 워밍업 유지 |
+| feature 추가 | `compute.py`, `layer.py` | `FEATURE_COLUMNS`, missing 표식, feature version을 함께 검토 |
+| 보존 기간 변경 | `src/investment_agent/research/features/retention.py` (`prune_history`) | ResearchStore의 저장 정책과 일관되게 조정 |
+
+함께 움직이는 곳:
+
+* **상류 파이프라인**: [Market (일별 시세)](../../data/market/README.md)
+* **하류 파이프라인**:
+  * [Trading (후보 종목 랭킹 및 가격 특징량)](../../trading/README.md)
+  * [Notifications (차트 지표 및 모멘텀)](../../notifications/README.md)

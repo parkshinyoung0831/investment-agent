@@ -55,7 +55,7 @@ ExecutionIntent                 이 지점부터 `investment_agent.execution`이
 모든 저장 ID는 가능한 범위에서 canonical JSON의 SHA-256으로 안정적으로 만듭니다. 같은 입력을
 재시도할 때 다른 주문 의도나 평가 대상으로 보이지 않게 하기 위해서입니다.
 
-## 1. Universe와 후보 선정
+## Universe와 후보 선정
 
 현재 live/Shadow 신규 위험 universe는 `universe.securities.is_tracked=true`입니다. CLI에서 ticker를
 직접 입력해도 이 조건을 우회하지 못합니다.
@@ -76,7 +76,7 @@ factor 점수는 가장 최근의 온전한 live feature 횡단면에서 `resear
 랭커로 고르고 `path=legacy_rotation` 경고를 남깁니다 — 그 계산은
 [CANDIDATE_SELECTION.md](CANDIDATE_SELECTION.md)를 봅니다.
 
-## 2. Context와 PIT 경계
+## Context와 PIT 경계
 
 `ContextBuilder.build(ticker, as_of_at, source_kind=...)`(`research/evidence/context.py`)는 각 domain repository를
 호출해 bundle을 만듭니다. 계약·조립기·통계와 PIT 읽기(`PitReader`)는 Research가 소유하고 Trading은
@@ -97,7 +97,7 @@ factor 점수는 가장 최근의 온전한 live feature 횡단면에서 `resear
 근거가 없으면 빈 객체나 0을 넣지 않고 `missing_data`에 사람이 읽을 수 있는 이유를 기록합니다.
 `available_at > as_of_at`인 `EvidenceItem`은 계약 생성 자체가 실패합니다.
 
-## 3. Feature layer
+## Feature layer
 
 `FeatureLayer.build()`는 가격 수익률, technical, fundamentals, macro, 13F를 동일 정의로
 `FeatureBundle`로 변환합니다. **컬럼 집합은 도메인 결측과 무관하게 항상 같습니다**
@@ -119,7 +119,7 @@ bundle은 다음을 함께 보존합니다.
 확정되기 전에는 학습에 사용할 수 없습니다. 이 분리는 같은 feature 정의를 training과 live inference가
 공유하면서도 미래 수익률이 inference payload에 섞이지 않게 합니다.
 
-## 4. TradingAgents
+## TradingAgents
 
 `decision/agents/`는 TradingAgents 역할 그래프와 공개 실행 인터페이스를,
 `decision/llm/runtime.py`는 upstream 도구를 이 저장소의 데이터 경계로 교체한 실행 환경을 소유합니다.
@@ -157,7 +157,7 @@ provider를 호출하고 sanitize·dedupe·quota·DuckDB cache 경계를 통과�
 저장용 `signal`은 이 필드에서 파생하고 `target_weight`는 0이다. ALPHA는 명시 논지와
 강제 제약을 먼저 읽고, 옛 기록에만 행동 단어를 해석한다.
 
-## 5. System Portfolio와 My Portfolio
+## System Portfolio와 My Portfolio
 
 - `system/target.py`는 System 자신의 현재 비중만 입력으로 받아 목표비중을 만듭니다. 계좌 스냅샷 인자가 없습니다.
   시장위험·5일 CVaR95 한도는 optimizer의 내부 입력이며 초과 시 위험자산을 현금으로 축소합니다.
@@ -167,7 +167,7 @@ provider를 호출하고 sanitize·dedupe·quota·DuckDB cache 경계를 통과�
   보유는 0(전량 매도), 차이가 최소 주문금액 미만이면 묻지 않습니다. 같은 목표는 한 번만 묻습니다.
 - `portfolio/signal_book.py`의 `SignalBatch`·`SignalRecord`는 분석 회차의 완전성과 논지 기록 계약입니다.
 
-## 6. Optimizer와 RiskGate
+## Optimizer와 RiskGate
 
 `RiskAwareOptimizer`의 기본 목적함수는 다음 개념입니다.
 
@@ -196,7 +196,7 @@ long-only, 종목 최대 10%, 섹터 최대 30%, turnover 최대 25%, 현금 최
 정확한 판단·optimizer·RiskGate 흐름은
 [투자 시스템](../../../docs/INVESTMENT_SYSTEM.md)을 봅니다.
 
-## 7. Backtest, ML, RL, Qlib
+## Backtest, ML, RL, Qlib
 
 - `src/investment_agent/research/backtest/`: 완전한 `BacktestRequest`만 받는 Native engine과 append-only ledger
 - `src/investment_agent/research/backtest/validation.py`: LumiBot PandasData adapter와 metric comparator
@@ -209,7 +209,7 @@ long-only, 종목 최대 10%, 섹터 최대 30%, turnover 최대 25%, 현금 최
 Qlib, LumiBot, LightGBM/XGBoost, SB3는 선택 dependency입니다. import 가능한 것과 실제 장기간
 성과가 검증된 것은 구분합니다.
 
-## 8. 평가와 승격
+## 평가와 승격
 
 모델 artifact에는 feature version, dataset hash, train/validation/OOS 기간, seed, parameter, code
 version과 artifact hash를 저장합니다. `ManualPromotionGate`는 현재 model artifact stage를

@@ -6,11 +6,6 @@ Toss execution ledger/reconciliation은 canonical package와 `db/postgres/v1/` �
 
 ## 현재 구조
 
-![닫힌 루프 투자 데이터 흐름](diagrams/vnext-closed-loop.svg)
-
-판단 → 실행 → 성과가 어떻게 다음 판단으로 되먹임되는지.
-
-*소스: `docs/diagrams/vnext-closed-loop.dataflow.json` — 그림을 고치려면 이 파일을 고치고 `python scripts/build_diagrams.py`.*
 
 데이터 수집은 `src/investment_agent/data/universe`, `src/investment_agent/data/market`,
 `src/investment_agent/data/fundamentals`, `src/investment_agent/data/macro`,

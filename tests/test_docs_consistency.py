@@ -44,7 +44,7 @@ _FILE_SUFFIXES = frozenset({"py", "sql", "md", "toml", "json", "duckdb", "sqlite
 # 표가 아닌 것. 하나하나가 "왜 표처럼 보이는데 표가 아닌지"를 말한다.
 NOT_A_TABLE = frozenset({
     # 파이썬 모듈·패키지 경로
-    "macro.releases", "research.features", "research.strategies",
+    "research.features", "research.strategies",
     "notifications.discord_admin", "universe.watchlists", "institutional.managers",
     # 계층 이름(패키지 안의 domain/application)
     "fundamentals.domain", "fundamentals.application",
@@ -272,9 +272,12 @@ class DiagramArtifactTest(unittest.TestCase):
     """
 
     DIAGRAMS = ROOT / "docs" / "diagrams"
+    SPECS = DIAGRAMS / "src"
+    HTML = DIAGRAMS / "html"
+    SVG = DIAGRAMS / "svg"
 
     def _sources(self) -> list[Path]:
-        return sorted(p for p in self.DIAGRAMS.glob("*.html") if ".visual-check" not in p.name)
+        return sorted(self.HTML.glob("*.html"))
 
     def test_there_are_diagrams_to_check(self) -> None:
         """다이어그램을 옮기거나 이름을 바꾸면 아래 검사가 0건으로 조용히 통과한다."""
@@ -294,7 +297,7 @@ class DiagramArtifactTest(unittest.TestCase):
             expected = build_svg(html.read_text(encoding="utf-8", errors="replace"))
             if expected is None:
                 continue
-            svg = html.with_suffix(".svg")
+            svg = self.SVG / f"{html.stem}.svg"
             if not svg.exists():
                 stale.append(f"{svg.name} 없음")
             elif svg.read_text(encoding="utf-8", errors="replace") != expected:
@@ -308,9 +311,8 @@ class DiagramArtifactTest(unittest.TestCase):
     def test_every_diagram_source_has_a_delivered_html(self) -> None:
         """JSON만 커밋하고 빌드를 안 돌리면 문서가 없는 그림을 가리킨다."""
         orphan = [
-            spec.name for spec in sorted(self.DIAGRAMS.glob("*.json"))
-            if ".visual-check" not in spec.name
-            and not (self.DIAGRAMS / f"{spec.name.split('.')[0]}.html").exists()
+            spec.name for spec in sorted(self.SPECS.glob("*.json"))
+            if not (self.HTML / f"{spec.name.split('.')[0]}.html").exists()
         ]
         self.assertEqual([], orphan, "python scripts/build_diagrams.py 를 돌려라")
 

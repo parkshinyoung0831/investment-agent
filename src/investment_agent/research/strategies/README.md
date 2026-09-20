@@ -9,16 +9,7 @@
 
 ---
 
-## 0. 관련 문서 및 전체 위치
-
-* **상위 문서**: [루트 README.md](../../../../README.md) · [개발 가이드 CLAUDE.md](../../../../CLAUDE.md)
-* **하류 파이프라인**:
-  * [Notifications (월간 전략 리밸런싱 알림 및 도넛 차트)](../../notifications/README.md)
-  * [Trading (벤치마크 및 포트폴리오 비교)](../../trading/README.md)
-
----
-
-## 1. 전체 데이터 파이프라인 아키텍처
+## 전체 데이터 파이프라인 아키텍처
 
 ```mermaid
 flowchart TD
@@ -41,7 +32,7 @@ flowchart TD
 
 ---
 
-## 2. 핵심 개념 (초보자 가이드)
+## 핵심 개념
 
 ### 듀얼 모멘텀 (Dual Momentum)
 * **상대 모멘텀 (Relative Momentum)**: 여러 자산(예: 미국 주식 vs 선진국 주식) 중 과거 1~12개월 수익률이 더 높은 1등 자산을 선택하는 방식.
@@ -53,7 +44,7 @@ flowchart TD
 
 ---
 
-## 3. 지원하는 6대 퀀트 자산배분 전략 ([`catalog.py`](catalog.py))
+## 지원하는 6대 퀀트 자산배분 전략 ([`catalog.py`](catalog.py))
 
 | 전략 ID | 전략명 (Strategy Name) | 핵심 알고리즘 및 룰 | 원작자 / 출처 |
 |---|---|---|---|
@@ -66,7 +57,7 @@ flowchart TD
 
 ---
 
-## 4. 관련 코드 및 데이터 흐름
+## 관련 코드 및 데이터 흐름
 
 ### 주요 파일 구조
 ```text
@@ -88,7 +79,7 @@ etl.py::main()
 
 ---
 
-## 5. 실행 및 검증 가이드
+## 실행 및 검증 가이드
 
 ```bash
 # 1. 월간 정기 배분 계산 (매월 1일 실행)
@@ -103,7 +94,14 @@ python -m investment_agent.operations.commands.notify --kind strategy
 
 ---
 
-## 6. 수정할 때 확인할 곳
+## 유용한 SQL 점검 쿼리
+
+로컬 점검은 `ResearchStore().allocations()`를 사용한다. `strategy_runs`는 계산 한 번의
+시점·mode·signal metadata를, `strategy_allocations`는 `(run_id, asset_symbol)`별 weight를
+보관한다. Discord 발송 상태는 이 표에 저장하지 않고 Postgres 알림 원장(`notifications.notices`)이 소유한다.
+이 영역에는 Production Supabase schema나 migration 파일을 만들지 않는다.
+
+## 고칠 때 함께 볼 곳
 
 | 수정 목적 | 확인할 파일 및 함수 | 주의사항 |
 |---|---|---|
@@ -111,11 +109,8 @@ python -m investment_agent.operations.commands.notify --kind strategy
 | 모멘텀 계산 기간 변경 | `src/investment_agent/research/strategies/strategies.py` | 월말 종가 결측치 처리 검토 |
 | 리밸런싱 적용일(apply_date) 규칙 수정 | `src/investment_agent/research/strategies/etl.py` | 매월 1일 멱등성 유지 |
 
----
+함께 움직이는 곳:
 
-## 7. 유용한 SQL 점검 쿼리
-
-로컬 점검은 `ResearchStore().allocations()`를 사용한다. `strategy_runs`는 계산 한 번의
-시점·mode·signal metadata를, `strategy_allocations`는 `(run_id, asset_symbol)`별 weight를
-보관한다. Discord 발송 상태는 이 표에 저장하지 않고 Postgres 알림 원장(`notifications.notices`)이 소유한다.
-이 영역에는 Production Supabase schema나 migration 파일을 만들지 않는다.
+* **하류 파이프라인**:
+  * [Notifications (월간 전략 리밸런싱 알림 및 도넛 차트)](../../notifications/README.md)
+  * [Trading (벤치마크 및 포트폴리오 비교)](../../trading/README.md)

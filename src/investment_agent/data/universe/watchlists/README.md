@@ -10,17 +10,7 @@
 
 ---
 
-## 0. 관련 문서 및 전체 위치
-
-* **상위 문서**: [루트 README.md](../../../../../README.md) · [개발 가이드 CLAUDE.md](../../../../../CLAUDE.md)
-* **하류 파이프라인**:
-  * [Fundamentals (Fast-Path 실적 시즌 우선 감시)](../../fundamentals/README.md)
-  * [Fundamentals 예상치 (컨센서스 스냅샷)](../../fundamentals/README.md)
-  * [Notifications (포럼 스레드 실적 알림)](../../../notifications/README.md)
-
----
-
-## 1. 전체 관심종목 파이프라인 아키텍처
+## 전체 관심종목 파이프라인 아키텍처
 
 ```mermaid
 flowchart TD
@@ -38,7 +28,7 @@ flowchart TD
 
 ---
 
-## 2. 핵심 개념 (초보자 가이드)
+## 핵심 개념
 
 ### Multi-Source 관심종목 관리 (`sources = ['manual', 'toss']`)
 * **한 줄 설명**: 사용자가 직접 지정한 관심종목(`manual`)과 토스증권 계좌에서 실제 보유 중인 종목(`toss`)을 배열 형태로 단일 레코드에 결합 관리하는 방식.
@@ -47,7 +37,7 @@ flowchart TD
 
 ---
 
-## 3. 관련 코드 및 데이터 흐름
+## 관련 코드 및 데이터 흐름
 
 ### 주요 파일 구조
 ```text
@@ -76,7 +66,7 @@ toss_holdings.py::main()
 
 ---
 
-## 4. 관심종목 CLI 관리 명령어
+## 관심종목 CLI 관리 명령어
 
 ```bash
 # 1. 관심종목 추가
@@ -101,7 +91,7 @@ python -m investment_agent.data.universe.watchlists.watchlist remove AAPL
 
 ---
 
-## 5. 토스증권 계좌 보유종목 동기화 (고정 IP 로컬 전용)
+## 토스증권 계좌 보유종목 동기화 (고정 IP 로컬 전용)
 
 토스증권 공식 Open API의 계좌/보유종목 조회를 통해 실제 매수한 미국 주식을 관심종목 `toss` 출처로 자동 반영합니다.
 
@@ -113,11 +103,16 @@ python -m investment_agent.data.universe.watchlists.toss_holdings --dry-run
 python -m investment_agent.data.universe.watchlists.toss_holdings
 ```
 
----
-
-## 6. 수정할 때 확인할 곳
+## 고칠 때 함께 볼 곳
 
 | 수정 목적 | 확인할 파일 및 함수 | 주의사항 |
 |---|---|---|
 | 관심 기업 추가/해제 룰 변경 | `src/investment_agent/data/universe/watchlists/db.py` (`add_member`, `remove_member`) | `watchlist_sources` 배열과 그것에서 파생되는 `is_watchlisted` 불변성 검증. 관심 갱신이 회사 사실(이름·SIC)을 덮어쓰지 않는지도 본다 |
 | 토스 보유종목 파싱 수정 | `src/investment_agent/data/universe/infrastructure/sources/toss_holdings.py` (`fetch_accounts`, `fetch_holdings`) | 고정 IP 화이트리스트 환경 확인 |
+
+함께 움직이는 곳:
+
+* **하류 파이프라인**:
+  * [Fundamentals (Fast-Path 실적 시즌 우선 감시)](../../fundamentals/README.md)
+  * [Fundamentals 예상치 (컨센서스 스냅샷)](../../fundamentals/README.md)
+  * [Notifications (포럼 스레드 실적 알림)](../../../notifications/README.md)

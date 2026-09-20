@@ -1,6 +1,6 @@
 ---
 name: archify
-description: "Create and compile polished, validated C4 architecture, workflow, sequence, dataflow, and lifecycle diagrams as standalone interactive HTML with showcase quality. Use when visualizing system architecture, execution runbooks, order lifecycles, and data pipelines in docs/diagrams/."
+description: "Create and compile polished, validated C4 architecture, workflow, sequence, dataflow, and lifecycle diagrams as standalone interactive HTML with showcase quality. Use when visualizing system architecture, execution runbooks, order lifecycles, and data pipelines in docs/diagrams/src/."
 ---
 
 # Archify (System Architecture & Workflow Diagram Compiler)
@@ -28,12 +28,14 @@ Invoke Archify via the repository batch wrapper or the automated diagram builder
 
 | Type | Specification | Use for |
 |---|---|---|
-| `architecture` | `docs/diagrams/*.architecture.json` | C4 components, services, database storage maps |
-| `workflow` | `docs/diagrams/*.workflow.json` | Execution runbooks, approval gates, maintenance procedures |
-| `sequence` | `docs/diagrams/*.sequence.json` | Event flows, SEC earnings notifications, broker orders |
-| `dataflow` | `docs/diagrams/*.dataflow.json` | Market ETL, feature pipelines, DuckDB/Supabase dataflow |
-| `lifecycle` | `docs/diagrams/*.lifecycle.json` | Order state machines, proposal status lifecycles |
+| `architecture` | `docs/diagrams/src/*.architecture.json` | C4 components, services, database storage maps |
+| `workflow` | `docs/diagrams/src/*.workflow.json` | Execution runbooks, approval gates, maintenance procedures |
+| `sequence` | `docs/diagrams/src/*.sequence.json` | Event flows, SEC earnings notifications, broker orders |
+| `dataflow` | `docs/diagrams/src/*.dataflow.json` | Market ETL, feature pipelines, DuckDB/Supabase dataflow |
+| `lifecycle` | `docs/diagrams/src/*.lifecycle.json` | Order state machines, proposal status lifecycles |
 
 ## Quality Standards
 - All project diagrams must achieve **Showcase** profile (0 composition errors, 0 warnings, all 9 checks passed).
-- Output diagrams are delivered to `docs/diagrams/*.html`.
+- Specs live in `docs/diagrams/src/`; delivered HTML goes to `docs/diagrams/html/`.
+- Run `python scripts/build_diagrams.py` — it validates, delivers HTML, and derives
+  `docs/diagrams/svg/*.svg` for GitHub Markdown preview. Never edit HTML or SVG by hand.

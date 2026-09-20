@@ -7,7 +7,7 @@
 상위 계층과 전체 데이터 흐름은 [../ARCHITECTURE.md](../ARCHITECTURE.md), 영속 컬럼은
 [../COLUMNS.md](../COLUMNS.md)와 [../SEGMENT_COLUMNS.md](../SEGMENT_COLUMNS.md)를 본다.
 
-## 1. 이 계층의 계약
+## 이 계층의 계약
 
 domain 함수는 이미 가져온 dict·bytes·날짜를 받아 같은 입력에 같은 금융 의미의 결과를
 돌려준다. 다음 책임은 domain에 둔다.
@@ -28,7 +28,7 @@ domain 함수는 이미 가져온 dict·bytes·날짜를 받아 같은 입력에
 - ticker 대상 선정, 병렬 worker 조립, Discord 발송
 - DB 보존 기간 삭제와 reporting read model 조회
 
-## 2. 허용 의존성과 금지 의존성
+## 허용 의존성과 금지 의존성
 
 이 계층을 “표준 라이브러리만 쓰는 계층”이라고 설명하지 않는다. 실제 허용 의존성은
 다음과 같다.
@@ -51,7 +51,7 @@ domain 함수는 이미 가져온 dict·bytes·날짜를 받아 같은 입력에
 항상 `services -> taxonomy -> models`로만 흐른다고 가정하지 않는다. 새 순환 의존을
 늘리지는 말고, 두 영역이 함께 써야 하는 규칙이 늘면 명시적인 낮은 수준 모듈로 분리한다.
 
-## 3. 디렉터리와 모듈 책임
+## 디렉터리와 모듈 책임
 
 ```text
 domain/
@@ -82,7 +82,7 @@ domain/
 정정공시 form을 기본 form으로 바꾸는 `normalize_form()`이 있다. 존재하지 않는 객체
 모델을 문서상 계약으로 만들지 않는다.
 
-## 4. 메모리 관측 계약
+## 메모리 관측 계약
 
 원시 fact dict는 영구 public schema가 아니라 domain과 application 사이의 내부 계약이다.
 모든 경로는 다음 의미를 보존한다.
@@ -103,7 +103,7 @@ Segment daily는 `parse_xbrl.py`, segment backfill은 `normalize_segment_facts.p
 같은 downstream 지표 계약으로 수렴한다. 원천이 다르다는 이유로 별도 금융 의미를
 만들지 않는다.
 
-## 5. 기업 전체 재무 규칙
+## 기업 전체 재무 규칙
 
 ### Concept 선택
 
@@ -137,7 +137,7 @@ NULL로 바꾸고 데이터 이슈 사유를 만들며, 자산과 부채+자본�
 `policies.BALANCE_TOLERANCE`를 넘으면 balance mismatch를 기록한다. 품질 경고는 나머지
 유효 컬럼의 저장을 막지 않는다.
 
-## 6. 차원 재무 규칙
+## 차원 재무 규칙
 
 ### 축과 concept
 
@@ -164,7 +164,7 @@ NULL로 바꾸고 데이터 이슈 사유를 만들며, 자산과 부채+자본�
 정확한 coverage 범위와 저장 컬럼은 [../SEGMENT_COLUMNS.md](../SEGMENT_COLUMNS.md)를
 단일 기준으로 사용한다.
 
-## 7. 예상치와 이벤트 규칙
+## 예상치와 이벤트 규칙
 
 `map_fiscal_periods.py`는 Yahoo의 `q+0`, `q+1`, `fy+0`, `fy+1` 같은 상대 horizon을
 호출자가 `financial_versions`에서 읽어 전달한 회사 회계력에 맞춘다. 결과에는 절대
@@ -178,7 +178,7 @@ NULL로 바꾸고 데이터 이슈 사유를 만들며, 자산과 부채+자본�
 filed_at`으로 시점 조인해 가져온다. 같은 날 스냅샷은 발표 전후를 구분할 수 없어
 보수적으로 제외한다.
 
-## 8. 공개 이름과 사용 방식
+## 공개 이름과 사용 방식
 
 `domain.services`는 자주 쓰는 다음 함수를 선별해 재수출한다.
 
@@ -191,7 +191,7 @@ filed_at`으로 시점 조인해 가져온다. 같은 날 스냅샷은 발표 �
 XBRL 파서, 세부 normalizer, registry 해석처럼 특정 흐름에만 속한 함수는 소유 모듈에서
 직접 import한다. 공개 목록에 없는 이름을 위해 별도 모듈을 만들지 않는다.
 
-## 9. 테스트와 변경 체크리스트
+## 고칠 때 함께 볼 곳
 
 Domain 테스트는 네트워크·DB 없이 고정 입력으로 다음을 검증해야 한다.
 

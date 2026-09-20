@@ -124,7 +124,8 @@ S&P 500 전체를 LLM에 보내지 않습니다. 현재 tracked universe에서 �
 우선하고, 같은 coverage 집단 안에서 구조화 데이터의 변화가 큰 종목을 먼저 분석합니다. 후보 점수는
 매수 점수가 아니라 **분석 순서**입니다.
 
-TradingAgents는 Market/Fundamentals/News/Social 분석, Bull/Bear 토론과 risk reasoning을 수행해
+TradingAgents는 분석가 5명(market · fundamentals · news · sentiment · macro) → Bull/Bear 토론 →
+Research Manager → Trader → 위험 3자 토론 → Portfolio Manager 순으로 고정 실행해
 structured `SecurityProposal`을 만듭니다. 외부 뉴스·소셜은 untrusted evidence로 표시하고 prompt
 injection 표현을 제거합니다.
 

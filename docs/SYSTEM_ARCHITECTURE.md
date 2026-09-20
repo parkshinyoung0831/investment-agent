@@ -9,13 +9,13 @@ package README가 갖는다.
 
 ## L0 — 전체 아키텍처
 
-![시스템 전체 아키텍처](diagrams/system-architecture.svg)
+![시스템 전체 아키텍처](diagrams/svg/system-architecture.svg)
 
 수집(공개 데이터) → 저장(네 저장소) → 연구(PIT feature·팩터·ML) → 판단(ALPHA·optimizer·RiskGate)
 → 승인 → 실행(Toss 단일 broker), 그리고 그 옆에서 reporting이 읽기 모델을 만들어 대시보드와
 Discord 알림에 공급한다. 점선 경계는 사람 승인 없이는 넘지 못하는 자리다.
 
-> 확대·테마 전환·흐름 추적이 되는 인터랙티브 판은 `docs/diagrams/system-architecture.html`을
+> 확대·테마 전환·흐름 추적이 되는 인터랙티브 판은 `docs/diagrams/html/system-architecture.html`을
 > 브라우저로 직접 열어서 본다. GitHub은 저장소의 `.html`을 렌더하지 않으므로 위 SVG가
 > 저장소 안에서의 기본 미리보기다.
 
@@ -95,28 +95,20 @@ platform   = 금융 도메인을 모르는 공통 기술 계층
 
 ## 다이어그램 지도
 
-canonical source는 `docs/diagrams/*.json`이다. **SVG·HTML은 생성물이라 손으로 고치지
-않는다** — 그림을 바꾸려면 JSON을 고치고 한 명령을 돌린다.
+canonical source는 `docs/diagrams/src/*.json`이고, `html/`과 `svg/`는 생성물이라 손으로
+고치지 않는다. 폴더 계약과 빌드 방법, 현재 다이어그램 목록은
+[다이어그램 README](diagrams/README.md)가 갖는다.
 
 ```bash
-python scripts/build_diagrams.py
+python scripts/build_diagrams.py     # JSON → validate → HTML → SVG
 ```
 
-`JSON → validate → HTML → SVG` 한 방향으로만 흐르고 결정적이다. SVG는 GitHub Markdown이
-직접 렌더하는 미리보기이고, HTML은 확대·테마·흐름 추적이 되는 인터랙티브 판이다.
-node가 없는 환경에서는 `python scripts/export_diagram_svg.py`로 마지막 단계만 돌릴 수 있고,
-`--check`를 주면 쓰지 않고 낡았는지만 본다(`DiagramArtifactTest`가 같은 검사를 한다).
-
-| Level | 다이어그램 | 답하는 질문 | 실리는 곳 |
-|---|---|---|---|
-| L0 | `system-architecture` | 전체가 어떻게 생겼는가 | 이 문서 |
-| L1 | `pipeline` | 수집이 어디서 와서 어디로 가는가 | [데이터](DATA.md) |
-| L2 | `trading-analysis` | 근거에서 신호까지 무엇이 계산되는가 | [투자 시스템](INVESTMENT_SYSTEM.md) |
-| L2 | `trading-target` | 신호가 어떻게 목표 비중이 되는가 | [투자 시스템](INVESTMENT_SYSTEM.md) |
-| L2 | `vnext-closed-loop` | 판단→실행→성과가 어떻게 되먹임되는가 | [자율 판단 계층](AUTONOMOUS_SYSTEM.md) |
-| L3 | `execution-lifecycle` | 주문 하나가 어떤 상태를 지나는가 | [실행과 안전](EXECUTION_AND_SAFETY.md) |
-| L3 | `execution-runbook` | 사람이 실행할 때 어떤 관문을 지나는가 | [실행과 안전](EXECUTION_AND_SAFETY.md) |
-| L3 | `earnings-pipeline` | 실적 공시가 어떻게 카드가 되는가 | [운영](OPERATIONS.md) |
+| Level | 다이어그램 | 답하는 질문 |
+|---|---|---|
+| L0 | `system-architecture` | 전체가 어떻게 생겼는가 (이 문서) |
+| L1 | `pipeline` | 수집이 어디서 와서 어디로 가는가 |
+| L2 | `trading-analysis` · `trading-target` | 근거가 어떻게 신호가 되고 목표 비중이 되는가 |
+| L3 | `execution-lifecycle` · `execution-runbook` · `earnings-pipeline` | 주문·승인·공시 각각이 어떤 단계를 지나는가 |
 
 그림은 **지도**다. 왜 그런지와 지켜야 할 불변식은 그림이 아니라 각 문서 본문에 있다.
 

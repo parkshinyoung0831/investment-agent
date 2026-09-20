@@ -10,14 +10,7 @@
 
 ---
 
-## 0. 관련 문서 및 전체 위치
-
-* **상위 문서**: [루트 README.md](../../../README.md) · [개발 가이드 CLAUDE.md](../../../CLAUDE.md)
-* **모든 서브패키지가 의존**: `investment_agent.data.universe`, `investment_agent.data.market`, `investment_agent.data.fundamentals`, `investment_agent.data.institutional`, `investment_agent.data.macro`, `investment_agent.data.macro.releases`, `investment_agent.research.strategies`, `investment_agent.trading`, `investment_agent.execution`, `investment_agent.notifications`, `investment_agent.operations`
-
----
-
-## 1. 주요 모듈 맵 및 역할
+## 주요 모듈 맵 및 역할
 
 ```text
 src/investment_agent/platform/
@@ -55,7 +48,7 @@ src/investment_agent/platform/
 
 ---
 
-## 2. 핵심 헬퍼 모듈 사용법
+## 핵심 헬퍼 모듈 사용법
 
 ### 1) Supabase 클라이언트 및 대량 페이징 (`db/postgres.py`)
 ```python
@@ -114,9 +107,12 @@ flowchart TD
 이 흐름 덕분에 같은 자격증명을 쓰는 worker 여러 개가 401을 동시에 맞아도, 잠금을 먼저 잡은
 쪽만 실제로 재발급하고 나머지는 그 결과(메모리 또는 cache 파일)를 재사용합니다.
 
----
+## 고칠 때 함께 볼 곳
 
-## 3. 수정할 때 확인할 곳
+`platform`은 **모든 도메인 패키지가 의존**하는 최하층이라, 여기를 고치면 저장소 전체가
+함께 흔들립니다. 반대로 platform은 도메인 패키지를 import하지 않습니다 —
+`PlatformBoundaryTest`가 강제합니다. 의존 목록을 여기 적어 두면 패키지가 늘 때마다
+갱신되지 않으므로 적지 않습니다.
 
 | 수정 목적 | 확인할 파일 및 함수 | 주의사항 |
 |---|---|---|

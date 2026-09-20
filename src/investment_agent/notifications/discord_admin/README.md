@@ -10,14 +10,7 @@
 
 ---
 
-## 0. 관련 문서 및 전체 위치
-
-* **상위 문서**: [루트 README.md](../../../../README.md) · [개발 가이드 CLAUDE.md](../../../../CLAUDE.md)
-* **연계 시스템**: [Notify (채널 라우팅)](../README.md) · [Execution (#투자-승인 채널)](../../execution/README.md) · [Operations (#운영-요약)](../../operations/README.md)
-
----
-
-## 1. 전체 서버 구조 및 카테고리 분류
+## 전체 서버 구조 및 카테고리 분류
 
 서버 카테고리는 데이터 출처가 아니라 **사용자의 확인 주기(Cadence)** 기준으로 분류됩니다.
 
@@ -54,7 +47,7 @@ flowchart TD
 
 ---
 
-## 2. 핵심 개념 (초보자 가이드)
+## 핵심 개념
 
 ### Infrastructure as Code (IaC) 방식으로 Discord 관리
 * **한 줄 설명**: 마우스로 Discord GUI에서 채널을 만들거나 권한을 누르는 대신, 파이썬 코드(`manifest.py`, `roles.py`)에 서버의 모든 설정을 적어두고 자동으로 동기화하는 방식.
@@ -63,7 +56,7 @@ flowchart TD
 
 ---
 
-## 3. 채널 구조 및 역할 권한 매트릭스
+## 채널 구조 및 역할 권한 매트릭스
 
 | 카테고리 | 채널명 | 연결 알림 / 역할 | 권한 정책 |
 |---|---|---|---|
@@ -102,7 +95,7 @@ private 카테고리(LAB·OPERATIONS) 셋뿐이며, private 카테고리의 봇 
 
 ---
 
-## 4. 관련 코드 및 디렉토리 구조
+## 관련 코드 및 디렉토리 구조
 
 ### 주요 파일 구조
 ```text
@@ -136,7 +129,7 @@ sync → roles → guide → onboarding 순서로 이어지는 나머지 세 진
 
 ---
 
-## 5. 실행 및 동기화 가이드 (로컬 전용)
+## 실행 및 동기화 가이드 (로컬 전용)
 
 ```bash
 # 1. 채널 및 포럼 구조 동기화 (.env의 채널 ID 자동 갱신)
@@ -157,12 +150,14 @@ python -m investment_agent.notifications.discord_admin.entries.guide --apply
 python -m investment_agent.notifications.discord_admin.entries.onboarding --apply
 ```
 
----
-
-## 6. 수정할 때 확인할 곳
+## 고칠 때 함께 볼 곳
 
 | 수정 목적 | 확인할 파일 및 함수 | 주의사항 |
 |---|---|---|
 | 신규 Discord 채널/포럼 추가 | `src/investment_agent/notifications/discord_admin/manifest.py` | 추가 후 알림 패키지의 채널 환경변수와 동기화 |
 | 역할별 권한 비트 조정 | `src/investment_agent/notifications/discord_admin/roles.py` | `@everyone` 기본 읽기 전용 정책 엄수 |
 | Discord REST API 변경 대응 | `src/investment_agent/notifications/discord_admin/client.py` | Bot Rate Limit 헤더 준수 |
+
+함께 움직이는 곳:
+
+* **연계 시스템**: [Notify (채널 라우팅)](../README.md) · [Execution (#투자-승인 채널)](../../execution/README.md) · [Operations (#운영-요약)](../../operations/README.md)

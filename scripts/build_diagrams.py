@@ -13,6 +13,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DIAGRAMS_DIR = ROOT / "docs" / "diagrams"
+SPEC_DIR = DIAGRAMS_DIR / "src"      # 손으로 고치는 유일한 곳
+HTML_DIR = DIAGRAMS_DIR / "html"     # 생성물
 
 DEFAULT_NODE = Path(r"C:\Program Files\nodejs\node.exe")
 ARCHIFY_MJS = Path(r"C:\Users\parks\.agents\skills\archify\bin\archify.mjs")
@@ -22,7 +24,6 @@ DIAGRAMS = [
     ("dataflow", "pipeline.dataflow.json", "pipeline.html"),
     ("dataflow", "trading-analysis.dataflow.json", "trading-analysis.html"),
     ("dataflow", "trading-target.dataflow.json", "trading-target.html"),
-    ("dataflow", "vnext-closed-loop.dataflow.json", "vnext-closed-loop.html"),
     ("lifecycle", "execution-lifecycle.lifecycle.json", "execution-lifecycle.html"),
     ("workflow", "execution-runbook.workflow.json", "execution-runbook.html"),
     ("sequence", "earnings-pipeline.sequence.json", "earnings-pipeline.html"),
@@ -53,9 +54,10 @@ def run() -> int:
     failures = 0
     print(f"=== Building {len(DIAGRAMS)} Archify Showcase Diagrams ===")
 
+    HTML_DIR.mkdir(parents=True, exist_ok=True)
     for dtype, json_name, html_name in DIAGRAMS:
-        json_path = DIAGRAMS_DIR / json_name
-        html_path = DIAGRAMS_DIR / html_name
+        json_path = SPEC_DIR / json_name
+        html_path = HTML_DIR / html_name
 
         if not json_path.exists():
             print(f"[FAIL] Missing specification: {json_path}", file=sys.stderr)

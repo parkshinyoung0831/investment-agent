@@ -1,0 +1,90 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "토스 실주문 실행 안전 런북 워크플로",
+    "animation": "trace",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "output": "execution-runbook.html",
+    "views": [
+      {
+        "id": "full-runbook",
+        "label": "전체 안전 런북",
+        "focus": ["harness", "maintenance", "riskgate", "discord_approval", "sell_orders", "toss_worker", "reconcile"],
+        "note": "트리거부터 정비 점검, 리스크 게이트, Discord 승인, 매도우선 실행, 체결 대사까지"
+      },
+      {
+        "id": "safety-guards",
+        "label": "안전 게이트 및 차단",
+        "focus": ["maintenance", "blocked_maint", "riskgate", "discord_approval", "rejected_stop"],
+        "note": "정비 보류 중단, 리스크 한도 초과, 승인 거절 시의 안전 격리 분기"
+      },
+      {
+        "id": "execution-settle",
+        "label": "주문 분할 및 대사",
+        "focus": ["sell_orders", "buy_orders", "toss_worker", "reconcile"],
+        "note": "현금 확보를 위한 매도 우선 실행 및 불일치 감시"
+      }
+    ]
+  },
+  "lanes": [
+    { "id": "orchestration", "label": "운영 및 하네스" },
+    { "id": "safety", "label": "안전 게이트 및 승인", "variant": "exception" },
+    { "id": "orders", "label": "주문 계획 및 분할" },
+    { "id": "broker", "label": "토스 브로커 및 대사" }
+  ],
+  "phases": [
+    { "id": "intake", "label": "호출 및 정비 점검", "fromCol": 0, "toCol": 1 },
+    { "id": "verification", "label": "리스크 및 사람 승인", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "execution_settle", "label": "실행 및 체결 대사", "fromCol": 4, "toCol": 5, "variant": "dashed" }
+  ],
+  "groups": [
+    { "id": "safety_gate_group", "label": "결정적 안전 게이트", "lane": "safety", "fromCol": 1, "toCol": 3, "variant": "security" },
+    { "id": "order_split_group", "label": "주문 순서 통제", "lane": "orders", "fromCol": 4, "toCol": 4, "variant": "emphasis" },
+    { "id": "broker_reconcile_group", "label": "브로커 및 대사", "lane": "broker", "fromCol": 4, "toCol": 5, "variant": "dashed" }
+  ],
+  "mainPath": ["harness", "maintenance", "riskgate", "discord_approval", "sell_orders", "toss_worker"],
+  "nodes": [
+    { "id": "harness", "lane": "orchestration", "col": 0, "type": "backend", "label": "로컬 하네스", "sublabel": "정규 판단 트리거", "width": 132 },
+    { "id": "maintenance", "lane": "safety", "col": 1, "type": "security", "label": "정비 보류 점검", "sublabel": "maintenance 플래그", "width": 132 },
+    { "id": "blocked_maint", "lane": "orchestration", "col": 1, "type": "security", "label": "정비 중지", "sublabel": "안전 탈출", "width": 132 },
+    { "id": "riskgate", "lane": "safety", "col": 2, "type": "security", "label": "리스크 게이트", "sublabel": "종목10% · 위기 시 40%", "tag": "deterministic", "width": 132 },
+    { "id": "discord_approval", "lane": "safety", "col": 3, "type": "security", "label": "Discord 승인", "sublabel": "사람 확인 (TTL 15분)", "tag": "fail-closed", "width": 132 },
+    { "id": "rejected_stop", "lane": "orchestration", "col": 3, "type": "security", "label": "승인 거절", "sublabel": "의도 폐기", "width": 132 },
+    { "id": "sell_orders", "lane": "orders", "col": 4, "type": "backend", "label": "매도 우선 계획", "sublabel": "현금 선확보", "width": 132 },
+    { "id": "buy_orders", "lane": "orders", "col": 4, "type": "backend", "label": "매수 분할 계획", "sublabel": "슬리피지 제어", "yOffset": 80, "width": 132 },
+    { "id": "toss_worker", "lane": "broker", "col": 5, "type": "cloud", "label": "토스 실체결", "sublabel": "고정 IP · OAuth", "width": 132 },
+    { "id": "reconcile", "lane": "broker", "col": 5, "type": "database", "label": "체결 대사 & 락", "sublabel": "불일치 락다운", "yOffset": 80, "width": 132 }
+  ],
+  "edges": [
+    { "id": "trigger-maint", "from": "harness", "to": "maintenance", "label": "호출", "variant": "default" },
+    { "id": "maint-hold", "from": "maintenance", "to": "blocked_maint", "label": "hold ON", "variant": "security", "role": "error" },
+    { "id": "maint-pass", "from": "maintenance", "to": "riskgate", "label": "정상", "variant": "emphasis" },
+    { "id": "risk-pass", "from": "riskgate", "to": "discord_approval", "label": "게이트 통과", "variant": "emphasis" },
+    { "id": "approval-rejected", "from": "discord_approval", "to": "rejected_stop", "label": "거절/만료", "variant": "security", "role": "error" },
+    { "id": "approval-confirmed", "from": "discord_approval", "to": "sell_orders", "label": "승인", "variant": "emphasis" },
+    { "id": "sell-to-buy", "from": "sell_orders", "to": "buy_orders", "label": "현금 확보 후", "variant": "default" },
+    { "id": "sell-exec", "from": "sell_orders", "to": "toss_worker", "label": "매도 주문", "variant": "emphasis" },
+    { "id": "buy-exec", "from": "buy_orders", "to": "toss_worker", "label": "매수 주문", "variant": "default" },
+    { "id": "worker-reconcile", "from": "toss_worker", "to": "reconcile", "label": "체결 대사", "variant": "dashed" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "다단계 안전 게이트와 승인 통제",
+      "items": [
+        "정비 보류(hold ON) 상태이거나 리스크 한도 초과 시 실주문 진입이 원천 차단된다",
+        "승인 대기 중 15분(TTL)이 초과하거나 사람이 거절하면 의도는 자동 폐기된다"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "매도 우선과 체결 대사 원칙",
+      "items": [
+        "미수 방지를 위해 매도 주문을 먼저 체결하여 현금을 확보한 후 매수를 실행한다",
+        "체결 직후 토스 실제 잔고와 로컬 원장을 대사하며 불일치 시 즉시 락다운된다"
+      ]
+    }
+  ]
+}

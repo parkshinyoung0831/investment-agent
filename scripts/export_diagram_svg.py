@@ -13,11 +13,11 @@ Archify CLI에는 SVG export 명령이 없다(`archify --help`). 대신 납품�
 
     *.json  →  archify deliver  →  *.html  →  (이 스크립트)  →  *.svg
 
-**생성물을 손으로 고치지 않는다.** 그림을 바꾸려면 `docs/diagrams/*.json`을 고치고
+**생성물을 손으로 고치지 않는다.** 그림을 바꾸려면 `docs/diagrams/src/*.json`을 고치고
 `python scripts/build_diagrams.py`를 다시 돌린다.
 
 사용:
-    python scripts/export_diagram_svg.py            # docs/diagrams/*.html 전부
+    python scripts/export_diagram_svg.py            # docs/diagrams/html/*.html 전부
     python scripts/export_diagram_svg.py --check    # 쓰지 않고 최신인지만 확인 (CI용)
 종료 코드: 실패하거나 --check에서 낡은 것이 있으면 1.
 """
@@ -37,6 +37,8 @@ for _stream in (sys.stdout, sys.stderr):
 
 ROOT = Path(__file__).resolve().parents[1]
 DIAGRAMS = ROOT / "docs" / "diagrams"
+HTML_DIR = DIAGRAMS / "html"
+SVG_DIR = DIAGRAMS / "svg"
 
 # SVG 안에서 쓰일 수 있는 요소 선택자. 이 이름이 선택자에 있으면 규칙을 가져온다.
 SVG_ELEMENTS = frozenset({
@@ -138,8 +140,21 @@ def selector_matches(selector: str, classes: set[str], ids: set[str]) -> bool:
     return False
 
 
-def collect_css(html: str, svg: str) -> str:
-    """SVG가 실제로 쓰는 규칙 + 그것들이 참조하는 CSS 변수만 모은다."""
+def only_variables(body: str) -> str:
+    """선언 블록에서 CSS 변수만 남긴다."""
+    return ";".join(d for d in body.split(";") if d.strip().startswith("--"))
+
+
+def collect_css(html: str, svg: str, preset: str) -> str:
+    """SVG가 실제로 쓰는 규칙 + 그것들이 참조하는 CSS 변수를 테마별로 모은다.
+
+    납품 HTML은 `<html data-theme="dark">`이고 팔레트가 `:root`와 `[data-theme=...]`에
+    나뉘어 있다. `:root`만 가져오면 어느 테마가 이기는지가 **선언 순서에 달린 우연**이 된다.
+    그래서 두 팔레트를 따로 모아, 기본은 light로 고정하고 dark는
+    `prefers-color-scheme`에 실어 GitHub의 테마를 따라가게 한다.
+
+    프리셋 전용 블록(`[data-preset="blueprint"]` 등)은 이 문서의 preset이 아니면 버린다.
+    """
     classes: set[str] = set()
     for attr in CLASS_ATTR.findall(svg):
         classes.update(attr.split())
@@ -147,7 +162,9 @@ def collect_css(html: str, svg: str) -> str:
 
     head = html[:html.find("<svg")]
     kept: list[str] = []
-    variables: list[str] = []
+    base: list[str] = []       # :root — 테마 표시가 없는 공통 팔레트
+    light: list[str] = []
+    dark: list[str] = []
 
     for block in STYLE_BLOCK.findall(head):
         for selector, body in split_rules(block):
@@ -155,23 +172,60 @@ def collect_css(html: str, svg: str) -> str:
                 if selector.startswith("@keyframes"):
                     kept.append(f"{selector}{{{body}}}")
                 continue
-            # 변수 선언부. `:root`는 SVG 문서에서 루트 요소를 가리키지 않으므로 svg로 바꾼다.
-            if ":root" in selector or selector.strip() in ("html", "body", "*"):
-                declarations = [d for d in body.split(";") if d.strip().startswith("--")]
-                if declarations:
-                    variables.append("svg{" + ";".join(declarations) + ";}")
+
+            # 다른 preset의 팔레트는 이 그림에 적용되지 않는다.
+            presets = re.findall(r'\[data-preset="([^"]+)"\]', selector)
+            if presets and preset not in presets:
                 continue
+
+            themes = set(re.findall(r'\[data-theme="([^"]+)"\]', selector))
+            if ":root" in selector or themes:
+                declarations = only_variables(body)
+                if not declarations:
+                    continue        # #theme-icon 같은 HTML 크롬 규칙
+                if ":root" in selector and not themes - {"dark", "light"}:
+                    # `:root, [data-theme="dark"]` 처럼 둘을 겸하는 선언.
+                    # 어느 쪽 팔레트인지는 함께 적힌 테마가 말한다.
+                    if themes == {"dark"}:
+                        dark.append(declarations)
+                    elif themes == {"light"}:
+                        light.append(declarations)
+                    else:
+                        base.append(declarations)
+                elif themes == {"light"}:
+                    light.append(declarations)
+                elif themes == {"dark"}:
+                    dark.append(declarations)
+                continue
+
+            if selector.strip() in ("html", "body", "*"):
+                declarations = only_variables(body)
+                if declarations:
+                    base.append(declarations)
+                continue
+
             if selector_matches(selector, classes, ids):
                 kept.append(f"{selector}{{{body}}}")
 
-    return "\n".join(variables + kept)
+    out: list[str] = []
+    if base:
+        out.append("svg{" + ";".join(base) + ";}")
+    if light:
+        out.append("svg{" + ";".join(light) + ";}")          # 기본은 light
+    if dark:
+        out.append("@media (prefers-color-scheme: dark){svg{"
+                   + ";".join(dark) + ";}}")                  # GitHub 다크 모드를 따라간다
+    out.extend(kept)
+    return "\n".join(out)
 
 
 def build_svg(html: str) -> str | None:
     svg = extract_svg(html)
     if svg is None:
         return None
-    css = collect_css(html, svg)
+
+    preset_match = re.search(r'<html[^>]*data-preset="([^"]+)"', html)
+    css = collect_css(html, svg, preset_match.group(1) if preset_match else "classic")
 
     # 독립 문서로 열리려면 namespace가 있어야 한다. 납품 HTML 안에서는 생략돼 있다.
     open_tag_end = svg.find(">")
@@ -183,18 +237,22 @@ def build_svg(html: str) -> str | None:
 
     body = svg[open_tag_end + 1:]
     style = f"<style>\n{css}\n</style>\n" if css else ""
+    # 배경을 칠하지 않으면 캔버스가 투명하다 — GitHub 다크 모드에서 어두운 바탕에
+    # 어두운 글자가 얹혀 읽을 수 없게 된다. 테마 변수를 그대로 쓰므로 위 팔레트를 따라간다.
+    canvas = '<rect width="100%" height="100%" fill="var(--bg)" />\n'
     banner = (
         "<!-- 생성물이다. 손으로 고치지 마라. "
         "docs/diagrams/*.json 을 고치고 python scripts/build_diagrams.py 를 돌려라. -->\n"
     )
-    return f'<?xml version="1.0" encoding="UTF-8"?>\n{banner}{open_tag}>\n{style}{body}\n'
+    return (f'<?xml version="1.0" encoding="UTF-8"?>\n{banner}{open_tag}>\n'
+            f'{style}{canvas}{body}\n')
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="납품 HTML에서 standalone SVG 파생")
     parser.add_argument("--check", action="store_true",
                         help="쓰지 않고 현재 SVG가 HTML과 일치하는지만 확인")
-    parser.add_argument("--dir", default=str(DIAGRAMS), help="다이어그램 디렉터리")
+    parser.add_argument("--dir", default=str(HTML_DIR), help="납품 HTML 디렉터리")
     args = parser.parse_args()
 
     directory = Path(args.dir)
@@ -204,10 +262,11 @@ def main() -> int:
         print(f"HTML을 하나도 찾지 못했다: {directory}", file=sys.stderr)
         return 2                      # 0건이면 아래 검사는 아무것도 지키지 않는다
 
+    SVG_DIR.mkdir(parents=True, exist_ok=True)
     stale: list[str] = []
     written = 0
     for source in sources:
-        target = source.with_suffix(".svg")
+        target = SVG_DIR / f"{source.stem}.svg"
         produced = build_svg(read_text(source))
         if produced is None:
             print(f"  [건너뜀] {source.name} — inline SVG가 없다")

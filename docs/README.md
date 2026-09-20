@@ -186,6 +186,7 @@ switch가 이 폴더에 있다. AI Investor는 broker key에 접근하지 않는
 | 알림 카드와 대시보드 UI 규칙 | [디자인 시스템](../DESIGN-system.md) |
 | 코드를 고칠 때 지켜야 할 규칙 | [CLAUDE.md](../CLAUDE.md) |
 | 지식 그래프를 MCP 서버로 붙이는 법 | [Graphify MCP](GRAPHIFY_MCP.md) |
+| 다이어그램을 고치고 다시 빌드하는 법 | [다이어그램](diagrams/README.md) |
 | 판단 계층이 넘지 않는 선 | [Trading Constitution](../src/investment_agent/trading/CONSTITUTION.md) |
 
 package를 직접 고칠 때는 그 폴더의 README가 가장 가깝다 — 책임·경계·진입점·불변식을
