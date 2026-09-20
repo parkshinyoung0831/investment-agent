@@ -416,13 +416,7 @@ class LayerDirectionTest(unittest.TestCase):
 
     # 허용 목록이 아니라 현재 의존성 부채의 기준선이다. 새 항목도, 해소된 항목의
     # 잔류도 실패시켜 이후 phase에서 이 집합이 줄어들기만 하게 한다.
-    PENDING_DEPENDENCIES = frozenset(
-        {
-            # Trading 후보 선정이 자기 판단 원장을 reporting reader로 읽는다. 읽기 구현을
-            # Trading이 갖고 reporting이 그것을 소비하도록 뒤집어야 한다.
-            ("src/investment_agent/trading/supabase_repository.py", "investment_agent.reporting.readers.runtime"),
-        }
-    )
+    PENDING_DEPENDENCIES: frozenset[tuple[str, str]] = frozenset()
 
     @classmethod
     def _is_allowed(cls, path: Path, name: str) -> bool:

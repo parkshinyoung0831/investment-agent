@@ -199,6 +199,20 @@ class TradingRepository:
             on_conflict="run_id",
         )
 
+    def security_decision_attempts(self) -> list[dict[str, Any]]:
+        """저장된 모든 판단 시도의 security_id·status·as_of_at을 읽는다.
+
+        후보 선정이 "마지막으로 분석한 시각"과 "마지막으로 시도한 시각"을 계산하는 입력이다.
+        원장은 ticker가 아니라 security_id를 저장하므로 ticker 해석은 Data owner가 한다.
+        """
+        return list(
+            self._db.table(SCHEMA, T_SECURITY_DECISIONS)
+            .select("security_id,status,as_of_at")
+            .execute()
+            .data
+            or []
+        )
+
     def decision_exists(self, case_key: str) -> bool:
         rows = (
             self._db.table(SCHEMA, T_SECURITY_DECISIONS)

@@ -7,7 +7,7 @@
 - 기준 원격 `main`: `b0d0786ae64aa21579bdacb7e19e0d6d05b8368b` (2026-09-20 재개 세션 시작 시 로컬 HEAD·`origin/main`과 일치, 작업 트리 깨끗). 이전 원장이 적은 `4181f6b`는 이 HEAD의 조상이다. 재개 세션 프롬프트는 Task 1~4가 미착수라고 서술했으나 실제로는 모두 완료돼 있었고, 실제 상태를 따랐다.
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
-- 현재 단계: 계층 의존성 pending 1쌍(`trading/supabase_repository.py → reporting.readers.runtime`, 배치 D)과 승인된 조립 예외를 남겨두고, 실제 runtime caller를 확인하며 조회·발송 및 실행 경계를 배치별로 정리한다.
+- 현재 단계: 계층 의존성 pending 0쌍(배치 E)과 승인된 조립 예외를 남겨두고, 실제 runtime caller를 확인하며 조회·발송 및 실행 경계를 배치별로 정리한다.
 - 현재 작업 방식: 같은 책임 경계의 독립 변경 2~3개를 한 배치로 묶고, 관련·architecture/import 테스트를 배치 안에서 실행한다. 전체 suite는 배치 종료, 실행·승인·risk 안전 변경, 최종 통합 때 실행한다. 완료 task마다 별도 plan 문서를 만들지 않는다.
 - 완료 단계: Phase 1 조사, Phase 2의 feature snapshot·training label·valuation·event·training sample·decision experience owner 이관, Phase 3 공통 serialization·forecast·평가 계약 및 일부 Data read 역방향 import 정리, production Trading 알고리즘 검증의 명시적 경계 설정, Phase 4 RiskGate→ExecutionIntent 생성 책임 이관. Research 사건 feature·계약 배치까지 `PENDING_DEPENDENCIES`는 16쌍이다.
 - 단일 브랜치 통합 점검(2026-09-20): 로컬·GitHub의 실제 브랜치는 `main` 하나였다. 남아 있던 `phase-source/main` 추적 참조(`e9f6fc5`)의 10개 커밋은 `git range-diff 5801357..phase-source/main baf40e2..d2a0315`에서 `main`의 대응 커밋 10개와 일대일로 확인했다(8개 동일, 2개는 선행 Research factor 소유 경로에 맞춰 적용). 이전 코드를 재병합하지 않고 오래된 참조만 정리한다.
@@ -21,7 +21,7 @@
 | `git ls-remote origin refs/heads/main` | 로컬 HEAD와 동일 SHA | 최신 `main` 기준 확인 |
 | `python -m unittest tests.investment_agent.test_architecture tests.test_repo_conventions tests.test_workflow_wiring -q` | 100개 통과 | 구조·관례·workflow 현재 기준선 |
 | `python -m unittest discover -s tests -t .` | 3,071개 통과, skip 1개 (재개 세션 배치 A 종료 시점) | 이 환경에서는 `lightgbm`·`xgboost` 오류도 재현되지 않았다. 최초 기준선은 3,009개 중 오류 4개(ML 미설치)였다 |
-| `tests/investment_agent/test_architecture.py` | `PENDING_DEPENDENCIES` 1쌍(최초 69쌍) + `COMPOSITION_ROOTS` 8개 파일 | 줄여야 하는 현재 import 부채와, 사용자가 승인한 좁은 조립 예외 |
+| `tests/investment_agent/test_architecture.py` | `PENDING_DEPENDENCIES` 0쌍(최초 69쌍) + `COMPOSITION_ROOTS` 8개 파일 | 줄여야 하는 현재 import 부채와, 사용자가 승인한 좁은 조립 예외 |
 
 ## 새 세션 재개 절차
 
@@ -565,6 +565,13 @@
 - 수정·삭제·이동 파일: 새 `tests/investment_agent/reporting/test_dashboard_reader_contracts.py`, `reporting/services/financial_row.py`(`notifications/earnings_report/capital.py`에서 이동), `dashboard/db.py`(사본·상수·import 삭제), `test_dashboard_readonly.py`, `scripts/verify_integration.py`, `trading/supabase_repository.py`, `test_architecture.py`, `CLAUDE.md`, 이 원장.
 - 테스트: 신규 reader 계약 10개 통과, dashboard readonly 19개 통과, 규칙 강화 직후 실제 위반 3건 RED(reporting→notifications 2, trading→reporting 1), 수정 후 architecture 36개 통과. 사본 삭제 후 전체 suite 3,080개 OK(skip 1)였고, 이후 변경(façade 정리·capital 이동·가드) 뒤의 전체 실행 결과는 아래 최종 검증에 기록한다.
 - 남은 dependency debt: (1) pending 1쌍(위). (2) `COMPOSITION_ROOTS` 8개 파일과 `build_features`의 `ContextBuilder`(승인된 예외, 증거 조립기·`EvidenceBundle` 소유권은 Trading). (3) 시스템 검증 예외 6개 import. (4) `dashboard/db.py` 잔여 로더 이동, `SupabaseRepository` God façade 분해.
+
+#### 재개 세션 배치 E — Trading 판단 원장 읽기 소유권 (2026-09-20)
+
+- 변경 전 호출 관계: 후보 선정(`SupabaseRepository._candidate_last_analyzed`, `_last_attempted`)이 Trading 자신의 로컬 판단 원장을 `reporting.readers.runtime.read_local_rows("security_decisions", canonical_db=…)`로 읽었다. Trading이 reporting을 역방향 import하는 유일한 자리였고 배치 D의 강화된 규칙이 이를 pending 1쌍으로 드러냈다.
+- 변경: `TradingRepository.security_decision_attempts()`(security_id·status·as_of_at)가 판단 원장 읽기를 소유한다. `SupabaseRepository._decision_attempts()`가 그 행에 Data owner의 `select_tickers_by_security_id`로 ticker를 붙이고, 신원을 못 찾는 행이 있으면 기존과 같이 `RuntimeError("local decisions reference unknown securities")`로 실패한다(조용히 버리면 coverage가 어긋난다). 원장이 비어 있으면 신원 조회를 하지 않는다. 성공·기권만 coverage로 세고 실패는 순환용 마지막 시도로만 세며 as_of 이후 판단은 무시하는 의미는 그대로다. reporting의 `read_local_rows("security_decisions")`는 화면 read model로 그대로 남는다.
+- 테스트: 새 `TradingRepository` 읽기 계약 2개와 후보 coverage 테스트 재작성(경계 두 개만 대체) 포함 9건이 메서드 부재로 RED였고 구현 후 통과했다. 소스 import 제거 뒤 pending 쌍이 "해소된 부채" 실패(RED)를 냈고 삭제 후 architecture 36개 통과. 실제 로컬 SQLite에서 새 읽기가 `{'security_id': 7, 'status': 'completed', 'as_of_at': …}`를 돌려주는 것을 확인했다.
+- import 방향 변화: `trading → reporting` 0건. `PENDING_DEPENDENCIES`는 빈 집합이다.
 
 ## 향후 milestone
 

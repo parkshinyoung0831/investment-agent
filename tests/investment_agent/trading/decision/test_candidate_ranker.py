@@ -319,15 +319,27 @@ class CandidateCoverageRepositoryTest(unittest.TestCase):
     종목만, as_of 이전 것만, 그중 가장 최근 것.
     """
 
-    @staticmethod
-    def _coverage(rows, tickers=("AAPL", "MSFT", "NVDA")):
-        with mock.patch(
-            "investment_agent.reporting.readers.runtime.read_local_rows",
-            return_value=rows,
-        ):
-            return SupabaseRepository()._candidate_last_analyzed(
-                list(tickers), as_of_at=_AS_OF
-            )
+    _IDS = {"AAPL": 1, "MSFT": 2, "NVDA": 3, "TSLA": 4}
+
+    @classmethod
+    def _repository_with(cls, rows, *, identities=None):
+        """Trading 원장 읽기와 Data 신원 해석, 두 경계만 대신한다."""
+        ledger = [{"security_id": cls._IDS[row["ticker"]], "status": row["status"], "as_of_at": row["as_of_at"]}
+                  for row in rows]
+        reverse = {value: key for key, value in cls._IDS.items()} if identities is None else identities
+        trading = mock.Mock()
+        trading.security_decision_attempts.return_value = ledger
+        return (
+            mock.patch.object(SupabaseRepository, "_trading_repository", return_value=trading),
+            mock.patch("investment_agent.trading.supabase_repository.select_tickers_by_security_id",
+                       side_effect=lambda ids: {i: reverse[i] for i in ids if i in reverse}),
+        )
+
+    @classmethod
+    def _coverage(cls, rows, tickers=("AAPL", "MSFT", "NVDA")):
+        trading, identity = cls._repository_with(rows)
+        with trading, identity:
+            return SupabaseRepository()._candidate_last_analyzed(list(tickers), as_of_at=_AS_OF)
 
     def test_the_latest_successful_case_wins_per_ticker(self):
         coverage = self._coverage([
@@ -341,16 +353,28 @@ class CandidateCoverageRepositoryTest(unittest.TestCase):
         self.assertEqual({"AAPL", "MSFT"}, set(coverage))
         self.assertEqual(datetime(2026, 8, 20, 21, tzinfo=timezone.utc), coverage["AAPL"])
 
-    def test_the_reader_receives_a_security_identity_resolver(self):
-        """판단 원장은 security_id를 저장한다. 조회기 없이 부르면 실제 reader는 매번 실패한다."""
-        def reader(view, *, canonical_db=None):
-            if canonical_db is None:
-                raise RuntimeError("canonical security identity reader is unavailable")
-            return []
+    def test_a_ledger_row_for_an_unknown_security_fails_loudly(self):
+        """판단 원장은 security_id를 저장한다. 신원을 못 찾는 행을 조용히 버리면 coverage가 어긋난다."""
+        rows = [{"case_key": "x", "ticker": "AAPL", "as_of_at": "2026-08-20T21:00:00+00:00", "status": "completed"}]
+        trading, identity = self._repository_with(rows, identities={})
+        with trading, identity:
+            with self.assertRaisesRegex(RuntimeError, "unknown securities"):
+                SupabaseRepository()._candidate_last_analyzed(["AAPL"], as_of_at=_AS_OF)
+            with self.assertRaisesRegex(RuntimeError, "unknown securities"):
+                SupabaseRepository()._last_attempted(["AAPL"], as_of_at=_AS_OF)
 
-        with mock.patch("investment_agent.reporting.readers.runtime.read_local_rows", side_effect=reader):
+    def test_an_empty_ledger_never_asks_for_identities(self):
+        trading, identity = self._repository_with([])
+        with trading, identity as resolver:
             self.assertEqual({}, SupabaseRepository()._candidate_last_analyzed(["AAPL"], as_of_at=_AS_OF))
-            self.assertEqual({}, SupabaseRepository()._last_attempted(["AAPL"], as_of_at=_AS_OF))
+            resolver.assert_not_called()
+
+    def test_failed_attempts_count_for_rotation_but_not_for_coverage(self):
+        rows = [{"case_key": "bad", "ticker": "NVDA", "as_of_at": "2026-08-20T21:00:00+00:00", "status": "failed"}]
+        trading, identity = self._repository_with(rows)
+        with trading, identity:
+            attempted = SupabaseRepository()._last_attempted(["NVDA"], as_of_at=_AS_OF)
+        self.assertEqual(datetime(2026, 8, 20, 21, tzinfo=timezone.utc), attempted["NVDA"])
 
     def test_a_failed_case_does_not_count_as_coverage(self):
         """실패한 판단을 coverage로 세면 그 종목이 다시 분석되지 않는다."""

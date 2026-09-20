@@ -410,6 +410,21 @@ class SupabaseRepository:
         if mirror is not None:
             return mirror.membership_snapshots(start_date=start_date, end_date=end_date)
         return select_sp500_membership_snapshots(start_date=start_date, end_date=end_date)
+    def _decision_attempts(self) -> list[dict[str, Any]]:
+        """Trading 판단 원장의 시도 행에 Data owner의 ticker를 붙인다.
+
+        원장은 security_id를 저장한다. 신원을 못 찾는 행을 조용히 버리면 coverage가 어긋나
+        후보 선정이 엉뚱한 종목을 고르므로 실패로 드러낸다.
+        """
+        rows = self._trading_repository().security_decision_attempts()
+        security_ids = sorted({int(row["security_id"]) for row in rows})
+        if not security_ids:
+            return []
+        tickers = select_tickers_by_security_id(security_ids)
+        if set(security_ids) - set(tickers):
+            raise RuntimeError("local decisions reference unknown securities")
+        return [{**row, "ticker": tickers[int(row["security_id"])]} for row in rows]
+
     def _candidate_last_analyzed(
         self,
         tickers: Sequence[str],
@@ -423,13 +438,9 @@ class SupabaseRepository:
         Data API가 닫혀 있는 동안 모든 요청이 같은 오류로 막혀서 그 사실이
         드러나지 않았고, 열자마자 후보 선정이 PGRST106으로 죽었다.
         """
-        from investment_agent.reporting.readers.runtime import read_local_rows
-
         members = {normalize_ticker(ticker) for ticker in tickers}
         latest: dict[str, datetime] = {}
-        # 판단 원장은 ticker가 아니라 security_id를 저장한다. 신원 조회기를 넘기지 않으면 reader가
-        # 판단이 하나라도 있는 순간부터 매번 실패해 후보 선정 전체가 멈춘다.
-        for row in read_local_rows("security_decisions", canonical_db=Database(sb)):
+        for row in self._decision_attempts():
             if str(row.get("status") or "") not in {"completed", "abstained"}:
                 continue
             symbol = normalize_ticker(str(row.get("ticker") or ""))
@@ -617,8 +628,7 @@ class SupabaseRepository:
     def _last_attempted(self, tickers: list[str], *, as_of_at: datetime) -> dict[str, datetime]:
         """마지막 분석 시각. 실패한 시도도 포함한다 — 한 종목의 장애가 순환·재분석을 막지 않게."""
         last_analyzed = self._candidate_last_analyzed(tickers, as_of_at=as_of_at)
-        from investment_agent.reporting.readers.runtime import read_local_rows
-        for row in read_local_rows('security_decisions', canonical_db=Database(sb)):
+        for row in self._decision_attempts():
             ticker=normalize_ticker(row.get('ticker'))
             if ticker in tickers and row.get('status')=='failed' and row.get('as_of_at'):
                 attempted=parse_datetime(row['as_of_at'])

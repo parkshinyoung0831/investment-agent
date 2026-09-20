@@ -50,6 +50,25 @@ class RunLifecycleTest(unittest.TestCase):
             self.repo.finish_run("r1", status="running")
 
 
+class DecisionAttemptsReadTest(unittest.TestCase):
+    """후보 선정이 마지막 분석 시각을 계산할 때 쓰는 판단 원장 읽기는 Trading이 소유한다."""
+
+    def test_attempts_expose_identity_status_and_time_from_the_trading_ledger(self) -> None:
+        db = FakeDatabase()
+        db.put(SCHEMA, T_SECURITY_DECISIONS, [
+            {"case_key": "a", "security_id": 1, "status": "completed", "as_of_at": "2026-08-20T21:00:00+00:00"},
+            {"case_key": "b", "security_id": 2, "status": "failed", "as_of_at": "2026-08-19T21:00:00+00:00"},
+        ])
+        rows = TradingRepository(db).security_decision_attempts()
+        self.assertEqual(
+            [(1, "completed", "2026-08-20T21:00:00+00:00"), (2, "failed", "2026-08-19T21:00:00+00:00")],
+            [(row["security_id"], row["status"], row["as_of_at"]) for row in rows],
+        )
+
+    def test_an_empty_ledger_yields_no_attempts(self) -> None:
+        self.assertEqual([], TradingRepository(FakeDatabase()).security_decision_attempts())
+
+
 class PolicyAndModelRepositoryTest(unittest.TestCase):
     def setUp(self) -> None:
         self.db = FakeDatabase()
