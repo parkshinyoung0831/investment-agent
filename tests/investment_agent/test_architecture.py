@@ -231,6 +231,19 @@ class DashboardReportingBoundaryTest(unittest.TestCase):
     }
     IDENTITY_GATE = "universe"
 
+    def test_migrated_readers_have_no_dashboard_db_alias_or_duplicate(self) -> None:
+        from investment_agent.dashboard import db
+
+        self.assertFalse(hasattr(db, "load_alpha_lab_data"))
+        self.assertFalse(hasattr(db, "load_tickers"))
+
+    def test_migrated_reader_guard_rejects_a_legacy_alias(self) -> None:
+        from investment_agent.dashboard import db
+
+        with patch.object(db, "load_tickers", lambda: None, create=True):
+            with self.assertRaises(AssertionError):
+                self.test_migrated_readers_have_no_dashboard_db_alias_or_duplicate()
+
     def test_migrated_pages_do_not_import_dashboard_db(self) -> None:
         offenders = []
         root = PACKAGE / "dashboard"

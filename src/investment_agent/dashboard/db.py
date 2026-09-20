@@ -30,7 +30,6 @@ from investment_agent.reporting.readers.research import (
     load_local_features,
     load_local_strategy_data,
 )
-from investment_agent.reporting.readers.dashboard import load_alpha_lab_data
 
 DB_SOURCE = "DB 저장 데이터 · v1 Supabase"
 MACRO_KPI_SERIES: tuple[str, ...] = ("FEAR_GREED", "TNX", "DXY", "WTI", "VIX")
@@ -719,10 +718,6 @@ def _active_watchlist_rows(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, 
     return active
 
 
-def _chunks(values: Sequence[str], size: int) -> list[tuple[str, ...]]:
-    return [tuple(values[index:index + size]) for index in range(0, len(values), size)]
-
-
 def _watchlist_rows(
     gateway: SelectOnlyGateway,
     *,
@@ -913,96 +908,6 @@ def load_ticker_data_quality(ticker: str) -> DataResult:
             source=source,
             value=payload,
             message=public_exception_message("신뢰도 조회에 실패했습니다.", error),
-        )
-
-
-@cache_data(ttl="30m", max_entries=2)
-def load_tickers() -> DataResult:
-    """추적 종목과 활성 watchlist 속성을 한 목록으로 결합한다."""
-
-    blocked = _preflight()
-    if blocked:
-        return blocked
-    source = f"{DB_SOURCE} · universe.securities/universe.entities"
-    try:
-        gateway = _gateway()
-        tracked_tickers = gateway.select_rows(
-            schema=SCHEMA_UNIVERSE,
-            table=T_SECURITIES,
-            columns=(
-                "ticker,cik,exchange_code,is_tracked"
-            ),
-            equal={"is_tracked": True},
-            order=(("ticker", False),),
-            page_size=1_000,
-            max_rows=20_000,
-        )
-        tracked_tickers = [
-            _display_security_profile(row)
-            for row in _attach_entity_profiles(gateway, tracked_tickers)
-        ]
-        active_watchlist = _watchlist_rows(gateway)
-        ticker_by_symbol = {
-            str(row.get("ticker") or "").upper(): row
-            for row in tracked_tickers
-            if row.get("ticker")
-        }
-        active_symbols = sorted(
-            {str(row.get("ticker") or "").upper() for row in active_watchlist if row.get("ticker")}
-        )
-        missing_symbols = [symbol for symbol in active_symbols if symbol not in ticker_by_symbol]
-        for chunk in _chunks(missing_symbols, 150):
-            metadata_rows = gateway.select_rows(
-                schema=SCHEMA_UNIVERSE,
-                table=T_SECURITIES,
-                columns=(
-                    "ticker,cik,exchange_code,is_tracked"
-                ),
-                equal={"is_active_listing": True},
-                in_values={"ticker": chunk},
-                order=(("ticker", False),),
-                limit=len(chunk),
-            )
-            metadata_rows = [
-                _display_security_profile(row)
-                for row in _attach_entity_profiles(gateway, metadata_rows)
-            ]
-            ticker_by_symbol.update(
-                {
-                    str(row.get("ticker") or "").upper(): row
-                    for row in metadata_rows
-                    if row.get("ticker")
-                }
-            )
-        by_ticker: dict[str, list[dict[str, Any]]] = {}
-        for row in active_watchlist:
-            by_ticker.setdefault(str(row.get("ticker") or "").upper(), []).append(row)
-
-        rows: list[dict[str, Any]] = []
-        for symbol in sorted(ticker_by_symbol):
-            ticker = ticker_by_symbol[symbol]
-            symbol = str(ticker.get("ticker") or "").upper()
-            memberships = by_ticker.get(symbol, [])
-            rows.append(
-                {
-                    **ticker,
-                    "watchlist_active": bool(memberships),
-                    "watchlist_names": ["fundamentals"] if memberships else [],
-                    "fundamentals_watchlist": bool(memberships),
-                    "watchlist": memberships,
-                }
-            )
-        observed_at = _latest_at(((active_watchlist, ("updated_at", "added_at")),))
-        return _empty_or_ok(
-            rows=rows,
-            source=source,
-            observed_at=observed_at,
-            empty_message="추적 또는 활성 watchlist 종목이 없습니다.",
-        )
-    except Exception as error:
-        return DataResult.error(
-            source=source,
-            message=public_exception_message("종목·watchlist DB 조회에 실패했습니다.", error),
         )
 
 
@@ -1859,11 +1764,9 @@ __all__ = [
     "load_earnings_extended",
     "load_execution_data",
     "load_guru_data",
-    "load_alpha_lab_data",
     "load_price_history",
     "load_macro_data",
     "load_reporting_view",
     "load_strategy_data",
     "load_ticker_data_quality",
-    "load_tickers",
 ]

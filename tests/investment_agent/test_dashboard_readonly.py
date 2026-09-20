@@ -545,23 +545,18 @@ class SelectOnlyGatewayTests(unittest.TestCase):
         )
 
     def test_ticker_loader_keeps_tracked_and_active_watchlist_members(self) -> None:
+        from investment_agent.reporting.readers.financial import VIEWS
+
+        columns = VIEWS["securities"].columns.split(",")
         client = _FakeClient(
             {
-                ("universe", "securities"): [
-                    {"security_id": 1, "ticker": "AAPL", "name": "Apple",
-                     "cik": "0000000001", "is_tracked": True},
-                    {"security_id": 2, "ticker": "PRIVATE", "name": "Private",
-                     "cik": "0000000002", "is_tracked": True},
-                    {"security_id": 3, "ticker": "REMOVED", "name": "Removed",
-                     "cik": "0000000003", "is_tracked": True},
-                ],
-                ("universe", "entities"): [
-                    {"cik": "0000000002", "watchlist_sources": ["manual"],
-                     "watch_from": "2026-01-01", "is_watchlisted": True,
-                     "watchlist_removed_at": None, "updated_at": None},
-                    {"cik": "0000000003", "watchlist_sources": [],
-                     "watch_from": "2026-01-01", "is_watchlisted": False,
-                     "watchlist_removed_at": "2026-08-20T00:00:00Z", "updated_at": None},
+                ("reporting", "securities"): [
+                    dict.fromkeys(columns) | {"security_id": 1, "ticker": "AAPL", "is_tracked": True,
+                                              "is_watchlisted": False, "watchlist_sources": []},
+                    dict.fromkeys(columns) | {"security_id": 2, "ticker": "PRIVATE", "is_tracked": True,
+                                              "is_watchlisted": True, "watchlist_sources": ["manual"]},
+                    dict.fromkeys(columns) | {"security_id": 3, "ticker": "REMOVED", "is_tracked": True,
+                                              "is_watchlisted": False, "watchlist_sources": []},
                 ],
             },
         )
@@ -575,9 +570,9 @@ class SelectOnlyGatewayTests(unittest.TestCase):
                 },
                 clear=False,
             ),
-            patch.object(db, "_gateway", return_value=db.SelectOnlyGateway(client)),
+            patch("investment_agent.reporting.readers.dashboard.service_client", return_value=client),
         ):
-            result = _uncached(db.load_tickers)()
+            result = _uncached(reporting_dashboard.load_tickers)()
 
         by_ticker = {row["ticker"]: row for row in result.rows}
         self.assertEqual(set(by_ticker), {"AAPL", "PRIVATE", "REMOVED"})
@@ -839,25 +834,17 @@ class DashboardStaticBoundaryTests(unittest.TestCase):
 
         self.assertEqual(violations, [], "\n".join(violations))
 
-    #: 두 모듈이 같은 이름으로 같은 조회를 각자 구현하는 잔여 구간과, 이전 중인
-    #: dashboard.db의 호환 재노출 경로.
-    #: 화면은 `reporting.readers.dashboard` 쪽만 import한다 — `dashboard.db` 쪽은
-    #: 이 테스트 파일이 게이트웨이 동작을 확인하려고 붙잡고 있는 마지막 소비자다.
-    #: 독립 구현은 줄어들기만 해야 한다. 호환 재노출을 추가할 때는 아래 집합에
-    #: 명시하고 같은 함수 객체인지도 검증한다.
+    #: 두 모듈이 같은 이름으로 다른 조회를 구현하는 잔여 구간이다.
+    #: 실제 화면은 Reporting reader를 사용하며, 아래 중복은 별도 의미를 확인한 뒤 줄인다.
     _KNOWN_OVERLAP = frozenset({
-        "load_alpha_lab_data", "load_execution_data", "load_guru_data", "load_price_history",
-        "load_strategy_data", "load_tickers",
+        "load_execution_data", "load_guru_data", "load_price_history", "load_strategy_data",
     })
-    _COMPATIBILITY_REEXPORTS = frozenset({"load_alpha_lab_data"})
 
     def test_required_public_loader_names_exist(self) -> None:
         expected_db = {
             "load_macro_data",
             "load_execution_data",
-            "load_tickers",
             "load_ai_data",
-            "load_alpha_lab_data",
             "load_earnings_data",
             "load_earnings_discord_support",
             "load_earnings_extended",
@@ -874,6 +861,8 @@ class DashboardStaticBoundaryTests(unittest.TestCase):
             "load_econ_series_history",
             "load_econ_detail",
             "load_macro_window",
+            "load_tickers",
+            "load_alpha_lab_data",
             "load_latest_target",
             "load_system_portfolio_data",
             "load_latest_account_snapshot",
@@ -898,8 +887,6 @@ class DashboardStaticBoundaryTests(unittest.TestCase):
             and callable(getattr(reporting_dashboard, name, None))
         }
         self.assertEqual(self._KNOWN_OVERLAP, both)
-        for name in self._COMPATIBILITY_REEXPORTS:
-            self.assertIs(getattr(db, name), getattr(reporting_dashboard, name))
 
     def test_load_reporting_view_delegates_to_queries(self) -> None:
         from investment_agent.reporting.readers.financial import VIEWS

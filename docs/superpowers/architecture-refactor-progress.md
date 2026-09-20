@@ -494,6 +494,13 @@
 - 검증: Portfolio legacy import guard RED 후 GREEN 및 합성 위반 검출. Reporting/기존 DB 계약·architecture 34개, page wiring 7개 통과. 전체 suite는 현재 HEAD `6cc373a`에서 3,052개 중 실패 3개·skip 1개로 끝났다. 세 실패는 함께 반영된 별도 문서/Graphify 작업의 `docs/SYSTEM_ARCHITECTURE.md` 미선언 채널, `docs/GRAPHIFY_MCP.md` 제목 형식, 추적 Graphify HTML 2개와 repo 테스트 기대치 불일치다. Portfolio/Reporting 회귀는 보고되지 않았다. 관련 파일은 다른 작업의 미커밋 변경까지 있어 임의 수정하지 않았다.
 - 남은 부채: `PENDING_DEPENDENCIES` 19쌍 불변. Dashboard 직접 DB caller 세 화면, broker runtime, ResearchStore/Operations 경계가 남는다. 현재 HEAD의 통합 테스트 실패 3건도 별도 소유 작업에서 정리해야 한다.
 
+#### Dashboard migrated-read 정리 배치 — Alpha Lab alias + 종목 목록 중복
+
+- 근거: 실제 화면은 Alpha Lab와 종목 목록을 이미 Reporting reader에서 읽었지만 `dashboard/db.py`에 Alpha Lab 재노출과 별도 raw-table 종목 목록 구현이 남아 있었다. `load_ai_data`는 로컬 decision과 canonical security identity를 결합하므로 이번 단순 정리 대상에서 제외했다.
+- 변경 파일·방향: `dashboard/app_pages/intelligence.py`가 Alpha Lab를 Reporting에서 직접 import하고, `dashboard/db.py`의 재노출과 미사용 종목 목록 구현·전용 chunk helper를 삭제했다. `tests/investment_agent/test_dashboard_readonly.py`의 종목 계약은 실제 `reporting.securities` view와 전체 공개 컬럼을 검증하도록 옮겼고, architecture test가 두 legacy 이름의 재등장을 막는다. 다른 화면·DB schema·read 계산은 불변이다.
+- 검증: legacy reader guard RED→GREEN, 합성 alias 위반 검출. Dashboard·Reporting guard·architecture·page wiring 66개 통과, import/legacy caller 검색 0건. 전체 suite 3,054개 중 이전과 동일한 별도 문서/Graphify 실패 3건·skip 1건 외 새 실패가 없다.
+- 남은 부채: `PENDING_DEPENDENCIES` 19쌍 불변. `dashboard/db.py`는 earnings와 canonical identity가 필요한 AI 화면 caller가 남아 유지한다. 서로 의미가 다른 execution/guru/price/strategy 동명 read도 자동 삭제하지 않는다. broker runtime·ResearchStore/Operations 및 외부 문서/Graphify 실패 3건은 별도 후속이다.
+
 ## 향후 milestone
 
 | 묶음 | 해당 phase | 독립 완료 조건 |
