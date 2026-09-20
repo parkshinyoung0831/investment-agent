@@ -487,6 +487,13 @@
 - 검증: concrete import architecture guard는 RED 후 GREEN이며 합성 위반도 검출한다. 알림 251개, architecture·workflow·Discord 91개, repository owner 재검증 30개 통과. 첫 전체 suite에서 repository 패키지 규칙이 새 공유 조립 모듈을 producer로 오분류한 실패 1건을 조사·수정했고, 재실행 3,043개는 기준선과 같은 선택적 `lightgbm`/`xgboost` 미설치 오류 4개·skip 1개 외 새 실패가 없다. source/test의 이전 `engine.default_context`·Discord 계약 import caller 0건.
 - 남은 부채: `PENDING_DEPENDENCIES` 19쌍 불변. 아직 broker runtime, dashboard reporting read, ResearchStore·Operations ownership과 최종 architecture guard가 남는다. 다음 배치는 현재 caller를 다시 확인해 broker 또는 dashboard read 중 동일 책임 경계 2~3개를 묶는다.
 
+#### Portfolio dashboard read 배치 — 계좌·System·승인 목표
+
+- 근거: `dashboard/app_pages/portfolio.py`만 `dashboard.db`의 최신 계좌 스냅샷, System Portfolio 비교, 승인 목표 read 세 함수를 호출했다. 세 함수 모두 기존 `reporting.readers.runtime.read_runtime_rows`와 Reporting 모델을 사용했고 DB write는 없었다.
+- 변경 파일·방향: 세 read를 `reporting/readers/dashboard.py`로 옮기고 Portfolio 화면 및 직접 테스트가 Reporting owner를 호출한다. `dashboard/db.py`의 원본·export를 제거했고 호환 alias는 없다. 계좌 최신시각·안전 필드, System/My 독립성, 오프라인 상태, 승인된 System 목표만 고르는 필터와 cache TTL은 유지했다. Reporting 계약 테스트 3개와 Portfolio 화면의 legacy import architecture guard를 추가했다. `dashboard/db.py`는 earnings·intelligence·ai_approval caller가 남아 유지한다.
+- 검증: Portfolio legacy import guard RED 후 GREEN 및 합성 위반 검출. Reporting/기존 DB 계약·architecture 34개, page wiring 7개 통과. 전체 suite는 현재 HEAD `6cc373a`에서 3,052개 중 실패 3개·skip 1개로 끝났다. 세 실패는 함께 반영된 별도 문서/Graphify 작업의 `docs/SYSTEM_ARCHITECTURE.md` 미선언 채널, `docs/GRAPHIFY_MCP.md` 제목 형식, 추적 Graphify HTML 2개와 repo 테스트 기대치 불일치다. Portfolio/Reporting 회귀는 보고되지 않았다. 관련 파일은 다른 작업의 미커밋 변경까지 있어 임의 수정하지 않았다.
+- 남은 부채: `PENDING_DEPENDENCIES` 19쌍 불변. Dashboard 직접 DB caller 세 화면, broker runtime, ResearchStore/Operations 경계가 남는다. 현재 HEAD의 통합 테스트 실패 3건도 별도 소유 작업에서 정리해야 한다.
+
 ## 향후 milestone
 
 | 묶음 | 해당 phase | 독립 완료 조건 |
