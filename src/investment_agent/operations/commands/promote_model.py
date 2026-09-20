@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import argparse
 
-from investment_agent.trading.supabase_repository import SupabaseRepository
+from investment_agent.trading.promotion import PromotionLedger
 from investment_agent.research.promotion.gate import ManualPromotionGate
 from investment_agent.platform.logging import get_logger
 
@@ -31,7 +31,7 @@ def _args(argv: list[str] | None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _args(argv)
-    repository = SupabaseRepository()
+    repository = PromotionLedger()
     artifact = repository.model_artifact(args.artifact_id)
     if artifact is None:
         raise RuntimeError(f"model artifact not found: {args.artifact_id}")

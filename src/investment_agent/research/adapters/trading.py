@@ -31,7 +31,12 @@ from investment_agent.research.ml_serving import (
     ChampionForecast,
     champion_forecast,
 )
-from investment_agent.research.promotion.gate import EvaluationSummary, PromotionDecision, has_approved_chain
+from investment_agent.research.promotion.gate import (
+    EvaluationSummary,
+    PromotionDecision,
+    approval_audit_row,
+    has_approved_chain,
+)
 from investment_agent.research.rl.contracts import (
     FeatureSnapshot,
     ForwardReturnLabel,
@@ -72,6 +77,7 @@ __all__ = [
     "PromotionDecision",
     "TrainingSample",
     "TransactionCostModel",
+    "approval_audit_row",
     "champion_forecast",
     "estimate_statistics",
     "guru_candidate_signals",

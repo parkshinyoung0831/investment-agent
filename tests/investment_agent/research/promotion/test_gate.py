@@ -7,7 +7,9 @@ from investment_agent.research.promotion.gate import (
     PROMOTION_PATH,
     EvaluationSummary,
     ManualPromotionGate,
+    PromotionDecision,
     aggregate_evaluations,
+    approval_audit_row,
     approval_confirmation,
     has_approved_chain,
 )
@@ -218,6 +220,61 @@ class ApprovedChainTest(unittest.TestCase):
             self.assertFalse(has_approved_chain(artifact_id="m", current_stage="live", to_stage=target, audits=audits), target)
         self.assertFalse(has_approved_chain(artifact_id="m", current_stage="unknown", to_stage="paper", audits=audits))
         self.assertFalse(has_approved_chain(artifact_id="m", current_stage=None, to_stage="paper", audits=audits))
+
+
+def _approved_decision(from_stage: str = "shadow", to_stage: str = "backtest") -> "PromotionDecision":
+    gate = ManualPromotionGate()
+    proposed = gate.propose(
+        "model-1", from_stage=from_stage, to_stage=to_stage,
+        summary=EvaluationSummary(
+            out_of_sample_days=100, walk_forward_windows=4, paper_days=30,
+            excess_return=0.03, max_drawdown=-0.08, turnover=0.7, evaluation_count=6,
+        ),
+    )
+    return gate.approve(
+        proposed, approved_by="operator", confirmation=approval_confirmation("model-1", from_stage, to_stage),
+    )
+
+
+class ApprovalAuditRowTest(unittest.TestCase):
+    """승인 감사 행을 만들기 전의 fail-closed 검증. 원장에는 이 행만 쓴다."""
+
+    def test_builds_the_audit_row_the_ledger_stores(self):
+        decision = _approved_decision()
+        row = approval_audit_row(
+            decision, confirmation="PROMOTE model-1 shadow->backtest",
+            model_artifact={"artifact_id": "model-1"}, model_stage="shadow",
+        )
+        self.assertEqual("approved", row["status"])
+        self.assertEqual("operator", row["approved_by"])
+        self.assertEqual("PROMOTE model-1 shadow->backtest", row["confirmation_text"])
+        self.assertEqual(("model-1", "shadow", "backtest"), (row["artifact_id"], row["from_stage"], row["to_stage"]))
+        self.assertEqual(decision.to_record()["evidence"], row["evidence"])
+
+    def test_undecided_or_rejected_decisions_are_not_persisted(self):
+        proposed = ManualPromotionGate().propose(
+            "model-1", from_stage="shadow", to_stage="backtest",
+            summary=EvaluationSummary(0, 0, 0, 0.0, -1.0, 0.0, evaluation_count=0),
+        )
+        with self.assertRaisesRegex(ValueError, "only a manually"):
+            approval_audit_row(proposed, confirmation="x", model_artifact={"a": 1}, model_stage="shadow")
+
+    def test_missing_artifact_or_moved_stage_fails_closed(self):
+        decision = _approved_decision()
+        confirmation = "PROMOTE model-1 shadow->backtest"
+        with self.assertRaisesRegex(RuntimeError, "artifact not found"):
+            approval_audit_row(decision, confirmation=confirmation, model_artifact=None, model_stage="shadow")
+        with self.assertRaisesRegex(RuntimeError, "stage changed"):
+            approval_audit_row(decision, confirmation=confirmation, model_artifact={"a": 1}, model_stage="backtest")
+        with self.assertRaisesRegex(RuntimeError, "stage changed"):
+            approval_audit_row(decision, confirmation=confirmation, model_artifact={"a": 1}, model_stage=None)
+
+    def test_confirmation_must_match_exactly(self):
+        with self.assertRaisesRegex(ValueError, "confirmation must exactly match"):
+            approval_audit_row(
+                _approved_decision(), confirmation="PROMOTE model-1 shadow->paper",
+                model_artifact={"a": 1}, model_stage="shadow",
+            )
 
 
 if __name__ == "__main__":

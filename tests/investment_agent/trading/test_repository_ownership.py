@@ -105,9 +105,44 @@ class RepositoryOwnershipTest(unittest.TestCase):
             "save_decision_experiences",
             "model_evaluation_rows",
             "model_evaluation_summary",
-            "save_promotion",
-            "approve_model_promotion",
         } <= set(dir(ResearchStore)))
+
+    def test_promotion_audit_belongs_to_the_trading_ledger_not_the_research_store(self) -> None:
+        from investment_agent.research.storage.repository import ResearchStore
+        from investment_agent.trading.promotion import PromotionLedger
+        from investment_agent.trading.supabase_repository import SupabaseRepository
+
+        roles = {
+            "model_artifact", "model_stage", "model_evaluation_summary",
+            "save_promotion", "approve_model_promotion", "has_approved_promotion",
+        }
+        self.assertTrue(roles <= set(dir(PromotionLedger)))
+        # Research 저장소는 Trading 원장 객체를 받아 승격 기록을 쓰지 않는다.
+        self.assertEqual(set(), {"save_promotion", "approve_model_promotion", "has_approved_promotion"} & set(dir(ResearchStore)))
+        # 합성 저장소는 승격 역할을 직접 정의하지 않고 물려받는다.
+        tree = ast.parse((PACKAGE / "trading" / "supabase_repository.py").read_text(encoding="utf-8"))
+        cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "SupabaseRepository")
+        own = {n.name for n in cls.body if isinstance(n, ast.FunctionDef)}
+        self.assertEqual(set(), (roles | {"_trading_repository", "_research_store"}) & own)
+        self.assertIs(PromotionLedger.has_approved_promotion, SupabaseRepository.has_approved_promotion)
+
+    def test_manual_promotion_command_needs_only_the_promotion_role(self) -> None:
+        source = (PACKAGE / "operations" / "commands" / "promote_model.py").read_text(encoding="utf-8")
+        self.assertIn("PromotionLedger", source)
+        self.assertNotIn("supabase_repository", source)
+
+    def test_promotion_confirmation_text_is_defined_only_by_the_gate(self) -> None:
+        offenders: list[str] = []
+        for path in PACKAGE.rglob("*.py"):
+            relative = path.relative_to(PACKAGE).as_posix()
+            if relative == "research/promotion/gate.py":
+                continue
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.startswith("PROMOTE "):
+                    offenders.append(f"{relative}:{node.lineno}")
+        self.assertEqual([], offenders)
+        gate = (PACKAGE / "research" / "promotion" / "gate.py").read_text(encoding="utf-8")
+        self.assertIn('f"PROMOTE ', gate, "확인 문구 원본이 사라져 가드가 공허해졌다")
 
     def test_research_artifact_write_calls_stay_in_research_owner(self) -> None:
         violations: list[str] = []

@@ -178,6 +178,38 @@ class ManualPromotionGate:
         return approval_confirmation(decision.artifact_id, decision.from_stage, decision.to_stage)
 
 
+def approval_audit_row(
+    decision: PromotionDecision,
+    *,
+    confirmation: str,
+    model_artifact: Mapping[str, Any] | None,
+    model_stage: str | None,
+) -> dict[str, Any]:
+    """승인된 결정을 원장의 감사 행으로 바꾼다. 조건이 하나라도 어긋나면 닫힌다.
+
+    artifact가 없거나 그 사이 단계가 움직였거나 확인 문구가 다르면 쓰지 않는다.
+    """
+    if decision.status != "approved" or decision.violations:
+        raise ValueError("only a manually is_approved clean decision can be persisted")
+    if model_artifact is None:
+        raise RuntimeError("model promotion failed closed: artifact not found")
+    if model_stage != decision.from_stage:
+        raise RuntimeError("model promotion failed closed: artifact stage changed")
+    expected = approval_confirmation(decision.artifact_id, decision.from_stage, decision.to_stage)
+    if confirmation != expected:
+        raise ValueError(f"confirmation must exactly match: {expected}")
+    return {
+        "artifact_id": decision.artifact_id,
+        "from_stage": decision.from_stage,
+        "to_stage": decision.to_stage,
+        "status": "approved",
+        "evidence": decision.to_record()["evidence"],
+        "approved_by": decision.approved_by,
+        "approved_at": decision.approved_at,
+        "confirmation_text": confirmation,
+    }
+
+
 def _covered_days(intervals: Sequence[tuple[datetime, datetime]]) -> int:
     """겹치는 평가 구간을 중복 계산하지 않은 완전한 24시간 수다."""
     if not intervals:
@@ -321,6 +353,7 @@ __all__ = [
     "PromotionCriteria",
     "PromotionDecision",
     "aggregate_evaluations",
+    "approval_audit_row",
     "approval_confirmation",
     "has_approved_chain",
 ]

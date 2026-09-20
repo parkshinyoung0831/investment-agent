@@ -26,9 +26,7 @@ from investment_agent.platform.storage_paths import (
 from investment_agent.research.datasets.contracts import TrainingSample
 from investment_agent.research.promotion.gate import (
     EvaluationSummary,
-    PromotionDecision,
     aggregate_evaluations,
-    approval_confirmation,
 )
 from investment_agent.research.rl.contracts import FeatureSnapshot, ForwardReturnLabel, normalize_symbols
 
@@ -971,43 +969,6 @@ class ResearchStore:
 
     def model_evaluation_summary(self, artifact_id: str) -> EvaluationSummary:
         return aggregate_evaluations(self.model_evaluation_rows(artifact_id))
-
-    def save_promotion(self, trading_repository: Any, row: dict[str, Any]) -> None:
-        trading_repository.record_model_promotion(row)
-
-    def approve_model_promotion(
-        self,
-        trading_repository: Any,
-        decision: PromotionDecision,
-        *,
-        confirmation: str,
-        model_artifact: dict[str, Any] | None,
-        model_stage: str | None,
-    ) -> dict[str, Any]:
-        if decision.status != "approved" or decision.violations:
-            raise ValueError("only a manually is_approved clean decision can be persisted")
-        if model_artifact is None:
-            raise RuntimeError("model promotion failed closed: artifact not found")
-        if model_stage != decision.from_stage:
-            raise RuntimeError("model promotion failed closed: artifact stage changed")
-        expected = approval_confirmation(decision.artifact_id, decision.from_stage, decision.to_stage)
-        if confirmation != expected:
-            raise ValueError(f"confirmation must exactly match: {expected}")
-        return trading_repository.approve_model_promotion(
-            audit_row={
-                "artifact_id": decision.artifact_id,
-                "from_stage": decision.from_stage,
-                "to_stage": decision.to_stage,
-                "status": "approved",
-                "evidence": decision.to_record()["evidence"],
-                "approved_by": decision.approved_by,
-                "approved_at": decision.approved_at,
-                "confirmation_text": confirmation,
-            },
-            artifact_id=decision.artifact_id,
-            from_stage=decision.from_stage,
-            to_stage=decision.to_stage,
-        )
 
     @staticmethod
     def _feature_snapshot(row: dict[str, Any]) -> FeatureSnapshot:

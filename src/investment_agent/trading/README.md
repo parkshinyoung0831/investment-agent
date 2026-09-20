@@ -212,14 +212,17 @@ Qlib, LumiBot, LightGBM/XGBoost, SB3는 선택 dependency입니다. import 가�
 ## 8. 평가와 승격
 
 모델 artifact에는 feature version, dataset hash, train/validation/OOS 기간, seed, parameter, code
-version과 artifact hash를 저장합니다. `ManualPromotionGate`는 현재 model artifact stage의
-`shadow → paper → live` 한 단계 이동을 담당합니다.
+version과 artifact hash를 저장합니다. `ManualPromotionGate`는 현재 model artifact stage를
+`shadow → backtest → out_of_sample → walk_forward → paper → live` 순서로 한 단계씩만 올리며,
+단계마다 사람이 정확한 확인 문구로 승인합니다. 이 순서와 확인 문구, 실주문 직전 검사
+(`has_approved_chain`)는 `research/promotion/gate.py` 한 곳에 있고, `trading/promotion.py`의
+`PromotionLedger`가 원장에서 현재 단계와 승인 기록을 읽어 그 검사에 넘깁니다.
 
-execution의 5단계 lifecycle과 model artifact의 3단계 저장 stage는 서로 다른 축입니다.
+execution의 5단계 lifecycle과 model artifact의 6단계 저장 stage는 서로 다른 축입니다.
 
 | 축 | 값 | 의미 |
 |---|---|---|
-| Model artifact stage | shadow → paper → live | 어떤 실행 범위에서 이 artifact를 사용할 수 있는가 |
+| Model artifact stage | shadow → backtest → out_of_sample → walk_forward → paper → live | 어떤 실행 범위에서 이 artifact를 사용할 수 있는가 |
 | Operational lifecycle | backtest → shadow → paper → live_manual → live_autonomous | 시스템이 사람 승인 없이 어디까지 행동할 수 있는가 |
 | Source kind | live_shadow / historical_replay | 데이터가 실제 시각인지 역사 replay인지 |
 
@@ -243,8 +246,9 @@ src/investment_agent/trading/
   system/                      System Portfolio(target·accounting·engine·store)
   my_portfolio.py              System 목표를 따라가는 실계좌 추종 제안
   performance/                 My Portfolio 성과(입출금 반영 시간가중 수익률)
-  repository.py                trading 원장 repository
-  supabase_repository.py       Trading 원장 게이트웨이(`PitReader` + `CandidateSelection` 합성, ticker↔security_id 변환)
+  repository.py                trading 원장 repository(`TradingRepository`)와 원장 연결 기반(`LedgerAccess`)
+  promotion.py                 모델 승격의 원장 역할(`PromotionLedger`) — 실주문 직전 검사와 수동 승격 명령이 쓴다
+  supabase_repository.py       Trading 원장 게이트웨이(`PitReader`·`CandidateSelection`·`PromotionLedger` 합성, ticker↔security_id 변환)
 ```
 
 ## 주요 CLI

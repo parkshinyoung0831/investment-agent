@@ -7,12 +7,11 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Any
 
-import investment_agent.research.adapters.trading as research_adapter
 from investment_agent.trading.decision.candidates import CandidateSelection
+from investment_agent.trading.promotion import PromotionLedger
 from investment_agent.trading.contracts import parse_datetime
-from investment_agent.research.adapters.trading import EvaluationSummary, PitReader, PromotionDecision
+from investment_agent.research.adapters.trading import PitReader
 from investment_agent.trading.portfolio.signal_book import SignalBatch, SignalRecord
 from investment_agent.trading.decision.universe import normalize_ticker
 from investment_agent.platform.logging import get_logger
@@ -38,20 +37,8 @@ def _security_ids(tickers: Sequence[str]) -> dict[str, int]:
     return result
 
 
-class SupabaseRepository(PitReader, CandidateSelection):
-    """PIT reader에 Trading 원장 위임과 후보 선정을 얹은 Trading 저장소 경계."""
-
-    @staticmethod
-    def _research_store(*, read_only: bool = False) -> Any:
-        return research_adapter.open_research_store(read_only=read_only)
-
-    @staticmethod
-    def _trading_repository():
-        """v1 trading 원장의 domain owner를 지연 생성한다."""
-        from investment_agent.trading.repository import TradingRepository
-
-        return TradingRepository()
-
+class SupabaseRepository(PitReader, CandidateSelection, PromotionLedger):
+    """PIT 읽기(Research)·후보 선정·승격(Trading 역할)을 합성하고 판단 원장 위임을 직접 갖는 Trading 저장소 경계."""
 
     def save_policy(self, row: dict) -> None:
         self._trading_repository().record_policy(row)
@@ -155,47 +142,6 @@ class SupabaseRepository(PitReader, CandidateSelection):
     def save_model_artifact(self, row: dict) -> None:
         self._trading_repository().record_model_version(row)
 
-
-    def save_promotion(self, row: dict) -> None:
-        self._research_store().save_promotion(self._trading_repository(), row)
-
-    def model_artifact(self, artifact_id: str) -> dict[str, Any] | None:
-        return self._trading_repository().model_version(artifact_id)
-
-    def model_stage(self, artifact_id: str) -> str | None:
-        return self._trading_repository().current_model_stage(artifact_id)
-
-    def model_evaluation_summary(self, artifact_id: str) -> EvaluationSummary:
-        """평가 원장 전체를 보수적인 승격 요약으로 집계한다."""
-        if self.model_artifact(artifact_id) is None:
-            raise LookupError(f"model artifact not found: {artifact_id}")
-        return self._research_store(read_only=True).model_evaluation_summary(artifact_id)
-
-    def approve_model_promotion(
-        self,
-        decision: PromotionDecision,
-        *,
-        confirmation: str,
-    ) -> dict[str, Any]:
-        """평가 재검증 뒤 현재 단계를 잠그고 승인 audit만 기록한다."""
-        return self._research_store().approve_model_promotion(
-            self._trading_repository(),
-            decision,
-            confirmation=confirmation,
-            model_artifact=self.model_artifact(decision.artifact_id),
-            model_stage=self.model_stage(decision.artifact_id),
-        )
-
-    def has_approved_promotion(self, artifact_id: str, to_stage: str) -> bool:
-        """실주문 직전 검사. 규칙은 Research 승격 게이트가 갖고, 여기서는 원장 두 조각만 읽어 넘긴다."""
-        if to_stage not in {"paper", "live"}:
-            return False
-        return research_adapter.has_approved_chain(
-            artifact_id=artifact_id,
-            current_stage=self.model_stage(artifact_id),
-            to_stage=to_stage,
-            audits=self._trading_repository().model_promotions(artifact_id),
-        )
 
     def decision_cases_for_experiences(self) -> list[dict]:
         """체결 여부로 거르지 않은 원본 판단이다."""

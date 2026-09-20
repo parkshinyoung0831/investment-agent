@@ -5,7 +5,6 @@
 """
 from __future__ import annotations
 
-from __future__ import annotations
 import math
 from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
@@ -22,6 +21,7 @@ from investment_agent.trading.decision.candidate_ranker import (
     validate_live_candidate_as_of,
 )
 from investment_agent.trading.contracts import ContractError, parse_datetime
+from investment_agent.trading.repository import LedgerAccess
 from investment_agent.research.adapters.trading import (FEATURE_VERSION, guru_candidate_signals, latest_cross_section, score_cross_section, technical_features_since)
 from investment_agent.trading.decision.universe import normalize_ticker
 from investment_agent.trading.decision.event_impact import PROXY_BY_THEME, global_event_priorities
@@ -102,7 +102,7 @@ def _segment_candidate_signals(
     return result
 
 
-class CandidateSelection:
+class CandidateSelection(LedgerAccess):
     """PIT reader와 Trading 원장 위에서 후보를 고르는 판단 로직. `SupabaseRepository`가 합성한다."""
 
     def _decision_attempts(self) -> list[dict[str, Any]]:

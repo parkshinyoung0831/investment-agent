@@ -553,3 +553,14 @@ __all__ = [
     "T_SIGNALS",
     "T_SIGNAL_RUNS",
 ]
+
+
+class LedgerAccess:
+    """Trading 원장(`TradingRepository`)을 여는 역할 클래스의 공통 기반.
+
+    후보 선정·승격처럼 원장의 한 조각만 쓰는 역할이 같은 원장 연결 방식을 공유한다.
+    """
+
+    @staticmethod
+    def _trading_repository() -> TradingRepository:
+        return TradingRepository()

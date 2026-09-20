@@ -625,7 +625,7 @@
 #### 최종 검증 (2026-09-20, G1~G5 종료 시점)
 
 - 실제 import 행렬(AST 계산): `research → trading`은 `research/system_validation/ablation.py` 한 파일뿐이다. `trading → reporting`, `reporting → notifications`은 0건이다. `trading → research`는 공개 계약 `research/adapters/trading.py`만 거친다. `dashboard`는 저장소 접근 코드가 0개이고 `dashboard → notifications`는 earnings 카드 미리보기 한 파일이다. `execution`은 platform과 최상위 공유 모듈만 안다.
-- 남은 예외: 시스템 검증 6개 import, 위 dashboard→notifications 1건, Trading 원장 위임 15개(호출자가 데이터 읽기와 같은 `repository` 객체를 받아 분리하려면 시그니처가 넓게 바뀐다), execution의 독립 비중 검증.
+- 남은 예외: 시스템 검증 6개 import, 위 dashboard→notifications 1건, Trading 원장 위임 17개(호출자가 데이터 읽기와 같은 `repository` 객체를 받아 분리하려면 시그니처가 넓게 바뀐다), execution의 독립 비중 검증.
 - 규모: `.py` 721개. 처음 기준 이후 커밋 74개. `SupabaseRepository`는 약 1,340줄에서 300줄이 됐고 PIT 읽기 635줄은 `research/evidence/reader.py`, 후보 선정 470줄은 `trading/decision/candidates.py`로 갔다.
 - 테스트: 전체 3,109 중 실패 1건은 사용자 동시 작업 `data/news/`를 금지하는 intelligence 가드다. 그 디렉터리를 제외하면 모두 통과한다.
 
@@ -640,6 +640,16 @@
 
 - 삭제: `supabase_repository.py`의 모듈 함수 4개(`latest_decision_run`·`latest_model_artifact`·`latest_backtest_evaluation`·`latest_risk_decision`)와 `SupabaseRepository.model_evaluation_rows`, 그 함수들만 부르던 `TradingRepository.latest_run`·`latest_model_version`·`latest_risk_decision`. src·tests·scripts·docs·workflows 어디에도 호출자가 없고 문자열 진입점도 없다(`grep`으로 확인). 함께 지운 고아 주석 1개는 이미 없는 코드의 설명이었다.
 - 유지: `latest_signal_batch_id`는 `scripts/verify_integration.py`가 부르므로 남긴다.
+
+#### 배치 H3 — 승격을 Trading 원장의 좁은 역할로 (2026-09-20)
+
+- 변경 전: `SupabaseRepository`가 승격 여섯 메서드를 판단 기록·평가·후보 선정과 한 객체에 섞어 갖고 있었다. 승격 감사 기록을 쓰는 경로는 `SupabaseRepository → ResearchStore.save_promotion(trading_repository, row) → TradingRepository`처럼 Research 저장소가 Trading 원장 객체를 인자로 받아 그대로 넘기는 전달자를 지났고, `ResearchStore.approve_model_promotion`도 검증 뒤 같은 객체에 썼다. 승격 감사 기록은 Research 산출물이 아니라 Trading 원장의 사실이다.
+- 변경: `trading/promotion.py`에 `PromotionLedger`(model_artifact·model_stage·model_evaluation_summary·save_promotion·approve_model_promotion·has_approved_promotion)를 두고 `SupabaseRepository`가 물려받는다. 승인 행을 만들기 전의 fail-closed 검증(결정 상태·artifact 존재·단계 불변·확인 문구, 검증 순서 유지)은 게이트의 순수 함수 `approval_audit_row`로 옮겼다. `ResearchStore.save_promotion`·`approve_model_promotion`은 삭제했다. 원장 연결 방식(`_trading_repository`)은 `LedgerAccess` 기반으로 올려 `CandidateSelection`이 호스트 클래스가 정의해 주길 기대하던 암묵 계약을 명시했다. `operations/commands/promote_model.py`는 전체 저장소 대신 `PromotionLedger`만 만든다.
+- 정비 보류가 걸린 상태에서 하네스 인접 코드(`operations/commands/promote_model.py`)를 고쳤다. hold·kill switch·`TOSS_LIVE_ENABLED`·실주문 worker·주문 예약·재조정 로직은 불변이다.
+- 테스트: `approval_audit_row` 계약 4개를 먼저 쓰고 RED를 확인했다. 소유권 가드(`test_repository_ownership.py`)의 "ResearchStore가 승격 메서드를 소유한다"는 단언은 그 소유가 잘못이었으므로 "Research 저장소가 승격 기록 메서드를 갖지 않고, 합성 저장소가 승격 역할·`_trading_repository`를 직접 정의하지 않으며, 확인 문구 리터럴은 게이트만 정의한다"는 가드 3개로 교체했다(가드 수 증가). 주입 5건(Trading 코드에서 확인 문구 재정의, 합성 저장소의 승격 메서드·`_trading_repository` 재정의, ResearchStore의 `save_promotion` 부활, `promote_model`의 전체 저장소 재사용)이 모두 실패함을 확인하고 원복했다. `promote_model` 테스트 3개는 patch 대상 이름만 `PromotionLedger`로 바꿨고 검증 내용은 같다.
+- 문서: `trading/README.md` 8절이 model artifact stage를 3단계(`shadow → paper → live`)로 설명해 코드와 어긋나 있었다. 코드는 6단계이고 전이 5개가 모두 승인돼야 paper·live가 열린다. 사실대로 고쳤다.
+- 판단(분해하지 않은 것): 판단 기록(`save_*`·`finish_decision_run`·`save_signal_batch`)과 평가·메모리 읽기는 별도 역할 클래스로 나누지 않았다. 호출자가 전부 데이터 읽기(`price_path`, `market_prices`, tracked 조회)와 같은 객체를 함께 받아서 나눠도 의존이 줄지 않고 파일만 옮기는 일이 된다. 합성 저장소에는 메서드 17개(약 190줄)가 남고, 대부분은 이름만 바꿔 넘기는 위임이며 ticker↔security_id 변환이 있는 것(`save_case`·`save_signal_batch`·`previous_decision`·`evaluated_memories`·평가 조회 2개)만 실제 로직이다. 이전에 "15개"라고 적은 숫자는 17개가 맞다. 이 위임을 없애려면 `analysis`·`system/engine`·`my_portfolio`와 fake 저장소를 쓰는 테스트의 시그니처가 함께 바뀌므로 필요가 생길 때 별도 배치로 한다.
+- 이름: `SupabaseRepository`는 실제로는 Trading 저장소 합성체다. 이름 변경은 호출자 9곳과 테스트 13개를 건드리는 순수 개명이라 이번에는 하지 않았다.
 
 ## 향후 milestone
 
