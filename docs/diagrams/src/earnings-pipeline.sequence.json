@@ -5,7 +5,7 @@
     "title": "SEC 실적 공시 감지 및 2단계 알림 시퀀스",
     "output": "earnings-pipeline.html",
     "column_fit": "spread",
-    "viewBox": [920, 960],
+    "viewBox": [900, 960],
     "animation": "trace",
     "visual_preset": "signal-flow",
     "quality_profile": "showcase",

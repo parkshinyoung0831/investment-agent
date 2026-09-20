@@ -131,11 +131,14 @@ COLUMN_POLICIES: dict[str, ColumnPolicy] = {
         "Depreciation": 50,
     }),
     # 매출. 카지노·유지보수 같은 개별 매출 라인은 총매출 대용이 될 수 없어 제외.
+    # 총계 태그(`Revenues`·`RevenuesNetOfInterestExpense`)가 ASC 606 고객계약 매출보다 먼저다:
+    # 606 매출은 임대·이자·투자 수익을 뺀 부분집합이라 리츠·보험·은행에서는 총매출의 0.4~30%뿐이다
+    # (SEC 원천 대조: ESS 2.2M vs 469.8M, MET 604M vs 17,340M). 총계 태그가 없는 회사는 606을 그대로 쓴다.
     "revenue": ColumnPolicy({
-        "RevenueFromContractWithCustomerExcludingAssessedTax": 10,
-        "Revenues": 20,
-        "RevenueFromContractWithCustomerIncludingAssessedTax": 30,
-        "RevenuesNetOfInterestExpense": 40,
+        "Revenues": 10,
+        "RevenuesNetOfInterestExpense": 20,
+        "RevenueFromContractWithCustomerExcludingAssessedTax": 30,
+        "RevenueFromContractWithCustomerIncludingAssessedTax": 40,
         "RegulatedAndUnregulatedOperatingRevenue": 50,
         "SalesAndOtherOperatingRevenueIncludingSalesBasedTaxes": 60,
         "SalesRevenueNet": 70,

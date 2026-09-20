@@ -9,7 +9,6 @@ from pathlib import Path
 
 from investment_agent.platform.storage_paths import (
     INTELLIGENCE_DATABASE_PATH_ENV,
-    INTELLIGENCE_PARQUET_ROOT_ENV,
     intelligence_database_path,
     intelligence_parquet_root,
 )

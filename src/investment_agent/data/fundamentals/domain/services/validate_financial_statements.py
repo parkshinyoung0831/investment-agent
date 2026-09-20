@@ -7,6 +7,7 @@ from investment_agent.platform.logging import get_logger
 from investment_agent.data.fundamentals.domain.policies import (
     AVERAGE_SHARES_SCALE_FACTOR,
     BALANCE_TOLERANCE,
+    PROFIT_OVER_REVENUE_TOLERANCE,
     UNIT_SCALE_LOG_TOLERANCE,
 )
 from investment_agent.data.fundamentals.domain.services.balance_identity import non_liability_claims
@@ -20,6 +21,8 @@ _SHARES_EPS_PAIRS = (
     ("shares_fully_diluted_average", "eps_diluted_gaap"),
 )
 _INCOME_COLUMNS = ("net_income_to_common_shareholders", "net_income")
+# 정의상 매출을 넘을 수 없는 이익 컬럼. 순이익은 일부러 뺀다(정책 상수 주석 참고).
+_PROFIT_BOUNDED_BY_REVENUE = ("gross_profit", "operating_income_loss")
 
 
 def _is_unit_scale(ratio: float) -> bool:
@@ -53,6 +56,20 @@ def _scale_mismatch(row: dict, shares_column: str, eps_column: str) -> dict | No
     return {"column": shares_column, "value": shares, eps_column: eps,
             "ratio_to_implied_shares": ratios,
             "is_unit_scale": any(_is_unit_scale(ratio) for ratio in ratios.values())}
+
+
+def _profit_above_revenue(row: dict) -> dict | None:
+    """매출을 넘는 이익 컬럼이 있으면 ``{컬럼: 값}``을, 없으면 `None`을 돌려준다."""
+    revenue = row.get("revenue")
+    if revenue is None or revenue <= 0:
+        return None
+    limit = revenue * (1.0 + PROFIT_OVER_REVENUE_TOLERANCE)
+    over = {
+        column: row[column]
+        for column in _PROFIT_BOUNDED_BY_REVENUE
+        if row.get(column) is not None and row[column] > limit
+    }
+    return over or None
 
 
 def check_core_wide(rows: list[dict]) -> tuple[list[dict], list[dict]]:
@@ -108,6 +125,20 @@ def check_core_wide(rows: list[dict]) -> tuple[list[dict], list[dict]]:
             })
             for column in cleared:
                 row[column] = None
+
+        # 매출이 총이익·영업이익보다 작으면 매출이 총계가 아니다. 이익 쪽은 다른 태그에서 오므로
+        # 맞는 값으로 보고 매출만 비운다 — 총매출의 0.4~30%인 하위 항목이 카드 마진·성장률에 나가는 것보다 빈칸이 낫다.
+        exceeded = _profit_above_revenue(row)
+        if exceeded is not None:
+            anomalies.append({
+                "cik": cik,
+                "fiscal_year": row["fiscal_year"],
+                "fiscal_period": row["fiscal_period"],
+                "reason": "revenue_below_profit",
+                "detail": {"revenue": row["revenue"], **exceeded, "cleared": ["revenue"]},
+                "filed_at": row.get("filed_at"),
+            })
+            row["revenue"] = None
 
         # 회계항등식 A = L + 자본. liabilities_and_equity 컬럼은 두지 않는다 —
         # assets와 실측 23,849/23,851행이 동일한 순수 중복이었다.

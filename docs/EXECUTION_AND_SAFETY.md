@@ -240,7 +240,7 @@ Paper 증거가 필요한 승격 조건은 자동으로 완화하지 않습니�
 
 사람이 실주문까지 갈 때 지나는 관문과, 각 관문이 닫히는 조건.
 
-*소스: `docs/diagrams/src/execution-runbook.workflow.json` — 그림을 고치려면 이 파일을 고치고 `python scripts/build_diagrams.py`.*
+*소스: `docs/diagrams/src/execution-runbook.workflow.json` — 그림을 고치려면 이 파일을 고치고 `python scripts/build_diagrams.py`. 본문 폭에서는 글자가 작다 — 이미지를 눌러 원본으로 보거나 `docs/diagrams/html/execution-runbook.html`을 브라우저로 연다.*
 
 1. PIT dataset과 Native backtest hash/result 재현
 2. ML baseline과 RL challenger를 동일 OOS에서 비교

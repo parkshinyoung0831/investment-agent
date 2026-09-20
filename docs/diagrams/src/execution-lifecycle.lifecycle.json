@@ -5,7 +5,7 @@
     "title": "주문 수명주기 — 의도 선점에서 결과 불명 복구까지",
     "output": "execution-lifecycle.html",
     "viewBox": [
-      1040,
+      900,
       680
     ],
     "animation": "trace",

@@ -15,9 +15,7 @@ package README가 갖는다.
 → 승인 → 실행(Toss 단일 broker), 그리고 그 옆에서 reporting이 읽기 모델을 만들어 대시보드와
 Discord 알림에 공급한다. 점선 경계는 사람 승인 없이는 넘지 못하는 자리다.
 
-> 확대·테마 전환·흐름 추적이 되는 인터랙티브 판은 `docs/diagrams/html/system-architecture.html`을
-> 브라우저로 직접 열어서 본다. GitHub은 저장소의 `.html`을 렌더하지 않으므로 위 SVG가
-> 저장소 안에서의 기본 미리보기다.
+*소스: `docs/diagrams/src/system-architecture.architecture.json` — 그림을 고치려면 이 파일을 고치고 `python scripts/build_diagrams.py`. 본문 폭에서는 글자가 작다 — 이미지를 눌러 원본으로 보거나 `docs/diagrams/html/system-architecture.html`을 브라우저로 연다.*
 
 ## 계층과 소유
 

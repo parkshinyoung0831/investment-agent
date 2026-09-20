@@ -9,7 +9,7 @@
 
 수집 원천에서 네 저장소까지, 무엇이 어디로 들어가는지.
 
-*소스: `docs/diagrams/src/pipeline.dataflow.json` — 그림을 고치려면 이 파일을 고치고 `python scripts/build_diagrams.py`.*
+*소스: `docs/diagrams/src/pipeline.dataflow.json` — 그림을 고치려면 이 파일을 고치고 `python scripts/build_diagrams.py`. 본문 폭에서는 글자가 작다 — 이미지를 눌러 원본으로 보거나 `docs/diagrams/html/pipeline.html`을 브라우저로 연다.*
 
 ```mermaid
 flowchart LR

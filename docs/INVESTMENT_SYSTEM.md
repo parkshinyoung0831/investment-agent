@@ -10,7 +10,7 @@
 
 어떤 근거가 어떤 순서로 신호가 되는지.
 
-*소스: `docs/diagrams/src/trading-analysis.dataflow.json` — 그림을 고치려면 이 파일을 고치고 `python scripts/build_diagrams.py`.*
+*소스: `docs/diagrams/src/trading-analysis.dataflow.json` — 그림을 고치려면 이 파일을 고치고 `python scripts/build_diagrams.py`. 본문 폭에서는 글자가 작다 — 이미지를 눌러 원본으로 보거나 `docs/diagrams/html/trading-analysis.html`을 브라우저로 연다.*
 
 ```text
 DATA (재무·가격·밸류에이션·추정치·거시·공시·사건)
@@ -546,7 +546,7 @@ ML/RL/TradingAgents output은 다음 계약으로 정규화한다.
 
 신호가 위험예산·optimizer·RiskGate를 지나 목표 비중이 되는 경로.
 
-*소스: `docs/diagrams/src/trading-target.dataflow.json` — 그림을 고치려면 이 파일을 고치고 `python scripts/build_diagrams.py`.*
+*소스: `docs/diagrams/src/trading-target.dataflow.json` — 그림을 고치려면 이 파일을 고치고 `python scripts/build_diagrams.py`. 본문 폭에서는 글자가 작다 — 이미지를 눌러 원본으로 보거나 `docs/diagrams/html/trading-target.html`을 브라우저로 연다.*
 
 `RiskAwareOptimizer`는 CVXPY로 다음 목적을 결정론적으로 최적화한다.
 

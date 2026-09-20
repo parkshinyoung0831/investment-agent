@@ -8,7 +8,6 @@ CI·로컬 어디서나 돈다 — 괄호가 안 맞거나 예약어를 잘못 �
 """
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 from pglast import parser

@@ -10,7 +10,7 @@ fundamentals 원장은 안 건드림.
 """
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from investment_agent.config import load_config
@@ -56,11 +56,6 @@ class _V1Client:
 
 
 v1 = _V1Client()
-
-
-def database_for_config(config: Any | None = None) -> Database:
-    """알림 실행기가 공유할 v1 reporting 연결을 만든다."""
-    return Database.from_config(config or load_config())
 
 
 def select_all_paged(factory: Any, *, order_by: str | None = None) -> list[dict]:

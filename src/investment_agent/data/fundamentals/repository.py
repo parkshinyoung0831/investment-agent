@@ -22,11 +22,10 @@ SEC CompanyFacts는 등록인(CIK) 단위로 온다. 한 CIK에 상장 종목이
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from datetime import date, datetime
+from datetime import date
 from typing import Any
 
 from investment_agent.data.fundamentals.domain.filings import Filing, filing_row
-from investment_agent.platform.clock import as_date
 from investment_agent.platform.db.postgres import Database
 from investment_agent.platform.logging import get_logger
 

@@ -8,6 +8,7 @@ from investment_agent.data.fundamentals.domain.services.balance_identity import 
     non_liability_claims,
     source_scope,
 )
+from investment_agent.data.fundamentals.domain.policies import NON_NEGATIVE_FLOW_COLUMNS
 from investment_agent.data.fundamentals.domain.taxonomy import gaap_concepts as concepts
 from investment_agent.data.fundamentals.domain.taxonomy.financial_columns import (
     BALANCE_COLUMNS,
@@ -683,9 +684,17 @@ def _standalone_duration_value(current: dict, previous: dict) -> float | None:
 
 
 def _q4_duration_value(fy: dict, quarters: list[dict]) -> float | None:
-    """FY와 Q1~Q3에서 Q4 단독 값을 복원한다."""
+    """FY와 Q1~Q3에서 Q4 단독 값을 복원한다. 복원할 수 없으면 `None`.
+
+    음수가 될 수 없는 유량이 음수로 복원되면 값을 만들지 않는다. 음수 Q4는 실제 분기가 아니라
+    FY와 분기가 다른 기준(스핀오프 재작성·기간마다 다른 태그)이라는 증거이고, 그대로 저장하면
+    매출이 -25.7B인 분기가 카드에 나간다.
+    """
     if fy["column_key"] not in _AVERAGE_SHARE_COLUMNS:
-        return fy["value"] - sum(row["value"] for row in quarters)
+        value = fy["value"] - sum(row["value"] for row in quarters)
+        if value < 0 and fy["column_key"] in NON_NEGATIVE_FLOW_COLUMNS:
+            return None
+        return value
 
     fy_days = _duration_days(fy)
     quarter_days = [_duration_days(row) for row in quarters]

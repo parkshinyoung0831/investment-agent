@@ -308,6 +308,28 @@ class DiagramArtifactTest(unittest.TestCase):
             "SVG는 생성물이라 손으로 고치지 않는다",
         )
 
+    def test_readme_diagrams_stay_narrow_enough_to_read(self) -> None:
+        """루트 README의 그림은 설명 없이 본문에서 그대로 읽혀야 한다.
+
+        Archify는 1440px 뷰포트로 가독성을 검사하지만 GitHub 본문은 약 830px다. Markdown이
+        SVG를 그 폭에 맞춰 줄이므로 `viewBox` 폭이 곧 글자 크기가 된다 — 넓히면 오류 없이
+        글자만 조용히 작아진다. 다른 그림은 `html/`로 넘길 수 있지만 README는 첫 화면이다.
+        """
+        import re
+
+        oversized: list[str] = []
+        for stem in ("overview", "promotion-ladder"):
+            svg = self.SVG / f"{stem}.svg"
+            self.assertTrue(svg.exists(), f"{svg.name} 없음 — build_diagrams.py 를 돌려라")
+            box = re.search(
+                r'viewBox="0 0 ([\d.]+) ', svg.read_text(encoding="utf-8", errors="replace")
+            )
+            self.assertIsNotNone(box, f"{svg.name}: viewBox 없음")
+            width = float(box.group(1))
+            if width > 880:
+                oversized.append(f"{stem} {width:.0f} > 880")
+        self.assertEqual([], oversized, "python scripts/check_diagram_width.py 로 실제 글자 크기를 봐라")
+
     def test_every_diagram_source_has_a_delivered_html(self) -> None:
         """JSON만 커밋하고 빌드를 안 돌리면 문서가 없는 그림을 가리킨다."""
         orphan = [
