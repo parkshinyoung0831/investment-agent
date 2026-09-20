@@ -657,6 +657,13 @@
 - 변경: `contracts.py`는 `run_context.STAGES`를, `promote_model`은 `PROMOTION_PATH[1:]`(shadow는 시작점이라 목표가 될 수 없다)을 쓴다. 동작은 같다.
 - 가드: `tests/investment_agent/trading/test_stage_vocabulary.py`가 단계 이름 4개 이상을 담은 set·tuple·list 리터럴이 원본 두 파일 밖에 있으면 실패시킨다. 복제 두 곳이 남은 상태에서 RED였고, 정리 뒤 통과한다. `promote_model.py`에 복사 목록을 넣는 주입은 실패함을 확인하고 원복했다. 원본이 사라지면 가드가 공허해지지 않도록 원본 두 곳의 존재도 단언한다.
 
+#### 배치 H5 — 쓰이지 않는 RL challenger 제안 빌더 삭제 (2026-09-20)
+
+- Ruling: 배치 F에서 사용자 판단 대기로 남긴 `rl_challenger_proposal`을 삭제한다. src 호출자가 0이고 테스트만 부르던 코드다. 사용자가 "지워야 할 것들을 지워 달라"고 요청했다.
+- 삭제: `trading/portfolio/rl_challenger.py`, 그 전용 테스트 `test_rl_challenger.py`(3개), `research/rl/test_baseline.py`의 끝 연결 검증(baseline 비중을 이 함수에 통과시켜 `execution_eligible=False`·`partial_universe`를 확인하던 8줄과 그 import). `test_baseline`의 나머지 검증은 그대로다.
+- 안전 경계: 이 함수가 붙이던 `execution_eligible=False`는 안전을 강제하던 것이 아니다. 강제는 `create_execution_intent`와 `request_toss_approval`이 `execution_eligible is True`를 요구하는 쪽이 하고, 플래그가 없는 제안은 거기서 거절된다. 그래서 삭제로 실행 게이트는 느슨해지지 않는다. 나중에 RL challenger 제안이 필요해지면 `PortfolioProposal.create(source_type="rl", …)`를 부르는 자리는 그때의 호출자에 두면 된다.
+- 남은 `data/news/` 실패는 사용자가 디렉터리를 지워 해소됐다.
+
 ## 향후 milestone
 
 | 묶음 | 해당 phase | 독립 완료 조건 |
