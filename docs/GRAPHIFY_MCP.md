@@ -1,4 +1,4 @@
-# Graphify MCP Server 연동 가이드
+# Graphify MCP Server — 코드 지식 그래프 연동 가이드
 
 이 문서는 이 저장소의 지식 그래프(`graphify-out/graph.json`)를 MCP(Model Context Protocol) 서버로 노출하여, AI 에이전트(Google Antigravity, Claude Desktop, Cursor 등)가 네이티브 도구 호출로 코드베이스 구조를 질의할 수 있도록 설정하는 방법을 설명합니다.
 

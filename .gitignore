@@ -33,6 +33,8 @@ graphify-out/.vocab.txt
 graphify-out/cost.json
 graphify-out/memory/
 graphify-out/reflections/
+graphify-out/GRAPH_CALLFLOW.html
+graphify-out/GRAPH_TREE.html
 
 # 개발 도구의 개인 PC 전용 훅 설정
 .claude/settings.json
