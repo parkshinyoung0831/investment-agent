@@ -622,6 +622,13 @@
 - 테스트·문서: `test_gateway_in_chunks.py`를 reporting 테스트로 옮기고 dashboard 로더 테스트·소스 경로 참조 테스트 3개를 새 위치로 갱신했다. CLAUDE.md·`docs/README.md`·reporting/dashboard README·`scripts/verify_integration.py`를 새 구조로 고쳤다. 전체 suite 3,109 중 실패 1건은 사용자 동시 작업 `data/news/`를 금지하는 intelligence 가드다.
 - 결과: dashboard 패키지에는 저장소 접근 코드가 0개다. dashboard→notifications 1건(earnings 카드 미리보기)만 의도적 예외로 남는다.
 
+#### 최종 검증 (2026-09-20, G1~G5 종료 시점)
+
+- 실제 import 행렬(AST 계산): `research → trading`은 `research/system_validation/ablation.py` 한 파일뿐이다. `trading → reporting`, `reporting → notifications`은 0건이다. `trading → research`는 공개 계약 `research/adapters/trading.py`만 거친다. `dashboard`는 저장소 접근 코드가 0개이고 `dashboard → notifications`는 earnings 카드 미리보기 한 파일이다. `execution`은 platform과 최상위 공유 모듈만 안다.
+- 남은 예외: 시스템 검증 6개 import, 위 dashboard→notifications 1건, Trading 원장 위임 15개(호출자가 데이터 읽기와 같은 `repository` 객체를 받아 분리하려면 시그니처가 넓게 바뀐다), execution의 독립 비중 검증.
+- 규모: `.py` 721개. 처음 기준 이후 커밋 74개. `SupabaseRepository`는 약 1,340줄에서 300줄이 됐고 PIT 읽기 635줄은 `research/evidence/reader.py`, 후보 선정 470줄은 `trading/decision/candidates.py`로 갔다.
+- 테스트: 전체 3,109 중 실패 1건은 사용자 동시 작업 `data/news/`를 금지하는 intelligence 가드다. 그 디렉터리를 제외하면 모두 통과한다.
+
 ## 향후 milestone
 
 | 묶음 | 해당 phase | 독립 완료 조건 |
