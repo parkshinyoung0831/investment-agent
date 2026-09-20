@@ -1,181 +1,70 @@
-# Investment Agent — S&P 500 투자 분석 파이프라인과 Discord 알림
+# Investment Agent — 근거가 갖춰졌을 때만 주문이 되는 미국 주식 시스템
 
-**Point-in-time 데이터 → 검증 가능한 신호 → 결정론적 위험 제한, 그다음에야 주문 후보가 되는
-미국 주식 투자 연구·운용 시스템.**
+**공개 데이터 → 같은 시점 기준의 근거 → 검증 가능한 신호 → 결정론적 위험 한도 → 사람 승인.
+이 순서를 전부 통과한 것만 주문 후보가 됩니다.**
 
-미국 주식의 일별·중기 투자를 연구하고 단계적으로 운용하기 위한 실험적 시스템입니다. 이 프로젝트의
-목표는 "LLM이 알아서 주문하는 봇"이 아닙니다. 신뢰할 수 있는 데이터가 같은 시점 기준의 feature와
-검증 가능한 신호가 되고, 수학적 포트폴리오 구성과 결정론적 위험 제한을 거쳐서만 주문 후보가 되게
-만드는 것이 목표입니다. SEC EDGAR·yfinance·FRED·ECOS·EIA 같은 공개 데이터와 명시된 provider만
-쓰고, LLM은 분석과 설명을
-맡을 뿐 최종 비중과 위험 한도는 항상 결정론적 코드가 정합니다.
-
-> Python 3.11 · Supabase(Postgres) · GitHub Actions · experimental research software
+`Python 3.11` · `Supabase(Postgres)` · `GitHub Actions` · 실험적 연구 소프트웨어
 
 > [!WARNING]
-> Live 주문은 기본 차단입니다. 설치·테스트·모델 실행 중 어느 것도 차단 플래그를 열지
-> 않으며, `LIVE_ENABLED`·`TOSS_LIVE_ENABLED`는 사람이 명시적으로 켭니다.
+> **실주문은 기본 차단입니다.** 설치·테스트·모델 실행 중 어느 것도 차단 플래그를 열지 않으며,
+> `LIVE_ENABLED`·`TOSS_LIVE_ENABLED`는 사람이 명시적으로 켭니다.
 
-**목차**: [아키텍처](#아키텍처) · [먼저 알아야 할 현재 상태](#먼저-알아야-할-현재-상태) ·
-[핵심 안전 원칙](#핵심-안전-원칙) · [각 계층이 하는 일](#각-계층이-하는-일) ·
-[Repository 구조](#repository-구조) · [빠른 시작](#빠른-시작) ·
-[안전한 첫 실행 순서](#안전한-첫-실행-순서) · [자주 쓰는 명령](#자주-쓰는-명령) ·
-[문서](#문서)
+---
 
-## 아키텍처
+## 한눈에
 
-```mermaid
-flowchart TD
-    A["외부 데이터 수집<br/>(SEC · yfinance · FRED/ECOS/EIA)"] --> B[("Supabase<br/>Point-in-Time 도메인 데이터")]
-    B --> C["EvidenceBundle / FeatureBundle"]
-    A --> O["GitHub Actions 원문 로그"]
-    O --> S["Discord #시스템-로그<br/>장애·복구·heartbeat"]
+![Investment Agent 한눈에](docs/diagrams/svg/overview.svg)
 
-    C --> D1["ML<br/>expected-return baseline"]
-    C --> D2["RL<br/>(PPO 등 연구 policy)"]
-    C --> D3["Qlib<br/>research workflow"]
-    C --> D4["TradingAgents<br/>정성 분석"]
+공개 데이터가 네 저장소에 쌓이고, 같은 시점 기준의 근거가 신호와 목표 비중이 됩니다.
+그 뒤 **빨간 점선 안쪽**이 이 프로젝트의 요점입니다 — 결정론적 위험 한도와 사람 승인을
+통과하지 못한 것은 주문이 되지 않습니다. 화면과 알림은 저장소를 직접 열지 않고 읽기 모델만
+지나갑니다.
 
-    D1 --> E["ExpectedReturnSignal"]
-    D2 --> E
-    D3 --> E
-    D4 --> E
+패키지 단위의 자세한 구조와 **허용되는 의존 방향**은
+[시스템 아키텍처](docs/SYSTEM_ARCHITECTURE.md)에 있습니다.
 
-    E --> F["CVXPY Portfolio Optimizer"]
-    F --> G{"DeterministicRiskGate"}
-    G --> H["Native Backtest<br/>+ LumiBot 외부 검증"]
-    H --> I["BACKTEST → SHADOW → PAPER →<br/>LIVE_MANUAL → LIVE_AUTONOMOUS"]
-    I --> J["ExecutionIntent"]
-    J --> K["승인 / durable permit"]
-    K --> L1["TossOrderApi<br/>(토스 단일 실행)"]
-```
+## 왜 이렇게 만들었는가
 
-데이터가 위에서 아래로 한 방향으로만 흐른다 — 상위 결과가 하위 결정에 영향을 줄 수는 있어도(예:
-RiskGate 통과 실패 → 재구성), 실행 계층이 신호나 evidence를 거꾸로 고쳐 쓰지 않는다. Toss는
-`TossOrderApi`를 직접 호출하는 단일 증권사 경로를 사용한다 —
-자세한 경계는 [src/investment_agent/execution/README.md](src/investment_agent/execution/README.md)를 참고한다.
+"LLM이 알아서 주문하는 봇"이 아닙니다. 아래 다섯 가지가 이 저장소의 설계를 결정했고, 전부
+테스트가 강제합니다.
 
-## 먼저 알아야 할 현재 상태
+| 원칙 | 구체적으로 | 어디가 강제하는가 |
+|---|---|---|
+| **LLM에는 비중 결정 권한이 없다** | 논지·토론·거부권만 행사합니다. 목표 비중은 CVXPY optimizer가, 절대 한도(종목 10% 등)는 `DeterministicRiskGate`가 정합니다 | `trading/risk/gate.py` |
+| **과거를 아는 채로 과거를 풀지 않는다** | cutoff `t`에서는 `available_at <= t`인 데이터만 씁니다. 시점 이력을 증명할 수 없으면 현재 값을 과거로 소급하지 않습니다 | `research/evidence/` |
+| **보내기 전에 기록한다** | 주문은 전송 전에 원장에 예약됩니다. 타임아웃·5xx는 실패가 아니라 *결과 불명*이고, 되물어 확인하기 전에는 **자동 재주문하지 않습니다** | `execution/orders/ledger.py` |
+| **자동으로 승격되지 않는다** | 단계는 한 번에 한 칸씩만 올라가고, 마지막 칸은 결정적 증거 게이트를 통과해야 합니다 | `execution/orders/lifecycle.py` |
+| **화면은 저장소를 열지 않는다** | 대시보드와 알림은 `reporting` 읽기 모델만 소비합니다. Supabase RPC 경로는 allowlist로 거르는 게 아니라 **코드에 존재하지 않습니다** | `reporting/readers/select_only.py` |
 
-코드가 존재하는 것과 실제 운용 준비가 끝난 것은 다릅니다.
+## 어디까지 올라갈 수 있는가
 
-- Macro는 현재 시장 상태 시계열만 제공하며 시장 상태의 point-in-time 이력이 없습니다.
-  따라서 historical replay에서는 macro evidence를 제외합니다. 기업 재무는
-  `financial_versions`의 accession별 버전과 `filings` provenance를 읽고, 공시일·사용
-  가능 시각·적재 시각 cutoff를 함께 적용합니다.
-- Native backtester, optimizer, deterministic risk, Shadow 및 execution 안전 원장은 구현·테스트됐습니다.
-- LumiBot, Qlib, LightGBM/XGBoost, Stable-Baselines3는 선택 기능입니다. adapter 테스트 통과가 실제
-  장기간 모델 성과를 뜻하지 않습니다.
-- 증권사 주문 연결은 토스만 지원합니다. 외부 증권사 모의주문은 제공하지 않습니다.
-- Live와 Live Autonomous는 기본 비활성입니다. 이 저장소의 설치나 모델 실행이 안전 스위치를 자동으로
-  열지 않습니다.
+![운영 승격 사다리](docs/diagrams/svg/promotion-ladder.svg)
 
-수집·알림 실패는 GitHub Actions 원문 로그와 Discord `#시스템-로그`를 우선하고, 로컬 하네스 상태만
-아래 명령으로 확인합니다.
+`live_autonomous`로 올라가려면 out-of-sample 120일·walk-forward 6구간·paper 60일 증거와
+Sharpe 0.5 이상, 최대 낙폭 15% 이내, 그리고 실행·대사·위험·데이터품질 **사고 0건**이 필요합니다.
+kill switch 테스트와 broker 대사도 통과해야 하고, 주문 한도 5종이 하나라도 비어 있으면 거절됩니다.
+판정은 증거 해시와 함께 남아 나중에 근거를 되짚을 수 있습니다.
 
-```powershell
-python -m investment_agent.operations.commands.harness_switch --status
-```
+기준값의 출처는 이 문서가 아니라 `AutonomyCriteria`입니다.
 
-## 핵심 안전 원칙
+## 지금 실제로 돌아가는 것
 
-1. 과거 cutoff `t`에서는 `available_at <= t`인 데이터만 사용합니다.
-2. point-in-time 이력을 증명할 수 없으면 current 값을 과거로 소급하지 않습니다.
-3. Backtest V1과 historical RL 학습에서는 뉴스·소셜을 사용하지 않습니다.
-4. 뉴스·소셜 원문은 Supabase가 아니라 로컬 DuckDB에 기사 단위로 최대 90일만 보관하고,
-   ResearchStore에는 feature·label·training sample·valuation과 `build_events`가 만든
-   사건·event feature 같은 재계산 가능한 파생물만 남깁니다.
-5. LLM은 분석·토론·설명·signal을 생성하지만 최종 비중과 hard risk limit을 결정하지 않습니다.
-6. optimizer가 목표 비중을 계산하고 RiskGate가 다시 절대 한도를 강제합니다.
-7. AI 계층은 broker credential, durable control, approval secret에 접근하지 않습니다.
-8. timeout/5xx 뒤 주문 성공 여부가 불명확하면 자동 재주문하지 않습니다.
-9. broker가 execution truth이며 내부 장부는 broker와 reconciliation합니다.
-10. kill switch, lockdown, account binding과 주문 한도는 autonomous mode에서도 해제되지 않습니다.
+코드가 있다는 것과 운용 준비가 끝난 것은 다릅니다.
 
-불변 규칙의 SSOT는 [Trading Constitution](src/investment_agent/trading/CONSTITUTION.md)입니다.
+| | 상태 |
+|---|---|
+| 수집 파이프라인 | **운영 중** — GitHub Actions cron 36개가 universe·market·fundamentals·macro·institutional을 적재 |
+| Discord 알림 | **운영 중** — 12종(PNG 대시보드 카드 + Embed), 중복 방지 원장이 발송 전에 선점 |
+| 대시보드 | **운영 중** — 읽기 전용 Streamlit |
+| backtester · optimizer · RiskGate · 실행 안전 원장 | **구현·테스트 완료** |
+| Live / Live Autonomous | **기본 비활성** — 사람이 켜기 전에는 열리지 않음 |
+| LumiBot · Qlib · LightGBM/XGBoost · Stable-Baselines3 | **선택 기능** — adapter 테스트 통과가 장기 성과를 뜻하지 않음 |
+| 증권사 연결 | **토스 단일 경로** — 외부 모의주문 없음 |
 
-## 각 계층이 하는 일
-
-### 1. 데이터 수집과 Supabase
-
-`src/investment_agent/data/`의 universe·market·fundamentals·macro·institutional 도메인이
-외부 원천을 수집하고, `research/features`가 저장된 원천으로 Research feature를 계산합니다.
-각 도메인은 자기 저장소 경계에서만 Supabase를 조회하며 투자·분석에 필요한 도메인 사실만 저장합니다. 실행 실패, 예외 문구, 재시도 이력과 품질
-진단은 DB에 쓰지 않고 GitHub Actions 원문 로그와 Discord `#시스템-로그`에 남깁니다.
-
-`macro.market_observations`는 현재 시장 상태 시계열이고, 경제지표 발표는
-`macro.economic_observations`가 따로 갖습니다. historical replay에서 point-in-time 이력이
-필요한 macro evidence는 제공하지 않습니다. 기업 재무의 원장 진실 공급원은
-`fundamentals.financials`와 `fundamentals.filings`이며, 과거 조회는
-`filed_at`·`available_at`·`ingested_at` cutoff를 사용합니다.
-
-### 2. Evidence와 Feature
-
-`ContextBuilder`는 ticker와 timezone-aware cutoff를 받아 가격, 기술, 재무, 예상, 거시, 일정, 기관
-근거를 하나의 `EvidenceBundle`으로 조립합니다. 없는 데이터는 0으로 채우지 않고
-`missing_data`에 기록합니다.
-
-`FeatureLayer`는 같은 bundle에서 학습과 live inference가 공유하는 versioned feature를 만듭니다.
-feature hash, source version, observed/available time을 보존해 training-serving skew를 줄입니다.
-
-### 3. 후보 선정과 AI 분석
-
-S&P 500 전체를 LLM에 보내지 않습니다. 현재 tracked universe에서 가장 오래 분석되지 않은 종목을
-우선하고, 같은 coverage 집단 안에서 구조화 데이터의 변화가 큰 종목을 먼저 분석합니다. 후보 점수는
-매수 점수가 아니라 **분석 순서**입니다.
-
-TradingAgents는 분석가 5명(market · fundamentals · news · sentiment · macro) → Bull/Bear 토론 →
-Research Manager → Trader → 위험 3자 토론 → Portfolio Manager 순으로 고정 실행해
-structured `SecurityProposal`을 만듭니다. 외부 뉴스·소셜은 untrusted evidence로 표시하고 prompt
-injection 표현을 제거합니다.
-
-### 4. 모델과 포트폴리오
-
-ML, RL, LLM 결과는 `ExpectedReturnSignal`로 정규화됩니다. CVXPY optimizer는 expected return,
-confidence, covariance risk, turnover와 명시적 제약을 사용합니다. LLM output의 호환용
-`target_weight`는 optimizer가 읽지 않습니다.
-
-결과 `PortfolioProposal`은 종목·섹터·현금·turnover·concentration·volatility·beta·staleness 등을
-검사하는 `DeterministicRiskGate`를 반드시 통과합니다.
-
-### 5. 검증과 실행
-
-Native backtest는 t일 종가 이후 생성된 목표 비중을 다음 trading session의 시가에 체결합니다.
-LumiBot adapter는 같은 input manifest를 받아 독립 검증 결과를 비교합니다.
-
-Shadow는 실제 시장 시각에 판단과 실행 가능한 manifest까지 만들지만 주문하지 않습니다.
-Paper는 연구·승격 증거 단계로 유지하며 외부 모의주문을 실행하지 않습니다.
-Live Manual은 Discord HMAC 승인 뒤에도 계좌·시세·시장시간·한도를 다시 확인합니다. Live Autonomous는
-장기간 OOS/Paper와 무사고 증거로 발급된 durable permit이 추가로 필요합니다.
-
-## Repository 구조
-
-```text
-src/investment_agent/
-  data/                    universe · market · fundamentals · macro · institutional
-  intelligence/            뉴스·소셜 원문과 종목 언급 (로컬 DuckDB)
-  research/                features · factors · datasets · models · evaluation ·
-                           evidence(PIT 읽기) · backtest · rl · strategies · adapters
-  trading/                 decision · evidence · portfolio · risk · system · performance
-  execution/               승인 · broker · 주문 · fill · reconciliation · safety
-  reporting/               화면과 알림이 공유하는 읽기 모델 (SELECT 전용)
-  notifications/           engine(원장) · Discord 카드 · 채널 · discord_admin
-  operations/              운영 관측 · Actions · heartbeat · 운영 CLI · 로컬 하네스
-  platform/                DB · clock · logging · retry · serialization · cache · usage ledger
-  dashboard/               읽기 전용 Streamlit 화면
-db/                        postgres · sqlite(runtime) · duckdb(research · intelligence) 선언
-.github/workflows/         GitHub Actions ETL·알림·CI
-docs/                      현재 아키텍처와 운영 설명, diagrams/ 다이어그램 소스와 생성물
-data/local/                Git에 넣지 않는 재생성 가능 DuckDB cache
-artifacts/                 Git에 넣지 않는 모델·실행 산출물
-```
-
-계층 사이에 허용되는 화살표와 그 단일 예외들은
-[시스템 아키텍처](docs/SYSTEM_ARCHITECTURE.md)가 갖는다.
+알아 둘 한계 하나: macro는 현재 시장 상태 시계열만 있고 시점 이력이 없어, historical replay에서는
+macro 근거를 제외합니다.
 
 ## 빠른 시작
-
-Python 3.11을 기준으로 합니다.
 
 ```powershell
 python -m pip install uv==0.12.10
@@ -184,84 +73,98 @@ Copy-Item .env.example .env
 python -m unittest discover -s tests -t .
 ```
 
-로컬 화면과 하네스 제어는 루트 실행기에서 엽니다. 인자 없이 실행하면 `운영 제어센터`와
-`점검·개발 도구`만 보이는 간결한 메뉴가 열립니다. 운영 제어센터는 상태·모드 선택·시작·안전
-정지와 대시보드 시작/열기를 제공하며, 변경 작업은 `harness_switch` 단일 진입점으로만 전달합니다.
+로컬 화면과 하네스 제어는 루트 실행기 하나로 엽니다.
 
 ```powershell
-run.bat
-# 운영 제어센터를 바로 실행
-run.bat --control-center
-# 읽기 전용 대시보드만 실행
-run.bat --dashboard
+run.bat                      # 대화형 메뉴
+run.bat --control-center     # 운영 제어센터
+run.bat --dashboard          # 읽기 전용 대시보드
 ```
 
-연구 기능이 필요할 때만 선택 의존성을 설치합니다.
+연구 기능은 필요할 때만 설치합니다. `research` group은 Qlib·LumiBot을 포함해 무겁고, core
+ETL·risk·execution 테스트에는 필요 없습니다.
 
 ```powershell
-uv sync --group ml
-uv sync --group rl
-uv sync --group research
+uv sync --group ml       # LightGBM · XGBoost
+uv sync --group rl       # Stable-Baselines3
+uv sync --group research # Qlib · LumiBot
 ```
-
-`research` group은 Qlib와 LumiBot을 포함해 무겁습니다. core ETL, risk, execution 단위
-테스트에는 필요하지 않습니다.
 
 ## 안전한 첫 실행 순서
 
+한 번에 LLM·Paper·broker를 켜지 않습니다. 위에서부터 하나씩 확인합니다.
+
 ```powershell
-# 1. 코드만 오프라인 검증
+# 1. 네트워크 없이 코드만 검증
 python -m compileall -q src tests
 python -m unittest discover -s tests -t .
 
 # 2. DB 도메인 데이터 불변식 확인
 python scripts/verify_data.py
 
-# 3. GitHub Actions와 Discord #시스템-로그에서 최근 장애를 확인한 뒤,
-#    LLM 없이 단일 ticker evidence와 계약 확인
+# 3. LLM 없이 단일 종목 근거와 계약만 확인
 python -m investment_agent.trading.decision.analysis --ticker AAPL --dry-run
 
 # 4. 하네스와 거래 차단 상태 확인
 python -m investment_agent.operations.commands.harness_switch --status
 ```
 
-실제 LLM Shadow, Paper, broker 연결은 한 번에 진행하지 않습니다. 설치와 상태 확인은
-[운영](docs/OPERATIONS.md), 단계별 주문 안전은
-[실행과 안전](docs/EXECUTION_AND_SAFETY.md)을 따릅니다.
+수집·알림 실패는 GitHub Actions 원문 로그와 Discord `#시스템-로그`가 먼저입니다.
 
 ## 자주 쓰는 명령
 
 ```powershell
-# 현재 tracked universe에서 최대 5개 Shadow 후보 분석
+# tracked universe에서 최대 5개 Shadow 후보 분석
 python -m investment_agent.trading.decision.analysis --limit 5
 
 # 성숙한 판단 평가
 python -m investment_agent.operations.commands.evaluate_decisions --limit 200
 
-# 뉴스·소셜 cache 90일 retention
-python -m investment_agent.intelligence.commands.prune_evidence_cache
+# System Portfolio 목표 갱신과 성과 요약 (주문 없음)
+python -m investment_agent.operations.commands.system_portfolio --summary
 
 # JSON manifest 기반 Native backtest
 python -m investment_agent.research.backtest.cli --input <INPUT.json> --output <OUTPUT.json>
 
-# System Portfolio 평가·목표 갱신과 성과 요약(주문 없음)
-python -m investment_agent.operations.commands.system_portfolio --summary
+# 뉴스·소셜 cache 90일 retention
+python -m investment_agent.intelligence.commands.prune_evidence_cache
 ```
 
-model promotion, execution intent, approval 명령은 ID와 실제 데이터 상태가
-필요합니다. 예제 문자열을 그대로 실행하지 말고 각 주제 문서의 선행 조건을 먼저 확인합니다.
+model promotion·execution intent·approval 명령은 실제 ID와 데이터 상태가 필요합니다. 예제
+문자열을 그대로 실행하지 말고 각 주제 문서의 선행 조건을 먼저 확인하세요.
+
+## 구조
+
+```text
+src/investment_agent/
+  data/            universe · market · fundamentals · macro · institutional 수집
+  intelligence/    뉴스·소셜 원문과 종목 언급 (로컬 DuckDB, 90일)
+  research/        feature · 팩터 · dataset · 모델 · 평가 · backtest · PIT 근거
+  trading/         사건 우선순위 · 논지 · ALPHA · optimizer · RiskGate · System Portfolio
+  execution/       승인 → 주문 → broker → 대사, 그 옆에서 safety가 감시
+  reporting/       화면과 알림이 공유하는 읽기 모델 (SELECT 전용)
+  notifications/   중복 방지 원장 · 카드 · Embed · Discord
+  dashboard/       읽기 전용 Streamlit 화면
+  operations/      최외곽 조립 · 스케줄 · 감시 · CLI 진입점
+  platform/        DB · clock · logging · retry · serialization · cache
+db/                Postgres · SQLite(runtime) · DuckDB(research · intelligence) 선언
+.github/workflows/ ETL · 알림 · CI
+docs/              주제 문서와 diagrams/(src · svg · html)
+```
+
+계층 사이에 **허용되는 화살표와 그 단일 예외들**은
+[시스템 아키텍처](docs/SYSTEM_ARCHITECTURE.md)가 갖고, `test_architecture.py`가 강제합니다.
 
 ## 문서
 
-**[docs/README.md](docs/README.md) 하나만 열면 됩니다.** 목적별로 읽을 문서 하나씩을
-가리키는 지도이고, 주제 문서·package README 전체 목록이 거기에 있습니다.
+**[docs/README.md](docs/README.md) 하나만 열면 됩니다.** 목적별로 읽을 문서 하나씩을 가리키는
+지도이고, 주제 문서와 package README 전체 목록이 거기에 있습니다.
 
-바로 가고 싶다면:
+바로 가고 싶다면 — [시스템 아키텍처](docs/SYSTEM_ARCHITECTURE.md) ·
+[저장 지도](docs/STORAGE_MAP.md) · [실행과 안전](docs/EXECUTION_AND_SAFETY.md) ·
+[운영](docs/OPERATIONS.md)
 
-- 전체 구조와 허용되는 의존 방향 — [시스템 아키텍처](docs/SYSTEM_ARCHITECTURE.md)
-- 어떤 사실이 네 저장소 중 어디에 사는가 — [저장 지도](docs/STORAGE_MAP.md)
-- 승인·broker·단계별 안전장치 — [실행과 안전](docs/EXECUTION_AND_SAFETY.md)
-- 설치·Actions·하네스·장애 대응 — [운영](docs/OPERATIONS.md)
+개발 규칙은 [CLAUDE.md](CLAUDE.md), UI 규칙은 [DESIGN-system.md](DESIGN-system.md),
+넘지 않는 선은 [Trading Constitution](src/investment_agent/trading/CONSTITUTION.md)입니다.
 
-개발 규칙은 [CLAUDE.md](CLAUDE.md), UI 규칙은 [DESIGN-system.md](DESIGN-system.md)입니다.
 API key와 broker credential은 커밋하지 않습니다.

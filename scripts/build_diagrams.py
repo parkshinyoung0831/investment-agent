@@ -24,9 +24,11 @@ DIAGRAMS = [
     ("dataflow", "pipeline.dataflow.json", "pipeline.html"),
     ("dataflow", "trading-analysis.dataflow.json", "trading-analysis.html"),
     ("dataflow", "trading-target.dataflow.json", "trading-target.html"),
+    ("lifecycle", "promotion-ladder.lifecycle.json", "promotion-ladder.html"),
     ("lifecycle", "execution-lifecycle.lifecycle.json", "execution-lifecycle.html"),
     ("workflow", "execution-runbook.workflow.json", "execution-runbook.html"),
     ("sequence", "earnings-pipeline.sequence.json", "earnings-pipeline.html"),
+    ("architecture", "overview.architecture.json", "overview.html"),
     ("architecture", "system-architecture.architecture.json", "system-architecture.html"),
 ]
 

@@ -1,0 +1,264 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Investment Agent — 한눈에",
+    "output": "overview.html",
+    "quality_profile": "showcase",
+    "animation": "trace",
+    "viewBox": [
+      860,
+      620
+    ],
+    "views": [
+      {
+        "id": "path",
+        "label": "데이터에서 주문까지",
+        "focus": [
+          "sources",
+          "stores",
+          "research",
+          "decide",
+          "risk",
+          "approval",
+          "broker"
+        ],
+        "note": "공개 데이터가 근거와 신호를 거쳐 주문이 되기까지, 중간에 두 개의 게이트를 지납니다."
+      },
+      {
+        "id": "gates",
+        "label": "넘지 못하는 두 자리",
+        "focus": [
+          "decide",
+          "risk",
+          "approval",
+          "broker"
+        ],
+        "note": "결정론적 위험 한도와 사람 승인. 둘 다 통과하지 못한 것은 주문이 되지 않습니다."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "sources",
+      "type": "external",
+      "label": "공개 금융 데이터",
+      "sublabel": "SEC · yfinance · FRED",
+      "pos": [
+        20,
+        50
+      ],
+      "size": [
+        180,
+        74
+      ],
+      "tag": "외부"
+    },
+    {
+      "id": "stores",
+      "type": "database",
+      "label": "저장소 4곳",
+      "sublabel": "Supabase · SQLite · DuckDB ×2",
+      "pos": [
+        230,
+        50
+      ],
+      "size": [
+        180,
+        74
+      ],
+      "tag": "적재"
+    },
+    {
+      "id": "research",
+      "type": "backend",
+      "label": "근거 · Feature",
+      "sublabel": "같은 시점 기준으로만",
+      "pos": [
+        440,
+        50
+      ],
+      "size": [
+        180,
+        74
+      ],
+      "tag": "연구"
+    },
+    {
+      "id": "decide",
+      "type": "backend",
+      "label": "신호 · 목표 비중",
+      "sublabel": "LLM 논지 + ML + 팩터",
+      "pos": [
+        650,
+        50
+      ],
+      "size": [
+        180,
+        74
+      ],
+      "tag": "판단"
+    },
+    {
+      "id": "surface",
+      "type": "frontend",
+      "label": "화면 · 알림",
+      "sublabel": "읽기 전용 경로로만",
+      "pos": [
+        230,
+        240
+      ],
+      "size": [
+        180,
+        74
+      ],
+      "tag": "소비"
+    },
+    {
+      "id": "risk",
+      "type": "security",
+      "label": "위험 한도",
+      "sublabel": "결정론 · 종목 10%",
+      "pos": [
+        650,
+        240
+      ],
+      "size": [
+        180,
+        74
+      ],
+      "tag": "게이트 1"
+    },
+    {
+      "id": "approval",
+      "type": "security",
+      "label": "사람 승인",
+      "sublabel": "Discord · TTL 15분",
+      "pos": [
+        650,
+        390
+      ],
+      "size": [
+        180,
+        74
+      ],
+      "tag": "게이트 2"
+    },
+    {
+      "id": "broker",
+      "type": "external",
+      "label": "토스 주문",
+      "sublabel": "보내기 전에 기록",
+      "pos": [
+        650,
+        520
+      ],
+      "size": [
+        180,
+        74
+      ],
+      "tag": "실행"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "security-group",
+      "label": "사람 승인 없이 넘지 못한다",
+      "wraps": [
+        "risk",
+        "approval",
+        "broker"
+      ],
+      "pad": 16
+    }
+  ],
+  "connections": [
+    {
+      "id": "a",
+      "from": "sources",
+      "to": "stores",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "b",
+      "from": "stores",
+      "to": "research",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "c",
+      "from": "research",
+      "to": "decide",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "d",
+      "from": "decide",
+      "to": "risk",
+      "label": "목표 비중",
+      "variant": "emphasis",
+      "route": "straight",
+      "labelAt": [
+        792,
+        182
+      ]
+    },
+    {
+      "id": "e",
+      "from": "risk",
+      "to": "approval",
+      "label": "통과한 것만",
+      "variant": "security",
+      "route": "straight",
+      "labelAt": [
+        792,
+        352
+      ]
+    },
+    {
+      "id": "f",
+      "from": "approval",
+      "to": "broker",
+      "label": "승인된 것만",
+      "variant": "security",
+      "route": "straight",
+      "labelAt": [
+        792,
+        492
+      ]
+    },
+    {
+      "id": "g",
+      "from": "stores",
+      "to": "surface",
+      "label": "읽기 모델",
+      "variant": "default",
+      "route": "straight",
+      "labelAt": [
+        372,
+        182
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "LLM이 정하지 않는 것",
+      "items": [
+        "최종 비중은 optimizer가, 절대 한도는 결정론적 위험 게이트가 정합니다",
+        "LLM은 논지와 거부권만 행사하고 broker credential에 접근하지 않습니다"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "되돌릴 수 없는 것 앞에서",
+      "items": [
+        "주문은 보내기 전에 원장에 예약되고, 결과가 불명확하면 자동 재주문하지 않습니다",
+        "실주문 스위치는 사람이 켭니다 — 설치·테스트·모델 실행이 열지 않습니다"
+      ]
+    }
+  ]
+}

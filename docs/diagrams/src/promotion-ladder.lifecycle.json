@@ -1,0 +1,191 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "운영 승격 사다리 — 자동으로 올라가지 않는다",
+    "output": "promotion-ladder.html",
+    "viewBox": [
+      880,
+      700
+    ],
+    "animation": "trace",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "ladder",
+        "label": "승격 경로",
+        "focus": [
+          "backtest",
+          "shadow",
+          "paper",
+          "live_manual",
+          "live_autonomous"
+        ],
+        "note": "한 번에 정확히 한 단계씩만 올라갑니다. 건너뛰면 승격이 거절됩니다."
+      },
+      {
+        "id": "gate",
+        "label": "자율 승격 증거 게이트",
+        "focus": [
+          "live_manual",
+          "autonomy_gate",
+          "live_autonomous",
+          "rejected"
+        ],
+        "note": "마지막 단계만 결정적 증거 게이트를 통과해야 합니다. boolean 하나로는 열리지 않습니다."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "main",
+      "label": "운영 승격 단계"
+    },
+    {
+      "id": "gatelane",
+      "label": "결정적 증거 게이트"
+    },
+    {
+      "id": "terminal",
+      "label": "거절"
+    }
+  ],
+  "states": [
+    {
+      "id": "backtest",
+      "type": "start",
+      "label": "backtest",
+      "sublabel": "과거 체결 재현",
+      "lane": "main",
+      "col": 0,
+      "step": "01",
+      "tag": "연구"
+    },
+    {
+      "id": "shadow",
+      "type": "active",
+      "label": "shadow",
+      "sublabel": "실시각 판단 · 주문 없음",
+      "lane": "main",
+      "col": 1,
+      "step": "02",
+      "tag": "관찰"
+    },
+    {
+      "id": "paper",
+      "type": "active",
+      "label": "paper",
+      "sublabel": "승격 증거 축적",
+      "lane": "main",
+      "col": 2,
+      "step": "03",
+      "tag": "증거"
+    },
+    {
+      "id": "live_manual",
+      "type": "waiting",
+      "label": "live_manual",
+      "sublabel": "건건이 사람이 승인",
+      "lane": "main",
+      "col": 3,
+      "step": "04",
+      "tag": "사람"
+    },
+    {
+      "id": "live_autonomous",
+      "type": "success",
+      "label": "live_autonomous",
+      "sublabel": "permit 범위 안에서만",
+      "lane": "main",
+      "col": 4,
+      "step": "05",
+      "tag": "자율"
+    },
+    {
+      "id": "autonomy_gate",
+      "type": "decision",
+      "label": "승격 게이트",
+      "sublabel": "증거 11항목 · 한도 5종",
+      "lane": "gatelane",
+      "col": 2,
+      "step": "G",
+      "tag": "게이트"
+    },
+    {
+      "id": "rejected",
+      "type": "failure",
+      "label": "승격 거절",
+      "sublabel": "violations 하나라도 있으면",
+      "lane": "terminal",
+      "col": 2,
+      "step": "X",
+      "tag": "차단"
+    }
+  ],
+  "transitions": [
+    {
+      "id": "bt-sh",
+      "from": "backtest",
+      "to": "shadow",
+      "variant": "emphasis"
+    },
+    {
+      "id": "sh-pa",
+      "from": "shadow",
+      "to": "paper",
+      "variant": "emphasis"
+    },
+    {
+      "id": "pa-lm",
+      "from": "paper",
+      "to": "live_manual",
+      "variant": "emphasis"
+    },
+    {
+      "id": "lm-gate",
+      "from": "live_manual",
+      "to": "autonomy_gate",
+      "variant": "security"
+    },
+    {
+      "id": "gate-la",
+      "from": "autonomy_gate",
+      "to": "live_autonomous",
+      "variant": "security"
+    },
+    {
+      "id": "gate-no",
+      "from": "autonomy_gate",
+      "to": "rejected",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "자율 승격이 요구하는 증거",
+      "items": [
+        "out-of-sample 120일 이상 · walk-forward 6구간 이상 · paper 60일 이상",
+        "Sharpe 0.5 이상 · 최대 낙폭 15% 이내",
+        "실행·대사·위험·데이터품질 사고 각각 0건, kill switch 테스트와 broker 대사 통과"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "게이트가 막는 것",
+      "items": [
+        "한 번에 두 단계를 건너뛰는 승격 — 정확히 한 칸씩만 올라갑니다",
+        "주문 한도 5종(건당·일일 금액, 일일 건수, 일일 손실, 낙폭)이 하나라도 비어 있으면 거절합니다",
+        "판정은 증거 해시와 함께 기록되어, 무엇을 근거로 열었는지 나중에 되짚을 수 있습니다"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "기준값의 출처",
+      "items": [
+        "단계와 전이는 execution/orders/lifecycle.py 의 LifecycleStage 와 _NEXT 가 갖습니다",
+        "임계값은 같은 파일의 AutonomyCriteria 기본값입니다 — 이 문서가 아니라 그 코드가 기준입니다"
+      ]
+    }
+  ]
+}

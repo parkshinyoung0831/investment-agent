@@ -276,7 +276,7 @@ python -m unittest tests.test_market_splits      # 단일 모듈
 14. **이름은 역할을 그대로 말합니다.**
     - 종목 컬럼은 어디서나 **`ticker`** (`symbol` 금지 — canonical broker/API 경계만 예외).
     - SEC 공시 식별자는 **`accession_no`** 하나 (`accession` 금지).
-    - 모델 수명주기 단계는 **`stage`**(shadow/backtest/oos/walk_forward/paper/live),
+    - 모델 수명주기 단계는 **`stage`**(shadow/backtest/out_of_sample/walk_forward/paper/live — `run_context.py`의 `STAGES`),
       주문 실행 대상은 **`execution_mode`**(paper/live), 데이터 출처는
       **`source_kind`**(live_shadow/historical_replay). `mode`로 축약하지 않습니다.
     - 순수 boolean은 **`is_*`** 접두. 이미 서술형인 `*_passed`·`*_complete`는 그대로 둡니다.
