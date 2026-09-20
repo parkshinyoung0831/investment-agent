@@ -113,7 +113,7 @@ class RepositoryMemoTest(unittest.TestCase):
     def test_same_price_read_is_sent_once_and_callers_get_independent_copies(self):
         repository = self._repository()
         rows = [{"trade_date": "2026-09-14", "close": 1.0}]
-        with mock.patch("investment_agent.trading.supabase_repository.market_db.price_history_as_of",
+        with mock.patch("investment_agent.research.evidence.reader.market_db.price_history_as_of",
                         return_value=rows) as read:
             first = repository.market_prices("aaa", AS_OF)
             first[0]["close"] = 999.0
@@ -126,7 +126,7 @@ class RepositoryMemoTest(unittest.TestCase):
     def test_memo_expires(self):
         repository = self._repository()
         with mock.patch.object(type(repository._reader_cache()), "_MEMO_SECONDS", -1.0), \
-                mock.patch("investment_agent.trading.supabase_repository.market_db.price_history_as_of",
+                mock.patch("investment_agent.research.evidence.reader.market_db.price_history_as_of",
                            return_value=[]) as read:
             repository.market_prices("AAA", AS_OF)
             repository.market_prices("AAA", AS_OF)
@@ -134,7 +134,7 @@ class RepositoryMemoTest(unittest.TestCase):
 
     def test_guru_state_is_built_once_per_as_of(self):
         repository = self._repository()
-        with mock.patch("investment_agent.trading.supabase_repository.institutional_persistence."
+        with mock.patch("investment_agent.research.evidence.reader.institutional_persistence."
                         "effective_portfolio_state", return_value=({}, {}, [])) as read:
             for _ in range(3):
                 repository._effective_guru_state(AS_OF)
@@ -143,7 +143,7 @@ class RepositoryMemoTest(unittest.TestCase):
     def test_technical_snapshot_reads_all_tickers_once_with_the_same_contract(self):
         repository = self._repository()
         latest = {"AAA": {"ticker": "AAA", "trade_date": "2026-09-14", "rsi14": 55.0, "ingested_at": "x"}}
-        with mock.patch("investment_agent.trading.supabase_repository.latest_technical_signals_as_of",
+        with mock.patch("investment_agent.research.evidence.reader.features_db.latest_signals_as_of",
                         return_value=latest) as read:
             self.assertEqual(repository.technical_snapshot("AAA", AS_OF), [latest["AAA"]])
             self.assertEqual(repository.technical_snapshot("BBB", AS_OF), [])

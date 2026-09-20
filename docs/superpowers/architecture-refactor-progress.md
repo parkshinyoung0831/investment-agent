@@ -590,6 +590,14 @@
 - 테스트: `tests/investment_agent/research/evidence/test_evidence_ownership.py`가 세 클래스의 정의가 새 위치에만 있고 옛 Trading 모듈이 없음을 AST로 강제한다(RED 6건 후 통과, 합성 중복 정의 검출 포함). 증거 테스트 4개는 Trading 테스트 폴더에서 Research로 옮겼다. `COMPOSITION_ROOTS`에서 `build_features`의 `ContextBuilder` 예외를 제거했다. 전체 suite 3,110 OK(skip 1).
 - 남은 일: 조립기가 쓰는 데이터 읽기 조립(`SupabaseRepository`의 market·fundamentals·macro·segment·guru·econ·replay mirror)을 Research reader로 옮기는 G2, Trading 원장을 다루는 CLI 진입점을 operations로 옮기는 G3.
 
+#### 배치 G2 — PIT 데이터 읽기 조립을 Research reader로 (2026-09-20)
+
+- 변경 전: `SupabaseRepository`(Trading)가 market·fundamentals·macro·segment·guru·econ 읽기, 판단 시각 재사용 캐시, 과거 재현 mirror를 구현했고 Research feature·label·valuation·backfill 진입점이 이 Trading 객체를 조립했다.
+- 변경: 그 읽기 30개 메서드와 `PointInTimeReaderCache`, 공유 helper(`guru_candidate_signals`)를 `research/evidence/reader.py`의 `PitReader`로 옮겼다(약 650줄). `SupabaseRepository`는 `PitReader`를 **상속**하고 Trading 원장 위임·후보 선정만 갖는다(약 780줄). Trading은 기존 공개 계약 `research/adapters/trading.py`로만 `PitReader`를 가져온다. reader는 Trading을 import하지 않으며 어댑터도 거치지 않는다(`normalize_ticker`는 동일한 platform 함수, 기술지표는 `research/features/db.py` 직접).
+- 조립 예외 축소: `build_features`·`build_labels`·`build_valuations`·`backfill_research_history`가 `PitReader`를 직접 만든다. `COMPOSITION_ROOTS`는 8개에서 4개(`build_decision_experiences`, `evaluate`, `system_ablation`, `promotion/cli`)로 줄었다. 이 네 진입점은 Trading 원장을 읽고 쓰는 job이라 G3에서 다룬다.
+- 테스트: 소유권 가드(`test_evidence_ownership.py`)가 `PitReader`·캐시 정의 위치, Trading 저장소가 PIT 메서드를 재정의하지 않고 상속만 하는지, `research/evidence`가 Trading을 import하지 않는지를 강제한다. `SupabaseRepository`에 `market_prices`를 재정의해 넣으면 실패함을 확인하고 원복했다. 예외 4개를 먼저 뺀 상태에서 architecture가 RED였고 import 전환 뒤 통과했다. 옛 모듈을 patch하던 테스트는 새 소유 위치(`research.evidence.reader`)를 가리키게 고쳤고, econ·mirror 테스트는 `PitReader`를 직접 검증한다. 전체 suite 3,110 OK.
+- 남은 일: G3(Trading 원장 job의 진입점을 operations로), 후보 선정 분리, `dashboard/db.py` 이동.
+
 ## 향후 milestone
 
 | 묶음 | 해당 phase | 독립 완료 조건 |

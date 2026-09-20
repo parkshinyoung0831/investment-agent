@@ -16,7 +16,7 @@ from typing import Any
 from investment_agent.platform.cli.runtime import run_log_payload
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.serialization import ContractError, parse_datetime
-from investment_agent.trading.supabase_repository import SupabaseRepository
+from investment_agent.research.evidence.reader import PitReader
 from investment_agent.research.datasets.universe import research_universe
 from investment_agent.research.storage.repository import ResearchStore
 from investment_agent.research.valuation.engine import PITValuationObservation, build_pit_valuation
@@ -76,7 +76,7 @@ def build_valuations(
     tickers: list[str],
     source_kind: str = "live_shadow",
     dry_run: bool = False,
-    repository: SupabaseRepository | None = None,
+    repository: PitReader | None = None,
     store: ResearchStore | None = None,
 ) -> dict[str, object]:
     """종목별 가격·발행주식수·TTM 재무를 하나의 PIT 관측값으로 만든다."""
@@ -84,7 +84,7 @@ def build_valuations(
         raise ValueError(f"unsupported source_kind: {source_kind}")
     started = time.monotonic()
     started_at = datetime.now(timezone.utc).isoformat()
-    selected = repository or SupabaseRepository()
+    selected = repository or PitReader()
     rows: list[dict[str, Any]] = []
     failures: list[str] = []
     complete = 0
@@ -161,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.limit is not None and args.limit < 1:
         raise SystemExit("--limit must be positive")
     as_of_at = parse_datetime(args.as_of) if args.as_of else datetime.now(timezone.utc)
-    repository = SupabaseRepository()
+    repository = PitReader()
     tickers = [value.upper() for value in (args.ticker or [])] or research_universe(
         repository, as_of_at=as_of_at, source_kind=args.source_kind,
     )

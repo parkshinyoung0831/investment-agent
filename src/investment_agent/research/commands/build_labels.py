@@ -18,7 +18,7 @@ from investment_agent.forecasting import SIGNAL_HORIZON_DAYS
 from investment_agent.platform.cli.runtime import run_log_payload
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.serialization import parse_datetime
-from investment_agent.trading.supabase_repository import SupabaseRepository
+from investment_agent.research.evidence.reader import PitReader
 from investment_agent.research.features.layer import FEATURE_VERSION, HORIZONS, FeatureLayer
 from investment_agent.research.rl.contracts import RLSafetyError
 from investment_agent.research.datasets.universe import members_over_window
@@ -61,7 +61,7 @@ def _session_close(trade_date: str) -> datetime:
     )
 
 
-def _label_symbols(selected: SupabaseRepository, *, start: date, end: date) -> tuple[str, ...]:
+def _label_symbols(selected: PitReader, *, start: date, end: date) -> tuple[str, ...]:
     """label을 찾을 종목. 현재 추적 종목에 그 창 동안의 S&P 500 멤버를 더한다."""
     return members_over_window(selected, start=start, end=end)
 
@@ -77,13 +77,13 @@ def build_labels(
     lookback_days: int,
     benchmark: str = DEFAULT_BENCHMARK,
     dry_run: bool = False,
-    repository: SupabaseRepository | None = None,
+    repository: PitReader | None = None,
     store: ResearchStore | None = None,
 ) -> dict[str, object]:
     """구간이 확정된 snapshot에만 label을 만들어 저장한다."""
     started = time.monotonic()
     started_at = datetime.now(timezone.utc).isoformat()
-    selected = repository or SupabaseRepository()
+    selected = repository or PitReader()
     window_start = (as_of_at - timedelta(days=lookback_days)).isoformat()
     window_end = as_of_at.isoformat()
     phase = time.monotonic()
@@ -239,7 +239,7 @@ def build_labels(
 
 
 def _benchmark_close_at(
-    repository: SupabaseRepository,
+    repository: PitReader,
     benchmark: str,
     as_of_at: datetime,
 ) -> float | None:

@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 
 from investment_agent.data.macro.releases import db as econ_db
-from investment_agent.trading import supabase_repository as db
+from investment_agent.research.evidence import reader as db
 
 MOMENT = datetime(2026, 8, 10, tzinfo=timezone.utc)
 
@@ -33,7 +33,7 @@ def _summary_row(**overrides: object) -> dict:
 class EconSnapshotShapeTest(unittest.TestCase):
     def _snapshot(self, rows: list[dict]) -> dict:
         with patch.object(econ_db, "select_snapshot_rows", return_value=rows):
-            return db.SupabaseRepository().econ_snapshot(MOMENT)
+            return db.PitReader().econ_snapshot(MOMENT)
 
     def test_the_reader_only_touches_keys_the_owner_declares(self) -> None:
         for key in db._ECON_RELEASE_KEYS + db._ECON_FORECAST_KEYS:

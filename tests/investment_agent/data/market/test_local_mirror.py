@@ -170,9 +170,9 @@ class LocalMirrorTest(unittest.TestCase):
 
 class RepositoryPrefersTheMirrorTest(unittest.TestCase):
     def test_fresh_mirror_answers_and_missing_mirror_falls_back_to_supabase(self):
-        from investment_agent.trading import supabase_repository as module
+        from investment_agent.research.evidence import reader as module
 
-        repository = module.SupabaseRepository()
+        repository = module.PitReader()
         with mock.patch.object(module.market_db, "price_history_as_of", return_value=[{"from": "supabase"}]) as remote:
             self.assertEqual(repository.market_prices("AAA", NOW), [{"from": "supabase"}])
             self.assertEqual(remote.call_count, 1)

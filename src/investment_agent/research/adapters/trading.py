@@ -11,6 +11,7 @@ from investment_agent.research.datasets.contracts import TrainingSample
 from investment_agent.research.evaluation.constants import EVALUATION_HORIZONS
 from investment_agent.research.evidence.context import FILING_ROWS_IN_PROMPT, ContextBuilder
 from investment_agent.research.evidence.contracts import EvidenceBundle, EvidenceItem
+from investment_agent.research.evidence.reader import PitReader, guru_candidate_signals
 from investment_agent.research.evidence.statistics import (
     estimate_statistics,
     fundamental_statistics,
@@ -67,11 +68,13 @@ __all__ = [
     "EvaluationSummary",
     "FeatureSnapshot",
     "ForwardReturnLabel",
+    "PitReader",
     "PromotionDecision",
     "TrainingSample",
     "TransactionCostModel",
     "champion_forecast",
     "estimate_statistics",
+    "guru_candidate_signals",
     "fundamental_statistics",
     "latest_cross_section",
     "latest_technical_signals_as_of",

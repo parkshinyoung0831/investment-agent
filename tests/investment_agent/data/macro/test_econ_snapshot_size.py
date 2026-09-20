@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from investment_agent.data.macro.releases import db as econ_db
-from investment_agent.trading import supabase_repository as db
+from investment_agent.research.evidence import reader as db
 
 MOMENT = datetime(2026, 8, 10, tzinfo=timezone.utc)
 
@@ -39,7 +39,7 @@ def _rows(count: int) -> list[dict]:
 
 def _snapshot(rows: list[dict], **kwargs) -> dict:
     with patch.object(econ_db, "select_snapshot_rows", return_value=rows):
-        return db.SupabaseRepository().econ_snapshot(MOMENT, **kwargs)
+        return db.PitReader().econ_snapshot(MOMENT, **kwargs)
 
 
 class EconSnapshotSizeTest(unittest.TestCase):

@@ -11,9 +11,9 @@ from investment_agent.trading.decision.candidate_ranker import (
     rank_candidate_features,
     validate_live_candidate_as_of,
 )
+from investment_agent.research.evidence.reader import guru_candidate_signals
 from investment_agent.trading.supabase_repository import (
     SupabaseRepository,
-    _guru_candidate_signals,
     _segment_candidate_signals,
 )
 from investment_agent.trading.decision import analysis
@@ -283,7 +283,7 @@ class CandidateDomainSummaryTest(unittest.TestCase):
         self.assertEqual(result["AAPL"]["quality"], 1.0)
 
     def test_guru_summary_uses_effective_current_and_previous_portfolios(self):
-        result = _guru_candidate_signals(
+        result = guru_candidate_signals(
             {"manager": {"effective_accession_no": "new"}},
             {"manager": {"effective_accession_no": "old"}},
             [

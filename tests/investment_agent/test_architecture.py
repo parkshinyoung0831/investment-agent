@@ -403,11 +403,7 @@ class LayerDirectionTest(unittest.TestCase):
     # 모듈은 실패한다.
     COMPOSITION_REPOSITORY = "investment_agent.trading.supabase_repository"
     COMPOSITION_ROOTS = {
-        "src/investment_agent/research/commands/backfill_research_history.py": frozenset({COMPOSITION_REPOSITORY}),
         "src/investment_agent/research/commands/build_decision_experiences.py": frozenset({COMPOSITION_REPOSITORY}),
-        "src/investment_agent/research/commands/build_features.py": frozenset({COMPOSITION_REPOSITORY}),
-        "src/investment_agent/research/commands/build_labels.py": frozenset({COMPOSITION_REPOSITORY}),
-        "src/investment_agent/research/commands/build_valuations.py": frozenset({COMPOSITION_REPOSITORY}),
         "src/investment_agent/research/commands/evaluate.py": frozenset({COMPOSITION_REPOSITORY}),
         "src/investment_agent/research/commands/system_ablation.py": frozenset({COMPOSITION_REPOSITORY}),
         "src/investment_agent/research/promotion/cli.py": frozenset({COMPOSITION_REPOSITORY}),
@@ -512,7 +508,7 @@ class LayerDirectionTest(unittest.TestCase):
             self.assertIn("probe.py", str(caught.exception))
 
     def test_composition_roots_may_not_import_other_trading_implementations(self) -> None:
-        path = ROOT / "src/investment_agent/research/commands/build_features.py"
+        path = ROOT / "src/investment_agent/research/commands/evaluate.py"
         self.assertTrue(self._is_allowed(path, self.COMPOSITION_REPOSITORY))
         self.assertFalse(self._is_allowed(path, "investment_agent.trading.risk.gate"))
         self.assertFalse(self._is_allowed(path, self.COMPOSITION_REPOSITORY + ".private"))

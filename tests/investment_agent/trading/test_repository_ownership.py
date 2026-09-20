@@ -64,13 +64,14 @@ def _research_read_violations(relative_path: Path, source: str) -> list[tuple[in
 
 class RepositoryOwnershipTest(unittest.TestCase):
     def test_point_in_time_cache_is_not_kept_on_the_compatibility_facade(self) -> None:
-        from investment_agent.trading.supabase_repository import (
-            PointInTimeReaderCache,
-            SupabaseRepository,
-        )
+        from investment_agent.research.evidence.reader import PitReader, PointInTimeReaderCache
+        from investment_agent.trading.supabase_repository import SupabaseRepository
 
         self.assertIn("_memo_state", inspect.getsource(PointInTimeReaderCache))
-        self.assertNotIn("_memo_state", inspect.getsource(SupabaseRepository._memo))
+        self.assertNotIn("_memo_state", inspect.getsource(PitReader._memo))
+        # Trading 저장소는 PIT 읽기를 다시 구현하지 않고 Research reader의 것을 그대로 물려받는다.
+        self.assertIs(PitReader._memo, SupabaseRepository._memo)
+        self.assertIs(PitReader.market_prices, SupabaseRepository.market_prices)
 
     def test_research_store_owns_recalculable_artifact_writes(self) -> None:
         from investment_agent.research.storage.repository import ResearchStore

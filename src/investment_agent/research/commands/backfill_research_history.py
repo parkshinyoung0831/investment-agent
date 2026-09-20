@@ -170,12 +170,12 @@ def main(argv: list[str] | None = None) -> int:
     from investment_agent.research.datasets.universe import research_universe
     from investment_agent.research.storage.repository import ResearchStore
     from investment_agent.forecasting import SIGNAL_HORIZON_DAYS
-    from investment_agent.trading.supabase_repository import SupabaseRepository
+    from investment_agent.research.evidence.reader import PitReader
 
     now = datetime.now(timezone.utc)
     start = date.fromisoformat(args.start)
     end = date.fromisoformat(args.end) if args.end else (now - timedelta(days=_LABEL_SETTLE_DAYS)).date()
-    repository = SupabaseRepository()
+    repository = PitReader()
 
     from investment_agent.research.features.layer import FEATURE_VERSION, FeatureLayer
 

@@ -22,7 +22,7 @@ class HistoricalReplayPrefetchTest(unittest.TestCase):
     def test_a_transient_domain_read_is_retried_without_repeating_successful_domains(self):
         repository = SupabaseRepository()
         repository._mirror = lambda as_of_at=None: _Mirror()
-        module = __import__("investment_agent.trading.supabase_repository", fromlist=["fundamentals_expectations"])
+        module = __import__("investment_agent.research.evidence.reader", fromlist=["fundamentals_expectations"])
         with (
             mock.patch.object(
                 module.fundamentals_expectations, "securities_fundamentals_filed_before",
@@ -41,7 +41,7 @@ class HistoricalReplayPrefetchTest(unittest.TestCase):
     def test_independent_remote_domains_are_prefetched_concurrently(self):
         repository = SupabaseRepository()
         repository._mirror = lambda as_of_at=None: _Mirror()
-        module = __import__("investment_agent.trading.supabase_repository", fromlist=["fundamentals_expectations"])
+        module = __import__("investment_agent.research.evidence.reader", fromlist=["fundamentals_expectations"])
         barrier = Barrier(4, timeout=1.0)
 
         def rows(*args, **kwargs):
@@ -65,25 +65,25 @@ class HistoricalReplayPrefetchTest(unittest.TestCase):
         repository._mirror = lambda as_of_at=None: _Mirror()
         with (
             mock.patch.object(
-                __import__("investment_agent.trading.supabase_repository", fromlist=["fundamentals_expectations"])
+                __import__("investment_agent.research.evidence.reader", fromlist=["fundamentals_expectations"])
                 .fundamentals_expectations,
                 "securities_fundamentals_filed_before",
                 return_value=[{"ticker": "AAA", "period_end": "2024-12-31"}],
             ) as fundamentals,
             mock.patch.object(
-                __import__("investment_agent.trading.supabase_repository", fromlist=["fundamentals_expectations"])
+                __import__("investment_agent.research.evidence.reader", fromlist=["fundamentals_expectations"])
                 .fundamentals_expectations,
                 "observed_consensus_for_tickers_as_of",
                 return_value={"AAA": [{"ticker": "AAA", "snapshot_date": "2025-01-01"}]},
             ) as consensus,
             mock.patch.object(
-                __import__("investment_agent.trading.supabase_repository", fromlist=["fundamentals_shares"])
+                __import__("investment_agent.research.evidence.reader", fromlist=["fundamentals_shares"])
                 .fundamentals_shares,
                 "share_class_snapshots_for_tickers_filed_before",
                 return_value={"AAA": [{"ticker": "AAA", "shares_outstanding": 10}]},
             ) as shares,
             mock.patch.object(
-                __import__("investment_agent.trading.supabase_repository", fromlist=["fundamentals_segments"])
+                __import__("investment_agent.research.evidence.reader", fromlist=["fundamentals_segments"])
                 .fundamentals_segments,
                 "segment_snapshots_as_of",
                 return_value={"AAA": {"filings": [], "metrics": []}},
@@ -104,7 +104,7 @@ class HistoricalReplayPrefetchTest(unittest.TestCase):
     def test_a_new_replay_date_discards_date_scoped_prefetch_entries(self):
         repository = SupabaseRepository()
         repository._mirror = lambda as_of_at=None: _Mirror()
-        module = __import__("investment_agent.trading.supabase_repository", fromlist=["fundamentals_expectations"])
+        module = __import__("investment_agent.research.evidence.reader", fromlist=["fundamentals_expectations"])
         empty_batches = (
             mock.patch.object(module.fundamentals_expectations, "securities_fundamentals_filed_before", return_value=[]),
             mock.patch.object(module.fundamentals_expectations, "observed_consensus_for_tickers_as_of", return_value={}),

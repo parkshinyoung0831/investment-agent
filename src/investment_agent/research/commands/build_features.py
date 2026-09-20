@@ -16,7 +16,7 @@ from investment_agent.platform.cli.runtime import run_log_payload
 from investment_agent.platform.logging import get_logger
 from investment_agent.research.evidence.context import ContextBuilder
 from investment_agent.platform.serialization import parse_datetime
-from investment_agent.trading.supabase_repository import SupabaseRepository
+from investment_agent.research.evidence.reader import PitReader
 from investment_agent.research.features.layer import FEATURE_VERSION, FeatureLayer
 from investment_agent.research.datasets.universe import research_universe
 from investment_agent.research.storage.repository import ResearchStore
@@ -61,7 +61,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def _valuations_by_ticker(
-    repository: SupabaseRepository,
+    repository: PitReader,
     *,
     as_of_at: datetime,
     tickers: list[str],
@@ -96,7 +96,7 @@ def build_features(
     tickers: list[str],
     source_kind: str = "live_shadow",
     dry_run: bool = False,
-    repository: SupabaseRepository | None = None,
+    repository: PitReader | None = None,
     store: ResearchStore | None = None,
     workers: int | None = None,
 ) -> dict[str, object]:
@@ -106,7 +106,7 @@ def build_features(
         raise ValueError("workers must be positive")
     started = time.monotonic()
     started_at = datetime.now(timezone.utc).isoformat()
-    selected = repository or SupabaseRepository()
+    selected = repository or PitReader()
     phase = time.monotonic()
     if source_kind == "historical_replay" and hasattr(selected, "prepare_historical_replay"):
         selected.prepare_historical_replay(tuple(tickers), as_of_at)
@@ -192,7 +192,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.limit is not None and args.limit < 1:
         raise SystemExit("--limit must be positive")
     as_of_at = parse_datetime(args.as_of) if args.as_of else datetime.now(timezone.utc)
-    repository = SupabaseRepository()
+    repository = PitReader()
     tickers = [value.upper() for value in (args.ticker or [])] or research_universe(
         repository, as_of_at=as_of_at, source_kind=args.source_kind,
     )
