@@ -11,11 +11,14 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
-from investment_agent.dashboard import db, ops
+from investment_agent.dashboard import ops
 from investment_agent.execution import db as execution_db
 from investment_agent.platform.db.sqlite import runtime_connection
 from investment_agent.reporting.models import DataResult
+from investment_agent.reporting.readers import ai as reader_ai
 from investment_agent.reporting.readers import dashboard as reporting_dashboard
+from investment_agent.reporting.readers import earnings as reader_earnings
+from investment_agent.reporting.readers import select_only
 from investment_agent.reporting.readers import news as reporting_news
 
 
@@ -173,7 +176,7 @@ class SelectOnlyGatewayTests(unittest.TestCase):
         client = _FakeClient(
             {("sample", "facts"): [{"id": 1, "kind": "a"}, {"id": 2, "kind": "b"}]}
         )
-        gateway = db.SelectOnlyGateway(client)
+        gateway = select_only.SelectOnlyGateway(client)
 
         rows = gateway.select_rows(
             schema="sample",
@@ -196,7 +199,7 @@ class SelectOnlyGatewayTests(unittest.TestCase):
 
     def test_paged_gateway_uses_range_and_stable_order(self) -> None:
         client = _FakeClient({("sample", "facts"): [{"id": value} for value in range(5)]})
-        rows = db.SelectOnlyGateway(client).select_rows(
+        rows = select_only.SelectOnlyGateway(client).select_rows(
             schema="sample",
             table="facts",
             columns="id",
@@ -211,7 +214,7 @@ class SelectOnlyGatewayTests(unittest.TestCase):
 
 
     def test_multi_dataset_loaders_keep_public_payload_keys(self) -> None:
-        empty_gateway = db.SelectOnlyGateway(_FakeClient())
+        empty_gateway = select_only.SelectOnlyGateway(_FakeClient())
         with tempfile.TemporaryDirectory() as directory:
             runtime_path = Path(directory) / "runtime.sqlite3"
             research_root = Path(directory) / "research"
@@ -224,7 +227,8 @@ class SelectOnlyGatewayTests(unittest.TestCase):
             }
             with (
                 patch.dict("os.environ", environment, clear=False),
-                patch.object(db, "_gateway", return_value=empty_gateway),
+                patch.object(reader_ai, "open_gateway", return_value=empty_gateway),
+                patch.object(reader_earnings, "open_gateway", return_value=empty_gateway),
             ):
                 from investment_agent.research.storage.repository import ResearchStore
 
@@ -232,8 +236,8 @@ class SelectOnlyGatewayTests(unittest.TestCase):
                 with runtime_connection():  # 로컬 runtime DB 스키마를 미리 만든다.
                     pass
                 results = {
-                    "ai": _uncached(db.load_ai_data)("AAPL"),
-                    "earnings": _uncached(db.load_earnings_data)(),
+                    "ai": _uncached(reader_ai.load_ai_data)("AAPL"),
+                    "earnings": _uncached(reader_earnings.load_earnings_data)(),
                     "target": _uncached(reporting_dashboard.load_latest_target)(),
                 }
 
@@ -258,11 +262,11 @@ class SelectOnlyGatewayTests(unittest.TestCase):
     def test_earnings_view_queries_only_required_base_tables(self) -> None:
         client = _FakeClient(
             {
-                ("fundamentals", db.T_FINANCIALS): [
+                ("fundamentals", reader_earnings.T_FINANCIALS): [
                     {"cik": "0000320193", "accession_no": "0000320193-26-000001",
                      "fiscal_year": 2026, "fiscal_period": "Q2", "period_end": "2026-06-30"}
                 ],
-                ("fundamentals", db.T_FILINGS): [{
+                ("fundamentals", reader_earnings.T_FILINGS): [{
                     "accession_no": "0000320193-26-000001", "filing_date": "2026-07-30",
                     "form_type": "10-Q", "available_at": "2026-07-30T20:00:00Z"
                 }],
@@ -282,13 +286,13 @@ class SelectOnlyGatewayTests(unittest.TestCase):
                 {"DASHBOARD_OFFLINE": "0", "SUPABASE_URL": "https://db.test", "SUPABASE_SERVICE_KEY": "x"},
                 clear=False,
             ),
-            patch.object(db, "_gateway", return_value=db.SelectOnlyGateway(client)),
+            patch.object(reader_earnings, "open_gateway", return_value=select_only.SelectOnlyGateway(client)),
         ):
-            result = _uncached(db.load_earnings_data)(section="재무 추이")
+            result = _uncached(reader_earnings.load_earnings_data)(section="재무 추이")
 
         self.assertEqual(result.status, "ok")
         selected_tables = [call[1] for call in client.calls if call[0] == "table"]
-        self.assertIn(db.T_FINANCIALS, selected_tables)
+        self.assertIn(reader_earnings.T_FINANCIALS, selected_tables)
         self.assertIn("entities", selected_tables)
         self.assertIn("securities", selected_tables)
         self.assertFalse([call for call in client.calls if call[0] == "rpc"])
@@ -300,65 +304,24 @@ class SelectOnlyGatewayTests(unittest.TestCase):
         self.assertEqual(result.value["filings"], [])
         self.assertEqual(result.value["consensus"], [])
 
-    def test_read_only_function_allowlist_rejects_anything_else(self) -> None:
-        gateway = db.SelectOnlyGateway(_FakeClient())
-        with self.assertRaises(db.DashboardDataError):
-            gateway.select_function_rows(schema="universe", function="watchlist_add")
-        with self.assertRaises(db.DashboardDataError):
-            gateway.select_function_rows(schema="universe", function="watchlist_sync_toss")
-        with self.assertRaises(db.DashboardDataError):
-            gateway.select_function_rows(
-                schema="universe",
-                function="watchlist_members_list",
-                arguments={"_tickers": ["AAPL"]},
-            )
-        self.assertEqual(
-            set(db.SelectOnlyGateway.READ_ONLY_FUNCTIONS),
-            set(),
-        )
+    def test_the_gateway_has_no_rpc_capability_at_all(self) -> None:
+        """RPC는 allowlist로 걸러 내는 것이 아니라 코드에 존재하지 않는다."""
+        gateway = select_only.SelectOnlyGateway(_FakeClient())
+        self.assertFalse(hasattr(gateway, "select_function_rows"))
+        self.assertFalse(hasattr(select_only.SelectOnlyGateway, "READ_ONLY_FUNCTIONS"))
+        for name in ("watchlist_add", "watchlist_sync_toss", "append_observations", "append_forecast_versions"):
+            with self.subTest(function=name), self.assertRaises(AttributeError):
+                gateway.select_function_rows(schema="universe", function=name)
 
-    def test_econ_mutations_are_not_allowlisted(self) -> None:
-        gateway = db.SelectOnlyGateway(_FakeClient())
-        for function in ("append_observations", "append_forecast_versions", "append_schedule_versions"):
-            with self.subTest(function=function), self.assertRaises(db.DashboardDataError):
-                gateway.select_function_rows(schema="macro", function=function, arguments={"p_rows": []})
-
-    def test_every_function_the_loaders_call_is_allowlisted(self) -> None:
-        """loader가 부르는 RPC 이름과 인자가 allowlist에 실제로 있는지 정적으로 확인한다.
-
-        오프라인 테스트는 preflight에서 먼저 끊기므로 이 경로를 밟지 않는다.
-        allowlist에 빠진 이름은 운영에서만 터지므로 소스에서 직접 대조한다.
-        """
-
-        source = (DASHBOARD_ROOT / "db.py").read_text(encoding="utf-8")
-        tree = ast.parse(source)
-        allowlist = db.SelectOnlyGateway.READ_ONLY_FUNCTIONS
-        checked = 0
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            function = node.func
-            if not isinstance(function, ast.Attribute) or function.attr != "select_function_rows":
-                continue
-            keywords = {item.arg: item.value for item in node.keywords}
-            name_node = keywords.get("function")
-            if not isinstance(name_node, ast.Constant):
-                continue
-            name = str(name_node.value)
-            self.assertIn(name, allowlist, f"allowlist에 없는 함수 호출: {name}")
-            argument_node = keywords.get("arguments")
-            if isinstance(argument_node, ast.Dict):
-                names = {
-                    str(key.value)
-                    for key in argument_node.keys
-                    if isinstance(key, ast.Constant)
-                }
-                self.assertTrue(
-                    names.issubset(allowlist[name]),
-                    f"{name} 호출이 allowlist에 없는 인자를 씁니다: {names - allowlist[name]}",
-                )
-            checked += 1
-        self.assertEqual(checked, 0, "v1 dashboard는 watchlist RPC를 호출하지 않습니다")
+    def test_no_reader_or_screen_source_calls_rpc(self) -> None:
+        roots = (ROOT / "src" / "investment_agent" / "reporting" / "readers", DASHBOARD_ROOT)
+        offenders = []
+        for root in roots:
+            for path in sorted(root.rglob("*.py")):
+                for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in {"rpc", "select_function_rows"}:
+                        offenders.append(f"{path.relative_to(ROOT).as_posix()}:{node.lineno}")
+        self.assertEqual([], offenders)
 
     def test_unfiltered_earnings_reads_are_scoped_and_paged(self) -> None:
         """관심종목 밖 행을 읽지 않고, PostgREST 상한에서 잘리지 않아야 한다."""
@@ -382,8 +345,8 @@ class SelectOnlyGatewayTests(unittest.TestCase):
         ]
         client = _FakeClient(
             {
-            ("fundamentals", db.T_FINANCIALS): canonical_rows,
-            ("fundamentals", db.T_FILINGS): [
+            ("fundamentals", reader_earnings.T_FINANCIALS): canonical_rows,
+            ("fundamentals", reader_earnings.T_FILINGS): [
                 {"accession_no": row["accession_no"], "filing_date": row["period_end"],
                  "form_type": "10-Q", "available_at": "2026-08-01T00:00:00Z"}
                 for row in canonical_rows
@@ -406,9 +369,9 @@ class SelectOnlyGatewayTests(unittest.TestCase):
                 {"DASHBOARD_OFFLINE": "0", "SUPABASE_URL": "https://db.test", "SUPABASE_SERVICE_KEY": "x"},
                 clear=False,
             ),
-            patch.object(db, "_gateway", return_value=db.SelectOnlyGateway(client)),
+            patch.object(reader_earnings, "open_gateway", return_value=select_only.SelectOnlyGateway(client)),
         ):
-            result = _uncached(db.load_earnings_data)(section="재무 추이")
+            result = _uncached(reader_earnings.load_earnings_data)(section="재무 추이")
 
         self.assertEqual(result.status, "ok")
         membership = [call for call in client.calls if call[0] == "in"]
@@ -490,10 +453,10 @@ class OfflineBoundaryTests(unittest.TestCase):
     def test_offline_db_loader_never_builds_client(self) -> None:
         with (
             patch.dict("os.environ", {"DASHBOARD_OFFLINE": "1"}, clear=False),
-            patch.object(db, "_gateway", side_effect=AssertionError("network boundary crossed")),
+            patch.object(reader_ai, "open_gateway", side_effect=AssertionError("network boundary crossed")),
             patch.object(reporting_dashboard, "service_client", side_effect=AssertionError("network boundary crossed")),
         ):
-            gateway_result = _uncached(db.load_ai_data)("AAPL")
+            gateway_result = _uncached(reader_ai.load_ai_data)("AAPL")
             reader_result = _uncached(reporting_dashboard.load_macro_window)()
         self.assertEqual({gateway_result.status, reader_result.status}, {"offline"})
 
@@ -548,21 +511,6 @@ class OfflineBoundaryTests(unittest.TestCase):
         self.assertTrue(health["pid_check_error"])
 
 class DashboardStaticBoundaryTests(unittest.TestCase):
-    @staticmethod
-    def _read_only_rpc_line_range() -> tuple[int, int]:
-        """`.rpc()` 예외를 허용할 유일한 메서드의 줄 범위를 소스에서 직접 찾는다."""
-
-        module = ast.parse((DASHBOARD_ROOT / "db.py").read_text(encoding="utf-8"))
-        for node in ast.walk(module):
-            if isinstance(node, ast.ClassDef) and node.name == "SelectOnlyGateway":
-                for member in node.body:
-                    if (
-                        isinstance(member, ast.FunctionDef)
-                        and member.name == "select_function_rows"
-                    ):
-                        return member.lineno, (member.end_lineno or member.lineno)
-        raise AssertionError("SelectOnlyGateway.select_function_rows를 찾지 못했습니다.")
-
     def test_dashboard_python_has_no_mutating_or_execution_boundary(self) -> None:
         violations: list[str] = []
         forbidden_modules = {
@@ -584,10 +532,7 @@ class DashboardStaticBoundaryTests(unittest.TestCase):
             "create_forum_thread",
         }
         db_receiver_names = {"sb", "client", "query", "builder", "gateway", "repository"}
-        # `.rpc()`는 원칙적으로 금지다. 유일한 예외는 비공개 alerts 스키마를 읽기 위한
-        # SelectOnlyGateway.select_function_rows 하나이며, 그 안에서도 allowlist에
-        # 있는 STABLE 함수만 부를 수 있다(위 allowlist 회귀 테스트가 범위를 고정한다).
-        rpc_exemption = self._read_only_rpc_line_range()
+        # `.rpc()`는 예외 없이 금지다. dashboard에는 저장소를 여는 코드가 없고 gateway도 RPC를 갖지 않는다.
 
         for path in sorted(DASHBOARD_ROOT.rglob("*.py")):
             source = path.read_text(encoding="utf-8")
@@ -615,12 +560,7 @@ class DashboardStaticBoundaryTests(unittest.TestCase):
                         continue
                     attribute = function.attr
                     receiver = ast.get_source_segment(source, function.value) or ""
-                    exempt = (
-                        attribute == "rpc"
-                        and relative == "src/investment_agent/dashboard/db.py"
-                        and rpc_exemption[0] <= node.lineno <= rpc_exemption[1]
-                    )
-                    if attribute in forbidden_calls and not exempt:
+                    if attribute in forbidden_calls:
                         violations.append(f"{relative}:{node.lineno} call .{attribute}()")
                     if attribute == "insert" and receiver != "sys.path":
                         violations.append(f"{relative}:{node.lineno} call .insert()")
@@ -636,10 +576,11 @@ class DashboardStaticBoundaryTests(unittest.TestCase):
 
     def test_required_public_loader_names_exist(self) -> None:
         expected_db = {
-            "load_ai_data",
-            "load_earnings_data",
-            "load_earnings_discord_support",
-            "load_earnings_extended",
+            (reader_ai, "load_ai_data"),
+            (reader_earnings, "load_earnings_data"),
+            (reader_earnings, "load_earnings_discord_support"),
+            (reader_earnings, "load_earnings_extended"),
+            (reader_earnings, "load_ticker_data_quality"),
         }
         expected_reporting = {
             "load_econ_upcoming",
@@ -659,7 +600,7 @@ class DashboardStaticBoundaryTests(unittest.TestCase):
 
         expected_ops = {"read_harness_state"}
         expected_news = {"load_live_news", "provider_statuses"}
-        self.assertTrue(all(callable(getattr(db, name, None)) for name in expected_db))
+        self.assertTrue(all(callable(getattr(module, name, None)) for module, name in expected_db))
         self.assertTrue(all(callable(getattr(reporting_dashboard, name, None))
                             for name in expected_reporting))
         self.assertTrue(all(callable(getattr(ops, name, None)) for name in expected_ops))
@@ -670,8 +611,8 @@ class DashboardStaticBoundaryTests(unittest.TestCase):
         from investment_agent.reporting.readers import dashboard as reporting_dashboard
 
         both = {
-            name for name in dir(db)
-            if name.startswith("load_") and callable(getattr(db, name, None))
+            name for module in (reader_ai, reader_earnings) for name in dir(module)
+            if name.startswith("load_") and callable(getattr(module, name, None))
             and callable(getattr(reporting_dashboard, name, None))
         }
         self.assertEqual(self._KNOWN_OVERLAP, both)

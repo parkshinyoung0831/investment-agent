@@ -407,7 +407,7 @@ def monthly_close_from_daily(
     """저장 일봉의 완료된 월말 종가만 전략 재현용 wide 표로 만든다.
 
     현재 달의 마지막 봉은 아직 확정되지 않았으므로 포함하지 않는다. 입력은
-    ``dashboard.db.load_price_history``가 반환하는 단일·복수 종목 가격 계약만
+    ``reporting.readers.dashboard.load_price_history``가 반환하는 단일·복수 종목 가격 계약만
     허용하고, 원자료가 없거나 Close 열을 찾지 못하면 빈 표를 반환한다.
     """
     if not isinstance(prices, pd.DataFrame) or prices.empty:

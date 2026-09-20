@@ -116,7 +116,7 @@ class DecisionCaseReadModelTest(unittest.TestCase):
 
     def test_dashboard_and_notification_use_the_shared_contract(self) -> None:
         root = Path(__file__).resolve().parents[3]
-        dashboard_db = (root / "src/investment_agent/dashboard/db.py").read_text(encoding="utf-8")
+        dashboard_db = (root / "src/investment_agent/reporting/readers/ai.py").read_text(encoding="utf-8")
         notification_db = (root / "src/investment_agent/reporting/notifications/investment/db.py").read_text(encoding="utf-8")
         approval_page = (root / "src/investment_agent/dashboard/app_pages/ai_approval.py").read_text(
             encoding="utf-8"

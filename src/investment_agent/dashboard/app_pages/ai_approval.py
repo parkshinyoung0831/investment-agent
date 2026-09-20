@@ -10,7 +10,7 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 from investment_agent.dashboard.calculations import add_technical_indicators
-from investment_agent.dashboard.db import load_ai_data
+from investment_agent.reporting.readers.ai import load_ai_data
 from investment_agent.reporting.readers.dashboard import load_price_history, load_tickers
 from investment_agent.dashboard.components.theme import dashboard_palette, plotly_layout
 from investment_agent.dashboard.components.ui import (

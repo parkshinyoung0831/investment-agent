@@ -216,7 +216,7 @@ Toss Blue를 기본 시각 언어로 쓰고, 금융 값의 상승·하락에만 
 
 ## 읽기 전용 안전 경계
 
-- Supabase 접근은 `db.py`의 명시적 SELECT 함수만 사용한다. `insert`, `upsert`,
+- 화면은 저장소를 열지 않는다. 읽기는 `reporting/readers/`의 reader만 거친다(gateway는 `select_only.py`). `insert`, `upsert`,
   `update`, `delete`, 상태 변경 RPC는 대시보드 코드에서 금지한다.
 - “읽기 전용 분석 프리뷰”는 현재 조회한 데이터로 계산해 `st.session_state`에만 둔다.
   `investment_agent.trading.decision.analysis`를 비롯한 저장 실행 경로를 호출하지 않는다.

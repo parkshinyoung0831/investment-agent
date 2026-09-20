@@ -80,7 +80,7 @@ src/investment_agent/reporting/notifications/<read-model>.py
 |---|---|
 | `src/investment_agent/dashboard/app.py` | 앱 시작과 상단 메뉴 |
 | `src/investment_agent/dashboard/app_pages` | 매크로·실적·13F·퀀트·AI 승인·포트폴리오·시스템 화면 |
-| `src/investment_agent/dashboard/db.py` | Supabase 읽기 전용 SELECT |
+| `src/investment_agent/reporting/readers/select_only.py` | Supabase 읽기 전용 SELECT gateway |
 | `src/investment_agent/dashboard/calculations/` | 화면용 계산 |
 | `src/investment_agent/reporting/models.py` | 화면·읽기 결과 데이터 구조 |
 | `src/investment_agent/dashboard/ui.py`, `theme.py` | 공통 UI와 색상 |

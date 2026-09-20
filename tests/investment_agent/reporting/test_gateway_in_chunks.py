@@ -12,7 +12,7 @@ from __future__ import annotations
 import unittest
 from typing import Any
 
-from investment_agent.dashboard.db import SelectOnlyGateway
+from investment_agent.reporting.readers.select_only import SelectOnlyGateway
 from investment_agent.platform.db.postgres import IN_FILTER_CHUNK
 
 

@@ -22,7 +22,7 @@ from investment_agent.dashboard.calculations import (
     sec_gaap_diluted_eps,
     today_kst,
 )
-from investment_agent.dashboard.db import (
+from investment_agent.reporting.readers.earnings import (
     EXTENDED_SECTIONS,
     load_earnings_data,
     load_earnings_discord_support,

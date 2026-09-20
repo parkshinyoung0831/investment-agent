@@ -20,7 +20,7 @@ from investment_agent.dashboard.components.alpha_lab import (
     trace_for_ticker,
 )
 from investment_agent.dashboard.components.animated_pipeline import animated_pipeline
-from investment_agent.dashboard.db import load_ai_data
+from investment_agent.reporting.readers.ai import load_ai_data
 from investment_agent.reporting.readers.dashboard import load_alpha_lab_data, load_execution_data, load_price_history, load_tickers
 from investment_agent.reporting.readers.news import load_live_news, provider_statuses
 from investment_agent.dashboard.components.theme import dashboard_palette

@@ -613,6 +613,15 @@
 - 테스트: 소유권 가드(`test_repository_ownership.py`)가 후보 선정 메서드의 정의가 `CandidateSelection`에만 있고 `SupabaseRepository`가 재정의하지 않음을 강제하며, 재정의를 넣으면 실패함을 확인하고 원복했다. 옛 모듈을 patch하던 테스트 5개는 새 위치를 가리키게 고쳤고 `research_store_read_paths` 가드는 `reader.py`·`candidates.py`·`supabase_repository.py`를 모두 검사한다. 전체 suite 3,110 중 실패 1건은 사용자 동시 작업 `data/news/`를 금지하는 intelligence 가드다.
 - 남은 일: `dashboard/db.py` 이동, Trading 원장 위임 15개를 호출자가 `TradingRepository`를 직접 쓰게 하는 정리(호출자가 데이터 읽기와 같은 객체를 받으므로 별도 배치).
 
+#### 배치 G5 — dashboard의 저장소 접근을 reporting으로 (2026-09-20)
+
+- 변경 전: `dashboard/db.py`(약 1,380줄)가 SELECT 전용 gateway와 화면 3개(`ai_approval`·`intelligence`·`earnings`)의 로더를 함께 갖고 있어 화면 패키지가 저장소를 직접 열었다.
+- 변경: 파일을 세 reporting reader로 나눴다. `reporting/readers/select_only.py`(`SelectOnlyGateway`와 공통 helper, 약 250줄), `reporting/readers/earnings.py`(실적 로더 묶음과 `load_ticker_data_quality`), `reporting/readers/ai.py`(`load_ai_data`). 화면 3개는 새 reader를 import하고 `dashboard/db.py`는 삭제했다. 공통 helper는 공개 이름이 됐다(`open_gateway`·`preflight`·`latest_at`·`security_identity` 등, 지역 변수 `gateway`와의 충돌을 피해 `_gateway`는 `open_gateway`로).
+- 안전 계약의 강화: 호출자가 0개이고 allowlist가 비어 있던 RPC 경로(`select_function_rows`, `READ_ONLY_FUNCTIONS`)를 삭제했다. 이제 gateway에는 RPC 능력이 코드에 없고, allowlist 테스트 3개는 "gateway에 그 메서드가 없다"와 "reader·화면 소스 어디에도 `.rpc()`·`select_function_rows` 호출이 없다"는 계약으로 바뀌었다. dashboard 정적 경계 테스트의 `.rpc()` 예외도 사라져 예외 없이 금지다.
+- 가드: reporting 읽기 전용 가드(`test_reporting_guards.py`)에 gateway 예외를 좁게 추가했다 — `select_only.py`의 `.table()`은 반드시 `.select()`가 바로 이어져야 하고 `.execute()`는 `SelectOnlyGateway.select_rows` 안에서만 허용한다. 예외를 깨뜨리는 주입 5건(다른 메서드의 execute, table().insert, table().select().upsert, rpc, 다른 파일에서 같은 코드)이 모두 실패한다. 실제 gateway 파일에 `.upsert`를 넣으면 가드가 실패함을 확인하고 원복했다. architecture의 `DashboardReportingBoundaryTest`는 "dashboard에 `db.py`가 없고 `investment_agent.dashboard.db`·`platform.db`를 import하는 모듈이 없다"로 강화했다(주입 2건 검증).
+- 테스트·문서: `test_gateway_in_chunks.py`를 reporting 테스트로 옮기고 dashboard 로더 테스트·소스 경로 참조 테스트 3개를 새 위치로 갱신했다. CLAUDE.md·`docs/README.md`·reporting/dashboard README·`scripts/verify_integration.py`를 새 구조로 고쳤다. 전체 suite 3,109 중 실패 1건은 사용자 동시 작업 `data/news/`를 금지하는 intelligence 가드다.
+- 결과: dashboard 패키지에는 저장소 접근 코드가 0개다. dashboard→notifications 1건(earnings 카드 미리보기)만 의도적 예외로 남는다.
+
 ## 향후 milestone
 
 | 묶음 | 해당 phase | 독립 완료 조건 |

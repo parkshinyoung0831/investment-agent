@@ -182,12 +182,11 @@ execution은 stable한 execution contract와 broker·승인·원장만 소유하
 ### 대시보드 ([src/investment_agent/dashboard/](src/investment_agent/dashboard/README.md))
 
 읽기 전용 Streamlit 앱입니다. `scripts/dashboard.bat`으로 띄우고 CI에서는 돌지 않습니다.
-읽기 전용은 관례가 아니라 강제입니다 — Supabase에 닿는 유일한 경로가
-`dashboard/db.py`의 `SelectOnlyGateway`이고, 그것은 SELECT 계열만 조합합니다.
-RPC 경로(`select_function_rows`)는 `READ_ONLY_FUNCTIONS` allowlist에 있는 함수와
-인자만 통과시키는데, **그 목록은 지금 비어 있고 부르는 곳도 없습니다** — 즉 RPC는
-전부 거부됩니다. 필요해지면 목록에 올리기 전에 해당 SQL 함수가 STABLE이고 본문이
-SELECT 하나인지 확인하세요.
+읽기 전용은 관례가 아니라 강제입니다 — 화면은 저장소를 열지 않고 `reporting/readers/`만 읽습니다.
+Supabase에 닿는 read-only 경로는 `reporting/readers/select_only.py`의 `SelectOnlyGateway`이고,
+그것은 `.table().select()`로 시작하는 SELECT 계열만 조합합니다. **RPC 경로는 코드에 없습니다** —
+allowlist로 거르는 것이 아니라 존재하지 않고, `test_dashboard_readonly.py`와
+`test_reporting_guards.py`가 `.rpc()`·쓰기 호출이 생기면 실패시킵니다.
 
 ### 플랫폼 공통 ([src/investment_agent/platform/](src/investment_agent/platform/README.md))
 - `db/postgres.py` — `from investment_agent.platform.db.postgres import sb`로 service-role 싱글턴.

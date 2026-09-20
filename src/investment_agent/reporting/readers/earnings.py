@@ -1,81 +1,85 @@
-"""Discord-Twin 대시보드의 Supabase SELECT 전용 데이터 계층.
-
-이 모듈은 실제 SQL 스키마에 존재하는 컬럼만 명시적으로 조회한다. 대시보드가
-가져온 행을 화면에서 계산할 수는 있지만, 이 경계에서는 어떤 상태도 저장하지 않는다.
-"""
-
+"""실적 화면이 읽는 재무·공시·컨센서스·세그먼트 read model. `SelectOnlyGateway`로만 저장소를 연다."""
 from __future__ import annotations
 
-import os
-import re
-from collections.abc import Iterator, Mapping, Sequence
-from itertools import product
-from datetime import date, datetime, timezone
-from typing import Any
+from investment_agent.reporting.readers.select_only import (
+    DB_SOURCE,
+    SCHEMA_UNIVERSE,
+    SelectOnlyGateway,
+    T_SECURITIES,
+    latest_at,
+    open_gateway,
+    preflight,
+    security_identity,
+)
 
+import re
+from collections.abc import Mapping, Sequence
+from typing import Any
 from investment_agent.reporting.services.fundamental_segments import enrich_segment_rows
 from investment_agent.platform.cache import cache_data
-from investment_agent.reporting.models import (
-    DataResult,
-    normalize_observed_at,
-    public_exception_message,
-)
-from investment_agent.reporting.services.investment import (
-    build_decision_cases_read_model,
-)
-from investment_agent.reporting.readers.runtime import read_local_rows, read_runtime_rows
+from investment_agent.reporting.models import DataResult, public_exception_message
 from investment_agent.reporting.readers.research import load_local_features
 
-DB_SOURCE = "DB 저장 데이터 · v1 Supabase"
-
-_IDENTIFIER_RE = re.compile(r"^[a-z][a-z0-9_]*$")
-_TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
-
-# --- fundamentals DB 식별자 (SSOT) --------------------------------------
 SCHEMA_FUNDAMENTALS = "fundamentals"
-SCHEMA_INSTITUTIONAL = "institutional"
+
+
 SCHEMA_MARKET = "market"
-SCHEMA_UNIVERSE = "universe"
+
+
 SCHEMA_REPORTING = "reporting"
+
+
 SCHEMA_NOTIFICATIONS = "notifications"
+
+
 T_NOTICES = "notices"
+
+
 T_FINANCIALS = "financials"
+
+
 T_FILINGS = "filings"
+
+
 T_FILING_PROCESSING = "filing_processing"
+
+
 T_EARNINGS_ESTIMATES = "earnings_estimates"
+
+
 T_SHARE_CLASS_SNAPSHOTS = "share_class_snapshots"
+
+
 T_SEGMENT_METRICS = "segment_metrics"
+
+
 T_ENTITIES = "entities"
+
+
 T_PRICES_DAILY = "prices_daily"
+
+
 T_ACTIONS_DAILY = "actions_daily"
+
+
 V_EARNINGS_SURPRISE = "earnings_surprise"
-T_INSTITUTIONAL_FILINGS = "filings"
-T_INSTITUTIONAL_POSITIONS = "positions"
-T_SECURITY_IDENTIFIERS = "security_identifiers"
-T_SECURITIES = "securities"
+
 
 FILING_CONTENT_COMPANY = "company"
+
+
 FILING_CONTENT_SEGMENTS = "segments"
+
+
 CONSENSUS_KIND_OBSERVED = "captured_live"
 
-
-def _membership_chunks(
-    filters: Mapping[str, Sequence[Any]],
-) -> Iterator[dict[str, Sequence[Any]]]:
-    """`in` 목록을 URL 한도 안에 들어가는 조각들의 조합으로 나눈다.
-
-    조각 크기는 platform이 정한 것 하나를 쓴다 — 여기서 따로 정하면 두 경계가
-    서로 다른 한도를 주장하게 된다.
-    """
-    from investment_agent.platform.db.postgres import IN_FILTER_CHUNK
-
-    columns = list(filters)
-    pieces = [
-        [tuple(values[at:at + IN_FILTER_CHUNK]) for at in range(0, len(values), IN_FILTER_CHUNK)]
-        for values in (filters[column] for column in columns)
-    ]
-    for combination in product(*pieces) if columns else [()]:
-        yield dict(zip(columns, combination))
+EXTENDED_SECTIONS: tuple[str, ...] = (
+    "성장·마진",
+    "업종 특수 재무",
+    "기술 지표",
+    "세그먼트 전 축",
+    "수집·발송 감사",
+)
 
 
 def _display_security_profile(row: Mapping[str, Any]) -> dict[str, Any]:
@@ -116,7 +120,7 @@ def _attach_entity_profiles(gateway: Any, rows: list[dict[str, Any]]) -> list[di
         merged.append(value)
     return merged
 
-# 기업 전체 재무 wide 컬럼. 업종 특수 계정(은행·금융)이 이 표로 흡수돼 함께 온다.
+
 _FINANCIAL_COLUMNS = (
     "cik,fiscal_year,fiscal_period,accession_no,filing_date,period_end,"
     "revenue,cost_of_goods_and_services_sold,gross_profit,"
@@ -142,47 +146,26 @@ _FINANCIAL_COLUMNS = (
     "net_loans_and_leases,total_deposits,common_equity_scope,is_liabilities_derived,"
     "mezzanine_equity,preferred_stock,mapping_version,ingested_at"
 )
-# 컨센서스 스냅샷 전 컬럼. 최신 관측 축약도 공시 전 결합도 이 원본에서만 나온다.
+
+
 _CONSENSUS_COLUMNS = (
     "security_id,target_fiscal_year,target_fiscal_period,target_period_end,snapshot_date,"
     "snapshot_kind,source,eps_basis,eps_avg,eps_low,eps_high,eps_analysts,"
     "revenue_avg,revenue_low,revenue_high,revenue_analysts,revisions_up_7d,"
     "revisions_up_30d,revisions_down_7d,revisions_down_30d,collected_at"
 )
+
+
 _FILING_PROCESSING_COLUMNS = (
     "accession_no,content_type,mapping_version,status,facts_count,rows_count,updated_at"
 )
-# ----------------------------------------------------------------------
-
-
-def _security_identity(gateway: Any, tickers: Sequence[str]) -> tuple[dict[str, dict], dict[str, dict]]:
-    """화면의 ticker를 canonical security_id/CIK로 해석한다."""
-    wanted = sorted({str(ticker).upper() for ticker in tickers if str(ticker).strip()})
-    if not wanted:
-        return {}, {}
-    rows = gateway.select_rows(
-        schema=SCHEMA_UNIVERSE,
-        table=T_SECURITIES,
-        columns="security_id,ticker,cik,is_active_listing",
-        in_values={"ticker": wanted},
-        # 같은 ticker를 옛 종목과 지금 종목이 함께 가질 수 있다 — 상장 중인 행이 마지막에 와 이긴다.
-        order=(("ticker", False), ("is_active_listing", False), ("security_id", False)),
-        page_size=1_000,
-        max_rows=2_000,
-    )
-    by_ticker = {str(row["ticker"]).upper(): row for row in rows}
-    by_cik = {
-        str(row["cik"]).zfill(10): row
-        for row in rows if row.get("cik")
-    }
-    return by_ticker, by_cik
 
 
 def _canonical_financial_rows(
     gateway: Any, tickers: Sequence[str], *, limit: int | None = None
 ) -> list[dict[str, Any]]:
     """canonical financials + filings를 dashboard 표시 행으로 투영한다."""
-    by_ticker, by_cik = _security_identity(gateway, tickers)
+    by_ticker, by_cik = security_identity(gateway, tickers)
     if not by_cik:
         return []
     rows = gateway.select_rows(
@@ -227,7 +210,7 @@ def _canonical_processing_rows(
     gateway: Any, tickers: Sequence[str], *, content_type: str
 ) -> list[dict[str, Any]]:
     """공시 처리 상태와 filings 사실을 화면용 ticker 행으로 결합한다."""
-    _by_ticker, by_cik = _security_identity(gateway, tickers)
+    _by_ticker, by_cik = security_identity(gateway, tickers)
     if not by_cik:
         return []
     filings = gateway.select_rows(
@@ -272,7 +255,7 @@ def _canonical_processing_rows(
 def _canonical_segment_rows(
     gateway: Any, tickers: Sequence[str], *, limit: int = 5_000
 ) -> list[dict[str, Any]]:
-    _by_ticker, by_cik = _security_identity(gateway, tickers)
+    _by_ticker, by_cik = security_identity(gateway, tickers)
     if not by_cik:
         return []
     rows = gateway.select_rows(
@@ -298,7 +281,7 @@ def _canonical_segment_rows(
 def _canonical_price_rows(
     gateway: Any, tickers: Sequence[str], *, limit: int = 2_000
 ) -> list[dict[str, Any]]:
-    by_ticker, _by_cik = _security_identity(gateway, tickers)
+    by_ticker, _by_cik = security_identity(gateway, tickers)
     ids = sorted({int(row["security_id"]) for row in by_ticker.values() if row.get("security_id") is not None})
     if not ids:
         return []
@@ -321,7 +304,7 @@ def _canonical_price_rows(
 def _canonical_share_rows(
     gateway: Any, tickers: Sequence[str], *, limit: int = 240
 ) -> list[dict[str, Any]]:
-    by_ticker, _by_cik = _security_identity(gateway, tickers)
+    by_ticker, _by_cik = security_identity(gateway, tickers)
     ids = sorted({int(row["security_id"]) for row in by_ticker.values() if row.get("security_id") is not None})
     if not ids:
         return []
@@ -359,240 +342,6 @@ def _canonical_share_rows(
         }
         for row in rows if ticker_by_id.get(int(row["mapped_security_id"]))
     ]
-
-
-class DashboardDataError(RuntimeError):
-    """읽기 결과의 구조가 계약과 다를 때 사용하는 안전한 오류."""
-
-
-class SelectOnlyGateway:
-    """허용된 PostgREST SELECT 연산만 조합하는 좁은 게이트웨이.
-
-    v1 관심 기업은 공개 읽기 전용인 ``universe.entities``의 관심 컬럼에서
-    직접 읽는다.
-    """
-
-    #: 이름 -> 허용된 인자 이름. SQL 정의가 STABLE이고 본문이 SELECT 하나인 함수만 둔다.
-    READ_ONLY_FUNCTIONS: Mapping[str, frozenset[str]] = {}
-
-    def __init__(self, client: Any) -> None:
-        from investment_agent.platform.db.postgres import SchemaClients
-
-        self._client = client
-        self._schemas = SchemaClients(client)
-
-    @staticmethod
-    def _identifier(value: str) -> str:
-        current = str(value).strip()
-        if not _IDENTIFIER_RE.fullmatch(current):
-            raise DashboardDataError("허용되지 않은 DB 식별자입니다.")
-        return current
-
-    @classmethod
-    def _columns(cls, value: str) -> str:
-        columns = [item.strip() for item in str(value).split(",") if item.strip()]
-        if not columns or any(not _IDENTIFIER_RE.fullmatch(item) for item in columns):
-            raise DashboardDataError("명시적이고 단순한 SELECT 컬럼만 허용합니다.")
-        return ",".join(columns)
-
-    @staticmethod
-    def _response_rows(response: Any) -> list[dict[str, Any]]:
-        data = getattr(response, "data", None)
-        if data is None:
-            return []
-        if not isinstance(data, list) or any(not isinstance(row, Mapping) for row in data):
-            raise DashboardDataError("Supabase SELECT 응답이 행 배열이 아닙니다.")
-        return [dict(row) for row in data]
-
-    def select_rows(
-        self,
-        *,
-        schema: str,
-        table: str,
-        columns: str,
-        equal: Mapping[str, Any] | None = None,
-        in_values: Mapping[str, Sequence[Any]] | None = None,
-        order: Sequence[tuple[str, bool]] = (),
-        limit: int | None = None,
-        page_size: int | None = None,
-        max_rows: int | None = None,
-    ) -> list[dict[str, Any]]:
-        """SELECT와 허용된 필터·정렬·범위만 사용해 행을 읽는다."""
-
-        schema_name = self._identifier(schema)
-        table_name = self._identifier(table)
-        selected_columns = self._columns(columns)
-        equal_filters = {
-            self._identifier(column): value for column, value in (equal or {}).items()
-        }
-        membership_filters = {
-            self._identifier(column): tuple(values)
-            for column, values in (in_values or {}).items()
-        }
-        order_fields = tuple((self._identifier(column), bool(desc)) for column, desc in order)
-
-        if any(not values for values in membership_filters.values()):
-            return []
-        if limit is not None and not 1 <= int(limit) <= 20_000:
-            raise DashboardDataError("SELECT limit 범위를 벗어났습니다.")
-        if page_size is not None:
-            if not 1 <= int(page_size) <= 1_000:
-                raise DashboardDataError("SELECT page_size 범위를 벗어났습니다.")
-            if not order_fields:
-                raise DashboardDataError("페이지 조회에는 안정적인 정렬 컬럼이 필요합니다.")
-        if max_rows is not None and not 1 <= int(max_rows) <= 200_000:
-            raise DashboardDataError("SELECT max_rows 범위를 벗어났습니다.")
-
-        def build(subsets: Mapping[str, Sequence[Any]]) -> Any:
-            query = self._schemas.get(schema_name).table(table_name).select(selected_columns)
-            for column, value in equal_filters.items():
-                query = query.eq(column, value)
-            for column, values in subsets.items():
-                query = query.in_(column, list(values))
-            for column, descending in order_fields:
-                query = query.order(column, desc=descending)
-            return query
-
-        def read(subsets: Mapping[str, Sequence[Any]], ceiling: int) -> list[dict[str, Any]]:
-            if page_size is None:
-                query = build(subsets)
-                if limit is not None:
-                    query = query.limit(int(limit))
-                return self._response_rows(query.execute())
-            rows: list[dict[str, Any]] = []
-            start = 0
-            batch_size = int(page_size)
-            while start < ceiling:
-                end = min(start + batch_size, ceiling) - 1
-                chunk = self._response_rows(build(subsets).range(start, end).execute())
-                rows.extend(chunk)
-                if len(chunk) < end - start + 1:
-                    break
-                start = end + 1
-            return rows[:ceiling]
-
-        ceiling = int(max_rows or limit or 20_000)
-        splits = list(_membership_chunks(membership_filters))
-        if len(splits) == 1:
-            return read(splits[0], ceiling)
-
-        # `in` 값은 URL에 그대로 실린다. 행 상한과 다른 벽이라 페이지네이션으로는
-        # 풀리지 않고, 넘기면 PostgREST가 400을 준다 — 대시보드에서는 "실적 DB
-        # 조회 실패" 한 줄로만 보인다. 한 행은 각 컬럼에서 정확히 한 조각에만
-        # 속하므로 조각을 합쳐도 중복이 생기지 않는다.
-        merged: list[dict[str, Any]] = []
-        for subsets in splits:
-            merged.extend(read(subsets, ceiling))
-        for column, descending in reversed(order_fields):
-            merged.sort(key=lambda row, c=column: (row.get(c) is None, row.get(c)), reverse=descending)
-        return merged[:ceiling]
-
-    def select_function_rows(
-        self,
-        *,
-        schema: str,
-        function: str,
-        arguments: Mapping[str, Any] | None = None,
-        page_size: int | None = None,
-        max_rows: int | None = None,
-    ) -> list[dict[str, Any]]:
-        """allowlist에 있는 읽기 전용 SQL 함수의 결과 행만 읽는다.
-
-        비공개 스키마(`alerts`)의 사실에 닿는 유일한 경로다. 이름과 인자 이름이
-        allowlist와 정확히 같지 않으면 호출하지 않고 거부한다. 상태를 바꾸는 RPC는
-        allowlist에 올리지 않으므로 이 경로로 실행할 수 없다.
-        """
-
-        schema_name = self._identifier(schema)
-        function_name = self._identifier(function)
-        allowed = self.READ_ONLY_FUNCTIONS.get(function_name)
-        if allowed is None:
-            raise DashboardDataError("읽기 전용 allowlist에 없는 함수입니다.")
-        parameters = dict(arguments or {})
-        if not set(parameters).issubset(allowed):
-            raise DashboardDataError("허용되지 않은 함수 인자입니다.")
-
-        def build() -> Any:
-            return self._schemas.get(schema_name).rpc(function_name, parameters)
-
-        if page_size is None:
-            return self._response_rows(build().execute())
-        if not 1 <= int(page_size) <= 1_000:
-            raise DashboardDataError("함수 page_size 범위를 벗어났습니다.")
-        ceiling = int(max_rows or 20_000)
-        if not 1 <= ceiling <= 200_000:
-            raise DashboardDataError("함수 max_rows 범위를 벗어났습니다.")
-        rows: list[dict[str, Any]] = []
-        start = 0
-        batch_size = int(page_size)
-        while start < ceiling:
-            end = min(start + batch_size, ceiling) - 1
-            chunk = self._response_rows(build().range(start, end).execute())
-            rows.extend(chunk)
-            if len(chunk) < end - start + 1:
-                break
-            start = end + 1
-        return rows[:ceiling]
-
-
-def _offline_mode() -> bool:
-    return os.environ.get("DASHBOARD_OFFLINE", "").strip().lower() in _TRUE_VALUES
-
-
-def _configured() -> bool:
-    return bool(
-        os.environ.get("SUPABASE_URL", "").strip()
-        and os.environ.get("SUPABASE_SERVICE_KEY", "").strip()
-    )
-
-
-def _gateway() -> SelectOnlyGateway:
-    from investment_agent.platform.db.postgres import service_client
-
-    return SelectOnlyGateway(service_client())
-
-
-def _preflight() -> DataResult | None:
-    if _offline_mode():
-        return DataResult.offline(source=DB_SOURCE)
-    if not _configured():
-        return DataResult.unconfigured(
-            source=DB_SOURCE,
-            message="SUPABASE_URL 또는 SUPABASE_SERVICE_KEY가 설정되지 않았습니다.",
-        )
-    return None
-
-
-def _as_datetime(value: object) -> datetime | None:
-    if isinstance(value, datetime):
-        current = value
-        return current.replace(tzinfo=timezone.utc) if current.tzinfo is None else current
-    if isinstance(value, date):
-        return datetime(value.year, value.month, value.day, tzinfo=timezone.utc)
-    if value in (None, ""):
-        return None
-    text = str(value).strip()
-    try:
-        current = datetime.fromisoformat(text.replace("Z", "+00:00"))
-        return current.replace(tzinfo=timezone.utc) if current.tzinfo is None else current
-    except ValueError:
-        try:
-            current_date = date.fromisoformat(text)
-        except ValueError:
-            return None
-        return datetime(current_date.year, current_date.month, current_date.day, tzinfo=timezone.utc)
-
-
-def _latest_at(groups: Sequence[tuple[Sequence[Mapping[str, Any]], Sequence[str]]]) -> str | None:
-    candidates: list[datetime] = []
-    for rows, fields in groups:
-        for row in rows:
-            for field in fields:
-                parsed = _as_datetime(row.get(field))
-                if parsed is not None:
-                    candidates.append(parsed.astimezone(timezone.utc))
-                    break
-    return normalize_observed_at(max(candidates)) if candidates else None
 
 
 def _active_watchlist_rows(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
@@ -671,9 +420,6 @@ def _watchlist_rows(
     return active
 
 
-# 매크로 화면이 읽는 지표 집합. Discord 코어/감시 카드의 SSOT를 그대로 인용한다.
-
-
 @cache_data(ttl="15m", max_entries=64)
 def load_ticker_data_quality(ticker: str) -> DataResult:
     """한 종목의 분할 이력과 회사 단위 시가총액 완전성을 읽는다."""
@@ -682,13 +428,13 @@ def load_ticker_data_quality(ticker: str) -> DataResult:
     source = f"{DB_SOURCE} · market.actions_daily/universe.securities"
     if not re.fullmatch(r"[A-Z0-9][A-Z0-9.-]{0,14}", symbol):
         return DataResult.blocked(source=source, message="유효한 종목 코드가 필요합니다.")
-    blocked = _preflight()
+    blocked = preflight()
     if blocked:
         return blocked
     payload: dict[str, list[dict[str, Any]]] = {"splits": [], "issuer": []}
     failures: list[str] = []
     try:
-        gateway = _gateway()
+        gateway = open_gateway()
 
         def select_dataset(dataset: str, **query: Any) -> None:
             try:
@@ -701,7 +447,7 @@ def load_ticker_data_quality(ticker: str) -> DataResult:
             except Exception:
                 failures.append(dataset)
 
-        identity, _ = _security_identity(gateway, [symbol])
+        identity, _ = security_identity(gateway, [symbol])
         security = identity.get(symbol)
         if security and security.get("security_id") is not None:
             action_rows = gateway.select_rows(
@@ -735,7 +481,7 @@ def load_ticker_data_quality(ticker: str) -> DataResult:
                 ]
         except Exception:
             failures.append("issuer")
-        observed_at = _latest_at(
+        observed_at = latest_at(
             ((payload["splits"], ("action_date",)),)
         )
         if failures and len(failures) == len(payload):
@@ -765,103 +511,6 @@ def load_ticker_data_quality(ticker: str) -> DataResult:
         )
 
 
-@cache_data(ttl="5m", max_entries=64)
-def load_ai_data(ticker: str) -> DataResult:
-    """선택 종목의 v1 판단·시그널·포트폴리오·승인 사실을 읽는다."""
-
-    symbol = str(ticker or "").strip().upper()
-    source = f"{DB_SOURCE} · reporting/execution"
-    if not re.fullmatch(r"[A-Z0-9][A-Z0-9.-]{0,14}", symbol):
-        return DataResult.blocked(source=source, message="유효한 종목 코드가 필요합니다.")
-    blocked = _preflight()
-    if blocked:
-        return blocked
-    payload: dict[str, list[dict[str, Any]]] = {
-        "cases": [],
-        "signals": [],
-        "proposals": [],
-        "risk_decisions": [],
-        "approvals": [],
-    }
-    try:
-        gateway = _gateway()
-        case_rows = [
-            row for row in read_local_rows("security_decisions", canonical_db=gateway)
-            if row.get("ticker") == symbol
-        ]
-        case_rows.sort(key=lambda row: str(row.get("as_of_at") or ""), reverse=True)
-        case_rows = case_rows[:12]
-        cases = build_decision_cases_read_model(case_rows)
-        securities = gateway.select_rows(
-            schema=SCHEMA_UNIVERSE,
-            table=T_SECURITIES,
-            columns="security_id,ticker",
-            equal={"ticker": symbol, "is_active_listing": True},
-            limit=1,
-        )
-        security_id = securities[0].get("security_id") if securities else None
-        signals = [row for row in read_runtime_rows("signals")
-                   if security_id is not None and row.get("security_id") == security_id]
-        signals.sort(key=lambda row: str(row.get("recorded_at") or ""), reverse=True)
-        signals = signals[:40]
-        proposal_rows = read_runtime_rows("portfolio_proposals")
-        proposal_rows.sort(key=lambda row: str(row.get("as_of_at") or ""), reverse=True)
-        proposal_rows = proposal_rows[:80]
-        case_keys = {str(row.get("case_key")) for row in cases if row.get("case_key")}
-        proposals = [
-            row
-            for row in proposal_rows
-            if symbol in (row.get("weights") or {})
-            or bool(case_keys.intersection(str(item) for item in (row.get("case_keys") or [])))
-        ]
-        proposal_ids = {
-            str(row.get("proposal_id")) for row in proposals if row.get("proposal_id")
-        }
-        risk_rows = read_runtime_rows("risk_decisions")
-        risk_rows.sort(key=lambda row: str(row.get("decided_at") or ""), reverse=True)
-        risk_rows = risk_rows[:120]
-        risk_decisions = [
-            row
-            for row in risk_rows
-            if str(row.get("proposal_id")) in proposal_ids
-            or symbol in (row.get("approved_weights") or {})
-        ]
-        approvals = [row for row in read_runtime_rows("approvals")
-                     if str(row.get("proposal_id")) in proposal_ids]
-        approvals.sort(key=lambda row: str(row.get("requested_at") or row.get("created_at") or ""), reverse=True)
-        approvals = approvals[:80]
-        payload = {
-            "cases": cases,
-            "signals": signals,
-            "proposals": proposals,
-            "risk_decisions": risk_decisions,
-            "approvals": approvals,
-        }
-        observed_at = _latest_at(
-            (
-                (cases, ("as_of_at", "created_at")),
-                (signals, ("recorded_at", "created_at")),
-                (proposals, ("as_of_at", "created_at")),
-                (risk_decisions, ("decided_at",)),
-                (approvals, ("updated_at", "requested_at")),
-            )
-        )
-        if not any(payload.values()):
-            return DataResult.empty(
-                source=source,
-                value=payload,
-                observed_at=observed_at,
-                message=f"{symbol}의 저장된 AI 판단이 없습니다.",
-            )
-        return DataResult.ok(value=payload, source=source, observed_at=observed_at)
-    except Exception as error:
-        return DataResult.error(
-            source=source,
-            value=payload,
-            message=public_exception_message("AI 투자 DB 조회에 실패했습니다.", error),
-        )
-
-
 @cache_data(ttl="15m", max_entries=32)
 def load_earnings_data(ticker: str | None = None, *, section: str = "all") -> DataResult:
     """SEC 재무·공시·시장 예상치·활성 실적 watchlist를 읽는다."""
@@ -870,7 +519,7 @@ def load_earnings_data(ticker: str | None = None, *, section: str = "all") -> Da
     source = f"{DB_SOURCE} · fundamentals expectations · {section}"
     if symbol and not re.fullmatch(r"[A-Z0-9][A-Z0-9.-]{0,14}", symbol):
         return DataResult.blocked(source=source, message="유효한 종목 코드가 필요합니다.")
-    blocked = _preflight()
+    blocked = preflight()
     if blocked:
         return blocked
     payload: dict[str, list[dict[str, Any]]] = {
@@ -896,7 +545,7 @@ def load_earnings_data(ticker: str | None = None, *, section: str = "all") -> Da
     if requested is None:
         return DataResult.blocked(source=source, message="지원하지 않는 실적 보기입니다.")
     try:
-        gateway = _gateway()
+        gateway = open_gateway()
         ticker_filter = {"ticker": symbol} if symbol else None
 
         def select_dataset(dataset: str, **query: Any) -> list[dict[str, Any]]:
@@ -928,7 +577,7 @@ def load_earnings_data(ticker: str | None = None, *, section: str = "all") -> Da
                 gateway, selected_tickers, content_type=FILING_CONTENT_COMPANY
             ) if "filings" in requested else []
         )
-        by_ticker, _by_cik = _security_identity(gateway, selected_tickers)
+        by_ticker, _by_cik = security_identity(gateway, selected_tickers)
         security_ids = [int(row["security_id"]) for row in by_ticker.values() if row.get("security_id") is not None]
         consensus = []
         if "consensus" in requested and security_ids:
@@ -987,7 +636,7 @@ def load_earnings_data(ticker: str | None = None, *, section: str = "all") -> Da
             "ticker_profiles": ticker_profiles,
             "earnings_flash": earnings_flash,
         }
-        observed_at = _latest_at(
+        observed_at = latest_at(
             (
                 (core, ("updated_at", "filed_at")),
                 (filings, ("updated_at", "filing_date")),
@@ -1027,7 +676,7 @@ def load_earnings_discord_support(ticker: str, *, section: str = "all") -> DataR
     source = f"{DB_SOURCE} · Discord #실적-리포트 상세 근거 · {section}"
     if not re.fullmatch(r"[A-Z0-9][A-Z0-9.-]{0,14}", symbol):
         return DataResult.blocked(source=source, message="유효한 종목 코드가 필요합니다.")
-    blocked = _preflight()
+    blocked = preflight()
     if blocked:
         return blocked
 
@@ -1062,7 +711,7 @@ def load_earnings_discord_support(ticker: str, *, section: str = "all") -> DataR
     failures: list[str] = []
     attempted: list[str] = []
     try:
-        gateway = _gateway()
+        gateway = open_gateway()
         def select_dataset(dataset: str, **query: Any) -> None:
             """한 선택 소스의 실패가 다른 실제 결과를 지우지 않게 격리한다."""
 
@@ -1091,7 +740,7 @@ def load_earnings_discord_support(ticker: str, *, section: str = "all") -> DataR
         # 관측(observed) 스냅샷만 올린다. reconstructed는 소급 재구성이라 공시 전
         # 시점 근거로 쓰면 안 된다.
         estimate_identity = (
-            _security_identity(gateway, [symbol])[0]
+            security_identity(gateway, [symbol])[0]
             if "earnings_estimates" in requested else {}
         )
         estimate_ids = [
@@ -1128,7 +777,7 @@ def load_earnings_discord_support(ticker: str, *, section: str = "all") -> DataR
                 gateway, [symbol], content_type=FILING_CONTENT_SEGMENTS
             )
 
-        observed_at = _latest_at(
+        observed_at = latest_at(
             (
                 (payload["metrics"], ("period_end",)),
                 (payload["ttm"], ("period_end",)),
@@ -1177,15 +826,6 @@ def load_earnings_discord_support(ticker: str, *, section: str = "all") -> DataR
         )
 
 
-EXTENDED_SECTIONS: tuple[str, ...] = (
-    "성장·마진",
-    "업종 특수 재무",
-    "기술 지표",
-    "세그먼트 전 축",
-    "수집·발송 감사",
-)
-
-
 @cache_data(ttl="15m", max_entries=64)
 def load_earnings_extended(ticker: str, *, section: str = "all") -> DataResult:
     """Discord 실적 카드가 싣지 않는 확장 근거를 선택 섹션만 읽는다.
@@ -1200,7 +840,7 @@ def load_earnings_extended(ticker: str, *, section: str = "all") -> DataResult:
     source = f"{DB_SOURCE} · 실적 확장 근거 · {section}"
     if not re.fullmatch(r"[A-Z0-9][A-Z0-9.-]{0,14}", symbol):
         return DataResult.blocked(source=source, message="유효한 종목 코드가 필요합니다.")
-    blocked = _preflight()
+    blocked = preflight()
     if blocked:
         return blocked
 
@@ -1229,7 +869,7 @@ def load_earnings_extended(ticker: str, *, section: str = "all") -> DataResult:
 
     failures: list[str] = []
     try:
-        gateway = _gateway()
+        gateway = open_gateway()
         def select_dataset(dataset: str, **query: Any) -> None:
             """선택 안 한 소스는 건너뛰고, 한 소스 실패를 그 소스에만 가둔다."""
 
@@ -1312,7 +952,7 @@ def load_earnings_extended(ticker: str, *, section: str = "all") -> DataResult:
             })
         payload["notify_log"] = notify_rows
 
-        observed_at = _latest_at(
+        observed_at = latest_at(
             (
                 (payload["growth"], ("period_end",)),
                 (payload["industry"], ("ingested_at", "filed_at")),
@@ -1357,15 +997,3 @@ def load_earnings_extended(ticker: str, *, section: str = "all") -> DataResult:
                 f"실패 데이터셋: {failed_text}"
             ),
         )
-
-
-__all__ = [
-    "DataResult",
-    "EXTENDED_SECTIONS",
-    "SelectOnlyGateway",
-    "load_ai_data",
-    "load_earnings_data",
-    "load_earnings_discord_support",
-    "load_earnings_extended",
-    "load_ticker_data_quality",
-]

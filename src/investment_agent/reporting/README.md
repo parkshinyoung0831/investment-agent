@@ -62,4 +62,4 @@ TTM·margin·서프라이즈·밸류에이션 배수는 표에 굳혀 두지 않
 - 새 뷰를 노출한다 → `financial.py`의 `VIEWS` + `db/postgres/v1/90_reporting.sql`
 - 로컬 원장 뷰를 늘린다 → `runtime.py`의 `LOCAL_VIEWS`
 - 알림 read model → `notifications/` (규칙 15: 알림 패키지는 이 계약을 소비만 한다)
-- 화면 read model → `readers/dashboard.py`와 `dashboard/db.py`의 `SelectOnlyGateway`
+- 화면 read model → `readers/dashboard.py`(reporting view), `readers/earnings.py`·`readers/ai.py`(`readers/select_only.py`의 `SelectOnlyGateway`로 읽는 로더)

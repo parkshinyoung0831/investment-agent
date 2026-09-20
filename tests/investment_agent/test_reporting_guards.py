@@ -33,13 +33,29 @@ ALLOWED_IMPORTS = {
     "investment_agent.data.fundamentals.domain.services.classify_dimensions",
     "investment_agent.data.fundamentals.domain.taxonomy.segment_concepts",
     "investment_agent.research.strategies.catalog",
+    "itertools",
+    "investment_agent.reporting.readers.select_only",
+    "investment_agent.reporting.services.fundamental_segments",
 }
 WRITE_CALLS = {"insert", "upsert", "update", "delete", "rpc", "execute", "from_config", "create_client"}
+
+
+def _inside_method(node, parents, class_name, method):
+    """`node`가 `class_name.method` 본문(중첩 함수 포함) 안에 있는지 본다."""
+    current, in_method = node, False
+    while current in parents:
+        current = parents[current]
+        if isinstance(current, ast.FunctionDef) and current.name == method:
+            in_method = True
+        if isinstance(current, ast.ClassDef) and current.name == class_name:
+            return in_method
+    return False
 
 
 def assert_boundary(sources):
     for filename, source in sources.items():
         tree = ast.parse(source)
+        parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 assert all(a.name in ALLOWED_IMPORTS for a in node.names), filename
@@ -49,6 +65,23 @@ def assert_boundary(sources):
                 if isinstance(node.func, ast.Name):
                     assert node.func.id not in {"__import__", "eval", "exec", "open"}, filename
                 if isinstance(node.func, ast.Attribute):
+                    if filename == "readers/select_only.py":
+                        # SELECT 전용 gateway. 조회는 항상 `.table(...).select(...)`로 시작하고, 종단 `.execute()`는
+                        # `SelectOnlyGateway.select_rows` 안에만 있다. insert·upsert·update·delete·rpc는 아래 검사가 막는다.
+                        if node.func.attr == "table":
+                            parent = parents.get(node)
+                            assert isinstance(parent, ast.Attribute) and parent.attr == "select", filename
+                            continue
+                        if node.func.attr == "execute":
+                            assert _inside_method(node, parents, "SelectOnlyGateway", "select_rows"), filename
+                            continue
+                    if (
+                        filename == "readers/earnings.py"
+                        and node.func.attr == "update"
+                        and isinstance(node.func.value, ast.Name)
+                        and node.func.value.id == "value"
+                    ):
+                        continue  # 행 사본(dict) 병합이며 저장소 쓰기가 아니다.
                     if (
                         filename == "readers/runtime.py"
                         and node.func.attr == "update"
@@ -148,8 +181,8 @@ class ReportingGuardsTest(unittest.TestCase):
             {
                 "__init__.py", "models.py",
                 "readers/__init__.py", "readers/dashboard.py", "readers/financial.py",
-                "readers/intelligence.py", "readers/news.py", "readers/research.py",
-                "readers/runtime.py",
+                "readers/ai.py", "readers/earnings.py", "readers/intelligence.py", "readers/news.py",
+                "readers/research.py", "readers/runtime.py", "readers/select_only.py",
                 "services/__init__.py", "services/economic_releases.py",
                 "services/financial_row.py", "services/fundamental_segments.py", "services/strategy_labels.py",
             },
@@ -172,7 +205,7 @@ class ReportingGuardsTest(unittest.TestCase):
 
     def test_boundary_rejects_individual_injected_violations(self):
         for statement in (
-            "import investment_agent.dashboard.db", "from investment_agent.data.market import persistence",
+            "import investment_agent.dashboard", "from investment_agent.data.market import persistence",
             "from investment_agent.notifications import service", "import yfinance",
             "from ..trading import repository", "import requests", "import streamlit",
             "db.insert({})", "db.upsert({})", "db.update({})", "db.delete()", "db.rpc('x')",
@@ -181,6 +214,27 @@ class ReportingGuardsTest(unittest.TestCase):
         ):
             with self.subTest(statement=statement):
                 self.assert_guard_fails(lambda: assert_boundary({"queries.py": statement}))
+
+    def test_select_only_gateway_exceptions_stay_narrow(self):
+        """gateway 예외(`.table().select()`·`select_rows`의 `.execute()`)는 그 자리에서만 통한다."""
+        gateway = (
+            "class SelectOnlyGateway:\n"
+            "    def select_rows(self):\n"
+            "        query = self.s.table('a').select('x')\n"
+            "        return query.execute()\n"
+        )
+        assert_boundary({"readers/select_only.py": gateway})
+        violations = (
+            gateway + "    def other(self):\n        return self.q.execute()\n",
+            "class SelectOnlyGateway:\n    def select_rows(self):\n        return self.s.table('a').insert({})\n",
+            "class SelectOnlyGateway:\n    def select_rows(self):\n        return self.s.table('a').select('x').upsert({})\n",
+            "class SelectOnlyGateway:\n    def select_rows(self):\n        return self.s.rpc('f')\n",
+        )
+        for statement in violations:
+            with self.subTest(statement=statement):
+                self.assert_guard_fails(lambda: assert_boundary({"readers/select_only.py": statement}))
+        # 다른 파일은 같은 코드를 쓸 수 없다.
+        self.assert_guard_fails(lambda: assert_boundary({"readers/ai.py": gateway}))
 
     def test_contract_rejects_individual_injected_violations(self):
         remote_views = {view: spec for view, spec in VIEWS.items() if view not in LOCAL_VIEWS}

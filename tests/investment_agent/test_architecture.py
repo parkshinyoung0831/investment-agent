@@ -256,57 +256,39 @@ class ResearchFactorsBoundaryTest(unittest.TestCase):
 
 
 class DashboardReportingBoundaryTest(unittest.TestCase):
-    """Reporting으로 옮긴 화면이 dashboard DB god module로 돌아가지 않는다."""
+    """화면은 저장소를 열지 않는다. 읽기는 reporting reader만 거친다."""
 
-    _MIGRATED = {
-        "app_pages/macro.py",
-        "app_pages/econ_calendar.py",
-        "app_pages/decision_flow.py",
-        "app_pages/gurus.py",
-        "app_pages/ml_rl_lab.py",
-        "app_pages/portfolio.py",
-    }
     IDENTITY_GATE = "universe"
+    _DB_MODULES = ("investment_agent.dashboard.db", "investment_agent.platform.db")
 
-    def test_migrated_readers_have_no_dashboard_db_alias_or_duplicate(self) -> None:
-        from investment_agent.dashboard import db
+    def _offenders(self) -> list[str]:
+        return [
+            f"{path.relative_to(ROOT).as_posix()} -> {name}"
+            for path in _modules(PACKAGE / "dashboard")
+            for name in sorted(_imported_names(path))
+            if any(name == module or name.startswith(module + ".") for module in self._DB_MODULES)
+        ]
 
-        self.assertFalse(hasattr(db, "load_alpha_lab_data"))
-        self.assertFalse(hasattr(db, "load_tickers"))
+    def test_the_dashboard_owns_no_database_module_and_imports_no_database_client(self) -> None:
+        self.assertFalse((PACKAGE / "dashboard" / "db.py").exists())
+        self.assertEqual([], self._offenders())
 
-    def test_migrated_reader_guard_rejects_a_legacy_alias(self) -> None:
-        from investment_agent.dashboard import db
+    def test_the_guard_rejects_a_dashboard_module_that_opens_a_database(self) -> None:
+        for statement in (
+            "from investment_agent.platform.db.postgres import sb\n",
+            "from investment_agent.dashboard.db import load_ai_data\n",
+        ):
+            with self.subTest(statement=statement):
+                with tempfile.TemporaryDirectory(dir=PACKAGE / "dashboard" / "app_pages") as temporary:
+                    (Path(temporary) / "probe.py").write_text(statement, encoding="utf-8")
+                    with self.assertRaises(AssertionError) as caught:
+                        self.test_the_dashboard_owns_no_database_module_and_imports_no_database_client()
+                    self.assertIn("probe.py", str(caught.exception))
 
-        with patch.object(db, "load_tickers", lambda: None, create=True):
-            with self.assertRaises(AssertionError):
-                self.test_migrated_readers_have_no_dashboard_db_alias_or_duplicate()
-
-    def test_migrated_pages_do_not_import_dashboard_db(self) -> None:
-        offenders = []
-        root = PACKAGE / "dashboard"
-        for relative in self._MIGRATED:
-            path = root / relative
-            if "investment_agent.dashboard.db" in path.read_text(encoding="utf-8"):
-                offenders.append(relative)
-        self.assertEqual([], sorted(offenders))
-
-    def test_portfolio_page_guard_rejects_legacy_db_import(self) -> None:
-        read_text = Path.read_text
-        portfolio = PACKAGE / "dashboard" / "app_pages" / "portfolio.py"
-
-        def injected(path: Path, *args: object, **kwargs: object) -> str:
-            if path == portfolio:
-                return "from investment_agent.dashboard.db import load_latest_target"
-            return read_text(path, *args, **kwargs)
-
-        with patch.object(Path, "read_text", injected):
-            with self.assertRaises(AssertionError):
-                self.test_migrated_pages_do_not_import_dashboard_db()
-
-    def test_price_reader_is_not_imported_from_dashboard_db(self) -> None:
-        pages = (PACKAGE / "dashboard" / "app_pages").glob("*.py")
-        offenders = [path.name for path in pages if "dashboard.db import load_price_history" in path.read_text(encoding="utf-8")]
-        self.assertEqual([], sorted(offenders))
+    def test_readers_the_pages_use_live_in_reporting(self) -> None:
+        for name in ("select_only", "ai", "earnings"):
+            self.assertTrue((PACKAGE / "reporting" / "readers" / f"{name}.py").is_file(), name)
+        self.assertFalse(hasattr(__import__("investment_agent.reporting.readers.select_only", fromlist=["x"]).SelectOnlyGateway, "select_function_rows"))
 
     def test_the_identity_gate_depends_on_no_other_pipeline(self) -> None:
         """예외는 한 방향뿐이다. 게이트가 남을 부르면 순환이 생긴다.

@@ -209,7 +209,7 @@ class EarningsFlashViewContractTests(unittest.TestCase):
     def test_consumers_read_the_derived_flash_view(self) -> None:
         with open("src/investment_agent/reporting/notifications/earnings_flash.py", encoding="utf-8") as handle:
             notify_db = handle.read()
-        with open("src/investment_agent/dashboard/db.py", encoding="utf-8") as handle:
+        with open("src/investment_agent/reporting/readers/earnings.py", encoding="utf-8") as handle:
             dashboard_db = handle.read()
 
         self.assertIn('V_EARNINGS_SURPRISE = "earnings_surprise"', notify_db)

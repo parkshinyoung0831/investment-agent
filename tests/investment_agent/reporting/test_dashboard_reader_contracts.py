@@ -1,7 +1,6 @@
-"""화면이 실제로 쓰는 reporting reader의 공개 계약을 검증한다.
+"""화면이 실제로 쓰는 reporting reader(`readers/dashboard.py`)의 공개 계약을 검증한다.
 
-`dashboard/db.py`에 있던 같은 이름의 옛 로더는 화면 caller가 없어서 지웠다. 그 로더의
-계약 테스트가 살아 있는 이 reader를 보호하지 못하던 상태였으므로 여기서 다시 고정한다.
+execution 관측·가격·13F·전략·거시 로더가 화면에 내는 payload 모양과 상태를 고정한다.
 """
 from __future__ import annotations
 

@@ -143,15 +143,16 @@ def run() -> int:
 
     import inspect
 
-    from investment_agent.dashboard import db as dash_db
+    from investment_agent.reporting.readers import ai as reader_ai
     from investment_agent.reporting.readers import dashboard as reporting_dashboard
+    from investment_agent.reporting.readers import earnings as reader_earnings
     # 화면이 쓰는 reader는 두 모듈에 나뉘어 있다. 어느 쪽이든 인자 없이 부를 수 있는 조회는 모두 확인한다.
-    for module in (dash_db, reporting_dashboard):
+    for module in (reader_ai, reader_earnings, reporting_dashboard):
         for name in sorted(dir(module)):
             if not name.startswith("load_"):
                 continue
             fn = getattr(module, name)
-            if not callable(fn) or getattr(fn, "__module__", module.__name__) != module.__name__ and module is dash_db:
+            if not callable(fn) or getattr(fn, "__module__", module.__name__) != module.__name__:
                 continue
             try:
                 params = inspect.signature(fn).parameters.values()
