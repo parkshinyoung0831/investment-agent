@@ -328,8 +328,6 @@ class LayerDirectionTest(unittest.TestCase):
     # 잔류도 실패시켜 이후 phase에서 이 집합이 줄어들기만 하게 한다.
     PENDING_DEPENDENCIES = frozenset(
         {
-            ("src/investment_agent/trading/supabase_repository.py", "investment_agent.execution.db"),
-            ("src/investment_agent/trading/supabase_repository.py", "investment_agent.execution.orders.snapshots"),
             ("src/investment_agent/research/backtest/contracts.py", "investment_agent.trading.portfolio.contracts"),
             ("src/investment_agent/research/backtest/simulator.py", "investment_agent.trading.portfolio.contracts"),
             ("src/investment_agent/research/commands/backfill_research_history.py", "investment_agent.trading.supabase_repository"),

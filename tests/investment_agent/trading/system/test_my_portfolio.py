@@ -31,13 +31,15 @@ def _snapshot(cash: float, positions: dict[str, tuple[float, float]] | None = No
     )
 
 
+def _save_snapshot(snapshot: AccountSnapshot) -> str:
+    return "execution_snapshot_1"
+
+
 class _Ledger:
     def __init__(self):
         self.rows: dict[str, list[dict]] = {}
 
     def __getattr__(self, name):
-        if name == "save_portfolio_snapshot":
-            return lambda snapshot: "execution_snapshot_1"
         if name.startswith("save_") or name == "finish_decision_run":
             return lambda *args, **kwargs: self.rows.setdefault(name, []).append(args[0] if args else kwargs)
         raise AttributeError(name)
@@ -65,7 +67,7 @@ class FollowWeightsTest(unittest.TestCase):
 class PlanFollowTest(unittest.TestCase):
     def test_plan_records_a_live_proposal_that_follows_exactly_the_system_target(self):
         ledger = _Ledger()
-        outcome = plan_follow(ledger, target=_target(), snapshot=_snapshot(4_000.0, {"TSLA": (2.0, 500.0)}), now=NOW)
+        outcome = plan_follow(ledger, target=_target(), snapshot=_snapshot(4_000.0, {"TSLA": (2.0, 500.0)}), now=NOW, save_snapshot=_save_snapshot)
         self.assertEqual(outcome.status, "planned")
         proposal = ledger.rows["save_portfolio_proposal"][0]
         self.assertEqual(proposal["stage"], "live")
@@ -82,31 +84,38 @@ class PlanFollowTest(unittest.TestCase):
     def test_an_account_that_already_matches_the_target_asks_nothing(self):
         snapshot = _snapshot(4_250.0, {"NVDA": (4.0, 100.0), "MSFT": (1.0, 350.0)})  # 총 5,000 = 8% / 7% / 85%
         ledger = _Ledger()
-        outcome = plan_follow(ledger, target=_target(), snapshot=snapshot, now=NOW)
+        writes: list[AccountSnapshot] = []
+
+        def save_snapshot(value: AccountSnapshot) -> str:
+            writes.append(value)
+            return "execution_snapshot_1"
+
+        outcome = plan_follow(ledger, target=_target(), snapshot=snapshot, now=NOW, save_snapshot=save_snapshot)
         self.assertEqual((outcome.status, outcome.reason), ("skipped", "already_following"))
         self.assertEqual(ledger.rows, {})
+        self.assertEqual(writes, [])
 
     def test_a_manual_external_trade_shows_up_in_the_next_snapshot(self):
         """사용자가 Toss에서 직접 판 종목은 다음 스냅샷의 차이로 다시 계산된다."""
         matched = _snapshot(4_250.0, {"NVDA": (4.0, 100.0), "MSFT": (1.0, 350.0)})
         sold_by_hand = _snapshot(4_650.0, {"MSFT": (1.0, 350.0)})
-        self.assertEqual(plan_follow(_Ledger(), target=_target(), snapshot=matched, now=NOW).status, "skipped")
-        outcome = plan_follow(_Ledger(), target=_target(), snapshot=sold_by_hand, now=NOW)
+        self.assertEqual(plan_follow(_Ledger(), target=_target(), snapshot=matched, now=NOW, save_snapshot=_save_snapshot).status, "skipped")
+        outcome = plan_follow(_Ledger(), target=_target(), snapshot=sold_by_hand, now=NOW, save_snapshot=_save_snapshot)
         self.assertEqual(outcome.status, "planned")
 
     def test_stale_or_unapproved_targets_and_open_orders_are_not_followed(self):
         old = _target(decided_at=(NOW - timedelta(days=11)).isoformat())
-        self.assertEqual(plan_follow(_Ledger(), target=old, snapshot=_snapshot(5_000.0), now=NOW).reason,
+        self.assertEqual(plan_follow(_Ledger(), target=old, snapshot=_snapshot(5_000.0), now=NOW, save_snapshot=_save_snapshot).reason,
                          "system_target_stale")
         busy = _snapshot(5_000.0, open_order_ids=("order-1",))
-        self.assertEqual(plan_follow(_Ledger(), target=_target(), snapshot=busy, now=NOW).reason,
+        self.assertEqual(plan_follow(_Ledger(), target=_target(), snapshot=busy, now=NOW, save_snapshot=_save_snapshot).reason,
                          "account_has_open_orders")
         with self.assertRaises(ContractError):
-            plan_follow(_Ledger(), target=_target(is_approved=False, weights={}), snapshot=_snapshot(5_000.0), now=NOW)
+            plan_follow(_Ledger(), target=_target(is_approved=False, weights={}), snapshot=_snapshot(5_000.0), now=NOW, save_snapshot=_save_snapshot)
 
     def test_the_same_target_and_account_plan_the_same_identity(self):
-        first = plan_follow(_Ledger(), target=_target(), snapshot=_snapshot(5_000.0), now=NOW)
-        second = plan_follow(_Ledger(), target=_target(), snapshot=_snapshot(5_000.0), now=NOW)
+        first = plan_follow(_Ledger(), target=_target(), snapshot=_snapshot(5_000.0), now=NOW, save_snapshot=_save_snapshot)
+        second = plan_follow(_Ledger(), target=_target(), snapshot=_snapshot(5_000.0), now=NOW, save_snapshot=_save_snapshot)
         self.assertEqual((first.proposal_id, first.risk_decision_id), (second.proposal_id, second.risk_decision_id))
 
 

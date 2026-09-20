@@ -107,10 +107,11 @@ def create_execution_intent(
         raise RuntimeError("confirmation must exactly match risk_decision_id")
     point = parse_datetime(now) if now is not None else datetime.now(timezone.utc)
     selected_repository = repository or SupabaseRepository()
-    row = selected_repository.risk_decision(risk_decision_id)
+    selected_execution = execution_repository or ExecutionRepository()
+    row = selected_execution.risk_decision(risk_decision_id)
     if row is None or not bool(row.get("is_approved")):
         raise RuntimeError("only an approved risk decision can create an execution intent")
-    proposal = selected_repository.portfolio_proposal(str(row["proposal_id"]))
+    proposal = selected_execution.portfolio_proposal(str(row["proposal_id"]))
     if proposal is None:
         raise RuntimeError("portfolio proposal not found")
     approved_weights = dict(row.get("approved_weights") or {})
@@ -146,7 +147,7 @@ def create_execution_intent(
         not_before=point,
         ttl_minutes=ttl_minutes,
     )
-    (execution_repository or ExecutionRepository()).save_intent(intent.as_row())
+    selected_execution.save_intent(intent.as_row())
     log.info(
         "%s execution intent created intent_id=%s artifact_id=%s expires_at=%s",
         execution_mode, intent.intent_id, artifact_id, intent.expires_at,

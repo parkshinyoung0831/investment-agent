@@ -1,12 +1,63 @@
 """Trading-owner harness stage adapters."""
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 
 from investment_agent.operations.adapters._metadata import _ID_PATTERNS, metadata_id
 from investment_agent.operations.harness.commands import PythonModuleCommand
 from investment_agent.operations.harness.contracts import StageContext, StageOutcome
+from investment_agent.platform.serialization import normalize_ticker
+
+
+def save_follow_snapshot(
+    snapshot: Any,
+    *,
+    execution_repository: Any | None = None,
+    security_ids_by_ticker: Callable[[list[str]], dict[str, int]] | None = None,
+) -> str:
+    """Operations가 Data identity와 Execution 계좌 원장을 조립한다."""
+    from investment_agent.data.universe.persistence import select_security_ids_by_ticker
+    from investment_agent.execution.db import ExecutionRepository
+
+    execution = execution_repository or ExecutionRepository()
+    account_ref = hashlib.sha256(
+        f"{snapshot.broker}|{snapshot.account_id}".encode("utf-8")
+    ).hexdigest()
+    snapshot_id = execution.save_account_snapshot({
+        "execution_mode": "live",
+        "broker_account_hash": account_ref,
+        "equity": snapshot.total_value,
+        "cash": snapshot.cash_value,
+        "buying_power": snapshot.cash_value,
+        "captured_at": snapshot.captured_at,
+        "raw_snapshot": {
+            "source": "portfolio_construction",
+            "broker": snapshot.broker,
+            "base_currency": snapshot.base_currency,
+            "open_order_count": len(snapshot.open_order_ids),
+        },
+    })
+    if snapshot.positions:
+        symbols = sorted({normalize_ticker(position.ticker) for position in snapshot.positions})
+        security_ids = (security_ids_by_ticker or select_security_ids_by_ticker)(symbols)
+        missing = [symbol for symbol in symbols if symbol not in security_ids]
+        if missing:
+            raise RuntimeError(f"unknown universe securities: {missing[:10]}")
+        execution.save_position_snapshots([
+            {
+                "account_snapshot_id": snapshot_id,
+                "ticker": normalize_ticker(position.ticker),
+                "security_id": security_ids[normalize_ticker(position.ticker)],
+                "quantity": position.quantity,
+                "market_price": position.market_price,
+                "market_value": position.market_value,
+                "weight": position.market_value / snapshot.total_value,
+            }
+            for position in snapshot.positions
+        ])
+    return str(snapshot_id)
 
 
 def follow_system_target(*, target_id: str, store: Any, repository: Any, now: datetime) -> Any:
@@ -21,7 +72,7 @@ def follow_system_target(*, target_id: str, store: Any, repository: Any, now: da
     if not repository.has_approved_promotion(target.model_artifact_id, "live"):
         raise RuntimeError("System target model artifact has not been manually promoted to live")
     snapshot = capture_toss_account_snapshot(account_seq=resolve_account_seq(None))
-    return plan_follow(repository, target=target, snapshot=snapshot, now=now)
+    return plan_follow(repository, target=target, snapshot=snapshot, now=now, save_snapshot=save_follow_snapshot)
 
 
 class TradingAdapters:

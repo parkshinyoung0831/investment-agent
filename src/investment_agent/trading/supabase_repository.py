@@ -5,7 +5,6 @@
 """
 from __future__ import annotations
 
-import hashlib
 import math
 from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -36,7 +35,6 @@ from investment_agent.research.adapters.trading import (
     technical_features_since,
 )
 from investment_agent.trading.portfolio.signal_book import SignalBatch, SignalRecord
-from investment_agent.execution.orders.snapshots import AccountSnapshot
 from investment_agent.trading.decision.universe import normalize_ticker
 from investment_agent.trading.decision.event_impact import THEME_BY_NAME, global_event_priorities
 from investment_agent.trading.portfolio.market_risk import estimate_betas
@@ -1067,50 +1065,6 @@ class SupabaseRepository:
             failure_reason=failure_reason,
         )
 
-    def save_portfolio_snapshot(self, snapshot: AccountSnapshot) -> str:
-        """execution owner의 불변 계좌 원장에 snapshot을 기록한다.
-
-        ``trading``은 계좌 상태를 소유하지 않지만, 판단이 사용한 snapshot을
-        가리킬 수 있어야 한다. 따라서 이 writer는 execution repository의
-        공개 계약만 호출하고, trading 테이블에는 snapshot 자체를 복제하지 않는다.
-        실제 계좌번호는 execution 원장에도 평문으로 남기지 않고 hash만 기록한다.
-        """
-        from investment_agent.execution.db import ExecutionRepository
-
-        execution = ExecutionRepository()
-        account_ref = hashlib.sha256(
-            f"{snapshot.broker}|{snapshot.account_id}".encode("utf-8")
-        ).hexdigest()
-        snapshot_id = execution.save_account_snapshot({
-            "execution_mode": "live",
-            "broker_account_hash": account_ref,
-            "equity": snapshot.total_value,
-            "cash": snapshot.cash_value,
-            "buying_power": snapshot.cash_value,
-            "captured_at": snapshot.captured_at,
-            "raw_snapshot": {
-                "source": "portfolio_construction",
-                "broker": snapshot.broker,
-                "base_currency": snapshot.base_currency,
-                "open_order_count": len(snapshot.open_order_ids),
-            },
-        })
-        if snapshot.positions:
-            security_ids = _security_ids([position.ticker for position in snapshot.positions])
-            execution.save_position_snapshots([
-                {
-                    "account_snapshot_id": snapshot_id,
-                    "ticker": normalize_ticker(position.ticker),
-                    "security_id": security_ids[normalize_ticker(position.ticker)],
-                    "quantity": position.quantity,
-                    "market_price": position.market_price,
-                    "market_value": position.market_value,
-                    "weight": position.market_value / snapshot.total_value,
-                }
-                for position in snapshot.positions
-            ])
-        return str(snapshot_id)
-
     def save_signal_batch(
         self,
         *,
@@ -1280,15 +1234,6 @@ class SupabaseRepository:
             model_artifact=self.model_artifact(decision.artifact_id),
             model_stage=self.model_stage(decision.artifact_id),
         )
-
-    def risk_decision(self, risk_decision_id: str) -> dict | None:
-        from investment_agent.execution.db import ExecutionRepository
-
-        return ExecutionRepository().risk_decision(risk_decision_id)
-
-    def portfolio_proposal(self, proposal_id: str) -> dict | None:
-        from investment_agent.execution.db import ExecutionRepository
-        return ExecutionRepository().portfolio_proposal(proposal_id)
 
     def has_approved_promotion(self, artifact_id: str, to_stage: str) -> bool:
         if to_stage not in {"paper", "live"}:

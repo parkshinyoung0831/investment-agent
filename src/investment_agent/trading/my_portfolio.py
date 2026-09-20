@@ -14,7 +14,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from investment_agent.execution.contracts import AccountSnapshot, ExecutionLimits
 from investment_agent.platform.logging import get_logger
@@ -78,6 +78,7 @@ def plan_follow(
     target: Any,
     snapshot: AccountSnapshot,
     now: datetime,
+    save_snapshot: Callable[[AccountSnapshot], str],
     policy: FollowPolicy | None = None,
 ) -> FollowOutcome:
     """System 목표 하나와 새 계좌 스냅샷으로 실계좌 추종 제안·결정을 기록한다. 주문은 내지 않는다."""
@@ -97,7 +98,7 @@ def plan_follow(
 
     decided_at = parse_datetime(snapshot.captured_at)
     run_id = stable_id("follow_run", {"target_id": target.target_id, "snapshot_id": snapshot.snapshot_id})
-    account_snapshot_id = repository.save_portfolio_snapshot(snapshot)
+    account_snapshot_id = save_snapshot(snapshot)
     if account_snapshot_id is None:
         raise RuntimeError("execution account snapshot writer returned no snapshot id")
     repository.save_policy({

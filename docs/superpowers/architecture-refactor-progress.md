@@ -8,8 +8,8 @@
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
 - 현재 단계: Phase 2~3의 Research artifact/Data read owner 이관과 실제 caller 기준 역방향 import 제거를 독립 단위로 진행 중이다.
-- 현재 계획: `docs/superpowers/plans/2026-09-20-risk-intent-execution-ownership.md` (Task 1~3 완료). 다음 독립 단위는 Trading God façade의 남은 Execution 원장 import와 broker runtime 등을 다시 확인해 선택한다.
-- 완료 단계: Phase 1 조사, Phase 2의 feature snapshot·training label·valuation·event·training sample·decision experience owner 이관, Phase 3 공통 serialization·forecast·평가 계약 및 일부 Data read 역방향 import 정리, production Trading 알고리즘 검증의 명시적 경계 설정, Phase 4 RiskGate→ExecutionIntent 생성 책임 이관. 현재 `PENDING_DEPENDENCIES`는 21쌍이다.
+- 현재 작업 방식: 같은 책임 경계의 독립 변경 2~3개를 한 배치로 묶는다. 이번 배치는 Execution decision row read와 계좌 snapshot persistence 이관이며, 별도 완료 plan 대신 아래 배치 원장에 기록한다.
+- 완료 단계: Phase 1 조사, Phase 2의 feature snapshot·training label·valuation·event·training sample·decision experience owner 이관, Phase 3 공통 serialization·forecast·평가 계약 및 일부 Data read 역방향 import 정리, production Trading 알고리즘 검증의 명시적 경계 설정, Phase 4 RiskGate→ExecutionIntent 생성 책임 이관. Execution persistence 배치 이관 후 `PENDING_DEPENDENCIES`는 19쌍이다.
 - maintenance 상태: `harness_switch --status`로 STOPPED·hold ON(reason=원본 사본 architecture refactor Phase 1-10 이식)·kill switch ON·Toss live FALSE를 확인했다. 이미 걸린 hold는 변경하지 않으며 임의로 해제/재기동하지 않는다.
 
 ## 검증 기준선
@@ -472,6 +472,13 @@
 - 제거된 debt: `trading/risk/gate.py → execution/orders/intents.py` 한 쌍. `PENDING_DEPENDENCIES` 22→21, 새 pending 없음.
 - 남은 debt: 일반 Research→Trading 19쌍, `trading/supabase_repository.py → execution/db.py`와 `→ execution/orders/snapshots.py` 2쌍. Execution과 live broker, dashboard, notifications, operations 등 pending 집합 밖 단계도 남는다.
 - 다음 독립 작업: Trading Supabase façade가 실제 Execution snapshot/DB를 어느 메서드에서 쓰는지 caller를 좁히고 owner별 분리 가능성을 평가한다. Execution 변경 전 다시 maintenance 상태를 확인한다.
+
+#### Execution persistence 배치 — decision row read + 계좌 snapshot write
+
+- 근거·변경 전 caller: intent 명령은 Trading `SupabaseRepository.risk_decision/portfolio_proposal`을 불렀지만 둘 다 ExecutionRepository Runtime SQLite read에 즉시 전달했다. System 추종 `plan_follow`은 같은 Trading façade의 `save_portfolio_snapshot`을 통해 Execution account/position snapshot을 기록했다. Toss 승인 기본 경로는 이미 ExecutionRepository로 decision row를 읽고 있었다.
+- 변경 파일·방향: `operations/commands/create_execution_intent.py`가 주입·기본 ExecutionRepository 하나로 risk/proposal read와 intent write를 수행한다. `trading/my_portfolio.py`는 명시적 `save_snapshot` callback을 받으며 `operations/adapters/trading.py`가 Data security ID 조회와 Execution snapshot 저장을 조립한다. `trading/supabase_repository.py`의 해당 forwarding/read/write 3메서드와 Execution imports를 삭제했다. Trading 계획의 skip 판정, 저장 시점·순서, 계좌 hash·position payload, PIT/read 저장소는 유지했다. 변경 테스트는 Operations intent·snapshot, Trading follow, architecture이다.
+- 검증: fake owner 분리에서 RED, snapshot writer 부재·architecture 위반 정확히 2건으로 RED 확인. 관련·architecture·workflow·docs 107개 통과. 전체 offline suite 3,039개는 이전과 같은 선택적 `lightgbm`/`xgboost` 미설치 오류 4개·skip 1개 외 새 실패가 없다. skip 시 snapshot write 0건, account hash/security ID/비중, runtime callback wiring 검증. maintenance hold ON·kill switch ON·Toss live FALSE 유지.
+- 남은 부채: `PENDING_DEPENDENCIES` 21→19, 모두 일반 Research→Trading imports다. Execution DB/snapshot의 Trading façade caller/import는 0건. Broker runtime, dashboard read, notification channel, ResearchStore·Operations 경계와 최종 architecture guard는 아직 완료되지 않았다. 다음 배치는 실제 caller를 확인해 같은 책임 경계의 독립 후보 2~3개를 묶는다.
 
 ## 향후 milestone
 

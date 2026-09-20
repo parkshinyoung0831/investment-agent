@@ -55,6 +55,16 @@ class CreateExecutionIntentScopeTest(unittest.TestCase):
 
     def test_public_core_returns_the_persisted_intent(self):
         class Repository:
+            def current_tracked_tickers(self):
+                return ["AAPL"]
+
+            def has_approved_promotion(self, artifact_id, execution_mode):
+                return artifact_id == "artifact-1" and execution_mode == "paper"
+
+        class IntentRepository:
+            def __init__(self):
+                self.rows = []
+
             def risk_decision(self, risk_decision_id):
                 return {
                     "risk_decision_id": risk_decision_id,
@@ -76,16 +86,6 @@ class CreateExecutionIntentScopeTest(unittest.TestCase):
                     proposal_id=proposal_id,
                     model_artifact_id="artifact-1",
                 )
-
-            def current_tracked_tickers(self):
-                return ["AAPL"]
-
-            def has_approved_promotion(self, artifact_id, execution_mode):
-                return artifact_id == "artifact-1" and execution_mode == "paper"
-
-        class IntentRepository:
-            def __init__(self):
-                self.rows = []
 
             def save_intent(self, row):
                 self.rows.append(row)
