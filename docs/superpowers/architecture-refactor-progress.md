@@ -508,6 +508,13 @@
 - 검증: pending 두 항목 제거 시 정확한 architecture 위반 2건과 새 owner 모듈 import 오류로 RED 확인. 관련 Research·Operations·Trading·native·architecture 81개 통과. 전체 오프라인 suite 3,056개는 이전과 동일한 별도 문서/Graphify 실패 3건·skip 1건 외 새 실패가 없다. 두 이전 production import 및 사용처 검색 0건.
 - 남은 부채: `PENDING_DEPENDENCIES` 19→17쌍. `event_intelligence`의 Event 계약은 아직 Trading 소유라 별도 검증이 필요하다. Broker runtime, Dashboard의 earnings/AI read, ResearchStore·Operations 소유권 및 별도 문서/Graphify 실패 3건이 남는다. 다음 배치는 Event 계약과 나머지 Research import를 실제 caller·검증 helper 사용 범위부터 다시 조사한다.
 
+#### Research 사건 계약 배치 — Event와 EventFeatureSnapshot 소유권
+
+- 근거·변경 전 caller: `Event`와 `EventFeatureSnapshot`의 production 생성·소비는 `research.features.event_intelligence`뿐이었다. Trading decision은 두 클래스를 사용하지 않았고, native test의 Trading `Event` import도 미사용이었다. Research가 Trading 계약을 역방향 import한 실제 한 쌍이었다.
+- 변경 파일·방향: 두 dataclass와 기존 검증·PIT·직렬화·hash 식을 `research/features/event_contracts.py`로 이동하고 `event_intelligence.py`가 직접 import한다. Trading contracts의 원본·export 및 미사용 `_EVENT_TYPES`, native test의 미사용 import를 제거했다. 호환 alias·DB schema·사건 계산·Trading 재분석 계산 변경 없음. 새 Research owner test는 기존 고정 input hash, source 정렬과 시각 거절을 검증한다.
+- 검증: 새 owner import 오류와 pending 한 건의 정확한 위반으로 RED 확인. Research event·Trading 재분석·native·architecture 50개 통과. repo/packaging/architecture 62개 중 기존 Graphify 추적 파일 불일치 1건 외 새 실패 없음. 전체 suite 3,058개는 이전과 동일한 별도 문서/Graphify 실패 3건·skip 1건 외 새 실패가 없다. 이전 Trading 사건 계약 caller 검색 0건.
+- 남은 부채: `PENDING_DEPENDENCIES` 17→16쌍. Research 명령의 Trading Supabase façade 및 backtest/RL의 Trading portfolio/risk import는 별도 caller·행동 검증 후 이관해야 한다. 별도 문서/Graphify 통합 실패 3건도 남아 있다.
+
 ## 향후 milestone
 
 | 묶음 | 해당 phase | 독립 완료 조건 |
