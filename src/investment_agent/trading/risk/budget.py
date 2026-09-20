@@ -66,6 +66,7 @@ def risk_budget(
             "trend": regime.trend,
             "volatility_state": regime.volatility_state,
             "inputs": dict(regime.metadata.get("inputs", {})),
+            "source_ids": list(regime.source_ids),
         },
         "regime_budget_version": market_policy.version,
         "market_risk_policy": market_policy.to_dict(),

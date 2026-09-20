@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from investment_agent.reporting.services.financial_row import total_debt
+
 
 def as_float(v: Any) -> float | None:
     if v is None:
@@ -32,21 +34,6 @@ def _margin(num: float | None, den: float | None) -> float | None:
     return num / den
 
 
-def _total_debt(row: dict) -> float | None:
-    total = as_float(row.get("total_debt_including_current"))
-    if total is not None:
-        return total
-    parts = [
-        as_float(row.get("short_term_debt")),
-        as_float(row.get("current_portion_of_long_term_debt")),
-        as_float(row.get("long_term_debt")),
-        as_float(row.get("operating_lease_current_debt_equivalent")),
-        as_float(row.get("operating_lease_non_current_debt_equivalent")),
-    ]
-    vals = [p for p in parts if p is not None]
-    return sum(vals) if vals else None
-
-
 def _cash(row: dict) -> float | None:
     """현금성 자산 = 현금·현금성자산 + 단기투자자산.
 
@@ -61,7 +48,7 @@ def _cash(row: dict) -> float | None:
 
 
 def _net_debt(row: dict) -> float | None:
-    debt = _total_debt(row)
+    debt = total_debt(row)
     if debt is None:
         return None
     return debt - (_cash(row) or 0.0)

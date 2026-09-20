@@ -1,0 +1,121 @@
+# 데이터 영역 감사 — universe / market / macro / institutional (진행 중, 발견 즉시 추가)
+기준일 2026-09-21. 운영 DB는 readonly 세션으로만 조회. 파일 수정 없음.
+항목 형식: 영역 / 증상 / 근거 / 재현·수치 / 원인 / 수정 방향 / 위험 / 확정·의심 / 난이도 / 사용자 결정 필요 여부
+
+## DA-1 [높음·확정] release watcher(due_releases)가 월간·주간 발표를 거의 못 본다 — 이벤트를 ref_period로 거른다
+- 근거: src/investment_agent/data/macro/releases/db.py `_summary_rows`(events 조회에 `.gte/.lte("ref_period", start.date()/end.date())`), `due_releases`(now-4d~now), `upcoming`, `releases_within`, `select_snapshot_rows`, `summaries_for`.
+- 원인: 창이 "발표 시각(scheduled_at)"이 아니라 "관측 기간(ref_period)"에 걸린다. ref_period는 월간 지표에서 전월 1일(CPI 발표 9/11 -> 2026-08-01), 주간 청구는 발표일-5일(-12일)이라 [now-4d, now] 창 밖이다.
+- 수치(운영 DB, 최근 4일 발표): US_INITIAL_CLAIMS(ref 9/12, 발표 9/17 12:30Z) False, US_CONTINUING_CLAIMS(ref 9/5) False, US_INDUSTRIAL_PRODUCTION(ref 8/1, 발표 9/18) False. 실제로 첫 관측 시각(min available_at)이 발표 뒤 한참: CPI 발표 9/11 12:30Z -> 첫 저장 9/13 16:26Z(약 52시간), 청구 9/17 12:30Z -> 9/18 06:37Z, 산업생산 9/18 13:15Z -> 9/19 06:34Z. 즉 15분 watcher가 아니라 daily(06:xxZ)가 잡았다. `econ_calendar_watch.yml` 주석("창 안 지표는 15분 안에 속보")이 월간·주간에는 성립하지 않는다.
+- 통과하는 것은 ref가 최근인 일간·주간(mortgage, FED_NET_LIQUIDITY)뿐이며 이들은 발표 시각(16:00Z, 20:30Z)이 watcher 창(UTC 12~15시) 밖이다.
+- 수정: 이벤트 선택을 `release_schedule_versions.scheduled_at`(최신 버전) 창으로 바꾸고 ref_period는 자연키로만 쓴다. `_summary_rows`가 `events`를 ref_period로 자르는 대신 schedules에서 scheduled_at 범위로 후보 키를 만든다. 하드코딩 불필요.
+- 위험: 수정 후 watcher가 실제로 알림을 더 내보낸다(econ_calendar_release 채널 재발송/신규 발송). 신규 topic baseline 필요 여부 확인 필요. 난이도 중. 알림 발송 영향 -> 사용자 결정 필요(활성화 시점).
+
+## DA-2 [높음·확정] own_model(자체 예상)이 measure와 다른 단위의 값(원값 수준)으로 저장된다
+- 근거: application/release_calendar.py `snapshot_forecasts` L~199 `db.primary_history(sid) if measure["is_primary"] else db.measure_history(...)`; releases/db.py `primary_history`(economic_observations 원값), `measure_history`(forecast_snapshots 자기 자신의 과거).
+- 원인: 예상 대상 measure는 MOM/MONTHLY_CHANGE/YOY 같은 변환값인데 is_primary이면 원값 이력(지수·고용자수 수준)으로 다음 값을 예측해 measure_id=US_CPI.MOM 로 저장한다. 비primary는 예상 스냅샷 자체를 이력으로 삼는 순환.
+- 수치: forecast_snapshots 최신 행 — US_CPI.MOM = 335.092(지수 수준, %가 아님), US_RETAIL_SALES.MOM = 773,947, US_NFP.MONTHLY_CHANGE = 159,075(고용자 수준; 변화는 ~100). `market_surprise`는 survey 없어서 NULL이나 `model_error = first_actual - own_model`이 수십만 단위 쓰레기. `notifications/econ_calendar/embeds.py:47-48`이 이를 표시하고 research/evidence/reader.py:527도 evidence로 실어 나른다.
+- 수정: measure 이력은 `normalize.calculate_family(measure, raw_by_period)`로 measure 값을 계산해 그 이력에 drift를 적용한다(공용 함수 이미 있음). 기존 own_model 행은 오염이므로 재계산/삭제 필요(DDL 아님, DML) -> 사용자 결정.
+- 위험: 카드/evidence에 잘못된 자체모델 값 노출. 확정. 난이도 중.
+
+## DA-3 [높음·확정] 월간 발표는 발표 전 예상 스냅샷이 아예 없다 — snapshot_forecasts도 ref_period 창
+- 근거: release_calendar.py `snapshot_forecasts`가 `db.releases_within(start=now, end=now+EXPECTATION_HORIZON_DAYS)`(DA-1과 같은 ref_period 창).
+- 수치: US_CPI 예상 스냅샷의 ref_period = 5/1,6/1,7/1,8/1(모두 9/13 16:27Z 한 번, 발표 후), 10/1(9/14~), 11/1(9/17~). **다음 발표(9/1 -> 10/14 발표)의 ref 2026-09-01은 행이 0건.** 반대로 아직 한참 먼 ref 10/1·11/1에는 매일 새 행이 쌓인다. US_GDP nowcast는 ref 2026-04-01까지만이고 마지막 수집 9/13 — Q3(ref 2026-07-01, 10월 말 발표)는 GDPNow가 없다.
+- 결과: closing 예상(발표 직전까지 공개된 마지막 값)이 월간 지표 대부분 비어 `market_surprise`/`model_error`가 NULL. 8/1 CPI는 스냅샷이 첫 관측(9/13 16:26Z)보다 늦은 16:27Z라 closing으로 못 쓰인다.
+- 수정: DA-1과 같은 뿌리. scheduled_at 창으로 "다가오는 발표"를 고른다.
+- 난이도 중(DA-1과 함께). 사용자 결정: 백필은 과거 발표 직전 예상을 복원할 수 없음(PIT) — 그대로 둠.
+
+## DA-4 [중간·확정] 예상값·일정 스냅샷이 매일 동일한 값으로 append된다 (append-only 표 팽창)
+- 근거: releases/db.py `upsert_releases`(변경 감지 없이 미래 일정 전부를 collected_at=now 로 insert), `append_forecasts`(effective_at=now 이므로 항상 새 행). snapshot_forecasts 독스트링은 "달라진 상태만 DB가 원자적으로 저장"이라 하나 코드에 비교가 없다(DB 트리거 여부는 미확인 -> 아래 수치는 실제로 쌓임을 보임).
+- 수치: release_schedule_versions 6,192행 중 서로 다른 (series,ref,scheduled_at,precision,source,cancelled)는 5,155(1,037행 중복, 미래 EIA/CPI 일정이 매일 1행씩: EIA ref 2026-09-25 8버전 등). forecast_snapshots 5,161행 중 값 동일 중복 262+. US_CPI ref 10/1 예상은 7일 연속 335.092 동일.
+- 부수: `_summary_rows`가 이 세 표와 economic_observations(59,703행) 전체를 select("*") 페이지네이션으로 읽는다(DA-5).
+- 수정: upsert 전에 최신 버전과 비교해 (scheduled_at,precision,source,cancelled) 동일하면 skip. 예상도 값 동일하면 skip. 하드코딩 없음.
+- 난이도 낮음.
+
+## DA-5 [중간·확정] due_releases/summaries_for가 호출마다 전체 표를 읽는다 (성능)
+- 근거: releases/db.py `_summary_rows` — series, measures, schedule_versions 전체, economic_observations 전체(59,703행), forecast_snapshots 전체를 매번 select_paged. `watch_once`(15분마다, 폴링 4회) -> due_releases 1회 + ingest_raw가 summaries_for를 before/after 2회 = 폴링 1회당 3회 전체 조회, 실행 1회당 최대 12회. econ_calendar_daily도 동일.
+- 수정: 대상 series/ref로 좁혀 읽기(`eq("series_key", ...)`)하거나 SQL view `reporting.macro_release_summary`를 SELECT. 난이도 중.
+
+### DA-1 추가 영향(같은 뿌리, 확정)
+- `db.upcoming()`를 쓰는 `econ_calendar_publish_ics`는 ref_period가 아직 미래인 발표만 담는다 -> 월간 미국 지표(CPI·NFP 등, ref=전월 1일)는 ICS 구독 캘린더에서 빠진다.
+- `research/evidence/reader.py:496 econ_snapshot` -> `select_snapshot_rows(as_of, lookback 14d, lookahead 30d)`도 ref_period 창. Trading 판단 evidence(LLM 프롬프트)의 "최근 결과"에 8/1 CPI 같은 직전 월간 발표가 안 들어오고(ref 8/1 < as_of-14d), 발표가 한참 먼 ref 10/1·11/1 행이 "예정"으로 들어온다. 그 행의 forecast가 DA-2의 335.09 같은 원값이다.
+- 재현 방법(순수): `_summary_rows`의 events 조회 조건을 SQL로 옮기면 `select ... where ref_period between current_date-4 and current_date` 가 최근 4일 발표 5건 중 3건(청구 2, 산업생산 1)만 탈락시킨다(위 수치).
+- 테스트 가림: tests/investment_agent/data/macro/releases/test_watch.py 픽스처는 ref_period가 발표일 근처(2026-07-01 등)로 만들어져 실제 lag(전월 1일)를 재현하지 못한다.
+
+## DA-6 [중간·확정 수치, 설계 판단 필요] ALFRED 백필 40,230행의 available_at이 전부 백필 시각(2026-09-13)
+- 근거: releases/db.py `_times`/`append_observations`(collected_at 기본 now), infrastructure/releases/sources/alfred.py `source_rows`(effective_at만 지정, collected_at 미지정), db/postgres/v1/40_macro.sql:118 COMMENT("과거 빈티지 백필은 백필 시각이다" — 의도된 규칙).
+- 수치: economic_observations alfred_first_print 3,392행(available_at 30일 초과 지연 3,367), alfred_revision 36,838행(36,650) — vintage_at 2016-09~2026-09인데 available_at은 전부 2026-09-13. `domain/revisions.py Observation.known_at`은 max(effective, collected)를 쓰므로 2026-09-13 이전 as_of의 PIT 재현(research 과거 재현·backtest)은 이 10년 거시 이력을 전혀 못 본다. `_summary_rows`의 `as_of` 필터도 collected_at 기준이라 동일.
+- 성격: 보수적 규칙이지만 ALFRED는 realtime_start가 신뢰 가능한 공개일(date_only)이라 known_at을 vintage_at(+1일) 기준으로 두어도 PIT 안전하다. 반대로 지금은 "과거 재현에서 거시가 조용히 빈다". 메모리 "과거 재현 PIT 규칙"과 연결.
+- 수정: 백필 행에 한해 소비자(`Observation.known_at`)가 time_precision=date_only이며 source가 alfred_* 인 경우 vintage_at 기준으로 판단하게 하거나, 적재 시 available_at=vintage_at(+DATE_ONLY_LAG)로 넣는 결정. 후자는 DML 재작성이라 사용자 결정. 하드코딩 없음.
+- 위험: 결정 없이 두면 과거 재현 macro 특성이 없음. 확정(수치), 방향은 사용자 결정. 난이도 낮음~중.
+
+## DA-7 [낮음·확정] macro 정적 창·연도 상수
+- `fomc_calendar.py:_CURRENT_LAST_YEAR = 2027`, `_CURRENT_FIRST_YEAR = 2021`: 현재 페이지가 2027 이후를 다뤄도 `start.year <= 2027` 조건 때문에 2028 이후 horizon에서는 조용히 비어(FOMC 일정 0건, 실패로 안 잡힘) 갈 수 있다. 시간이 지나면 2021 이전 판정도 어긋남. -> "페이지에서 읽은 연도" 기준으로 판단.
+- `schedule.py:_KR_BASE_RATE_DATES`(2026 하드코딩 8개): 2027-01 이후 일정이 없으면 KR_BASE_RATE는 일정 0건인데 실패로 안 보고된다(주석은 degraded 보고라 했으나 `official_calendar_dates`가 빈 리스트를 그냥 반환). 이전 목적지: series_config.json의 schedule 계약 또는 코드 catalog.
+- `_first_business_day`는 공휴일 무시(KR_CPI/KR_EXPORT, 한국 설·추석·1/1). 12시간 창(rule)이라 하루 어긋나면 watcher가 놓친다(daily가 하루 안에 커버).
+
+## DA-8 [낮음·확정] 죽은 코드·중복 시간대 유틸
+- `commands/macro_refresh.py`: `_rows_for_series`, `_build_row`은 테스트(test_entrypoint.py)만 참조 — 실제 적재는 `application/refresh_market_state.py`가 한다. 테스트가 죽은 경로를 지키고 있다.
+- `macro_refresh._kst_today`(ZoneInfo 직접), `yfinance._market_today` 는 platform.clock의 `kst_today()`/`us_market_today()`와 중복 진실.
+
+## DM-1 [낮음·확정] market/domain/adjustments.py 는 src 어디서도 호출되지 않는 죽은 코드 + `__init__` 문서가 사실과 다름
+- 근거: `adjust`/`split_factors`/`dividend_factors` 참조는 자기 파일과 tests/investment_agent/data/market/test_adjustments.py 뿐(grep 전수). `market/__init__.py` 독스트링은 "조정가는 `adjustments`가 읽는 시점에 만든다"라고 하지만 실제 소비자는 저장된 raw close(분할 보정은 price_repair가 저장 전에 함)를 쓴다.
+- 부수 결함(호출되는 순간 조용히 틀림): `split_factors`/`dividend_factors`는 마지막 봉 이후 날짜의 이벤트(action_date/ex_date > 최신 봉)를 첫 반복에서 소비해 **최신 봉까지** 계수가 곱해진다. 독스트링("최신 가격이 기준")과 반대. 미래 ex_date가 조금이라도 있으면 최신 봉이 조정됨.
+- 수정: 쓸 계획이 없으면 삭제(+테스트, `__init__` 문구 정정). 쓸 계획이면 이벤트를 [첫봉, 마지막봉] 범위로 잘라 먼저 걸러낼 것. 난이도 낮음.
+
+## DM-2 [낮음·확정] market_daily 의 날짜 계산이 clock 유틸 대신 직접 ZoneInfo (중복 진실)
+- 근거: commands/market_daily.py `today = datetime.now(ZoneInfo("America/New_York")).date()` vs domain/calendar.py `market_today()`(같은 모듈 owner가 이미 있음), universe/persistence.py `_us_market_today()`도 같은 계산. 동작은 같지만 세 곳. 하나로 통일(`platform.clock.us_market_today`).
+
+## DU-1 [낮음·확정] `refresh_korean_names(retry_after_days=90)`의 재시도 간격은 무동작
+- 근거: universe/application/collection.py `refresh_korean_names`가 `retry_before`를 계산해 `db.select_name_ko_pending(retry_before)`에 넘기지만 universe/persistence.py `select_name_ko_pending`이 `del retry_before`(v1은 실패 ledger가 없음). 로그에 `retry_after_days=90`을 찍어 90일 간격으로 재시도하는 것처럼 보이지만 실제로는 실행마다 이름이 빈 tracked 종목 전부를 토스에 다시 조회한다(C-5 company_name_ko 0%와 결합하면 매 실행 ~500종목 조회, 토스 호출 예산 소모).
+- 수정: 실패 시각을 entities에 저장하거나(DDL 필요 -> 사용자 결정) 파라미터와 로그 문구를 제거해 "매번 전부 재시도"임을 정직하게 표기. 난이도 낮음(문구)/중(간격).
+
+## DU-2 [낮음·확정] set_membership 은 행마다 UPDATE 1회(N+1), 값이 그대로여도 항상 UPDATE
+- 근거: universe/persistence.py `set_membership` — `for ticker, is_tracked in wanted: db.table(T_SECURITIES).update({"is_tracked": ...}).eq("security_id", ...).execute(); changed += 1`. 현재값(`security.is_tracked`)과 같아도 쓰고, 반환 `changed`는 실제 변경 수가 아니라 시도 수다. 월간/멤버십 변경 시 ~503건 순차 PATCH, 로그 "현재 멤버: 503"이 항상 503.
+- 수정: `security.is_tracked == bool(is_tracked)`면 건너뛰고, 모아서 `upsert(on_conflict=security_id)`가 불가한 표(NOT NULL 컬럼)라면 변경분만 update. 난이도 낮음. (게이트 자체는 운영 DB에서 정상: tracked 503 = 열린 S&P 멤버십 503, 비상장·미확인·CIK 없음 0건.)
+
+### DA-2 추가 수치(확정)
+- 같은 own_model이 두 경로로 쓰이고 단위가 정반대다. 백필 경로(`econ_calendar_backfill._historical_own_model_rows`, `normalize.calculate_family`로 measure 이력 계산)는 정상: US_CPI `alfred_baseline_v1_*` 115행이 -0.80~+1.32(% MoM 스케일), US_NFP `alfred_baseline_v1_naive` 115행이 -20,714~4,890(천 명 변화). 라이브 경로(`snapshot_forecasts` -> `primary_history`)는 US_CPI `econ_baseline_v1_drift` 11행이 전부 335.092, US_NFP `econ_baseline_v1_naive` 11행이 전부 159,075(PAYEMS 수준). 라이브 own_model 행 전체(25개 지표)가 같은 오류 계열(US_RETAIL_SALES.MOM = 773,947 등).
+- 수정: `snapshot_forecasts`가 백필과 같은 함수(`_historical_own_model_rows`의 measure 이력 계산부)를 재사용하도록 공유 함수로 뺀다. 오염된 라이브 행(source_code like 'econ_baseline_v1_%')은 DML 삭제/재계산 필요 -> 사용자 결정.
+
+## DA-10 [높음·확정] 주간 지표의 ref_period를 "발표일 - 고정 일수"로 만들어 휴일 주에 유령 이벤트가 생긴다
+- 근거: domain/releases/schedule.py `reference_period`(`_WEEKLY_LAG_DAYS`, FED_NET_LIQUIDITY는 `release_date - 1`), `release_row`.
+- 원인: 청구 발표는 추수감사절 주에 수요일로 당겨지는데 lag는 5일 고정이라 관측일(토요일)과 하루 어긋난다.
+- 운영 데이터: US_INITIAL_CLAIMS 이벤트 ref 2025-11-21(발표 11/26, obs 없음)과 실제 관측 ref 2025-11-22(obs 있음)가 동시에 존재 -> 전자는 영구 "not_available_yet" 유령 이벤트. 최근 400일 유령 12건(청구 6, FED_NET_LIQUIDITY 3 등). **앞으로도 생김**: 미래 일정 중 US_INITIAL_CLAIMS 2026-11-20(금, 토요일이어야 함), US_CONTINUING_CLAIMS 2026-11-13(금), FED_NET_LIQUIDITY 2026-11-26(목, 수요일이어야 함), US_MORTGAGE_30Y 2026-11-25(수, 목요일이어야 함).
+- 결과: 휴일 주 발표는 watcher/알림이 실제 관측과 못 맞물려 알림이 빠지고 캘린더에 유령이 남는다.
+- 수정: 지표별 관측 요일(series_config.json의 schedule 계약에 `observation_weekday` 추가; 청구=토, EIA=금, WALCL=수, 모기지=목)로 "발표일 직전(또는 당일)의 그 요일"을 ref로 계산. 이미 있는 catalog(json)에 필드 하나 추가라 하드코딩 신설 아님.
+- 난이도 낮음. 기존 유령 행 정리는 DML(사용자 결정).
+
+## DA-11 [중간·확정 코드] 발표 이벤트가 이동/취소돼도 옛 이벤트를 취소로 표시하는 경로가 없다
+- 근거: release_calendar.py `sync_schedules`는 `is_cancelled`를 어디서도 세우지 않는다(`releases/db.py upsert_releases`는 raw.get("is_cancelled")만 소비). 월 경계를 넘겨 일정이 이동하면(예: 10/31 -> 11/3) `reference_period`가 월 기준이라 ref가 바뀌어 새 이벤트가 생기고 옛 이벤트는 "scheduled"->"not_available_yet"로 영구 남는다. FRED가 목록에서 제거한 날짜도 마찬가지.
+- 수정: 이번 동기화에서 소스가 더는 안 주는 미래 이벤트(같은 series, scheduled_at>now, 소스 동일)를 cancelled 버전으로 append. 난이도 중.
+- 의심(운영 재현 못함): 이번 사례는 데이터로 확인하지 못했고 DA-10이 이미 같은 증상을 냄.
+
+## DI-1 [높음·확정] Pershing Square(빌 애크먼)가 13F 제출자를 바꿔 최신 분기가 영구히 안 들어온다
+- 근거: institutional/domain/managers.py `MANAGER_CATALOG`(0001336528 만 있음), infrastructure/sources/sec13f.py `_FORMS = {"13F-HR","13F-HR/A"}`.
+- 수치(SEC submissions 직접 조회): CIK 0001336528은 2026-08-14에 **13F-NT**(13F NOTICE, accession 0001172661-26-003777, 2026-06-30 기준)를 냈고 본문에 "Holdings of this reporting manager are now included in the report of its public parent company"라 적혀 있으며 otherManager=PERSHING SQUARE INC.(CIK 0002026053). 그 CIK는 2026-08-14에 13F-HR(accession 0001172661-26-003790, period 2026-06-30)을 제출했다. 우리 DB: 0001336528 최신 period_end 2026-03-31(filings 21건). 다른 6인은 모두 2026-06-30.
+- 결과: 카드/evidence에서 애크먼은 2026 Q1 보유를 "현재"로 계속 쓴다(다음 분기도 같은 방식이라 영구). 앞선 감사 C-6("1곳이 분기를 건너뜀, 의심")의 원인이 이것으로 확정 — 데이터 구멍이 아니라 제출자 교체.
+- 수정: `MANAGER_CATALOG`/`MANAGER_PRESENTATION`에 후속 제출자 CIK를 같은 인물로 묶는 개념(예: `successor_of`/`alias_ciks`)이 필요하다. 지금 구조는 CIK가 곧 인물 identity(포럼 스레드·태그 키)라 CIK를 새로 추가하면 다른 거장 1명이 늘어난 것으로 처리돼 스레드/알림 토픽이 갈라진다. 이전 목적지: managers.py 상수.
+- 위험: Discord 포럼 태그/스레드 선언(discord_admin)과 알림 baseline(`notify_ledger baseline`) 영향 -> **사용자 결정 필요(알림 재발송·채널 선언 동반)**. 난이도 중.
+
+## DI-2 [중간·확정 코드+데이터] PIT 포트폴리오가 NEW HOLDINGS 정정 분기에서 "추가분만" 현재 포트폴리오로 본다
+- 근거: institutional/persistence.py `effective_portfolio_state` L247-265: 분기의 유효 신고 중 `max(filing_date, accession_no)`인 하나를 event로 삼고, 포지션 행에는 `{"effective_accession_no": row["accession_no"], **row}` — 즉 effective_accession_no가 **행 자신의 accession**이다. 소비자 `research/evidence/reader.py guru_candidate_signals`는 `equity_by_accession[current_event.effective_accession_no]`만 읽는다.
+- 결과: 원본 + NEW HOLDINGS(추가분)이 함께 유효한 분기는 추가분 행만 그 분기 포트폴리오로 집계된다(원본 수십 종목 무시). 운영 데이터의 해당 사례: 애크먼 2021-12-31(추가분 1행, 2022-03-07), 2024-12-31(1행, 2025-04-16), 버크셔 2023-12-31(1행), 2025-03-31(4행, 2025-08-14). 그 분기를 current/previous로 삼는 과거 재현에서 "직전 분기 포트폴리오"가 1~4행이라 다음 분기 전체가 신규 편입으로 계산된다(라이브 as_of=지금은 최신 분기에 정정이 없어 영향 없음 -> 과거 재현·백테스트 한정).
+- 두 번째 결함(같은 규칙 중복): `domain/holdings.effective_filings`는 RESTATEMENT가 있으면 **그것 하나만** 반환해, RESTATEMENT 이후에 낸 NEW HOLDINGS를 버린다(버크셔 2023-09-30: RESTATEMENT 152행 + 이후 NEW HOLDINGS 1행 -> 1행 소실). 같은 저장소 안의 `domain/analysis.py::_authoritative_filings`는 `_filing_order >= base_order`인 NEW HOLDINGS를 더한다 — 정정 규칙이 두 곳에서 다르다(중복 진실).
+- 수정: (a) effective_accession_no는 "이 분기 포트폴리오를 이루는 accession 묶음"의 대표 키(예: 마지막 accession)로 두고 포지션에는 그 묶음 키를 부착, (b) `effective_filings`를 RESTATEMENT 이후 NEW HOLDINGS 포함하도록 고치고 analysis.py도 그 함수 하나를 쓰게 통합. 난이도 중. 테스트 가림 주의: 정정 없는 픽스처만 있으면 통과.
+
+## DI-3 [낮음·확정 코드] etl.main()은 항상 parser.error로 종료하는 죽은 진입점, 실패 공시의 재시도 창은 7일
+- 근거: institutional/application/etl.py `main`(인자 파싱 후 무조건 `parser.error(...)`); `commands/institutional_daily.py`가 진짜 진입점. 위 main과 `--include-existing/--reparse-since` 옵션은 아무 데도 연결되지 않는다.
+- 근거2: `POLL_WINDOW_DAYS = env_int("GURUS_POLL_WINDOW_DAYS", 7)` + 워크플로 `lookback_days 7`, 화~토 실행. 파싱/검증 실패(`validate_or_ingest`)한 공시는 저장되지 않으므로 다음 실행에서 다시 시도되지만 접수 후 7일이 지나면 폴링 대상에서 영구 탈락한다(실패 알림은 그 실행의 exit 1 한 번뿐). 백필로만 복구.
+- 수정: 죽은 main 삭제. 창은 "미저장이면서 접수 후 N일 이내"가 아니라 "카탈로그 운용사별 최신 저장 접수일 이후 전체"로. 난이도 낮음~중.
+
+## 확인했으나 문제 없음(참고)
+- universe tracked 게이트: is_tracked 503 = 열린 S&P 멤버십 503, 상장 아님·신원 미확인·CIK 없음·common_stock 아님 0건, active ticker 중복 0건. 이전 감사의 25% 부풀림은 재발하지 않았다.
+- 시장 종가 확정 컷(NY 18:00) vs market_daily cron(23:30 UTC 월~금): EST/EDT 양쪽에서 컷 뒤라 당일 봉이 빠지지 않는다.
+- Fed net liquidity 단위식(WALCL 백만, WTREGEN 백만, RRPONTSYD 십억 -> ×1000): 맞음.
+- 13F value 단위 판정은 휴리스틱이지만 합계(tableValueTotal)에도 같은 scale을 곱해 비교하므로 scale 오류는 검증에서 못 잡힌다(의심, 단 fallback이 schema/period 규칙이라 실제 오류 사례는 못 찾음).
+
+## 의심(코드만 보고 데이터 확인 못함)
+- 의심-1 `macro/infrastructure/sources/web.py _multpl`: multpl by-month 표의 최신 행 날짜가 오늘일 수 있고 확정 월값이 아니다 — 저장 후 다음 실행 upsert로 덮이지만 PIT(date_only, +1일)로는 미확정값이 "알려진 값"이 된다.
+- 의심-2 breadth_200dma(`macro/infrastructure/sources/market.py`)는 **현재** S&P 구성종목으로 과거 전 구간을 계산(생존편향). 백필 값이 과거 시점 실제 breadth와 다르다.
+- 의심-3 `_cboe_put_call_on`: 페이지에 레이블이 없으면 휴장으로 간주해 None — 차단/개편과 구분 불가(빈 시계열일 때만 잡힘).
+- 의심-4 econ_calendar_daily 실제 첫 관측 시각이 매일 06:3x~07:0x UTC(cron 01:40 UTC보다 5시간 뒤)라 GitHub cron 지연이 매일 큰 것으로 보임 — DA-1 수치의 "지연 시간" 해석 시 감안.

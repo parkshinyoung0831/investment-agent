@@ -13,8 +13,8 @@ from typing import Any, Mapping, Sequence
 
 from investment_agent.platform.serialization import finite_float
 from .palette import COLOR_APPROVED, COLOR_INFO, COLOR_REJECTED
+from investment_agent.reporting.services.investment import CASH_SYMBOL
 
-CASH_SYMBOL = "CASH"
 ENGINE_FOOTER = "factor 기대수익 · TradingAgents 논지 검증 → cvxpy optimizer → 결정론적 RiskGate"
 # 카드 한 장에 담을 상한. Discord embed field는 1024자 제한이 있다.
 _MAX_HOLDINGS = 10

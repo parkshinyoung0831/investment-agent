@@ -14,6 +14,7 @@ from typing import Any, Hashable, Sequence
 
 import numpy as np
 
+IC_INFERENCE_METHOD = "newey_west_bartlett_iid_floor_v1"
 
 @dataclass(frozen=True)
 class CrossSectionalAlphaScore:
@@ -26,6 +27,10 @@ class CrossSectionalAlphaScore:
     mean_quantile_spread: float
     quantiles: int
     observation_count: int
+    ic_t_stat_iid: float
+    inference_method: str
+    horizon_days: int
+    hac_lags: int
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -65,12 +70,15 @@ def cross_sectional_alpha_metrics(
     *,
     quantiles: int = 5,
     min_names_per_date: int = 5,
+    horizon_days: int = 1,
 ) -> CrossSectionalAlphaScore:
     """날짜별 IC와 분위 spread를 모아 한 모델의 순위 능력을 요약한다."""
     if not len(dates) == len(actual) == len(predicted) or not dates:
         raise ValueError("dates, actual and predicted must have the same non-empty length")
     if quantiles < 2 or min_names_per_date < quantiles:
         raise ValueError("min_names_per_date must be at least quantiles and quantiles >= 2")
+    if isinstance(horizon_days, bool) or not isinstance(horizon_days, int) or horizon_days < 1:
+        raise ValueError("horizon_days must be a positive integer")
     grouped: dict[Hashable, list[tuple[float, float]]] = defaultdict(list)
     for key, left, right in zip(dates, actual, predicted, strict=True):
         value_actual, value_predicted = float(left), float(right)
@@ -81,7 +89,8 @@ def cross_sectional_alpha_metrics(
     ics: list[float] = []
     spreads: list[float] = []
     used = 0
-    for key in sorted(grouped, key=str):
+    # 숫자 날짜 키도 시간 순서여야 한다(문자열 정렬의 1,10,2는 자기상관을 훼손한다).
+    for key in sorted(grouped):
         rows = grouped[key]
         if len(rows) < min_names_per_date:
             continue
@@ -102,17 +111,32 @@ def cross_sectional_alpha_metrics(
     mean_ic = float(values.mean())
     ic_std = float(values.std(ddof=1)) if len(values) > 1 else 0.0
     icir = mean_ic / ic_std if ic_std > 0 else 0.0
+    # 겹치는 h일 label의 IC를 독립 표본으로 세면 유효 표본 수가 부풀려진다.
+    # Bartlett HAC(h-1), 유한표본 n/(n-1) 보정. 음의 자기상관으로 채택 근거가
+    # 더 강해지지 않도록 IID 평균분산을 하한으로 둔다. 이는 확률 calibration은 아니다.
+    count = len(values)
+    lags = min(horizon_days - 1, count - 1)
+    residual = values - mean_ic
+    variance_sum = float(residual @ residual)
+    for lag in range(1, lags + 1):
+        variance_sum += 2.0 * (1.0 - lag / (lags + 1)) * float(residual[lag:] @ residual[:-lag])
+    mean_variance = max(ic_std ** 2 / count, variance_sum / (count * (count - 1))) if count > 1 else 0.0
+    t_stat = mean_ic / math.sqrt(mean_variance) if mean_variance > 0 and count > horizon_days else 0.0
     return CrossSectionalAlphaScore(
         date_count=len(values),
         mean_ic=mean_ic,
         ic_std=ic_std,
         icir=icir,
-        ic_t_stat=icir * math.sqrt(len(values)),
+        ic_t_stat=t_stat,
         positive_ic_ratio=float(np.mean(values > 0)),
         mean_quantile_spread=float(np.mean(spreads)),
         quantiles=quantiles,
         observation_count=used,
+        ic_t_stat_iid=icir * math.sqrt(count),
+        inference_method=IC_INFERENCE_METHOD,
+        horizon_days=horizon_days,
+        hac_lags=lags,
     )
 
 
-__all__ = ["CrossSectionalAlphaScore", "cross_sectional_alpha_metrics", "spearman_ic"]
+__all__ = ["IC_INFERENCE_METHOD", "CrossSectionalAlphaScore", "cross_sectional_alpha_metrics", "spearman_ic"]

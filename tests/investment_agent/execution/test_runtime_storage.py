@@ -13,7 +13,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-from investment_agent.execution.approval.ledger import ApprovalRequest
+from investment_agent.execution.approval.ledger import ApprovalRequest, ApprovalSigner
+from investment_agent.execution.approval.service import ApprovalWorkflow
 from investment_agent.execution.contracts import ExecutionSafetyError
 from investment_agent.execution.db import ExecutionRepository
 from investment_agent.execution.orders.intents import ExecutionIntent
@@ -92,6 +93,43 @@ class RuntimeStorageTest(unittest.TestCase):
                     manifest_hash=request.manifest_hash), range(2)))
         self.assertEqual(1, sum(result is not None for result in results))
         self.assertEqual("consumed", self.repo.load_approval(request.approval_id).status)
+
+    def test_signed_workflow_uses_real_repository_action_contract(self):
+        signer = ApprovalSigner("integration-test-secret-longer-than-thirty-two-bytes")
+        workflow = ApprovalWorkflow(repository=self.repo, signer=signer)
+        for action, status in (("approve", "approved"), ("reject", "rejected")):
+            with self.subTest(action=action):
+                self.repo.save_intent(replace(
+                    self.intent, intent_id=f"intent-{action}", risk_decision_id=f"risk-{action}",
+                ).as_row())
+                request = ApprovalRequest.create(
+                    intent_id=f"intent-{action}", proposal_id="proposal-test", risk_decision_id="risk-test",
+                    execution_mode="live", proposal_hash="a" * 64, risk_hash="b" * 64,
+                    manifest_hash="c" * 64, account_seq=7, allowed_client_order_ids=["order-test"],
+                    discord_guild_id="1510267057885941840", discord_channel_id="1539250099999999999",
+                    allowed_approver_user_ids=["1537373837350404146"], requested_at=self.now,
+                )
+                self.repo.create_approval(request)
+                request = self.repo.attach_approval_message(
+                    request.approval_id, discord_guild_id=request.discord_guild_id,
+                    discord_channel_id=request.discord_channel_id, discord_message_id="1539250199999999999",
+                )
+                payload = {
+                    "type": 3, "data": {"component_type": 2, "custom_id": signer.custom_id(request, action)},
+                    "guild_id": request.discord_guild_id, "channel_id": request.discord_channel_id,
+                    "message": {"id": request.discord_message_id},
+                    "member": {"user": {"id": request.allowed_approver_user_ids[0]}},
+                }
+                self.assertEqual(workflow.handle_interaction(payload).status, status)
+                self.assertEqual(self.repo.load_approval(request.approval_id).status, status)
+                with self.assertRaises(ExecutionSafetyError):
+                    workflow.handle_interaction(payload)
+                if action == "approve":
+                    self.assertEqual(workflow.consume_once(
+                        approval_id=request.approval_id, expected_manifest_hash=request.manifest_hash,
+                    ).status, "consumed")
+                with self.assertRaises(ExecutionSafetyError):
+                    workflow.consume_once(approval_id=request.approval_id, expected_manifest_hash=request.manifest_hash)
 
     def test_concurrent_claims_only_one_succeeds(self):
         with ThreadPoolExecutor(max_workers=2) as pool:

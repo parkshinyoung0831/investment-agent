@@ -35,6 +35,16 @@ def repository_root() -> Path:
     raise RuntimeError("저장소 루트를 찾지 못했다 (pyproject.toml + db/)")
 
 
+def harness_state_dir() -> Path:
+    """투자 하네스의 state.json·lockdown이 놓이는 폴더. 쓰는 쪽과 읽는 화면이 같은 곳을 본다."""
+    return repository_root() / "artifacts" / "ops" / "investment_harness"
+
+
+def rl_policy_dir() -> Path:
+    """RL 정책 산출물 폴더. 학습(research)이 쓰고 대시보드가 읽는다."""
+    return repository_root() / "artifacts" / "trading" / "rl_policies"
+
+
 def _configured_path(name: str) -> Path | None:
     configured = os.environ.get(name, "").strip()
     return Path(configured) if configured else None

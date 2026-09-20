@@ -378,7 +378,8 @@
         "release_id": 180,
         "time": "08:30",
         "timezone": "America/New_York",
-        "confidence": "exact"
+        "confidence": "exact",
+        "observation_weekday": 5
       },
       "survey": {
         "status": "unsupported"
@@ -409,7 +410,8 @@
         "release_id": 180,
         "time": "08:30",
         "timezone": "America/New_York",
-        "confidence": "exact"
+        "confidence": "exact",
+        "observation_weekday": 5
       },
       "survey": {
         "status": "unsupported"
@@ -707,7 +709,8 @@
         "release_id": 190,
         "time": "12:00",
         "timezone": "America/New_York",
-        "confidence": "exact"
+        "confidence": "exact",
+        "observation_weekday": 3
       },
       "survey": {
         "status": "unsupported"
@@ -828,7 +831,8 @@
         "release_id": 20,
         "time": "16:30",
         "timezone": "America/New_York",
-        "confidence": "rule"
+        "confidence": "rule",
+        "observation_weekday": 2
       },
       "survey": {
         "status": "unsupported"
@@ -890,7 +894,8 @@
         "rule": "weekly_wednesday",
         "time": "10:30",
         "timezone": "America/New_York",
-        "confidence": "rule"
+        "confidence": "rule",
+        "observation_weekday": 4
       },
       "survey": {
         "status": "unsupported"

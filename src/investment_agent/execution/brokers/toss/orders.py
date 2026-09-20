@@ -396,6 +396,16 @@ class TossOrderApi:
             request_id=str(error["requestId"]) if error.get("requestId") else None,
         )
 
+    def _mutation_json(self, response: requests.Response, *, client_order_id: str) -> dict[str, Any]:
+        """전송한 mutation의 응답을 해석할 수 없으면 접수 여부는 대사만이 판단한다."""
+        try:
+            return self._json(response)
+        except TossOrderApiError as exc:
+            raise TossOrderOutcomeUnknown(
+                client_order_id=client_order_id, reason="unreadable response after mutation submission",
+                status_code=response.status_code,
+            ) from exc
+
     def create_order(
         self,
         command: TossOrderCommand,
@@ -438,7 +448,7 @@ class TossOrderApi:
             )
         if response.status_code >= 400:
             self._raise_rejection(response)
-        payload = self._json(response)
+        payload = self._mutation_json(response, client_order_id=command.client_order_id)
         result = payload.get("result")
         if not isinstance(result, Mapping) or not result.get("orderId"):
             raise TossOrderOutcomeUnknown(
@@ -522,7 +532,7 @@ class TossOrderApi:
             )
         if response.status_code >= 400:
             self._raise_rejection(response)
-        result = self._json(response).get("result")
+        result = self._mutation_json(response, client_order_id=modification.client_order_id).get("result")
         if not isinstance(result, Mapping) or not result.get("orderId"):
             raise TossOrderOutcomeUnknown(
                 client_order_id=modification.client_order_id,
@@ -679,7 +689,7 @@ class TossOrderApi:
             )
         if response.status_code >= 400:
             self._raise_rejection(response)
-        payload = self._json(response)
+        payload = self._mutation_json(response, client_order_id=f"cancel:{order_id}")
         result = payload.get("result")
         if not isinstance(result, Mapping) or not result.get("orderId"):
             raise TossOrderOutcomeUnknown(

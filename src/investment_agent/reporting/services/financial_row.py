@@ -15,18 +15,20 @@ def f(v) -> float | None:
         return None
 
 
-def total_debt(row: dict) -> float:
-    """단기차입·유동성 장기부채·장기부채·운용리스 부채 합계."""
+def total_debt(row: dict) -> float | None:
+    """단기차입·유동성 장기부채·장기부채·운용리스 부채 합계. 구성요소가 하나도 없으면 모른다(None).
+
+    결측을 0으로 접으면 부채 없는 회사처럼 보여 순부채·부채비율이 좋게 나온다.
+    """
     total = f(row.get("total_debt_including_current"))
     if total is not None:
         return total
-    return sum(
-        v or 0.0
-        for v in (
-            f(row.get("short_term_debt")),
-            f(row.get("current_portion_of_long_term_debt")),
-            f(row.get("long_term_debt")),
-            f(row.get("operating_lease_current_debt_equivalent")),
-            f(row.get("operating_lease_non_current_debt_equivalent")),
-        )
+    parts = (
+        f(row.get("short_term_debt")),
+        f(row.get("current_portion_of_long_term_debt")),
+        f(row.get("long_term_debt")),
+        f(row.get("operating_lease_current_debt_equivalent")),
+        f(row.get("operating_lease_non_current_debt_equivalent")),
     )
+    known = [v for v in parts if v is not None]
+    return sum(known) if known else None

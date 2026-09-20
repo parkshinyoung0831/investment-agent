@@ -8,7 +8,6 @@ Lopez de Prado의 DSR 과적합 검정 게이지, RL 연구 후보의 역할 설
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -16,12 +15,12 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from investment_agent.dashboard.ops import read_harness_state
+from investment_agent.platform.storage_paths import rl_policy_dir
 from investment_agent.reporting.readers.dashboard import load_guru_data, load_macro_window, load_price_history
 from investment_agent.dashboard.components.theme import dashboard_palette
 from investment_agent.dashboard.components.ui import result_payload
 
-ROOT = Path(__file__).resolve().parents[3]
-ACTIVE_POLICY_PATH = ROOT / "artifacts" / "trading" / "rl_policies" / "active_policy.json"
+ACTIVE_POLICY_PATH = rl_policy_dir() / "active_policy.json"
 
 
 def _load_real_active_policy() -> dict[str, Any] | None:

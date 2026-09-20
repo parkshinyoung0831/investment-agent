@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Mapping
 
 from investment_agent.platform.serialization import canonical_json, json_value, parse_datetime
+from investment_agent.execution.orders.intents import CASH_SYMBOL
 
 
 def _number(value: Any, field_name: str, *, allow_none: bool = True) -> float | None:
@@ -42,7 +43,7 @@ class MarketQuote:
 
     def __post_init__(self) -> None:
         ticker = str(self.ticker).upper().strip()
-        if not ticker or ticker == "CASH":
+        if not ticker or ticker == CASH_SYMBOL:
             raise ValueError("quote ticker is required")
         values = {}
         for name in (

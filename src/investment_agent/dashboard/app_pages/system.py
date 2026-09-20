@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from typing import Any
 
 import streamlit as st
 
 from investment_agent.dashboard.ops import read_harness_state
+from investment_agent.platform.storage_paths import harness_state_dir, repository_root
 from investment_agent.dashboard.components.operations_view import render_operations_guide
 from investment_agent.dashboard.components.ui import (
     SOURCE_LOCAL,
@@ -23,8 +23,8 @@ from investment_agent.dashboard.components.ui import (
 )
 
 
-ROOT = Path(__file__).resolve().parents[3]
-STATE_PATH = ROOT / "artifacts" / "ops" / "investment_harness" / "state.json"
+ROOT = repository_root()
+STATE_PATH = harness_state_dir() / "state.json"
 
 
 def _kill_switch_label() -> tuple[str, str]:

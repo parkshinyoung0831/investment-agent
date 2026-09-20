@@ -11,6 +11,7 @@ from types import MappingProxyType
 from typing import Any, Iterable, Mapping
 
 from investment_agent.platform.serialization import canonical_json, parse_datetime
+from investment_agent.portfolio_weights import CASH_SYMBOL
 
 _TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.-]{0,14}$")
 _MEMBERSHIP_KINDS = {"live_tracked", "historical_point_in_time"}
@@ -38,7 +39,7 @@ class RLDataNotReadyError(RLSafetyError):
 
 def _ticker(value: str) -> str:
     ticker = str(value).upper().strip()
-    if ticker == "CASH" or not _TICKER_RE.fullmatch(ticker):
+    if ticker == CASH_SYMBOL or not _TICKER_RE.fullmatch(ticker):
         raise ValueError(f"invalid RL ticker: {ticker}")
     return ticker
 

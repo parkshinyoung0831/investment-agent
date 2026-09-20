@@ -1,4 +1,4 @@
-"""개인 계좌 규모의 주문 계획: 매도는 나누지 않고, 매수 1건 한도와 전체 한도는 그대로 막는다."""
+"""매수·매도 모두 실제 제출 게이트와 같은 주문 한도를 적용한다."""
 from __future__ import annotations
 
 import hashlib
@@ -32,11 +32,9 @@ class OrderSizeTest(unittest.TestCase):
             prices=prices, required_mode="live", now=NOW,
         )
 
-    def test_a_full_exit_is_one_order_even_above_the_per_order_buy_limit(self):
-        plans = self.plan({"AAPL": 0.0, "CASH": 1.0}, {"AAPL": 60.0}, {"AAPL": 200.0}, 12_000.0)
-        self.assertEqual([(plan.side, plan.quantity) for plan in plans], [("sell", 60.0)])
-        self.assertEqual(plans[0].client_order_id,
-                         client_order_id(intent_id="intent-size", symbol="AAPL", side="sell", quantity=60.0))
+    def test_oversized_exit_is_rejected_before_approval(self):
+        with self.assertRaisesRegex(ExecutionSafetyError, "order notional"):
+            self.plan({"AAPL": 0.0, "CASH": 1.0}, {"AAPL": 60.0}, {"AAPL": 200.0}, 12_000.0)
 
     def test_idempotency_key_is_derived_from_the_plan(self):
         self.assertEqual(
@@ -49,8 +47,10 @@ class OrderSizeTest(unittest.TestCase):
             self.plan({"AAPL": 0.9, "CASH": 0.1}, {}, {"AAPL": 200.0}, 12_000.0)
 
     def test_total_notional_limit_still_applies_to_sells(self):
+        planner = TargetWeightOrderPlanner(ExecutionLimits(max_order_notional=40_000, max_total_notional=20_000))
         with self.assertRaisesRegex(ExecutionSafetyError, "total order notional"):
-            self.plan({"AAPL": 0.0, "CASH": 1.0}, {"AAPL": 150.0}, {"AAPL": 200.0}, 30_000.0)
+            planner.plan(_intent({"AAPL": 0.0, "CASH": 1.0}), portfolio_value=30_000,
+                         current_quantities={"AAPL": 150}, prices={"AAPL": 200}, required_mode="live", now=NOW)
 
 
 if __name__ == "__main__":

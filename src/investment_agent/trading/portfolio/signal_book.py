@@ -8,6 +8,7 @@ from typing import Any, Iterable
 from investment_agent.trading.contracts import ContractError, json_value, parse_datetime
 from investment_agent.trading.portfolio.contracts import SecurityProposal
 from investment_agent.platform.serialization import stable_id
+from investment_agent.portfolio_weights import CASH_SYMBOL
 
 _SYMBOL_RE = re.compile(r"^[A-Z][A-Z0-9.-]{0,14}$")
 
@@ -17,7 +18,7 @@ def _symbols(values: Iterable[str], field_name: str, *, required: bool = False) 
     if any(not isinstance(value, str) for value in raw):
         raise ContractError(f"{field_name} must contain strings")
     normalized_values = tuple(value.upper().strip() for value in raw if value.strip())
-    invalid = [value for value in normalized_values if value == "CASH" or not _SYMBOL_RE.fullmatch(value)]
+    invalid = [value for value in normalized_values if value == CASH_SYMBOL or not _SYMBOL_RE.fullmatch(value)]
     if invalid:
         raise ContractError(f"{field_name} contains invalid symbols: {sorted(invalid)}")
     if len(normalized_values) != len(set(normalized_values)):

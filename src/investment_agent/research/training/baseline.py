@@ -115,6 +115,7 @@ def _oos_alpha(
             [dataset.rows[index].as_of_at for index in test],
             [float(dataset.targets[index]) for index in test],
             [float(value) for value in predicted],
+            horizon_days=label_horizon_days(dataset.manifest.label_definition),
         )
     except ValueError:
         return None

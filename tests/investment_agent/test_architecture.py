@@ -25,6 +25,8 @@ PLATFORM_MODULES = {
     "cache",
     "cli",
     "clock",
+    # 빈 값을 미설정으로 읽는 숫자·문자열 환경변수 helper. 여러 도메인이 같은 규칙을 쓴다.
+    "env",
     "external_usage",
     "logging",
     "retry",

@@ -199,8 +199,7 @@ def snapshot_forecasts(*, now: datetime) -> tuple[int, list[dict[str, Any]]]:
             rows.append({**common, "forecast_kind": "nowcast", "source": "atlanta_fed_gdpnow", "value": nowcast_value,
                          "effective_at": gdpnow_seen, "collected_at": gdpnow_seen})
         if sid not in history_cache:
-            history_cache[sid] = (db.primary_history(sid) if measure["is_primary"]
-                                  else db.measure_history(sid, measure["measure_id"]))
+            history_cache[sid] = db.measure_actual_history(sid, measure, str(setting["frequency"]))
         forecast = baseline.drift_forecast(history_cache[sid], window=BASELINE_WINDOW.get(str(setting["frequency"]), 12))
         if forecast is not None:
             model_seen = datetime.now(timezone.utc)

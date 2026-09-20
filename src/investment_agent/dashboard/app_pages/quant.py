@@ -49,6 +49,7 @@ from investment_agent.dashboard.components.ui import (
     source_note,
     view_selector,
 )
+from investment_agent.reporting.services.investment import CASH_SYMBOL
 
 
 _COLORS = dashboard_palette()
@@ -158,7 +159,7 @@ def _assets_for_allocations(rows: list[dict[str, Any]], *, include_benchmark: bo
     assets: set[str] = set()
     for row in rows:
         for symbol, _weight in _allocation_items(row.get("weights")):
-            if symbol != "CASH":
+            if symbol != CASH_SYMBOL:
                 assets.add(symbol)
     if include_benchmark:
         assets.add(_BENCHMARK)

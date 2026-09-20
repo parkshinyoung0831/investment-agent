@@ -39,10 +39,10 @@ historical replay에서 제외합니다.
 
 ## 3. TradingAgents의 책임
 
-업스트림 TradingAgents의 역할 순서를 유지합니다.
+저장소 소유 `decision/agents/orchestrator.py`의 역할 순서를 따릅니다. 외부 TradingAgents 설치본을 수정하지 않습니다.
 
 ```text
-Market → Social → News → Fundamentals
+Market → Fundamentals → News → Sentiment → Macro
        → Bull ↔ Bear → Research Manager
        → Trader
        → Aggressive ↔ Conservative ↔ Neutral Risk

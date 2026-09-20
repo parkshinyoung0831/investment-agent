@@ -70,6 +70,40 @@ class ReferencePeriodTest(unittest.TestCase):
             date(2026, 8, 29),
         )
 
+    def test_holiday_week_release_still_lands_on_the_observation_weekday(self) -> None:
+        """추수감사절 주에는 청구 발표가 수요일로 당겨진다. 고정 일수(5)를 빼면 금요일이 된다."""
+        cases = (
+            ("US_INITIAL_CLAIMS", date(2025, 11, 26), 5, date(2025, 11, 22)),
+            ("US_CONTINUING_CLAIMS", date(2025, 12, 4), 5, date(2025, 11, 22)),
+            ("FED_NET_LIQUIDITY", date(2026, 11, 26), 2, date(2026, 11, 25)),
+            ("US_MORTGAGE_30Y", date(2026, 11, 25), 3, date(2026, 11, 26)),
+        )
+        for series_id, released, weekday, expected in cases:
+            with self.subTest(series_id=series_id):
+                self.assertEqual(
+                    schedule.reference_period(series_id, "weekly", released, observation_weekday=weekday),
+                    expected,
+                )
+                self.assertEqual(expected.weekday(), weekday)
+
+    def test_ordinary_week_is_unchanged_by_the_weekday_contract(self) -> None:
+        self.assertEqual(
+            schedule.reference_period("US_INITIAL_CLAIMS", "weekly", date(2026, 8, 27), observation_weekday=5),
+            date(2026, 8, 22),
+        )
+
+    def test_every_weekly_series_declares_its_observation_weekday(self) -> None:
+        """선언이 빠지면 휴일 주에 유령 이벤트가 다시 생긴다."""
+        weekly = [
+            sid for sid in catalog.series_ids()
+            if catalog.series_config(sid).get("source_contract", {}).get("schedule", {}).get("rule") == "weekly_wednesday"
+            or sid in {"US_INITIAL_CLAIMS", "US_CONTINUING_CLAIMS", "FED_NET_LIQUIDITY", "US_MORTGAGE_30Y"}
+        ]
+        self.assertGreaterEqual(len(weekly), 5)
+        for sid in weekly:
+            with self.subTest(series_id=sid):
+                self.assertIn("observation_weekday", catalog.series_config(sid)["source_contract"]["schedule"])
+
     def test_rule_dates_are_deterministic(self) -> None:
         self.assertEqual(
             schedule.rule_dates("weekly_wednesday", start=date(2026, 8, 1), end=date(2026, 8, 15)),

@@ -24,6 +24,16 @@ approved RiskDecision
 → broker order/fill/position/cash reconciliation
 ```
 
+계획 단계부터 매수·매도 모두 주문당 한도를 적용한다. live worker는 전체 배치의 일일 주문 수·금액
+여유를 승인 consume 전에 확인하고, 각 POST 직전에도 공통 safety 검사를 한다. 승인 소비 이후의
+실제 broker 거부·통신 불명까지 없앨 수는 없다. 주문 후 현금·손실·drawdown을 재조회하지 않았다면
+위험 상태의 `captured_at`을 갱신하지 않는다.
+
+승인 서비스가 repository에 넘기는 명령은 `approve`/`reject`이고 저장 상태는 `approved`/`rejected`다.
+Discord expiry는 JSON 직렬화 가능한 timestamp 문자열이다. create/modify/cancel이 전송된 뒤 성공 HTTP의
+본문을 해석할 수 없으면 `outcome_unknown`으로 취급한다. 접수 여부를 확인하기 전 자동 재전송하지 않고
+대사 대상으로 남긴다. 이는 broker가 요청을 거부했다고 확정한 상태와 다르다.
+
 ## Broker-independent contract
 
 ```text

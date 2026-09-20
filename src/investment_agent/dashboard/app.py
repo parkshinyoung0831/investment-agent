@@ -219,12 +219,13 @@ st.html("""
 """)
 
 from investment_agent.dashboard.components.ui import format_time  # noqa: E402
+from investment_agent.platform.storage_paths import harness_state_dir  # noqa: E402
 
 
 def _sidebar_status() -> None:
     """사이드바에 현재 하네스 상태만 간결하게 표시한다."""
 
-    state_path = ROOT / "artifacts" / "ops" / "investment_harness" / "state.json"
+    state_path = harness_state_dir() / "state.json"
     st.sidebar.caption("운영 상태")
     offline = os.getenv("DASHBOARD_OFFLINE", "").strip().lower() in {"1", "true", "yes", "on"}
     if offline:

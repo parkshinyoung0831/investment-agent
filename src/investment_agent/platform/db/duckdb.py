@@ -19,6 +19,7 @@ DuckDB는 다른 프로세스가 파일을 잡고 있으면 기다리지 않고 
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import time
 from pathlib import Path
@@ -30,6 +31,9 @@ from investment_agent.platform.logging import get_logger
 
 log = get_logger(__name__)
 _WRITER_LOCKS: dict[str, RLock] = {}
+# 이 프로세스가 이미 선언을 적용한 (파일 신원, 선언 내용). 연결마다 CREATE ×10을 다시 돌리면
+# 저장 한 건이 0.25초라 백필 루프가 분 단위로 느려진다(실측 242ms 중 DDL 약 140ms).
+_PREPARED: set[tuple[str, int, int, str]] = set()
 # 다른 프로세스의 짧은 쓰기 창을 넘길 만큼. 넘으면 잠금이 아니라 장애로 보고 올린다.
 DEFAULT_OPEN_TIMEOUT_SECONDS = 180.0
 _OPEN_RETRY_SECONDS = 1.0
@@ -117,20 +121,51 @@ def connect(
     return connection
 
 
+def _prepared_key(target: Path, statements: tuple[str, ...]) -> tuple[str, int, int, str] | None:
+    """파일이 아직 없으면 None — 새로 만든 파일에는 반드시 선언을 적용한다.
+
+    파일 신원(dev·inode)을 키에 넣어, 지우고 같은 경로에 다시 만든 파일이 "이미 적용됨"으로
+    오인되지 않게 한다. 선언 내용이 바뀌면 키가 달라져 다시 적용된다.
+    """
+    try:
+        stat = target.stat()
+    except FileNotFoundError:
+        return None
+    digest = hashlib.sha256(";".join(statements).encode("utf-8")).hexdigest()
+    return (str(target).casefold(), stat.st_dev, stat.st_ino, digest)
+
+
 @contextmanager
-def transactional_connection(path: Path | str, *, ddl_dir: Path | str | None = None):
-    """한 프로세스의 쓰기를 직렬화하고 DDL·읽기·쓰기를 함께 commit한다."""
+def transactional_connection(
+    path: Path | str,
+    *,
+    ddl_dir: Path | str | None = None,
+    after_ddl: Callable[[Any], None] | None = None,
+):
+    """한 프로세스의 쓰기를 직렬화하고 DDL·읽기·쓰기를 함께 commit한다.
+
+    선언은 프로세스당·파일당 한 번만 적용한다. `after_ddl`(예: 옛 스키마 이관)은 선언을
+    적용할 때만 같은 트랜잭션에서 실행된다.
+    """
     target = Path(path).resolve()
     lock = _WRITER_LOCKS.setdefault(str(target).casefold(), RLock())
     with lock:
+        statements = ddl_statements(ddl_dir) if ddl_dir is not None else ()
+        already_prepared = _prepared_key(target, statements) in _PREPARED if statements else True
         connection = connect(target)
         try:
             connection.execute("BEGIN TRANSACTION")
-            if ddl_dir is not None:
-                for statement in ddl_statements(ddl_dir):
+            if not already_prepared:
+                for statement in statements:
                     connection.execute(statement)
+                if after_ddl is not None:
+                    after_ddl(connection)
             yield connection
             connection.execute("COMMIT")
+            if not already_prepared and statements:
+                key = _prepared_key(target, statements)
+                if key is not None:
+                    _PREPARED.add(key)
         except BaseException:
             connection.execute("ROLLBACK")
             raise

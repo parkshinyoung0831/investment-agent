@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 import argparse
-import os
 import traceback
 
+from investment_agent.platform.env import env_int
 from investment_agent.platform.logging import configure_logging, get_logger
 
 log = get_logger(__name__)
@@ -16,7 +16,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--lookback-days",
         type=int,
-        default=int(os.environ.get("FUNDAMENTALS_SEGMENT_LOOKBACK_DAYS", "7")),
+        default=env_int("FUNDAMENTALS_SEGMENT_LOOKBACK_DAYS", 7),
     )
     parser.add_argument("--watchlist-only", action="store_true")
     return parser.parse_args(argv)

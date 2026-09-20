@@ -119,7 +119,8 @@ def sync_toss_members(tickers: list[str]) -> dict[str, Any]:
     members = _member_rows(include_inactive=True)
     present_ciks = {row["cik"] for row in members}
     for row in members:
-        sources = set(row["sources"])
+        old_sources = sorted(row["sources"])
+        sources = set(old_sources)
         had = "toss" in sources
         if row["cik"] in target_ciks:
             sources.add("toss")
@@ -129,7 +130,22 @@ def sync_toss_members(tickers: list[str]) -> dict[str, Any]:
             sources.discard("toss")
             removed += int(had)
             unchanged += int(not had)
-        _upsert_member(cik=row["cik"], sources=sorted(sources), watch_from=str(row.get("watch_from") or date.today().isoformat()), removed_at=None if sources else datetime.now(timezone.utc).isoformat())
+        new_sources = sorted(sources)
+        if new_sources == old_sources:
+            continue  # 바뀐 것이 없으면 쓰지 않는다 — 쓰면 해제 시각 같은 이력이 매번 움직인다
+        # 해제 시각은 "활성에서 비활성으로 바뀐 순간"이다. 이미 비어 있던 행의 시각을 다시 찍지 않는다.
+        if new_sources:
+            removed_at = None
+        elif old_sources:
+            removed_at = datetime.now(timezone.utc).isoformat()
+        else:
+            removed_at = row.get("removed_at")
+        _upsert_member(
+            cik=row["cik"],
+            sources=new_sources,
+            watch_from=str(row.get("watch_from") or date.today().isoformat()),
+            removed_at=removed_at,
+        )
     for cik in sorted(target_ciks - present_ciks):
         _upsert_member(cik=cik, sources=["toss"], watch_from=date.today().isoformat(), removed_at=None)
         added += 1

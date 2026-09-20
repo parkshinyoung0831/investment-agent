@@ -23,18 +23,40 @@ APPROVAL_POLL_SECONDS = 15.0
 DEFAULT_ANALYSIS_INTERVAL_SECONDS = 24 * 3600.0
 
 
+def _easter_sunday(year: int) -> date:
+    """그레고리력 부활절(Meeus/Jones/Butcher). Good Friday 계산에 쓴다."""
+    a = year % 19
+    b, c = divmod(year, 100)
+    d, e = divmod(b, 4)
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i, k = divmod(c, 4)
+    weekday_offset = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * weekday_offset) // 451
+    month, day = divmod(h + weekday_offset - 7 * m + 114, 31)
+    return date(year, month, day + 1)
+
+
 def is_us_market_holiday(d: date) -> bool:
-    """미국 증권거래소(NYSE) 공식 휴장일 여부를 판정한다."""
+    """미국 증권거래소(NYSE)의 정기 휴장일 여부를 판정한다.
+
+    규칙으로 나오는 정기 휴장만 안다. 1회성 임시 휴장(국장 등)은 알 수 없어 실주문은 브로커 캘린더가
+    따로 거른다. 조기 마감(추수감사절 다음 날 등)도 이 함수의 범위가 아니다.
+    """
     month = d.month
     day = d.day
     weekday = d.weekday()
 
-    # 1. New Year's Day (1월 1일, 대체 공휴일 포함)
+    # 1. New Year's Day (1월 1일, 대체 공휴일 포함).
+    #    1월 1일이 토요일이면 NYSE는 직전 금요일(12/31)에 열린다 — 다른 토요일 공휴일과 다른 유일한 예외.
     if month == 1 and day == 1 and weekday < 5:
         return True
     if month == 1 and day == 2 and weekday == 0:
         return True
-    if month == 12 and day == 31 and weekday == 4:
+
+    # 1-1. Good Friday (부활절 이틀 전 금요일)
+    if weekday == 4 and d == _easter_sunday(d.year) - timedelta(days=2):
         return True
 
     # 2. Martin Luther King Jr. Day (1월 셋째 주 월요일)

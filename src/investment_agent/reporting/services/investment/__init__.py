@@ -8,7 +8,10 @@ from investment_agent.reporting.services.investment.decision_cases import (
     summarize_role_analyses,
 )
 from investment_agent.reporting.services.investment.market_regime import build_live_regime_read_model
-from investment_agent.reporting.services.investment.system_portfolio import build_system_portfolio_read_model
+from investment_agent.reporting.services.investment.system_portfolio import (
+    CASH_SYMBOL,
+    build_system_portfolio_read_model,
+)
 from investment_agent.reporting.services.investment.policy_snapshots import (
     build_alpha_policy_read_model,
     build_optimizer_policy_read_model,
@@ -16,6 +19,7 @@ from investment_agent.reporting.services.investment.policy_snapshots import (
 )
 
 __all__ = [
+    "CASH_SYMBOL",
     "build_decision_case_read_model",
     "build_decision_cases_read_model",
     "build_alpha_policy_read_model",

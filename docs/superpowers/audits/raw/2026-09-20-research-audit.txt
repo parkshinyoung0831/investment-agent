@@ -1,0 +1,187 @@
+# 감사: research / intelligence / platform (RS · IN · PF)
+
+기준일 2026-09-21. 읽기 전용. 확정 = 코드 경로 끝까지 + 운영/로컬 데이터 수치. 의심 = 정황만.
+
+---
+## RS-1 [확정·높음] 13F "guru" feature/근거가 영구히 비어 있다 — 소비자가 읽는 컬럼이 원천에 없다
+- 영역: research/evidence/reader.py (소비) ↔ data/institutional/persistence.py (생산)
+- 증상: `guru_*` 9개 feature가 live(2026-09-14, 903행)에서도 replay에서도 전부 `__is_missing=1`. 후보 선정의 guru 신호(`trading/decision/candidates.py:235`)도 항상 `{}`.
+- 근거: `institutional/persistence.py:253-261` `effective_portfolio_state`가 positions에서 `accession_no,source_row_no,issuer_name,identifier,identifier_type,value_usd,quantity,quantity_type,position_kind`만 select. `reader.py:102-103` `guru_candidate_signals.by_ticker`는 `row["ticker"]`와 `row["mapping_status"] in {mapped,historical}`를 요구, `reader.py:454-458` `guru_snapshot`도 `row["ticker"]`로 필터.
+- 수치: 운영 DB `institutional.positions` 컬럼 = 위 9개뿐(ticker·mapping_status 없음). filings 145건/매니저 7명. rl_feature_snapshots 표본 300행(2025) `guru_*__is_missing` 300/300, live 2026-09-14(v4) 표본도 100% 결측.
+- 원인: 식별자→ticker 연결(`cache_mappings`가 verified로 잇는 표)을 읽기 경로가 조인하지 않는다. 생산·소비 계약이 갈라졌는데 테스트 픽스처는 `ticker`/`mapping_status`가 든 행을 직접 넣어 통과(픽스처가 리더보다 풍부).
+- 고치는 법: `effective_portfolio_state`가 identifier(CUSIP)→security→ticker를 조인해 `ticker`를 채워 돌려주고(verified 연결만), reader의 `mapping_status` 조건은 "verified" 계약으로 대체. 테스트는 저장소 select 컬럼 목록과 reader 요구 컬럼을 대조.
+- 위험: 고치면 feature 분포가 바뀌어 `FEATURE_VERSION`을 올려야 하고, 기존 ML challenger/champion과 비교 불가. 후보 선정 순위도 바뀐다.
+- 난이도: 중. 사용자 결정: FEATURE_VERSION 승격·후보 랭킹 변화 승인 필요(실주문 직접은 아님).
+
+## RS-2 [확정·중간] 학습 표본 96k행(replay 전부)에서 technical·macro·revision 22개 feature가 100% 결측 — live에는 채워져 학습·서빙 분포가 다르다
+- 영역: research/evidence/context.py, research/features/db.py, research/storage/repository.py
+- 증상: 2021~2025 replay 표본 97,973행 중 `technical_rsi14/macd/macd_signal`, `macro_*`(16), `revision_*`(3)가 전부 결측. 2026-09-09/14 live 1,907행(단, 이 행들은 v3/v4 세대라 v5 학습축과 다르다 — RS-11)은 technical 0% 결측.
+- 근거: (a) technical: `features/db.py:143 utc_now_iso()`를 `ingested_at`으로 쓰고 `repository.py:latest_features_as_of_all`이 `ingested_at <= as_of_at`로 자른다. 로컬 feature 저장소 전 행의 ingested_at이 단일 값(2026-09-08 11:25 KST), trade_date는 2024-09-09부터 → 과거 as_of에서 항상 0행. (b) macro: `context.py:186-190`이 replay에서 macro를 통째로 제외(의도된 것). (c) revision: 관측 컨센서스는 live 수집분뿐.
+- 수치: feature_snapshots year별 technical 결측 = 1272/1272, 22489/22489, 23262/23262, 24077/24077, 24887/24887, 2026은 1986/3893.
+- 영향: Ridge는 train z-score에서 상수열 계수가 0이라 편향은 없으나(baselines.py:229-233) 트리 모델·`__is_missing` 열은 상수 → 모델이 live에서 새로 채워진 22개 열을 한 번도 못 배운 채 서빙한다. "ML이 technical/macro를 쓴다"는 서술은 거짓. 학습 표본은 사실상 가격·재무·밸류 feature뿐.
+- 고치는 법: technical은 replay용으로 as_of 이전 봉에서 재계산하거나(저장소 `ingested_at` 대신 `trade_date` 기준 + 재계산 결과 무누출 보장), replay에서 해당 열을 학습 열에서 제외하는 feature set 분리. 학습 진입점에서 "학습 구간에서 상수(전부 결측)인 열" 수를 검사해 실패/경고.
+- 위험: 학습 열 목록이 바뀌면 champion과 비교 무효.
+- 난이도: 중~상. 사용자 결정 필요(feature 계약 변경).
+
+## RS-3 [확정·중간] label 기준가가 UTC 날짜 기준 "그날 종가"라, 장 마감 전에 찍은 live snapshot의 label 시작점이 as_of 이후 가격이다
+- 영역: research/commands/build_labels.py:150-161, 169-173
+- 증상: `as_of_date = snapshot_as_of.date()`(UTC 날짜)로 `trade_date <= as_of_date`의 마지막 봉을 시작 종가로, `> as_of_date` 봉부터 20번째를 종료 종가로 쓴다. live snapshot이 장전/장중(11:09·12:13·12:27·17:43 UTC)이면 시작 종가가 그날 종가(as_of 이후에야 알 수 있는 값), 수익률은 as_of 시점 가격→20일 뒤가 아니라 "당일 종가→20거래일 뒤 종가"가 되어 당일 등락이 label에서 빠진다.
+- 근거: build_labels.py:150, 153, 158; 같은 파일 `_SESSION_CLOSE_UTC_HOUR=21`을 종료 시각에만 쓰고 시작에는 적용하지 않음. (feature 쪽은 `ContextBuilder.build`가 `bar_available_at`(NY 18:00 확정)으로 봉을 다시 거르므로 새지 않는다 — 확인함. `price_history_as_of`의 `as_of_at.date()`(UTC) 창 자체는 여전히 그날 봉을 포함하지만 컨텍스트가 버린다.)
+- 부수 불일치(낮음): label의 `label_available_at`은 종료 거래일 21:00 UTC 고정(`_SESSION_CLOSE_UTC_HOUR`, 주석은 "보수적 상한")인데 feature 쪽 봉 가용 시각은 NY 18:00(EDT 22:00 UTC, EST 23:00 UTC)이다. 같은 봉을 label이 1~2시간 먼저 "알려졌다"고 주장한다. `close_window_for_labels`가 `ingested_at`을 돌려주지 않아 `max(forward_end_at, ingested)`의 ingested 항도 항상 무효(build_labels.py:180-185).
+- 수치: 현재 저장된 snapshot 중 23:30 UTC(장 마감 후) 97,973행은 무해. 장중·장전 snapshot 1,907행(4개 시각)이 해당 — 아직 label 미생성(labels max as_of 2026-07-31)이라 잠복. 이후 build_labels가 돌면 그대로 생성된다.
+- 고치는 법: 시작 종가를 "as_of 시각에 마감이 끝난 마지막 거래일"(NYSE 세션 마감 UTC를 `data.market.domain.calendar` 규칙으로)로 정하고, 장 마감 전 snapshot은 직전 거래일 종가를 시작점으로. feature 조회(`price_history_as_of`)도 같은 규칙 하나를 공유.
+- 위험: label 재정의 시 이미 만든 label과 혼재 안 되게 label_definition 갱신 필요.
+- 난이도: 중. 사용자 결정: 아니오(연구 경로, DDL·주문 무관).
+
+## RS-4 [확정·낮음] build_features가 밸류에이션 조회 실패를 삼키고 success로 끝난다
+- research/commands/build_features.py:74-88 `except Exception`→`{}` 후 경고 로그만. 전 종목 valuation 결측이 되어도 payload status는 `success`(failures는 종목 예외만 셈). `with_valuation`을 detail에 남기지만 임계 검사가 없다. 또한 모든 종목이 `is_available=False`여서 rows가 비어도 `status="success"`, exit 0(build_features.py:127-131,153).
+- 고치는 법: `with_valuation == 0`이면 status `partial`, `built == 0 and tickers`이면 실패.
+- 난이도: 하. 확정(코드).
+
+---
+## IN-1 [확정·중간] 뉴스 수집이 "전부 파싱 실패"·"0건"이어도 status=ok, 실행 기록에는 unparsed가 아예 저장되지 않는다
+- 영역: intelligence/application/collect_news.py:113-125, intelligence/repository.py:record_run
+- 증상: provider 응답 형식이 바뀌어 `to_record`가 전부 None(→`run.unparsed_count`만 증가)이거나 종목 목록이 비어도 `run.status`는 기본 ok. `record_run`이 runtime `local_job_state.detail`에 stored/duplicate/deleted만 쓰고 `unparsed_count`를 뺀다.
+- 수치: 로컬 runtime.sqlite3 `intelligence:collect:news`(2026-09-14T12:22Z) = `ok`, stored 0, duplicate 0. 뉴스 저장소 최신 `first_seen_at`은 2026-09-09 21:55 KST(94건, 그 뒤 12일 신규 0). 같은 날 yfinance 원장 attempts 23(cap 300)이라 호출은 됐다. stored·duplicate가 둘 다 0이라 "빈 응답" 또는 "전부 unparsed/보존기간 밖" 중 하나인데 기록에는 구분 정보가 없다 → 원인 미확정(의심).
+- 원인: 상태 판정이 예외 유무만 본다. 0건·전부 unparsed는 성공으로 접힌다. 또 `run.finished_at`이 `now`가 주어지면 `started_at`과 같아(`collect_news.py:113`) 로컬 job_state의 started==finished(실측: 09-14 12:22:11.075 == 12:22:11.075) — 소요 시간·마지막 성공 시각이 무의미.
+- 고치는 법: (a) 대상 종목 ≥1인데 `stored+duplicates==0`이면 status `empty`/`partial`+message, `unparsed_count>0 and stored==0`이면 `error_kind=parse_failed`. (b) `record_run` detail에 `unparsed_count` 추가. (c) finished_at은 항상 `utc_now()`.
+- 위험: 낮음(로컬 관측 메타데이터). 난이도 하. 사용자 결정 불필요. 수집 중단 원인은 하네스 정비 보류일 수 있어 별도 확인.
+
+## IN-2 [확정·낮음] 뉴스 수집이 재개 커서 없이 항상 관심종목 앞에서부터 돈다
+- collect_news.py:98-108 `NewsQuotaExhausted` 시 "다음 실행에서 재개한다"(message)지만 `tickers`는 매번 `watchlist_tickers()` 순서 그대로라 재개 지점이 없다. cap이 종목 수보다 작은 날(운영값 300/일이면 하루 여러 번 실행 시 발생 가능; 09-08에는 300/300 소진 기록)에는 앞쪽 종목만 반복 수집되고 뒤쪽 종목은 영구히 굶는다. 같은 원장을 대시보드 라이브 뉴스(`provider.py:load_live_news`)가 공유해 화면 조회가 수집 슬롯을 잠식한다.
+- 고치는 법: 종목별 마지막 수집 시각(로컬 job_state 또는 content_index의 최신 first_seen)으로 오래된 종목부터 정렬. 난이도 하.
+
+## IN-3 [의심·낮음] 다른 URL·같은 제목/요약 기사가 dedup으로 버려지는데 그 기사 id로 mention이 저장돼 고아가 된다
+- 근거: intelligence/repository.py:151-158 `store_news`가 `content_hash`(제목+요약) 중복도 skip. 그러나 collect_news.py:118-119는 저장 결과와 무관하게 `records` 전부에 대해 `_mention(record, symbol)` 저장(`article_id = sha(provider|url)`는 버려진 기사의 것). `entity_mentions`에 FK가 없다(30_mentions.sql).
+- 수치: 현재 로컬 DB는 90 mentions 중 고아 0 (확인함). 잠재 결함.
+- 고치는 법: `store_news`가 실제 저장된/이미 있던 article_id 매핑(content_hash→기존 id)을 돌려주고 mention은 그 id로 저장. 난이도 하.
+
+## IN-4 [확정·낮음] 대시보드 뉴스 sentiment/risk 태그가 부분 문자열 매칭이라 오탐이 크다
+- intelligence/infrastructure/sources/news/provider.py:_sentiment_and_risk — `word in text`(부분 문자열). 예: "software"·"aware"·"warning"이 지정학(`war`), "generates"·"corporates"가 매크로(`rates`), "offered"가 매크로(`fed`), "cutting-edge"/"execute" 등이 부정(`cut`), "fallout"·"pitfall"이 부정(`fall`)으로 판정. 'profit'은 긍정 사전과 실적 태그 양쪽에 있다.
+- 화면 표시용("참고용, AI 입력 아님")이라 낮음. 고치는 법: 단어 경계 정규식 `\b`, 사전은 코드 catalog 상수 한 곳(한국어는 부분 일치 허용 목록 분리). 난이도 하.
+
+---
+## PF-1 [확정·낮음] `platform/db/sqlite.py:runtime_connection`이 쓰기 연결마다 전체 DDL 파일을 다시 읽어 실행하고 레거시 이관 검사를 매번 돈다
+- 근거: sqlite.py:48-62 `_apply_schema`(BEGIN IMMEDIATE → `_migrate_legacy_execution_tables` → `_migrate_legacy_decision_tables` → `db/sqlite/runtime/v1/*.sql` 전부 실행) 후 `runtime_connection`이 곧바로 다시 BEGIN IMMEDIATE(126-128). 연결 하나당 쓰기 잠금 2회·파일 읽기 N개·`PRAGMA table_info` 수십 번. 하네스가 원장을 자주 여는 경로(`intelligence.record_run` 등 호출당 1회)에서 반복.
+- 구조 위반: CLAUDE.md 규칙 10 — "적용이 끝난 이관"(legacy_v0_*·prototype decision tables)이 핫패스에 남아 있음.
+- 고치는 법: 프로세스당 경로별 1회만 스키마 적용(모듈 캐시 set), 레거시 이관은 별도 1회성 진입점으로 이동/삭제. 위험: 실주문 원장 경로라 변경 시 `tests/investment_agent/execution/test_runtime_storage.py` 통과 필수, 정비 보류 필요. 난이도 중. **사용자 결정 필요(실주문 원장 코드)**.
+
+## PF-2 [확정·낮음] Research DuckDB 쓰기 연결도 같은 패턴 — 연결마다 레거시 이관 검사 2회
+- research/storage/repository.py:73-79 `_connect`(쓰기)가 `_migrate_legacy_strategy_allocations`·`_migrate_legacy_bulk_tables`를 호출 → 연결마다 information_schema 조회 최소 2회. `upsert_features`/`upsert_records`/`save_*`/`_ensure_bulk_migrated`(쓰기 모드 인스턴스일 때만 읽기 전 쓰기 연결을 한 번 열어 배타 잠금을 잡음, :253)가 모두 이 경로. Intelligence도 동일(`intelligence/repository.py:_migrate_legacy_content_tables`, 다만 state 표로 조기 반환).
+- 쓰기 모드 `ResearchStore()`로 `latest_feature_*`·`features_*`를 부르면 읽기마다 배타 잠금을 잡는다(`features/db.py`는 read_only 인스턴스를 써서 현재는 회피됨 — 의심 수준).
+- 이미 해법이 있다: `platform/db/duckdb.py:transactional_connection(after_ddl=...)`은 "선언을 적용할 때만" 이관을 돌리도록 만들어졌는데(프로세스·파일당 1회, `_PREPARED`), ResearchStore·IntelligenceRepository는 `after_ddl`을 안 쓰고 `with` 안에서 직접 이관을 매 연결 호출한다.
+- 고치는 법: 이관을 `after_ddl=`로 옮긴다(또는 이관 완료 뒤 삭제 — 규칙 10). 난이도 하~중.
+
+## PF-3 [확정·낮음] `chunk_values`가 정수 0·False를 조용히 버린다
+- platform/db/postgres.py:`chunk_values` — `str(value or "").strip()`: `0 or ""` → "" → 필터에서 제외. security_id는 1부터라 현재 영향 없음, 다른 정수 키(0 허용)에는 조용히 행이 빠진다. `str(value)` 후 `strip()`으로 검사해야 함. 난이도 하. 실영향 없음(잠복).
+
+## PF-4 [확정·낮음] `is_transient`가 `OSError` 전체·`57014`(statement_timeout)를 재시도 대상으로 본다
+- retry.py:TRANSPORT_ERRORS에 `OSError` 포함 → `FileNotFoundError`·`PermissionError`도 4회·지수 대기 재시도(`network_retry`·`transient_retry`가 감싼 모든 호출). SQLSTATE 57014를 transient로 분류(:`_TRANSIENT_SQLSTATE`)해 8초 statement_timeout에 걸린 무거운 쿼리를 그대로 4번 다시 보낸다(서버 부하 가중, PostgREST 8초 한도에서 같은 결과). 
+- 고치는 법: `OSError` 대신 `ConnectionError`·`socket.timeout`류로 좁힘, 57014는 재시도하지 말고 호출자가 범위를 좁히게. 난이도 하. 위험: 재시도 정책 변경은 수집 파이프라인 전반에 영향 → 테스트 `tests/.../test_retry*` 확인.
+
+## PF-5 [확정·낮음·구조] 같은 일을 하는 3중 구현: `Database.select_in_chunks` / 모듈 `select_in_chunks` / `select_paged_in_chunks`, `chunk_values` / `chunk_filter_values`
+- platform/db/postgres.py 하단. 세 경로가 같은 페이지 계약을 각자 호출. 재시도(`RemoteProtocolError`)는 `select_all_paged`에만 있어 통일되지만, 사용자 코드가 어느 경로를 쓰는지에 따라 `sb`(전역) vs 주입 `Database`가 갈라진다. 죽은 alias는 정리 대상. 난이도 하.
+
+---
+## RS-5 [확정·높음(게이트 오작동)] RL 승격 게이트의 DSR이 단위가 어긋나 있다 — 기대 최대 샤프가 상수 1.11로 고정
+- 영역: research/evaluation/deflated_sharpe.py:55-110, research/rl/continuous_learner.py:87
+- 증상: `evaluate_model`이 `DeflatedSharpeRatio.compute(returns, num_trials=10, annualize=False)`로 **기간별(20일 구간) 샤프**를 넘기는데, `variance_trials`는 기본 0.5 상수라 `expected_max_sr = sqrt(0.5)·(…) = 1.1134`가 항상 같다. 기간별 샤프가 1.11을 넘어야 DSR≥0.5가 된다(연환산 시 약 3.9). 결과: 실제로 쓸 만한 정책도 `dsr_probability ≈ 0`, 반대로 기간별 샤프 1.3(비현실적) 이상이면 통과.
+- 재현(순수 함수): 20일 기간 수익률 30개, σ=0.05, 평균 0.02/0.05/0.10 → 관측 SR 0.34/1.34/1.98, 기대최대 1.1134, DSR 확률 0.0/0.84/0.9993. 평균 0.02(기간 SR 0.34는 이미 매우 좋음)가 0.0.
+- 추가 결함: `annualize=True`(기본) 경로는 SE 분산항(`var_sr`)에 **연환산 SR**과 (n-1)을 그대로 넣는다 — Mertens 식은 기간별 SR 기준이라 연환산 SE는 √ppy배여야 하는데 그대로라 표준오차가 ~13배 작다. 재현(일별 수익률 60개, σ=2%, ppy=252, num_trials=10): 평균 0.2%/일 → 구현 0.0728 vs 표준오차를 바로잡은 값 0.4532, 평균 0 → 0.0 vs 0.1646 (z가 과대 → 확률이 0/1로 쏠림). 현재 호출자는 `annualize=False`뿐이라 이 경로는 잠복.
+- 로그에도 영향: `PolicyEvaluationScore.sharpe_ratio`가 "연율화 샤프비율"이라는 주석(:86)과 달리 기간별 값이고 `min_sharpe_improvement=0.02`가 그 단위에 걸려 있다.
+- 원인: DSR 입력 단위(기간 SR)와 시도 간 SR 분산의 단위를 맞추지 않음. `variance_trials`는 시도들의 SR 추정치 분산(≈ 1/(n-1) 수준)이어야 함.
+- 고치는 법: `variance_trials`를 인자 필수로 하고 호출자가 시도별 SR의 표본 분산(또는 1/(n-1))을 넘기게; annualize 경로의 SE는 기간 SR로 계산 후 √ppy 곱. 경계값 테스트(평균 0.02 케이스) 추가.
+- 위험: RL은 challenger 전용이라 실주문 영향 없음. 게이트 통과 기준이 바뀌면 후보 채택 빈도가 바뀐다. 난이도 하. 사용자 결정: 승격 문턱 정책이라 확인 권장.
+
+## RS-6 [확정·낮음] `EvaluationSummary.turnover` 상한 2.0이 평가 기간 길이를 모른다
+- research/promotion/gate.py `PromotionCriteria.max_turnover=2.0`은 `aggregate_evaluations`의 `max(turnovers)` 와 비교. 백테스트 turnover(`backtest/metrics.py:81` 총 체결금액/평균 NAV)와 RL turnover(step별 합)는 **누적값**이라 창이 길수록 커진다. 5년 백테스트는 거의 항상 >2로 거절, 3개월 창은 통과 — 같은 전략이 창 길이로 판정이 갈린다. 반대로 워크포워드 창 여러 개 중 최대만 봐 짧은 창이 유리.
+- 고치는 법: 연환산 turnover(× ppy/기간수)로 정규화한 값을 저장·비교. 난이도 하. 승격은 사람 승인이 마지막이라 위험 낮음. `win_rate`도 이름은 거래 승률이나 실제는 "양의 일별 수익률 비율"(metrics.py:99-102)이라 오해 소지.
+
+## RS-7 [확정·낮음] HAC 지연 수 = horizon-1이 "일 단위 관측" 가정인데 표본은 주 단위(7일 간격)
+- research/evaluation/alpha.py:110-121 `lags = min(horizon_days-1, count-1)`, ml_inference.py `has_dependence_aware_oos`가 `hac_lags == horizon_days-1`을 강제. 실측: rl_training_labels의 distinct as_of 215개, 간격 7일 207회(주간 금요일). 20거래일(≈28~34일) label은 인접 4~5개 관측과 겹친다 → 필요한 lag는 약 4, 사용 19. OOS 날짜 수가 40대면 lag 19의 Bartlett 추정이 불안정(IID 하한 덕에 과대 통과는 막힘, 과소 통과·불안정 위험).
+- 고치는 법: lag = ceil(horizon 달력일 / 관측 간격) 로 관측 간격을 인자로 받기. 계약 검사도 함께 변경(기존 artifact 무효화 → 재학습 필요). 난이도 중. 사용자 결정 필요(채택된 모델 자격 재평가).
+
+## RS-8 [확정·낮음] 알파벳순 종목 자르기가 "성과와 무관하니 편향 없음"이라고 주석에 적혀 있다
+- research/commands/continuous_retrain.py:96 `sorted(tracked)[:max_symbols]`, research/rl/decision_dataset.py:25 `sorted({row["ticker"]…})[:max_symbols]`(30개). 알파벳 앞쪽 종목만 학습에 남고 나머지 경험은 조용히 버려진다(`continue`). 섹터·규모가 무작위가 아니므로 A~C로 시작하는 종목군 편향.
+- `ResearchStore.decision_experience_rows`가 있는 운영 경로에서는 decision_dataset 쪽이 실사용; `load_training_set` 경로(continuous_retrain.py:_training_set 아래 절반)와 `build_feature_dataset`·`build_live_inference_frame`은 운영 코드에서 호출자가 없다(테스트만) — 죽은 코드.
+- 고치는 법: 경험 건수 상위 N 또는 해시 기반 고정 무작위 표본. 죽은 경로 삭제. 난이도 하.
+
+---
+## RS-9 [확정·높음] 복수 주식 종류 기업의 시가총액·PER·PBR·PSR·FCF수익률이 한 종류 주식수만 써서 절반 수준으로 계산된다
+- 영역: research/valuation/inputs.py:shares_scalar(:183-227), 소비: research/commands/build_valuations.py → `valuation_observations` → feature `valuation_*` → 후보 선정·factor ALPHA
+- 증상: 분자(TTM 순이익·매출·FCF, 자본)는 CIK(회사 전체)인데 분모(시가총액)는 그 ticker에 `mapped_security_id`로 붙은 **한 주식 종류**의 발행주식수 × 그 종류 가격이다. 다른 종류(상장된 다른 티커·비상장 B종)는 합산하지 않는다.
+- 수치(운영 DB `fundamentals.share_class_snapshots` 최신 + 로컬 `valuation_observations` 2026-09-14):
+  - GOOGL: shares 5.868B, price 338.5 → market_cap 1.986T, **pe_ttm 8.13**, pb 3.10. 실제 발행주식수는 A 5.868B + C 5.527B + B 0.835B = 12.23B → 시총 ≈ 4.1T, PER ≈ 16~17. GOOG도 pe 7.59(5.527B만 사용).
+  - BRK-B: B 1.408B만 사용, A 488,450주(B환산 ×1500 ≈ 0.733B) 누락 → 시총 66%. META: B 342.4M(`unmapped_unlisted`) 누락 → 87%.
+  - 추적 종목 중 같은 CIK 티커 쌍: GOOG/GOOGL, FOX/FOXA, NWS/NWSA. 비상장 종류를 가진 종목 다수.
+- 원인: `shares_scalar`가 행 중 `available_at`이 가장 늦은 **한 행**을 고른다(`best`). 종류 합산 계약이 없고, `unmapped_unlisted` 행은 상장 ticker에 붙지 않아 어디에도 안 들어간다.
+- 영향: GOOGL·GOOG가 "PER 8의 초저평가"로 value/earnings-yield factor를 받는다. valuation feature 21개 컬럼 중 시총 log·PE·PB·PS·FCF yield·earnings yield 전부. 이 값은 ALPHA factor 후보와 ML 학습 표본(replay 96k행 포함, 같은 오류가 과거 전체에 있음)에 그대로 들어간다.
+- 고치는 법: (a) 회사 시총 = Σ(종류별 shares × 그 종류 가격), 상장 종류는 각자 가격, 비상장(B 등)은 전환비율×대표 종류 가격으로 근사하거나 명시적으로 결측; (b) 최소한 CIK 단위로 `shares_outstanding` 합산 후 (대표 종류 가격 × 합계)로 계산하고 종류별 가격 차이는 오차로 인정. 계약은 `PITValuationInputs.shares_outstanding`의 의미를 "회사 전체 등가 주식수"로 문서화.
+- 위험: valuation_observations·feature_snapshots·training_samples 전부 재생성 필요(FEATURE_VERSION 승격), 후보 랭킹·System Portfolio 목표가 바뀜. 난이도 중. **사용자 결정 필요**(재적재·feature 세대 승격·기존 ML champion 무효화).
+
+## RS-10 [확정·낮음] TTM 4분기 선택이 연속성을 확인하지 않는다 (valuation·quality 두 곳)
+- research/valuation/inputs.py:select_ttm_quarters, research/evidence/statistics.py:_quarters_desc/_sum. 최근 4개 분기 행을 `period_end` 순으로 자를 뿐 분기 간격을 안 본다. 중간 분기가 빠져도 4행이면 5분기에 걸친 합이 "TTM"이 된다.
+- 수치: `fundamentals.financials` 2021년 이후 (cik, period_end) 10,267쌍 중 130일 넘는 간격 18건(12개 CIK, 0.18%). 영향은 작으나 조용히 틀린다.
+- 고치는 법: 선택한 4행의 `period_end` 인접 간격이 각각 60~130일 안인지 검사하고 아니면 `ttm_gap` 사유로 결측. 난이도 하.
+
+## RS-11 [확정(운영 데이터)·중간] v5 feature 세대의 live snapshot이 0건 — 마지막 v5는 2026-07-31(주간 replay), live는 v3/v4
+- 수치(로컬 `rl_feature_snapshots` parquet): v5 97,973행(2021-09-03~2026-07-31, 모두 23:30 UTC replay), v3 1,004행(2026-09-09), v4 903행(2026-09-14). 코드의 `FEATURE_VERSION="v5"`·`FEATURE_COLUMNS`는 120열, live 저장분은 84열(quality_*·momentum_*·growth_revenue_ttm_yoy·revision_*·valuation_earnings_yield 등 36열 없음). `rl_training_labels`는 v5만 있고 최대 as_of 2026-07-31.
+- 영향: (a) `champion_forecast`(lookback 3일)·`factor_cross_section`(v5 필터)가 live 횡단면을 못 찾아 각각 "inference unavailable"/`legacy_rotation` 폴백. 폴백은 로그로 드러나 조용하진 않다. (b) 실제 이번 확인 시 v3/v4 행으로 `score_cross_section`을 돌리면 503종목 전부 `quality_unknown`(quality 열 자체가 없음) — 세대가 섞이면 factor 게이트가 전원 탈락으로 끝난다. (c) 2026-08-01 이후 label·표본이 없어 최근 7주는 학습에 안 들어감(replay가 07-31에서 멈춤, label horizon 20일 때문에 실질 학습 종료는 07-03경).
+- 원인: FEATURE_VERSION을 올린 뒤 live 적재(build_features)가 v5로 한 번도 안 돌았다(하네스 정비 보류 추정 — 원인 미확정). 버전 불일치를 fail-fast로 알리는 경로가 없고 소비자마다 "없으면 폴백"이다.
+- 고치는 법: 하네스 재개 후 `build_features` 1회로 v5 live 확인; 버전 승격 시 "최신 live snapshot의 feature_version == 코드 FEATURE_VERSION" 검증을 하네스 헬스체크(`operations.monitoring`)에 추가. replay는 `backfill_research_history`로 2026-08 이후를 이어 적재.
+- 위험/결정: 하네스 재개·재적재는 사용자 결정(정비 보류 중일 수 있음). 난이도 하.
+
+---
+## RS-12 [확정·중간] research 진입점이 "일부 종목 실패"를 exit 1로 돌려 feature_store 잡 전체(labels·samples·평가·events)가 그날 멈춘다
+- 영역: research/commands/build_features.py:153, build_valuations.py, build_labels.py:265 (`return 0 if payload["status"] == "success" else 1`), operations/harness/runtime.py:266-289
+- 증상: 503종목 중 1종목이 일시 오류(PostgREST 503·8초 timeout)면 `status="partial"` → exit 1 → 하네스가 스테이지를 실패 처리하고 **전체를 10분 뒤 다시 실행**(build_features 1회 최대 60분). 2회째도 같은 종목이 실패하면 `job.status="failed"`로 종료, 뒤 스테이지(build_labels·build_training_samples·evaluate_decisions·build_events)는 그날 실행되지 않는다. 앞 스테이지가 이미 다른 종목 502행을 저장한 뒤에 벌어진다.
+- 근거: `platform/cli/runtime.py:EXIT_PARTIAL=2`("부분 성공에 고유한 코드", 워크플로는 경고로 통과)가 있는데 research 진입점은 안 쓴다. 하네스 `CommandRunner` 경계가 exit≠0을 예외로 바꿈(operations/adapters/research.py → StageOutcome.succeeded는 예외 없을 때만).
+- 영향: evaluate_decisions가 막히면 CaseMemory·학습 루프가 열린 채로 남는다(주석 자체가 경고). label 단계의 `failures`(단일 label의 ValueError)도 같은 경로.
+- 고치는 법: 실패 비율 임계(예: 실패 ≤ 2% 이고 저장 행 ≥ 1)까지는 exit 0 + status `partial`, 임계 초과만 exit 1. 하네스가 EXIT_PARTIAL(2)을 warning 성공으로 받도록 통일. 난이도 하~중. 사용자 결정: 하네스 코드라 정비 보류 후 수정.
+
+## RS-13 [확정·낮음] label horizon이 저장·검증되지 않는다 — `excess_return_20d`라는 이름표는 export가 붙인다
+- research/commands/export_dataset.py `definition = f"excess_return_{horizon_days}d"`(기본 20)를 저장된 label 행에 그대로 붙이는데, `rl_training_labels` 행에는 horizon 필드가 없다(build_labels.py는 `--horizon {1,5,20}`을 받되 identity에 안 넣음, 파일 머리 주석도 "snapshot당 horizon 하나"). `build_labels --horizon 5`를 한 번 돌리면 이후 신규 snapshot부터 5일 label이 20일 정의로 학습된다.
+- 현재 데이터는 일관: 97,973행 전부 forward_end−as_of 달력일 28~34(20거래일). 즉 잠복 결함.
+- 고치는 법: label payload에 `horizon_days` 기록 + `export_dataset`/`build_research_dataset`이 요청 horizon과 불일치 시 실패(또는 `--horizon` 선택지를 SIGNAL_HORIZON_DAYS 단일로 축소). 난이도 하.
+
+## RS-14 [확정·높음] 학습·IC 연구 표본에 생존 편향 — 과거 S&P 멤버의 16%가 표본에서 빠져 있고 "coverage 1.0" 검사가 이를 못 잡는다
+- 영역: research/datasets/universe.py(의도는 편향 제거), research/commands/build_features.py, data/market(가격 미적재)
+- 증상: 2021-09-03 S&P 500 멤버 505종목(멤버십 표 기준) 중 snapshot·label은 423종목. 빠진 82종목은 전부 현재 추적 밖·비상장(ATVI·CERN·CTXS·ABMD·AAL·AAP·ALK 등). 기간 전체(2021-09~)로는 멤버였던 595종목 중 92종목이 현재 비추적·비활성이고, snapshot에 나온 고유 ticker는 503(=현재 tracked 수)로 과거 시점마다 425→503으로 늘어난다.
+- 원인: 이 종목들의 `market.prices_daily` 봉이 0개(가격 수집이 tracked만) → `market_prices`가 빈 목록 → `FeatureLayer`가 `is_available=False` → `build_features`가 저장 안 함(`unavailable_tickers`로만 기록). `research_universe(historical_replay)`가 멤버십 기준 ticker를 주므로 코드는 "생존 편향 없음"으로 읽히지만 실제 입력은 생존자뿐.
+- 시스템이 이미 알고 있다: `artifacts/research/backfill_audit_2022_2025.json`의 날짜별 행이 `expected_count 505 / snapshot_count 425 / unavailable_count 80 / terminal_count 505 / coverage 1.0`(2022-01-07) — `unavailable`을 "끝난 것(terminal)"으로 세서 coverage가 1.0이 된다(`backfill.audit_backfill`의 `coverage = terminal/expected`). 원인이 '봉 없음'인지 다른 도메인 부재인지는 종목별로 재확인하지 않았다(`is_available=bool(sources)`, layer.py:344 — 근거 도메인이 하나도 없을 때만 미사용이므로 가격·재무·13F 모두 없다는 뜻; 봉 0개는 확인).
+- 가드가 공허: `artifacts/research/data_quality_2022_2025.json`의 `feature_label_coverage: 1.0`, `label_sample_coverage: 1.0`은 snapshot↔label↔sample 간 비율이지 **멤버십 대비 커버리지가 아니다**. `EvaluationSummary.survivorship_incidents`를 세는 `survivorship_check_passed` 플래그는 생산자가 코드 어디에도 없다(RS-15).
+- 영향: 인수·상장폐지·편출(대개 이후 수익률 분포가 다른 종목군)이 학습·factor IC(`factor_research`: 가중치 제안의 근거)에서 빠져 IC·spread가 낙관적. value factor는 특히 편출 부진주가 빠져 과대평가 가능.
+- 고치는 법: (a) 최소: 재현 날짜마다 `snapshot_count / membership_count`를 `historical_replay_runs`와 데이터 품질 리포트에 기록하고 승격·채택 게이트(`check_adoptable`)에 최소 커버리지(예 95%)를 추가; (b) 근본: 과거 멤버의 봉을 backfill(market owner, yfinance로 상폐 종목이 안 받아지면 결측 비율을 그대로 공개).
+- 위험: (b)는 외부 provider 호출·저장 증가, 이미 만든 96k 표본을 재생성(FEATURE_VERSION 승격). 난이도 (a) 하 / (b) 상. **사용자 결정 필요**.
+
+## RS-15 [확정·중간] 모델 승격 게이트의 입력 `portfolio_evaluations` 데이터셋에 생산자가 없다 — 승격 경로가 구조적으로 닫혀 있다
+- research/storage/repository.py:963-974 `model_evaluation_rows`가 `records("portfolio_evaluations")`을 읽고 `promote_model` 명령(operations/commands/promote_model.py)이 그 요약을 게이트에 넣는다. 그러나 src 전체에 `portfolio_evaluations`를 쓰는 코드가 없다(readers 4곳뿐, `data/local/research/parquet/datasets/`에 해당 디렉터리도 없음). `leakage_check_passed`·`survivorship_check_passed`·`data_integrity_check_passed`·`research_only` 필드도 생산자·DB 컬럼이 없다(test fixture에만 존재 → 테스트 픽스처가 프로덕션 리더보다 풍부).
+- 결과: `aggregate_evaluations([])` → `evaluation_count=0`, `data_integrity_incidents=1`로 항상 "no persisted evaluation evidence" 위반. ManualPromotionGate/`has_approved_chain`(실주문 직전 검사)는 어떤 artifact도 통과시킬 수 없거나(fail-closed), 다른 곳에서 우회해 쓰이고 있다면 게이트의 의미가 없다. 
+- 고치는 법: 생산자(walk-forward·paper 평가 → `portfolio_evaluations`)를 만들거나 게이트/명령을 삭제. fail-closed라 위험은 낮으나 "있는 것처럼 보이는 안전장치"다. 난이도 중. 사용자 결정 필요(실주문 승격 정책).
+
+## RS-16 [확정·낮음] factor_research의 종가 캐시가 날짜만 키로 써서 다른 종목 집합의 조회를 가린다
+- research/commands/factor_research.py `close_cache: dict[date, ...]`가 `closes(day, tickers)`의 tickers를 키에 안 넣는다. 주간 표본에서 horizon 20일의 end_day는 4주 뒤 as_of의 start_day와 같은데, 캐시는 먼저 요청한 날짜의 종목 집합으로 채워져 그 뒤 날짜에 새로 들어온 멤버는 시작가가 없어 조용히 수익률에서 빠진다(편입 종목이 IC 표본에서 누락).
+- 고치는 법: 키에 `frozenset(tickers)` 대신 "전체 union을 한 번 조회". 난이도 하. 영향 작음(주간 멤버 변동 수 종목).
+
+## RS-17 [의심·낮음] 후보 모델 4종을 같은 OOS 창에서 비교해 최고 ICIR을 추천 — 다중 비교 보정 없음
+- research/commands/ml_challengers.py:beats_champion, `best = max(... icir)`. 4 종류 × 매 실행마다 새 후보를 만들고 champion보다 ICIR이 높으면 추천. `check_adoptable`은 후보 단독 IC t≥2만 보고 후보 수(deflation)를 반영하지 않는다. 채택은 사람이 하므로 위험은 낮으나 "추천"이 선택 편향을 담는다. 고치는 법: 후보 수를 OOS t-stat 임계에 반영(Bonferroni/DSR-IC), OOS를 선택과 독립된 마지막 구간으로 분리. 난이도 중.
+
+---
+## PF-6 [의심·낮음] 로컬 데이터 루트가 CWD 상대경로다 — 다른 폴더에서 CLI를 돌리면 조용히 새 빈 저장소가 생긴다
+- platform/storage_paths.py:`DEFAULT_LOCAL_DATA_ROOT = Path("data/local")`; `research_database_path`·`runtime_database_path`·`intelligence_database_path`·`local_mirror_root`·`evidence_cache_path` 전부 이 상대경로(환경변수 미설정 시). 반면 `.env`는 `bootstrap.start_cli`가 `repository_root()/.env`로 로드하고 `harness_state_dir`·`rl_policy_dir`는 `repository_root()` 기준 — 같은 파일 안에서 규칙이 갈린다. 하네스 서비스는 `WorkingDirectory=root`로 설치돼(`service_install.py:112,159`) 정상이나, 사람이 다른 cwd에서 `python -m investment_agent...`를 실행하면 `mkdir(parents=True)`와 `CREATE TABLE`이 그 폴더에 새 DB를 만들고 "데이터 없음"으로 성공 종료한다.
+- 고치는 법: 기본 루트를 `repository_root()/"data"/"local"`로(환경변수 우선은 유지). 난이도 하. 위험 낮음(경로 계산 한 줄, 기존 사용자 cwd=루트면 동일).
+
+## IN-5 [의심·낮음] 근거 캐시가 같은 기사를 첫 조회 종목 하나에만 귀속한다
+- intelligence/evidence_cache.py:`row()` — `item_id`가 (canonical_url, content) 해시이고 `INSERT OR IGNORE`+`UNIQUE(url_hash, content_hash)`라 두 번째 종목 조회에서 온 같은 기사는 버려진다. `iter_contents(symbols=[...])`는 `symbol` 컬럼으로 거르므로 두 번째 종목의 사건 추출(`build_events`)에는 그 기사가 없다. 로컬 `news_social.duckdb`: 뉴스 923행/58종목, 같은 url_hash가 서로 다른 종목으로 3건(내용이 달라 별도 행) — 동일 내용 중복 여부는 버려져 관측 불가(의심).
+- 고치는 법: 종목을 identity에 넣거나 `symbols` 배열/연결 표로 분리. 난이도 중.
+
+## IN-6 [확정·낮음(구조)] Research 사건(`build_events`)은 Intelligence 90일 archive가 아니라 LLM 판단 때 채워지는 lazy 근거 캐시만 읽는다
+- research/commands/build_events.py:`LocalEvidenceCache(args.cache_path)` → `news_social.duckdb`(뉴스 923·소셜 1,270, 최신 2026-09-15). `collect_news`/`collect_social`이 쌓는 `intelligence.duckdb`(뉴스 94, 최신 09-09)는 research 사건에 연결이 없다(`reporting/readers/intelligence.py`와 화면만 읽음). 결과적으로 스케줄 수집(cap을 소비)의 결과가 학습 feature로 가지 않고, 판단이 안 도는 날은 사건 feature가 갱신되지 않는다. 메모리 "뉴스 경로가 둘로 갈라져 있다"의 확인.
+- 또 `build_events` payload는 rows_read=0이어도 status=success·exit 0(build_events.py:100-113).
+- 고치는 법: 한 경로를 정본으로(Intelligence archive → `iter_contents`와 같은 계약의 reader 어댑터). 난이도 중. 사용자 결정: 어느 쪽이 정본인지.
+
+---
+## 범위와 한계
+- 읽은 것: research/evidence(reader·context·statistics), commands(build_features·labels·valuations·training_samples·events·export_dataset·ml_challengers·continuous_retrain·adopt_ml_model·factor_research·backfill 앞부분), datasets, training, models/baselines, ml_inference/ml_serving, evaluation(alpha·deflated_sharpe), promotion/gate, backtest(engine·metrics), rl(features·pipeline·continuous_learner·decision_dataset), factors/core, features(db·etl·layer 앞부분), valuation/inputs, storage/repository(앞 600줄+평가부), intelligence 전체 주요 파일, platform(db/postgres·sqlite·duckdb, clock, retry, serialization, artifacts, cache, external_usage, storage_paths, cli).
+- 읽지 못한/얕게 본 것: research/rl/environment·baseline·bundle·leakage·trainer, backtest/simulator·validation, features/event_intelligence·event_contracts·compute, strategies/*, system_validation/ablation, valuation/engine, platform/logging·secret_scope, intelligence/domain(extract·social_normalize)·reddit source.
+- 다른 에이전트가 같은 %TEMP%를 써서 임시 스크립트가 덮인 일이 있어 scratchpad의 rs_*.py/sql로 다시 실행했다. 운영 DB는 readonly 세션으로만 조회.

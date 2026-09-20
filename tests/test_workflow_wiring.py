@@ -78,8 +78,20 @@ _DISTRIBUTION_NAMES = {
 
 
 def _entry_modules(name: str) -> list[str]:
-    """워크플로가 실제로 실행하는 `python -m investment_agent....` 진입점들."""
-    return sorted(set(re.findall(r"python -m (investment_agent\.[A-Za-z0-9_.]+)", _text(name))))
+    """워크플로가 실제로 실행하는 `python -m investment_agent....` 진입점들.
+
+    `notify --kind X`는 `notify.KINDS`의 문자열("모듈:함수")을 `importlib`로 불러 producer를 돌린다.
+    이 동적 간선은 import 문이 아니라 AST 도달성 분석에 안 잡히므로, `--kind` 값을 그 producer 모듈로 풀어
+    진입점에 직접 더한다 — 안 그러면 알림 워크플로의 서드파티 import 검사가 빈 집합에 대해 통과한다.
+    """
+    text = _text(name)
+    modules = set(re.findall(r"python -m (investment_agent\.[A-Za-z0-9_.]+)", text))
+    from investment_agent.operations.commands.notify import KINDS
+
+    for kind in re.findall(r"--kind\s+([A-Za-z0-9_]+)", text):
+        if kind in KINDS:
+            modules.add(KINDS[kind].split(":")[0])
+    return sorted(modules)
 
 
 def _workflow_groups(name: str) -> list[str]:
@@ -525,25 +537,81 @@ class NotificationWorkflowTest(unittest.TestCase):
 class KillSwitchTest(unittest.TestCase):
     """킬 스위치는 워크플로 레벨 게이트다 — Python 코드 안에서 검사하지 않는다."""
 
-    def test_fundamentals_workflows_gate_on_the_repo_variable(self):
-        for name in (
-            "fundamentals_daily",
-            "fundamentals_backfill",
-            "fundamentals_watchlist_fast",
-            "notify_fundamentals",
-            "notify_fundamentals_calendar",
-        ):
+    # 워크플로 이름 접두 → 그 도메인의 킬 변수. 워크플로를 하나씩 나열하지 않는 이유: 나열한 이름 밖의
+    # 워크플로에서 게이트가 사라져도 검사가 통과한다(실측: 게이트가 있는 17개 중 5개만 나열돼 있었다).
+    KILL_VARIABLE_BY_PREFIX = (
+        ("fundamentals_", "FUNDAMENTALS_KILL"),
+        ("notify_fundamentals", "FUNDAMENTALS_KILL"),
+        ("institutional_", "GURUS_KILL"),
+        ("econ_calendar_", "ECON_CALENDAR_KILL"),
+        ("notify_econ_calendar_", "ECON_CALENDAR_KILL"),
+    )
+    # 게이트가 없는 것이 맞는 워크플로와 그 이유. 이유를 적지 못하면 여기 넣지 않는다.
+    KILL_EXEMPT = {
+        "fundamentals_integrity": "킬 중에도 적재가 멈춘 것을 경보해야 하는지가 정해지지 않았다(보고서 OPS-3)",
+    }
+
+    @classmethod
+    def _kill_variable(cls, name: str) -> str | None:
+        for prefix, variable in cls.KILL_VARIABLE_BY_PREFIX:
+            if name.startswith(prefix):
+                return variable
+        return None
+
+    def test_every_domain_workflow_gates_on_its_repo_variable(self):
+        gated = [name for name in sorted(_workflow_names()) if self._kill_variable(name)]
+        for name in gated:
+            if name in self.KILL_EXEMPT:
+                continue
+            variable = self._kill_variable(name)
             with self.subTest(workflow=name):
-                self.assertIn("vars.FUNDAMENTALS_KILL != 'on'", _text(name))
+                self.assertIn(f"vars.{variable} != 'on'", _text(name))
+
+    def test_the_prefix_table_still_finds_workflows(self):
+        """접두 표가 아무것도 못 찾으면 위 검사는 공허하게 통과한다."""
+        for prefix, variable in self.KILL_VARIABLE_BY_PREFIX:
+            with self.subTest(prefix=prefix):
+                self.assertTrue(
+                    [name for name in _workflow_names() if name.startswith(prefix)],
+                    f"{variable}: '{prefix}'로 시작하는 워크플로가 없다",
+                )
+
+    def test_a_workflow_using_a_kill_variable_is_covered_by_the_table(self):
+        """킬 변수를 쓰는데 표가 모르는 워크플로는 게이트가 지워져도 잡히지 않는다."""
+        for name in sorted(_workflow_names()):
+            used = sorted(set(re.findall(r"vars\.([A-Z_]+_KILL)", _text(name))))
+            if not used:
+                continue
+            with self.subTest(workflow=name):
+                self.assertEqual(used, [self._kill_variable(name)], "접두 표에 없거나 다른 변수를 쓴다")
 
     def test_kill_switch_is_never_read_from_python(self):
         src = Path(__file__).resolve().parents[1] / "src"
+        variables = sorted({variable for _, variable in self.KILL_VARIABLE_BY_PREFIX})
         offenders = [
-            path.relative_to(src).as_posix()
+            f"{path.relative_to(src).as_posix()}: {variable}"
             for path in src.rglob("*.py")
-            if "FUNDAMENTALS_KILL" in path.read_text(encoding="utf-8")
+            for variable in variables
+            if variable in path.read_text(encoding="utf-8")
         ]
         self.assertEqual(offenders, [])
+
+
+class HeartbeatChannelInjectionTest(unittest.TestCase):
+    """감시 대상 채널의 ID를 하트비트가 실제로 받아야 한다.
+
+    받지 못하면 그 채널은 `configured=False`로 조기 판정돼 매일 "채널 ID 없음" 경보가 뜨고,
+    `quiet_hours`(예: 투자-리포트 72시간 무발송)는 한 번도 평가되지 않는다.
+    """
+
+    def test_heartbeat_injects_every_watched_channel_id(self):
+        from investment_agent.operations.monitoring.channels import WATCHED
+
+        text = _text("ops_heartbeat")
+        injected = set(re.findall(r"^\s+([A-Z][A-Z0-9_]+):\s*\$\{\{\s*secrets\.", text, flags=re.MULTILINE))
+        watched = [entry["env"] for entry in WATCHED if entry.get("env")]
+        self.assertTrue(watched, "감시 대상에 env가 하나도 없으면 이 검사는 공허하다")
+        self.assertEqual(sorted(set(watched) - injected), [])
 
 
 class ExpectationsWorkflowTest(unittest.TestCase):

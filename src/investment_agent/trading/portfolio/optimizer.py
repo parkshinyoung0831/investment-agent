@@ -371,6 +371,11 @@ class RiskAwareOptimizer:
             ),
             "capped_expected_returns": capped,
         }
+        if beta_budget is not None:
+            # 실제 제약에 들어간 정규화 베타와 고정 보유 차감 후 예산도 재현 입력이다.
+            inputs["beta_constraint"] = {
+                "signal_betas": beta_budget[0].tolist(), "budget": beta_budget[1],
+            }
         if factor_exposures:
             # 노출 제약이 없는 판단의 입력 hash는 제약이 생기기 전과 같게 둔다.
             inputs["factor_exposures"] = {

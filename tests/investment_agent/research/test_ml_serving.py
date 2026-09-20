@@ -24,7 +24,9 @@ def _artifact(*, mean_ic: float, t_stat: float, coefficient: float = 0.01, horiz
         },
         "model_state": {"coefficients": [coefficient], "intercept": 0.0},
         "feature_names": ["evidence_domain_count"],
-        "out_of_sample_alpha": {"mean_ic": mean_ic, "ic_t_stat": t_stat},
+        "out_of_sample_alpha": {"mean_ic": mean_ic, "ic_t_stat": t_stat, "date_count": 60,
+                                "inference_method": "newey_west_bartlett_iid_floor_v1",
+                                "horizon_days": horizon, "hac_lags": horizon - 1},
         "dataset_manifest": {"label_definition": label},
     }
 
@@ -120,7 +122,13 @@ class ChampionForecastTest(unittest.TestCase):
         self.assertEqual(load_model(_artifact(mean_ic=0.03, t_stat=1.5)).confidence, 0.0)
         legacy = _artifact(mean_ic=0.0, t_stat=0.0)
         legacy.pop("out_of_sample_alpha")
-        self.assertAlmostEqual(load_model(legacy).confidence, 0.8)
+        self.assertEqual(load_model(legacy).confidence, 0.0)
+
+    def test_legacy_iid_summary_is_unavailable_until_re_evaluated(self):
+        payload = _artifact(mean_ic=0.06, t_stat=9.0)
+        payload["out_of_sample_alpha"].pop("inference_method")
+        self.write(payload)
+        self.assertFalse(self.forecast().is_available)
 
 
 class SignalHorizonContractTest(unittest.TestCase):

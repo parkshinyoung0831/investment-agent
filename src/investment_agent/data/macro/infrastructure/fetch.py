@@ -1,13 +1,13 @@
 """출처 함수들이 공통으로 쓰는 도우미 모음(성공값 + 실패목록 함께 반환)."""
 from __future__ import annotations
 
-import os
 import time
 from collections.abc import Callable
 from logging import Logger
 
 import pandas as pd
 
+from investment_agent.platform.env import env_float
 from investment_agent.data.macro.domain.quality import validate_series
 
 # 소스 하나가 실행 전체를 잡아먹지 못하게 막는 벽시계 예산(초).
@@ -15,7 +15,7 @@ from investment_agent.data.macro.domain.quality import validate_series
 # 4회가 곱해져 워크플로 캡(20분)을 넘긴다. 그러면 이미 받아둔 미국 지표까지 통째로
 # 사라진다 — 예산을 넘긴 시점부터는 남은 지표를 호출하지 않고 실패로 적어 부분 성공을 남긴다.
 # 네 소스는 병렬로 도니 전체 수집 시간은 대략 이 값 하나로 묶인다.
-SOURCE_BUDGET_SEC = float(os.environ.get("MACRO_SOURCE_BUDGET_SEC", "360"))
+SOURCE_BUDGET_SEC = env_float("MACRO_SOURCE_BUDGET_SEC", 360.0)
 
 
 def normalize_tz(s: pd.Series) -> pd.Series:

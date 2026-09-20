@@ -248,6 +248,20 @@ def load_execution_data() -> DataResult:
         if result.status not in {"ok", "empty"}:
             return result
         payload[key] = result.rows
+    # 주문 이벤트·대사 실행은 reporting view가 아니라 로컬 원장에서 온다. 비워 두면 화면이
+    # 대사가 한 번도 안 돌았다고 주장한다.
+    try:
+        payload["order_events"] = read_runtime_rows("order_events")
+        payload["reconciliations"] = sorted(
+            read_runtime_rows("reconciliation_runs"),
+            key=lambda row: str(row.get("started_at") or ""),
+            reverse=True,
+        )
+    except Exception as error:
+        return DataResult.error(
+            source="로컬 Runtime · order_events·reconciliation_runs",
+            message=public_exception_message("주문 이벤트·대사 기록 조회에 실패했습니다.", error),
+        )
     return DataResult.empty(value=payload, source="reporting execution", message="아직 저장된 실행·체결 기록이 없습니다.") if not any(payload.values()) else DataResult.ok(value=payload, source="reporting execution")
 
 

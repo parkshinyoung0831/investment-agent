@@ -291,6 +291,12 @@ def cmd_reclaim(args) -> int:
 
 
 def main() -> int:
+    # Windows 콘솔 기본 인코딩(cp949)은 보고서의 em dash를 못 써 UnicodeEncodeError로 중간에 멈춘다.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
 

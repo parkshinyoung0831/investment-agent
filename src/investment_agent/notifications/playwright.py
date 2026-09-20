@@ -5,6 +5,7 @@ Playwright Chromium을 사용해 렌더링된 HTML을 2x 해상도 PNG로 캡처
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import pathlib
 import shutil
@@ -40,24 +41,28 @@ async def capture_html_to_png(
     from playwright.async_api import async_playwright  # 무거운 의존성 — 캡처 시점에만 지연 import
 
     prepared_html = inject_windows_font_fallback(html)
-    out = pathlib.Path(tempfile.gettempdir()) / f"{prefix}_{abs(hash(html)) % 10**8}.png"
+    # `hash()`는 프로세스마다 시드가 달라, 같은 카드를 다시 만들어도 같은 파일을 덮어쓰지 못한다.
+    digest = hashlib.sha256(html.encode("utf-8")).hexdigest()[:16]
+    out = pathlib.Path(tempfile.gettempdir()) / f"{prefix}_{digest}.png"
 
     async with async_playwright() as pw:
         browser = await pw.chromium.launch()
-        ctx = await browser.new_context(
-            viewport={"width": viewport_width, "height": 100},
-            device_scale_factor=2,  # 2x 해상도로 선명하게 렌더
-        )
-        page = await ctx.new_page()
-        await page.set_content(prepared_html, wait_until="networkidle")
         try:
-            await page.evaluate("document.fonts.ready")
-        except Exception:
-            pass
-        height = await page.evaluate("document.documentElement.scrollHeight")
-        await page.set_viewport_size({"width": viewport_width, "height": int(height)})
-        await page.screenshot(path=str(out), full_page=True)
-        await browser.close()
+            ctx = await browser.new_context(
+                viewport={"width": viewport_width, "height": 100},
+                device_scale_factor=2,  # 2x 해상도로 선명하게 렌더
+            )
+            page = await ctx.new_page()
+            await page.set_content(prepared_html, wait_until="networkidle")
+            try:
+                await page.evaluate("document.fonts.ready")
+            except Exception:
+                pass
+            height = await page.evaluate("document.documentElement.scrollHeight")
+            await page.set_viewport_size({"width": viewport_width, "height": int(height)})
+            await page.screenshot(path=str(out), full_page=True)
+        finally:
+            await browser.close()  # 캡처가 실패해도 Chromium 프로세스를 남기지 않는다
 
     log.info("png shot: %s (%d bytes)", out, out.stat().st_size)
     return str(out)

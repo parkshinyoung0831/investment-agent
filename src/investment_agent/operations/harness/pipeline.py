@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from datetime import datetime
+from typing import Any, Callable
 
 from investment_agent.operations.harness.contracts import (
     JobDefinition,
@@ -251,12 +252,14 @@ def toss_reconciliation_job(
     reconcile: StageHandler,
     interval_seconds: float = 60,
     stale_after_seconds: float = 5 * 60,
+    interval_provider: Callable[[datetime], float] | None = None,
 ) -> JobDefinition:
     """kill switch와 무관하게 이미 보낸 주문의 상태만 다시 읽는다."""
     return JobDefinition(
         job_id="toss_reconciliation",
         interval_seconds=interval_seconds,
         stale_after_seconds=stale_after_seconds,
+        interval_provider=interval_provider,
         stages=(
             StageDefinition(
                 "reconcile",

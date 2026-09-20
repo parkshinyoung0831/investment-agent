@@ -25,7 +25,7 @@ import math
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, Sequence
 
 from investment_agent.config import Config
 from investment_agent.execution.contracts import ExecutionSafetyError
@@ -229,6 +229,21 @@ def classify_order_risk(*, side: str, quantity: float, position_quantity: float 
     return ORDER_RISK_REDUCING
 
 
+def assert_order_budget_available(
+    *, controls: LiveTradingControls, state: RuntimeRiskState, notionals: Sequence[float],
+) -> None:
+    """승인 전 배치와 제출 직전 단일 주문이 같은 수량·금액 한도를 사용한다."""
+    values = tuple(float(value) for value in notionals)
+    if any(not math.isfinite(value) or value <= 0 for value in values):
+        raise ExecutionSafetyError("order notional must be finite and positive")
+    if any(value > controls.max_order_notional_usd for value in values):
+        raise ExecutionSafetyError("order exceeds the per-order notional limit")
+    if state.submitted_order_count + len(values) > controls.max_daily_orders:
+        raise ExecutionSafetyError("daily order count limit reached")
+    if state.submitted_notional_usd + math.fsum(values) > controls.max_daily_notional_usd:
+        raise ExecutionSafetyError("daily submitted notional limit reached")
+
+
 def assert_live_order_allowed(
     *,
     permit: object,
@@ -273,15 +288,7 @@ def assert_live_order_allowed(
     if state_age < 0 or state_age > max_state_age_seconds:
         raise ExecutionSafetyError("runtime risk state is stale")
 
-    notional = float(order.estimated_notional_usd)
-    if not math.isfinite(notional) or notional <= 0:
-        raise ExecutionSafetyError("order notional must be finite and positive")
-    if notional > controls.max_order_notional_usd:
-        raise ExecutionSafetyError("order exceeds the per-order notional limit")
-    if state.submitted_order_count + 1 > controls.max_daily_orders:
-        raise ExecutionSafetyError("daily order count limit reached")
-    if state.submitted_notional_usd + notional > controls.max_daily_notional_usd:
-        raise ExecutionSafetyError("daily submitted notional limit reached")
+    assert_order_budget_available(controls=controls, state=state, notionals=(order.estimated_notional_usd,))
     quantity = getattr(order, "quantity", None)
     side = getattr(order, "side", None)
     risk = (
@@ -332,6 +339,7 @@ __all__ = [
     "RuntimeRiskState",
     "assert_live_cancel_allowed",
     "assert_live_order_allowed",
+    "assert_order_budget_available",
     "classify_order_risk",
     "resolve_trading_state",
     "ORDER_RISK_INCREASING",

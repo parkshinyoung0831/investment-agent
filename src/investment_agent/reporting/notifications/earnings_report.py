@@ -354,7 +354,7 @@ def load_quality_history(tickers: list[str]) -> dict[str, list[dict]]:
             out.setdefault(r["ticker"], []).append({
                 "ticker": r["ticker"],
                 "period_end": r["period_end"],
-                "debt_to_equity": total_debt(r) / equity if equity else None,
+                "debt_to_equity": _ratio_or_none(total_debt(r), equity),
                 "current_ratio": (
                     assets / liabilities
                     if assets is not None and liabilities else None
@@ -469,6 +469,12 @@ def _ttm(rows: list[dict], column: str) -> float | None:
     return None if any(value is None for value in values) else float(sum(values))
 
 
+def _ratio_or_none(numerator: float | None, denominator: float | None) -> float | None:
+    if numerator is None or not denominator:
+        return None
+    return numerator / denominator
+
+
 def _net_debt(row: dict) -> float | None:
     debt = total_debt(row)
     cash = f(row.get("cash_and_cash_equivalents"))
@@ -489,9 +495,10 @@ def _ev_ex_market_cap(row: dict) -> float | None:
 
 def _ebitda_ttm(rows: list[dict]) -> float | None:
     operating = _ttm(rows, "operating_income_loss")
-    if operating is None:
+    amortization = _ttm(rows, "depreciation_amortization_cf")
+    if operating is None or amortization is None:
         return None
-    return operating + (_ttm(rows, "depreciation_amortization_cf") or 0.0)
+    return operating + amortization
 
 
 def _fcf_ttm(rows: list[dict]) -> float | None:
@@ -647,6 +654,9 @@ def _altman_z(row: dict, *, operating_ttm: float | None) -> float | None:
 
     Z'' = 6.56·(운전자본/자산) + 3.26·(이익잉여금/자산)
         + 6.72·(영업이익/자산) + 1.05·(자본/부채)
+
+    상수항이 없는 식이다. 게이지 경계 2.6(양호)/1.1(위험)이 이 식의 것이다 — 상수 3.25를 더하는
+    신흥시장형은 경계가 5.85/4.35라서, 한쪽만 바꾸면 모든 종목이 위험 또는 양호로 쏠린다.
     """
     assets = f(row.get("assets"))
     liabilities = f(row.get("liabilities"))
@@ -687,7 +697,7 @@ def load_health(tickers: list[str]) -> dict[str, dict]:
         equity = f(current.get("common_equity"))
         assets = f(current.get("assets"))
         debt = total_debt(current)
-        invested = None if equity is None else equity + (debt or 0.0)
+        invested = None if equity is None or debt is None else equity + debt
         ebitda = _ebitda_ttm(rows)
         net_debt = _net_debt(current)
         interest = _ttm(rows, "interest_expense")

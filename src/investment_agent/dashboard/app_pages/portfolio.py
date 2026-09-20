@@ -28,6 +28,7 @@ from investment_agent.dashboard.components.ui import (
     source_note,
     view_selector,
 )
+from investment_agent.reporting.services.investment import CASH_SYMBOL
 
 
 _COLORS = dashboard_palette()
@@ -152,11 +153,11 @@ def _render_system_portfolio(model: dict[str, Any], observed_at: Any) -> None:
         figure.update_layout(**plotly_layout(height=320), title="System Portfolio와 SPY · 시작 100 기준")
         st.plotly_chart(figure, width="stretch", config={"displaylogo": False})
     rows = sorted(system.get("weights_table") or [],
-                  key=lambda row: (row["ticker"] == "CASH", -max(row["target_weight"], row["current_weight"])))
+                  key=lambda row: (row["ticker"] == CASH_SYMBOL, -max(row["target_weight"], row["current_weight"])))
     left, right = st.columns(2, gap="medium")
     with left:
         st.markdown("**목표비중 · 현재비중**")
-        dataframe([{"종목": "현금" if row["ticker"] == "CASH" else row["ticker"],
+        dataframe([{"종목": "현금" if row["ticker"] == CASH_SYMBOL else row["ticker"],
                     "목표": display_percent(row["target_weight"]),
                     "현재(가격 drift 반영)": display_percent(row["current_weight"])}
                    for row in rows if row["target_weight"] > 0 or row["current_weight"] > 0],
@@ -416,7 +417,7 @@ else:
             actual_concentration = max(positive_values) / total_value if positive_values and total_value else None
             cash_weight = cash / total_value if cash is not None and total_value else None
             target_concentration = max(
-                (float(weight) for symbol, weight in approved_weights.items() if symbol != "CASH"),
+                (float(weight) for symbol, weight in approved_weights.items() if symbol != CASH_SYMBOL),
                 default=None,
             )
             metadata = proposal.get("metadata") if isinstance(proposal.get("metadata"), dict) else {}
@@ -451,7 +452,7 @@ else:
                         for row in holdings
                         if row.get("ticker") and row.get("market_value") is not None
                     }
-                    actual_weights["CASH"] = float(cash) / float(total_value)
+                    actual_weights[CASH_SYMBOL] = float(cash) / float(total_value)
                     figure.add_trace(
                         go.Bar(
                             x=symbols,

@@ -6,7 +6,7 @@
 """
 from __future__ import annotations
 
-import os
+from investment_agent.platform.env import env_int, env_str
 
-POLL_WINDOW_DAYS = int(os.environ.get("GURUS_POLL_WINDOW_DAYS", "7"))
-HISTORICAL_START_DATE = os.environ.get("GURUS_HISTORICAL_START_DATE", "2014-01-01")
+POLL_WINDOW_DAYS = env_int("GURUS_POLL_WINDOW_DAYS", 7)
+HISTORICAL_START_DATE = env_str("GURUS_HISTORICAL_START_DATE", "2014-01-01")

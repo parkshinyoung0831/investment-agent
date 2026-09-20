@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import statistics
 import subprocess
@@ -95,7 +96,9 @@ def _observed_minutes(limit: int) -> dict[str, float]:
         # 취소된 채 매달린 실행은 실제 compute가 아니다.
         if 0 <= minutes <= 180:
             samples.setdefault(row["name"], []).append(minutes)
-    return {name: statistics.median(v) for name, v in samples.items()}
+    # GitHub은 실행 시간을 분 단위로 올림 과금한다. 0.69분짜리도 1분이라, 중앙값을 그대로
+    # 곱하면 짧은 잡이 잦은 워크플로가 실제보다 싸게 계산된다(올림은 단조라 중앙값에 바로 적용).
+    return {name: float(math.ceil(statistics.median(v))) for name, v in samples.items()}
 
 
 def main(argv: list[str] | None = None) -> int:

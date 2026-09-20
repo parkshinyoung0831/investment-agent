@@ -20,8 +20,9 @@ UTC = timezone.utc
 _DATE_ONLY_TIME = time(12, 0)
 
 # official BOK Monetary Policy Board calendar에서 전사한 현재 운영 범위의 날짜.
-# 이 목록은 추정 rule이 아니며 매년 official calendar 갱신이 없으면 해당 family는
-# degraded로 보고한다. 09:50 KST는 source contract와 이 함수가 함께 강제한다.
+# 이 목록은 추정 rule이 아니다. 마지막 날짜가 지나면 `official_calendar_dates`가
+# `ScheduleContractError`를 던져 해당 family를 실패로 보고한다(조용히 빈 일정이 되지 않는다).
+# 09:50 KST는 source contract와 이 함수가 함께 강제한다.
 _KR_BASE_RATE_DATES: tuple[date, ...] = (
     date(2026, 1, 15), date(2026, 2, 26), date(2026, 4, 16),
     date(2026, 5, 28), date(2026, 7, 16), date(2026, 8, 27),
@@ -92,7 +93,13 @@ def schedule_window(confidence: str) -> timedelta:
         raise ScheduleContractError(f"unsupported schedule confidence: {confidence}") from exc
 
 
-def reference_period(series_id: str, frequency: str, release_date: date) -> date:
+def reference_period(
+    series_id: str,
+    frequency: str,
+    release_date: date,
+    *,
+    observation_weekday: int | None = None,
+) -> date:
     """initial release가 대표하는 raw observation period의 보수적 추정.
 
     이 값은 release identity와 forecast 결합에만 쓰인다. watcher는 이 period 주변의
@@ -108,10 +115,22 @@ def reference_period(series_id: str, frequency: str, release_date: date) -> date
             return _quarter_start(_add_months(release_date, -3))
         return _quarter_start(_add_months(release_date, -1))
     if frequency == "weekly":
-        if series_id == "FED_NET_LIQUIDITY":
-            return release_date - timedelta(days=1)  # H.4.1 Wednesday balance date.
-        return release_date - timedelta(days=_WEEKLY_LAG_DAYS.get(series_id, 0))
+        lag = 1 if series_id == "FED_NET_LIQUIDITY" else _WEEKLY_LAG_DAYS.get(series_id, 0)  # H.4.1은 수요일 잔액, 목요일 발표
+        nominal = release_date - timedelta(days=lag)
+        return nominal if observation_weekday is None else _nearest_weekday(nominal, observation_weekday)
     return release_date
+
+
+def _nearest_weekday(day: date, weekday: int) -> date:
+    """`day`에서 가장 가까운 해당 요일(±3일 안이라 하나로 정해진다).
+
+    휴일 주에는 발표가 하루 당겨지지만 관측일(청구=토, 모기지=목 …)은 그대로다. 발표일에서
+    고정 일수를 빼면 관측일과 하루 어긋난 유령 이벤트가 생긴다.
+    """
+    if not 0 <= weekday <= 6:
+        raise ScheduleContractError(f"observation_weekday must be 0..6: {weekday}")
+    delta = (weekday - day.weekday()) % 7
+    return day + timedelta(days=delta if delta <= 3 else delta - 7)
 
 
 def rule_dates(rule: str, *, start: date, end: date) -> list[date]:
@@ -140,6 +159,13 @@ def rule_dates(rule: str, *, start: date, end: date) -> list[date]:
 def official_calendar_dates(series_id: str, *, start: date, end: date) -> list[date]:
     """scraping 없이 DB 저장이 허가된 공식 일정만 반환한다."""
     if series_id == "KR_BASE_RATE":
+        # 조회 시작일이 전사한 마지막 날짜를 넘었다면 앞날 일정을 하나도 모른다. 빈 목록으로
+        # 돌려주면 다음 해 일정이 오류 없이 사라진다.
+        if start > _KR_BASE_RATE_DATES[-1]:
+            raise ScheduleContractError(
+                f"KR_BASE_RATE official calendar ends {_KR_BASE_RATE_DATES[-1]}; "
+                "update _KR_BASE_RATE_DATES from the BOK Monetary Policy Board calendar"
+            )
         return [day for day in _KR_BASE_RATE_DATES if start <= day <= end]
     raise ScheduleContractError(f"no official calendar seed for {series_id}")
 
@@ -161,7 +187,8 @@ def release_row(setting: dict[str, Any], scheduled_date: date, *, schedule_sourc
     return {
         "series_id": str(setting["series_id"]),
         "ref_period": reference_period(
-            str(setting["series_id"]), str(setting["frequency"]), scheduled_date
+            str(setting["series_id"]), str(setting["frequency"]), scheduled_date,
+            observation_weekday=schedule.get("observation_weekday"),
         ).isoformat(),
         "scheduled_at": when.isoformat(),
         "schedule_source": schedule_source,

@@ -111,6 +111,17 @@ class JobDefinition:
     interval_seconds: float
     stale_after_seconds: float = 180.0
     kill_switch_env: str | None = None
+    # 시각에 따라 주기가 달라지는 job(장중 60초·장외 300초). 정의는 시작 때 한 번 만들어지므로
+    # 값을 미리 고정하지 않고 판정할 때마다 부른다. 없으면 `interval_seconds` 고정.
+    interval_provider: Callable[[datetime], float] | None = None
+
+    def interval_at(self, now: datetime) -> float:
+        if self.interval_provider is None:
+            return self.interval_seconds
+        value = float(self.interval_provider(now))
+        if not math.isfinite(value) or value <= 0.0:
+            raise ValueError("interval_provider must return a finite positive value")
+        return value
 
     def __post_init__(self) -> None:
         if not _ID_RE.fullmatch(self.job_id):

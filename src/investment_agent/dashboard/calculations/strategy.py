@@ -16,6 +16,7 @@ from investment_agent.dashboard.calculations._common import (
     parse_date_safe,
     parse_datetime_safe,
 )
+from investment_agent.reporting.services.investment import CASH_SYMBOL
 
 def _dated_price_series(value: Any) -> pd.Series:
     """단일 종목 응답에서 날짜가 붙은 실제 Close 시계열만 추출한다."""
@@ -152,7 +153,7 @@ def build_strategy_returns(
             weights = _valid_weights(row.get("weights"))
             if weights is None:
                 continue
-            required_symbols = [symbol for symbol, weight in weights.items() if weight > 0.0 and symbol != "CASH"]
+            required_symbols = [symbol for symbol, weight in weights.items() if weight > 0.0 and symbol != CASH_SYMBOL]
             if any(symbol not in period.columns for symbol in required_symbols):
                 continue
             common_period = period[required_symbols].dropna(how="any") if required_symbols else period
@@ -161,7 +162,7 @@ def build_strategy_returns(
             period_return = 0.0
             valid = True
             for symbol, weight in weights.items():
-                if weight == 0.0 or symbol == "CASH":
+                if weight == 0.0 or symbol == CASH_SYMBOL:
                     continue
                 first = finite_number(common_period[symbol].iloc[0])
                 last = finite_number(common_period[symbol].iloc[-1])
@@ -461,7 +462,7 @@ def _weighted_month_return(
     total = 0.0
     for symbol, raw_weight in weights.items():
         weight = finite_number(raw_weight)
-        if weight is None or weight <= 0.0 or symbol == "CASH":
+        if weight is None or weight <= 0.0 or symbol == CASH_SYMBOL:
             continue
         if symbol not in month_returns.index:
             return None, f"{symbol} 월 수익률 없음"
@@ -544,7 +545,7 @@ def replay_strategy_rules(
             normalized = str(symbol).upper().strip()
             if normalized and weight is not None:
                 weights[normalized] = weight
-        required_universe.update(symbol for symbol in weights if symbol != "CASH")
+        required_universe.update(symbol for symbol in weights if symbol != CASH_SYMBOL)
         entry: dict[str, Any] = {
             "decision_month": decision_month,
             "apply_month": _apply_month_start(decision_month),

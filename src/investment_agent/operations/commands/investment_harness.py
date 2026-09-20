@@ -9,6 +9,7 @@ import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 from investment_agent.platform.serialization import canonical_json
 from investment_agent.platform.logging import configure_logging, get_logger
@@ -51,6 +52,7 @@ def build_registry(
     investment_interval_seconds: float = 60,
     risk_snapshot_interval_seconds: float = 5 * 60,
     reconciliation_interval_seconds: float = 60,
+    reconciliation_interval_provider: Callable[[datetime], float] | None = None,
     earnings_watch_interval_seconds: float = 60,
     feature_store_interval_seconds: float = 24 * 60 * 60,
     intelligence_interval_seconds: float = 24 * 60 * 60,
@@ -106,6 +108,7 @@ def build_registry(
     registry.register(toss_reconciliation_job(
         reconcile=selected.reconcile,
         interval_seconds=reconciliation_interval_seconds,
+        interval_provider=reconciliation_interval_provider,
     ))
     if hasattr(selected, "continuous_learning"):
         if hasattr(selected, "build_decision_experiences"):
@@ -168,17 +171,21 @@ def main(argv: list[str] | None = None) -> int:
     store = JsonStateStore(state_dir / "state.json")
     
     from investment_agent.operations.harness.market_schedule import get_us_market_phase
-    phase_info = get_us_market_phase()
-    reconciliation_interval = (
-        phase_info.suggested_interval_seconds
-        if args.adaptive_schedule else args.reconciliation_interval_seconds
+    # 적응형 주기는 시작 시각 한 번이 아니라 판정 때마다 계산한다 — 밤에 띄운 하네스가 다음 날 장중에도
+    # 300초로, 장중에 띄운 하네스가 밤새 60초로 도는 것을 막는다.
+    reconciliation_interval_provider = (
+        (lambda now: get_us_market_phase(now).suggested_interval_seconds)
+        if args.adaptive_schedule else None
     )
+    reconciliation_interval = args.reconciliation_interval_seconds
+    phase_info = get_us_market_phase()  # 시작 로그용 현재 국면. 주기 결정에는 쓰지 않는다
     
     registry = build_registry(
         analysis_interval_seconds=args.analysis_interval_seconds,
         investment_interval_seconds=args.investment_interval_seconds,
         risk_snapshot_interval_seconds=args.risk_snapshot_interval_seconds,
         reconciliation_interval_seconds=reconciliation_interval,
+        reconciliation_interval_provider=reconciliation_interval_provider,
         earnings_watch_interval_seconds=args.earnings_watch_interval_seconds,
         feature_store_interval_seconds=args.feature_store_interval_seconds,
         intelligence_interval_seconds=args.intelligence_interval_seconds,

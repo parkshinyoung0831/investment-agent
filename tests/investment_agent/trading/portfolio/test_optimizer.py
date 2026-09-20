@@ -13,6 +13,15 @@ from investment_agent.trading.portfolio.market_risk import TradingCostInputs, es
 
 
 class OptimizerTest(unittest.TestCase):
+    def test_beta_constraint_inputs_change_audit_hash(self):
+        optimizer = RiskAwareOptimizer(OptimizerPolicy(max_portfolio_beta=0.2))
+        inputs = dict(signals=(_signal("AAPL", 0.04),), current_weights={"CASH": 1.0})
+        first = optimizer.optimize(**inputs, betas={"AAPL": 1.0})
+        repeated = optimizer.optimize(**inputs, betas={"aapl": 1.0})
+        changed = optimizer.optimize(**inputs, betas={"AAPL": 2.0})
+        self.assertEqual(first.input_hash, repeated.input_hash)
+        self.assertNotEqual(first.input_hash, changed.input_hash)
+
     def test_correlated_assets_receive_a_larger_variance_penalty(self):
         signals = (
             ExpectedReturnSignal("AAPL", 0.04, 1.0, 0.1, 5, "test", "2026-08-20T22:00:00+00:00", "v1"),

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -104,7 +105,7 @@ class _Repository:
     def decide_approval(self, approval_id: str, **values) -> ApprovalRequest | None:
         with self.lock:
             row = self.rows.get(approval_id)
-            if row is None or row.status != "pending":
+            if row is None or row.status != "pending" or values["action"] not in ("approve", "reject"):
                 return None
             if (
                 row.discord_guild_id != values["discord_guild_id"]
@@ -115,8 +116,8 @@ class _Repository:
                 return None
             decided = replace(
                 row,
-                status=values["action"],
-                decision=values["action"],
+                status="approved" if values["action"] == "approve" else "rejected",
+                decision="approved" if values["action"] == "approve" else "rejected",
                 decided_at=_NOW.isoformat(),
                 decided_by_user_id=values["discord_user_id"],
             )
@@ -246,6 +247,12 @@ class ApprovalWorkflowTest(unittest.TestCase):
         self.assertIn(request.risk_hash, str(payload["embeds"]))
         self.assertIn(request.manifest_hash, str(payload["embeds"]))
         self.assertIn("permit으로 바뀌지 않습니다", str(payload["embeds"]))
+
+    def test_card_payload_is_json_serializable_and_expiry_is_discord_timestamp(self):
+        request = self._published()
+        payload = json.loads(json.dumps(self.discord.payload, allow_nan=False))
+        expiry = next(field["value"] for field in payload["embeds"][0]["fields"] if field["name"] == "승인 만료")
+        self.assertEqual(expiry, f"<t:{int(request.expires_at.timestamp())}:F>")
 
     def test_allowlisted_button_approves_once_then_consumes_once(self):
         request = self._published()

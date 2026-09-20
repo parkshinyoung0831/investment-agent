@@ -10,7 +10,7 @@ PACKAGE = ROOT / "src/investment_agent/notifications"
 ALLOWED_ROOTS = {
     "__future__", "copy", "dataclasses", "datetime", "typing", "collections", "math",
     "json", "urllib", "statistics", "os", "asyncio", "shutil", "argparse", "re",
-    "tempfile", "pathlib", "playwright", "jinja2", "zoneinfo", "time",
+    "tempfile", "pathlib", "playwright", "jinja2", "zoneinfo", "time", "hashlib",
 }
 INTERNAL = ("investment_agent.notifications", "investment_agent.reporting",
             "investment_agent.platform", "investment_agent.config",

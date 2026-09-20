@@ -1,0 +1,245 @@
+# 하드코딩(HC) · 성능(PB) 감사 — 저장소 전체 (읽기 전용)
+
+작성 기준일 2026-09-21. 직전 감사(`2026-09-20-silent-wrong-audit.md`)와 `2026-09-20-code-quality-overhaul.md`에 있는 항목은 세지 않았다.
+`tests/test_repo_conventions.py`가 이미 강제하는 것(`.table/.rpc/.schema`의 **첫 인자** 문자열 리터럴, print, 로거 이름, `from __future__` 등)은 제외했다.
+
+## 0. 방법
+
+- src 720개 파일을 AST로 훑었다: (a) for/while/컴프리헨션 안의 `.execute/.upsert/.rpc/select_*` 호출과, 그것을 한 단계 감싼 함수 호출(137곳 후보), (b) 함수 안 비교식의 숫자 리터럴, (c) 모듈 상수의 이름·값 중복, (d) URL·경로·날짜·CIK·ticker 리터럴, (e) `os.environ.get` 이름 83개와 `docs/ENV.md` 대조.
+- 후보 중 **읽어서 끝까지 따라간 것만** "확정"으로 적었다. 나머지는 "의심".
+- 측정은 네트워크 쓰기 없이 했다: 운영 DB는 SELECT만(PostgREST 조회·psycopg2 readonly), DuckDB는 운영 파일을 **임시 폴더로 복사한 사본**에서, Playwright는 로컬 Chromium. 운영 DB·파일에 쓴 것은 없다.
+- 이 머신의 왕복(RTT): psycopg2 직결 `SELECT 1` ≈ 10ms, PostgREST 단건 조회 ≈ 30~230ms(쿼리에 따라).
+
+## 1. 한눈에 보는 표
+
+| ID | 영역 | 한 줄 | 확정/의심 | 심각도 |
+|---|---|---|---|---|
+| HC-1 | macro/releases | `_KR_BASE_RATE_DATES`가 2026-11-26에서 끝난다. 주석이 약속한 "갱신 없으면 degraded 보고"는 코드에 없어, 2027년 KR 기준금리 발표가 **오류 없이** 사라진다 | 확정 | 중간(시한부, 66일 남음) |
+| HC-2 | trading/decision | 시장 regime 임계값 일부(유동성 0.20/0.45/0.75, macro ±0.25, 분산 0.75)가 `RegimeThresholds` 밖 인라인. 기록되는 `thresholds`·`version`에 안 실림. 분산 임계 0.75는 입력 척도와 안 맞아 **분기가 영원히 거짓** | 확정 | 중간 |
+| HC-3 | universe/watchlists | `sync_toss_members`가 이미 해제된 회사의 `watchlist_removed_at`을 **매 동기화마다 지금으로 덮어쓴다**(재현). 변경 없는 50개도 매번 UPDATE | 확정(재현), 운영엔 아직 해제 0건 | 중간(잠복) |
+| HC-4 | 환경변수 | `os.environ.get(NAME, "7")`는 빈 문자열에 기본값을 안 준다. `.env.example`이 `FUNDAMENTALS_SEGMENT_*`·`DASHBOARD_HARNESS_STALE_SECONDS`·`GURUS_HISTORICAL_START_DATE`를 빈 값으로 싣고 있어, 복사해 쓰면 `int("")`로 죽는다 | 확정(재현) | 낮음~중간 |
+| HC-5 | 환경변수 문서 | 코드가 읽는 12개 변수가 `docs/ENV.md`에 없다 | 확정 | 낮음 |
+| HC-6 | 경로 | 하네스 상태 폴더 `artifacts/ops/investment_harness`가 7곳에, TradingAgents 산출물 폴더가 4곳에 따로 적혀 있다. 이미 있는 `platform/storage_paths.py`·`operations/paths.py`를 안 쓴다 | 확정 | 중간(잘못 갈리면 안전 게이트가 못 봄; 직전 TE-15와 같은 뿌리) |
+| HC-7 | 경로 | 상대경로 `Path("artifacts/...")`가 cwd에 의존(알림 PNG 보존·시장 archive·factor_ic·toss_preview) | 확정(코드) | 낮음 |
+| HC-8 | 알림 | `notifications/playwright.py`에 `C:\Windows\Fonts\NotoSansKR-VF.ttf` 절대경로 두 번 | 확정 | 낮음 |
+| HC-9 | 외부 URL | Toss `https://openapi.tossinvest.com` 5곳, Discord API v10 4곳, FRED 5곳, SEC 4곳에 각각 선언 | 확정 | 낮음~중간(실주문 endpoint 5곳) |
+| HC-10 | DB 이름 | `trading/local_store.py:126,205`가 `.table(SCHEMA, "model_promotions")`·`"risk_decisions"` 리터럴 — 관례 테스트는 첫 인자만 봐서 통과한다 | 확정 | 낮음(가드 구멍) |
+| HC-11 | 중복 진실 | `reporting/notifications/earnings_report.py`와 `reporting/readers/earnings.py`가 표 상수 8개와 `_FINANCIAL_COLUMNS`(46개 vs 66개)를 각자 선언, `select_all_paged`·`Database` 래퍼도 사본 | 확정 | 낮음~중간(컬럼 드리프트) |
+| HC-12 | 중복 진실 | 표 상수 `SCHEMA_UNIVERSE` 15곳, `T_FILINGS` 11곳, `T_FINANCIALS` 8곳 재선언(reporting·research·execution이 data owner 상수를 안 씀) | 확정 | 낮음 |
+| HC-13 | dashboard | `gurus.py`가 매니저 이름 **부분 문자열**로 투자 성향을 고른다("혼", "클라만"). 카탈로그는 "클라먼"이라 한글 needle이 죽어 있다 | 확정 | 낮음 |
+| HC-14 | trading/evidence | `report.py:coverage_rows()`가 2026-09 시점 DB coverage(503/482/465…)를 **정적 표**로 박아 둔다. src 호출처 0(테스트만) | 확정 | 낮음(죽은 코드+낡은 수치) |
+| HC-15 | 상수 불일치 | `WRITE_CHUNK=500`(8초 timeout 근거)과 달리 `segment_metrics`는 1000행, `market` RPC도 1000, `company_financials` 250 | 의심 | 낮음 |
+| HC-16 | 색·상수 중복 | palette 5벌 동일 hex, `CASH_SYMBOL` 4곳, `FORUM=15` 2곳, `EARNINGS_ITEM='2.02'` 2곳, `RETENTION`·`STALE_DAYS`류 | 확정 | 낮음(대부분 규칙 15로 의도된 분리) |
+| PB-1 | research/valuation | 매일 하네스가 도는 `build_valuations`(live_shadow)는 배치 사전 적재를 안 써 종목마다 8회 안팎 왕복 | 확정(실측) | 중간 |
+| PB-2 | research/storage | `ResearchStore._connect`가 **연결마다 DDL 10파일을 다시 적용**: 호출당 ≈240ms, 그중 ≈140ms가 DDL | 확정(실측) | 중간 |
+| PB-3 | evaluation | `evaluate_case`/`build_decision_experiences`가 케이스마다 SPY 경로를 다시 읽음, `price_path`는 memo 없음 | 확정 | 낮음~중간 |
+| PB-4 | universe/watchlists | 동기화가 변경 없는 회사까지 매번 단건 UPDATE(50회) | 확정 | 낮음 |
+| PB-5 | fundamentals | 삭제 단건 루프 3곳(세그먼트 stale·share_class stale·CIK별 wide 정리) | 확정(코드), 빈도 낮음 | 낮음 |
+| PB-6 | fundamentals/integrity | 충전율 `count=exact` 9회 직렬(≈0.87s씩) | 확정 | 낮음 |
+| PB-7 | notifications/playwright | 카드마다 Chromium 재기동 | 확정(실측) | 낮음 |
+| PB-8 | notifications/engine | `skip_unchanged`·`replay`가 notice마다 원장 조회 | 확정, N ≤ 수십 | 낮음 |
+| PB-9 | intelligence | 뉴스·소셜 저장이 종목마다 Parquet/DuckDB 쓰기 | **의심**(미측정) | 낮음 |
+| 기각 | `series_config` deepcopy, `ddl_statements` 파싱, `schema()` 반복 | 측정으로 문제 아님 | - | - |
+
+---
+
+## 2. 하드코딩 (HC)
+
+### HC-1 KR 기준금리 공식 일정이 2026-11-26에서 끝난다 — "degraded 보고"는 주석뿐
+- **영역**: `data/macro/domain/releases/schedule.py:22-29, 140-144`, 호출 `data/macro/application/release_calendar.py:59-60`
+- **증상**: `_KR_BASE_RATE_DATES`는 2026년 8개 날짜뿐. 주석은 "매년 official calendar 갱신이 없으면 해당 family는 degraded로 보고한다"고 하지만 `degraded`를 내는 코드는 macro 전체에 없다(grep 0건). 창(window)이 목록 밖이면 `[]`를 돌려주고 호출부는 그대로 성공 처리한다.
+- **재현**: `official_calendar_dates("KR_BASE_RATE", start=date(2027,1,1), end=date(2027,12,31))` → `[]` (예외·경고 없음).
+- **원인**: 코드에 날짜를 전사하고, 만료를 검사하는 계약은 주석에만 있다.
+- **고치는 방법**: (1) 창의 끝이 목록의 마지막 날짜를 넘으면 `ScheduleContractError`(=`failures`에 실려 운영 알림)로 올린다. (2) 날짜 자체는 `data/macro/releases/` 옆 JSON catalog(이미 `series_config.json`·`catalog_metadata.json`이 있다)로 옮겨 코드 리뷰 없이 갱신하고 만료 검사 테스트를 둔다. 새 config 디렉터리는 만들지 않는다.
+- **위험**: 낮음. 만료 시점(2026-11-26 이후) 전에 넣어야 의미가 있다.
+- **확정**, 난이도 낮음, 사용자 결정 불필요(단 2027 일정 전사는 사람이 공식 달력 확인).
+
+### HC-2 시장 regime 임계값이 반쪽만 선언되고, 분산 임계는 척도가 안 맞는다
+- **근거**: `trading/decision/regime.py:118-138, 156-163`(인라인 값), `:19-45`(`RegimeThresholds`), 입력 `reporting/services/investment/market_regime.py:43,55`
+- **증상**:
+  1. 유동성 `<0.20 stressed`·`<0.45 thin`·`>=0.75 deep`, macro `±0.25`, 분산 `>0.75`(신뢰도 ×0.9)는 `RegimeThresholds`에 없다. `metadata["thresholds"]=limits.to_dict()`와 `version="native-regime-v1"`에도 안 실려, 인라인 값을 바꿔도 같은 version으로 다른 판단이 기록된다.
+  2. `dispersion`은 유일한 호출부(market_regime.py)에서 `pd.Series([SPY 21일수익, QQQ 21일수익]).std(ddof=0)`이다. 두 수익률 표준편차가 0.75를 넘으려면 두 종목 21일 수익 차이가 150%p여야 한다 — `dispersion_warning`과 신뢰도 감쇠가 **사실상 영원히 꺼져 있다**.
+- **원인**: 0~1 클램프 값이라는 이유로 "비율 척도" 임계를 그대로 붙였고, 입력은 수익률 표준편차라 척도가 다르다.
+- **고치는 방법**: 모든 임계를 `RegimeThresholds`로 옮기고(version 올림), 분산은 입력의 척도(예: 수익률 std 0.05~0.10)에 맞춘 값으로 정하거나, 정의를 "0~1 정규화 분산"으로 통일해 입력 쪽에서 정규화한다. hard risk limit(`gate.py`)은 건드리지 않는다.
+- **위험**: regime 상태가 바뀌어 `regime_budget`(배율은 임시값이라 메모리에 기록됨)에 파급. 값 변경은 사용자 승인 원칙 영역일 수 있다.
+- **확정**(코드 경로 확인, 분산 척도는 산식으로 증명), 난이도 낮음, **사용자 결정 필요**(임계 값 자체·version 올림 시 재계산 여부).
+
+### HC-3 토스 보유 동기화가 해제 시각을 매번 덮어쓰고 변경 없는 행도 전부 쓴다
+- **근거**: `data/universe/watchlists/db.py:sync_toss_members` (`for row in members:` 루프, `removed_at=None if sources else datetime.now(...)`), `data/universe/repository.py:408-425`
+- **재현**(가짜 저장소, 실행 결과):
+  ```
+  입력 members: AAA(toss) / BBB(이미 해제, removed_at=2026-03-01) / CCC(manual)
+  결과: unchanged=3, upsert 3회. BBB의 removed_at → 2026-09-20T15:46:11 (덮어씀)
+  ```
+- **원인**: 모든 멤버를 `sources`로 다시 계산해 UPDATE한다. 이미 빈 `sources`면 `removed_at`을 새로 찍는다. 컬럼 주석은 "마지막으로 관심에서 빠진 시각"이다.
+- **운영 수치**: `universe.entities` 관심 활성 50, 해제 이력 0 → 아직 안 드러났다. 누군가 한 번 해제하면 그 회사의 이력이 다음 동기화부터 계속 움직인다. `unchanged`도 부풀려 보고된다(변경 없는 3건이 unchanged=3인 건 맞지만 "쓴 행"과 다르다).
+- **고치는 방법**: 계산 결과가 현재 상태(`sources`·`removed_at`)와 같으면 쓰지 않는다. 해제 시각은 `sources`가 **비어 있지 않은 상태에서 빈 상태로 바뀔 때만** 찍는다. `date.today()`(watch_from)는 `_us_market_today`와 같은 달력으로 통일.
+- **위험**: 낮음. 워치리스트 `watch_from`/제거 이력은 실적 카드 시즌 게이트가 읽을 수 있음.
+- **확정**, 난이도 낮음, 사용자 결정 불필요.
+
+### HC-4 빈 문자열 환경변수는 기본값을 못 받는다
+- **근거**: `int(os.environ.get(name, default))` 15곳. `.env.example:56,217,218,221`이 `GURUS_HISTORICAL_START_DATE=`, `FUNDAMENTALS_SEGMENT_LOOKBACK_DAYS=`, `FUNDAMENTALS_SEGMENT_WORKERS=`, `DASHBOARD_HARNESS_STALE_SECONDS=`를 **빈 값으로** 싣는다.
+- **재현**: `load_dotenv(stream="FUNDAMENTALS_SEGMENT_WORKERS=\n...")` → `os.environ.get(..., "16") == ''`, `int('')` → `ValueError`.
+- **영향 위치**: `sync_recent_filings.py:333`(세그먼트 워커), `sync_filings.py:105`·`reprocess_filings.py:19`(lookback), `institutional/__init__.py:12`(빈 날짜가 `args.backfill_from or HISTORICAL_START_DATE`에서 `""`로 통과), `dashboard/ops.py:25`(이건 try/except로 안전).
+- CI는 `vars.X || '7'` 형태라 안전하다(`fundamentals_dimensions.yml:39`, `notify_fundamentals.yml:43`). 로컬에서 `.env.example`을 복사한 사람만 걸린다. 현재 운영 `.env`엔 해당 변수가 없다.
+- **고치는 방법**: 공용 `env_int/env_float(name, default)`(빈 값 → default)를 `platform`에 두고 15곳을 교체(이미 `refresh_earnings_season._env_int`가 절반짜리로 존재), `.env.example`의 빈 값 라인은 제거하거나 기본값을 채운다.
+- **확정**, 난이도 낮음, 사용자 결정 불필요.
+
+### HC-5 코드가 읽는데 `docs/ENV.md`에 없는 환경변수 12개
+`AI_INVESTOR_EXTERNAL_MAX_AGE_HOURS`(기본 24, `llm/runtime.py:143`), `AI_INVESTOR_EXTERNAL_MAX_CHARS`(12000, `:235`), `AI_INVESTOR_MODEL_POOL_LEDGER_PATH`(`analysis.py:62`), `AI_INVESTOR_SIGNAL_TTL_HOURS`(24, `analysis.py:188`), `DASHBOARD_HARNESS_STALE_SECONDS`(180), `DASHBOARD_NEWS_PROVIDER`(yfinance), `DISCORD_SYSTEM_LOG_URL`, `FINNHUB_API_KEY`, `FLASH_NOTIFY_LOOKBACK_DAYS`(7), `FUNDAMENTALS_SEGMENT_LOOKBACK_DAYS`(7, **두 파일에 각자 "7"**), `FUNDAMENTALS_SEGMENT_WORKERS`, `GURUS_HISTORICAL_START_DATE`(2014-01-01). 일부(`DISCORD_SYSTEM_LOG_URL`, `FINNHUB_API_KEY`)는 `.env.example`엔 있고 ENV.md엔 없다.
+- **이전 목적지**: `docs/ENV.md`. 환경변수 이름→ENV.md 존재를 강제하는 테스트가 없어 드리프트했다(`tests/test_docs_consistency.py`에 "src가 읽는 이름은 ENV.md에 있다" 추가 권장 — 가드를 쓸 때는 위반 주입으로 확인).
+- **확정**, 난이도 낮음.
+
+### HC-6 같은 폴더를 여러 곳이 각자 주장한다 (하네스 상태·TradingAgents 산출물)
+- **하네스 상태 폴더** `artifacts/ops/investment_harness`: `dashboard/app.py:227`, `dashboard/app_pages/system.py:27`, `dashboard/ops.py:19`, `execution/safety/lockdown.py:17`, `operations/control_center.py:26`, `operations/paths.py:7`, `operations/commands/install_investment_harness.py:93`(+ `security_audit.py` 문구). 이미 `operations/paths.py:HARNESS_STATE_DIR`가 owner인데 나머지가 안 쓴다. `execution/safety/lockdown.py`(실주문 게이트)와 harness가 다른 값을 갖게 되면 게이트가 lockdown을 못 본다 — 직전 TE-15의 원인이 여기에 있다.
+- **TradingAgents 산출물** `artifacts/ai_investor/tradingagents`: `platform/external_usage.py:23`, `trading/decision/analysis.py:66`, `trading/decision/llm/runtime.py:286`, `trading/evidence/artifacts.py:18` (앞 둘은 `AI_INVESTOR_ARTIFACT_DIR` env 기본값도 각자).
+- **RL/ML 정책 경로**: `dashboard/app_pages/ml_rl_lab.py:24`(자체 `ROOT`)와 `research/commands/continuous_retrain.py:37-38`이 `active_policy.json` 위치를 따로 계산.
+- **이전 목적지**: `platform/storage_paths.py`(이미 `repository_root()`·`research_database_path()` 보유) 한 곳에 `harness_state_dir()`, `ai_investor_artifact_dir()`, `rl_policy_dir()`를 두고 나머지는 호출. execution은 platform만 import하므로 계층 위반 없음.
+- **확정**, 난이도 낮음~중간(실주문 게이트 경로가 얽혀 정비 보류 필요), 사용자 결정: 정비 보류 하에서만.
+
+### HC-7 cwd 상대 경로
+`notifications/playwright.py:77`(`Path("artifacts")/"notifications"/kind`), `notifications/earnings_report/run.py:56`, `data/market/infrastructure/archive.py:20`(`artifacts/market_history`), `change_manifest.py:20`(`data/local/artifacts/...`), `research/commands/factor_research.py:56`, `operations/commands/toss_preview.py:47`, `train_baseline.py:27`. Actions는 저장소 루트가 cwd라 문제없고, 로컬에서 다른 폴더에서 돌리면 다른 곳에 만든다(알림 PNG 보존이 dispatcher가 다시 여는 경로라는 점이 핵심). **이전**: HC-6과 같은 `storage_paths`. **확정**(코드), 낮음.
+
+### HC-8 Windows 폰트 절대경로
+`notifications/playwright.py:17,25` `C:\Windows\Fonts\NotoSansKR-VF.ttf` + `file:///C:/Windows/Fonts/...`. Mac mini(로컬 서비스 후보) 에선 폰트가 조용히 빠져 글자가 깨질 수 있다(`exists()`가 False면 fallback 주입 자체를 건너뜀). **고치는 방법**: 폰트 파일을 저장소 `assets/`에 두거나 CJK 폰트를 이름으로 지정(Actions는 이미 `fonts-noto-cjk` 설치). 사용자명·개인 절대경로는 src에 없다(`parkshinyoung0831`은 User-Agent 문자열의 GitHub URL 2곳 — 식별 정보로 의도됨). **확정**, 낮음.
+
+### HC-9 외부 endpoint 중복 선언
+| endpoint | 선언 곳 |
+|---|---|
+| `https://openapi.tossinvest.com` | `data/universe/.../toss.py:32`, `toss_holdings.py:20`, `execution/brokers/toss/auth.py:29`, `client.py:23`, `orders.py:39` (5) |
+| `https://discord.com/api/v10` | `execution/approval/discord.py:15`, `notifications/channels/discord.py:24`, `discord_admin/client.py:20`, `operations/monitoring/discord.py:27` (4) |
+| `https://api.stlouisfed.org` | macro `fred.py`, `alfred.py`, `fred_calendar.py`, `nowcast.py`, `actuals.py` (5) |
+| SEC | `companyfacts.py:31`, `universe/.../sec.py:18`, `sec_entities.py:19,21` (4) |
+- 요청 `timeout=`도 `20/30/60/120`이 파일마다 다르게 박혀 있다(`grep timeout=`로 30건).
+- **이전 목적지**: 실주문이 닿는 Toss는 `execution/brokers/toss/`에 `TOSS_API_BASE` 한 상수(+ 필요 시 `docs/ENV.md`에 override 변수)로 두고 data 쪽은 platform에 둔 같은 상수를 쓴다(data→execution import 금지). Discord API 버전은 `platform`의 한 상수. Discord는 execution↔notifications 분리 규칙 때문에 같은 값 4개를 일부러 둔 것인지 확인이 필요하다.
+- **확정**(선언 위치), 낮음~중간.
+
+### HC-10 관례 테스트가 못 보는 DB 이름 리터럴 2개
+`trading/local_store.py:126` `self.database.table(SCHEMA_TRADING, "model_promotions")`, `:205` `... "risk_decisions"`. `DatabaseNameConstantsTest`는 `node.args[0]`만 검사하므로 `db.table(SCHEMA, "리터럴")` 형태(2번째 인자)는 통과한다. **고치는 방법**: 상수로 바꾸고 테스트가 `table`/`rpc`의 **모든 위치 인자**와 `schema=/table=` 키워드를 보게 확장(위반 주입으로 확인). 이 스캔으로 나온 위반은 이 2곳이 전부다(키워드 `table=/schema=/rpc=` 리터럴은 0건). **확정**, 낮음. `"risk_decisions(approved_weights)"`(PostgREST embed 문자열, `local_store.py:203`)도 표 이름을 문자열로 갖는다.
+
+### HC-11 earnings 읽기 경로가 둘이고 각자 표·컬럼 상수를 복제
+`reporting/notifications/earnings_report.py`(카드용)와 `reporting/readers/earnings.py`(대시보드용): `SCHEMA_FUNDAMENTALS/SCHEMA_MARKET/SCHEMA_REPORTING`, `T_FILINGS/T_FINANCIALS/T_FILING_PROCESSING/T_EARNINGS_ESTIMATES/T_PRICES_DAILY/T_ENTITIES/T_NOTICES` 등 8개를 각각 선언하고, `_FINANCIAL_COLUMNS`도 따로 갖는다. **실측 차이**: 카드 46컬럼 ⊂ 대시보드 66컬럼(카드에 없는 것: `goodwill, ppe_net, eps_basic_gaap, total_deposits, net_loans_and_leases, provision_for_credit_losses, ingested_at` 등 20개). 은행·보험 지표를 카드가 필요로 하게 되면 두 목록 중 한쪽만 고치는 드리프트가 난다. `earnings_report.py:46-70`에는 `Database`용 `_V1Schema`·`select_all_paged` 사본까지 있다.
+- **이전**: `reporting/readers/earnings.py`의 컬럼 상수를 한 곳(reader)에서 내보내고 notifications read model이 그 부분집합을 선언. **확정**, 난이도 중간.
+
+### HC-12 표 상수 재선언 (data owner 상수를 안 씀)
+`SCHEMA_UNIVERSE` 15파일, `T_FILINGS` 11, `T_FINANCIALS` 8, `T_SECURITIES`/`T_ENTITIES` 6+, `T_EARNINGS_ESTIMATES` 3 … 이름은 상수라 관례 테스트는 통과한다. 하지만 표 이름이 바뀌면 grep으로 15곳을 고쳐야 한다. `data/*/infrastructure/supabase`가 서로 같은 상수를 쓰는 것은 owner 내부라 무방하고, **reporting·research·execution이 data owner의 `db.py` 상수를 import하지 않고 재선언하는 곳**이 정리 대상이다. **낮음**, 규칙 16과 충돌은 없다.
+
+### HC-13 매니저 이름 부분 문자열로 성향을 고른다
+`dashboard/app_pages/gurus.py:44-100`. 이름·펀드명을 이어 소문자로 만든 뒤 `("혼", …)`, `("클라만", …)` 등이 **먼저 맞는 것**을 고른다. (1) 카탈로그(`institutional/domain/managers.py:40`)는 "세스 **클라먼**"이라 한글 needle 클라만은 죽어 있고 영어 needle만 산다. (2) 새 거장 이름에 "혼"이 들어가면(예: "…혼…") 크리스 혼의 성향이 붙는다. (3) `MANAGER_PRESENTATION`에 이미 `strategy_group`·`thesis_ko` 컬럼이 있다.
+- **이전**: `MANAGER_PRESENTATION`(CIK 키)에 `style_label_ko`·`approach_ko`를 넣고 화면은 CIK로 조회. **확정**, 낮음.
+- 참고: `managers.py`는 같은 CIK 7개를 `MANAGER_PRESENTATION`(KO)과 `MANAGER_CATALOG`(EN, `is_active`) 두 표에 둔다 — 같은 파일 안 이중 선언이라 낮음.
+
+### HC-14 정적 coverage 표 (`trading/evidence/report.py:18-28`)
+"읽기 전용 DB 감사 시점" 수치(503 ticker, 보유 503, 7년 가능 482, 최초 2016-09-02 …)와 날짜를 코드에 박아 두고 이름은 `coverage_rows()`다. src 호출처 0, `tests/.../test_dossier.py:193`만 읽는다. 숫자는 다음 적재에 낡고, 화면에 붙으면 "현재 상태"로 읽힌다. **고치는 방법**: 쓰지 않으면 삭제(TE-14와 같은 죽은 코드 묶음), 쓴다면 reporting reader로 실시간 계산. **확정**, 낮음.
+
+### HC-15 배치 크기가 파일마다 다르다 (의심)
+`platform/db/postgres.py:52-55`: `IN_FILTER_CHUNK=100`, `WRITE_CHUNK=500` — "너무 크면 statement_timeout(8초)". 실제 사용: `company_financials._UPSERT_BATCH=250`, `expectations.UPSERT_BATCH=500`, `segment_metrics._UPSERT_BATCH=1000`, `share_class_snapshots` 500 리터럴, `market._ACTION_BATCH=1000`(RPC), `universe` 500 리터럴, `institutional` `.in_` 200 리터럴, `segment_metrics` 100 리터럴 ×2, `_DELETE_ACCESSION_BATCH=50`. 1000이 8초를 넘기는지는 **측정하지 않았다**(쓰기라 실행 금지). 근거 없는 값이 8개 파일에 있다는 사실만 확정. **이전**: `postgres.py`의 두 상수를 쓰거나, 다른 값이면 이유 주석. 낮음.
+
+### HC-16 색·소상수 중복 (대부분 의도)
+- 5개 `palette.py`가 같은 hex(`#0a0b0d`, `#3182f6`, `#05b169`, `#cf202f` …)를 각자 선언, 정수 형태(Discord embed color)는 `execution/approval/card.py:11`, `reporting/services/earnings/thresholds.py:9-12`, `earnings_flash/embeds.py`에 또 있다. 규칙 15(패키지별 palette, 공유 금지)와 DESIGN-system이 정한 분리라 **결함이 아님**. 색 하나를 바꿀 때 5+곳을 고쳐야 한다는 비용만 기록한다.
+- 실제로 값이 맞아야 하는 중복: `CASH_SYMBOL='CASH'` 4곳(`portfolio_weights.py:11`, `execution/orders/intents.py:40`(독립 계약이라 일부러), `notifications/investment/embeds.py:17`, `reporting/services/investment/system_portfolio.py:18` — 뒤 둘은 `portfolio_weights`를 import해도 규칙 위반이 아니다), `FORUM=15`(`notifications/channels/directory.py:38`, `discord_admin/manifest.py:34`), `EARNINGS_ITEM='2.02'`(`filings.py:42`, `item_classifier.py:10`), `TTM_QUARTERS=4`(`research/evidence/statistics.py:91`, `valuation/inputs.py:18`), `FILING_CONTENT_SEGMENTS='segments'`(`segment_metrics.py:551`, `reporting/readers/earnings.py:71`), `DOMAIN/PROVIDER` 각 2곳.
+- 의미가 다른 같은 이름(합치지 말 것): `RETENTION_DAYS 90`(`external_usage` vs `intelligence.retention`), `STALE_DAYS 7/10`, `PRICE_ROWS 130/260`.
+- `PRICE_ROWS`: `trading/system/engine.py:44`(=130)는 벤치마크 캘린더 130행에서 미처리 세션을 고르므로, 마지막 mark 이후 공백이 130거래일을 넘으면 그 세션은 조용히 누락된다(**의심**, 낮음; 정상 운영 공백은 짧다). `target.py:58`은 260.
+
+### 참고: 발견했지만 문제가 아닌 것 (하드코딩 후보 기각)
+- `data/institutional/domain/managers.py`의 CIK 7개는 코드 catalog가 정식 목적지(CLAUDE.md 표)라 허용.
+- `research/evaluation/shadow_fill.py:127`의 `"COST"`·2026-01-02 날짜는 `round_trip_cost_rate()`의 합성 거래(가짜 ticker) — 값에 영향 없음.
+- `data/institutional/domain/value_units.py:13` `date(2022,9,30)`(13F 천 단위 규칙 변경일), `web.py:87` CNN 2020-09-19 floor — 사실 기반 상수로 이유 주석 있음.
+- hard risk limit은 요청대로 대상에서 제외.
+
+---
+
+## 3. 성능 (PB)
+
+### PB-1 매일 도는 valuation 적재가 종목마다 단건 왕복 — 배치 경로가 historical에만 연결돼 있다
+- **근거**: `research/commands/build_valuations.py:90-94`(`prepare_historical_replay`는 `source_kind == "historical_replay"`일 때만 호출), 루프 `:96-`에서 `fundamentals_pit`·`share_class_snapshots_pit`·`split_history`·`market_prices` 종목당 호출. 실행 경로: `operations/adapters/research.py:build_valuations`(기본 `live_shadow`, 종목 = tracked 503).
+- **왕복 견적(종목당)**: 재무(증권→버전→공시) 3 + 발행주식수(증권ID→스냅샷→공시) 3 + 분할(ID→분할) 2 + 가격 2(로컬 mirror가 없거나 오래되면) ≈ **8~10회 × 503 ≈ 4,000~5,000회**.
+- **실측**(운영 DB SELECT, 이 머신): 종목당 `fundamentals_filed_before` 228ms, `share_class_snapshots_filed_before` 100ms, `split_history` 33ms. 10종목 표본 재무+주식수 158ms/종목 → 503종목 **≈ 79초**. 같은 입력을 배치 함수(`securities_fundamentals_filed_before` 12.8초 + `share_class_snapshots_for_tickers_filed_before` 8.0초)로 읽으면 **≈ 21초**(재무 5,965행). 분할까지 배치하면 추가 ≈ 17초 절감. 즉 **하네스 1회당 ≈ 58~75초**, 그리고 왕복 수(~4,500→~40)가 서버·rate에 주는 부담이 준다.
+- **원인**: `prepare_historical_replay`가 이미 fundamentals/shares/splits/consensus/segments를 날짜당 한 번에 읽어 단건 계약 캐시에 `seed`한다. 이 배치 경로가 live_shadow에는 안 붙었다. 주의: 그 함수는 consensus·segments까지 읽으므로 valuation만 필요한 live 경로엔 세 도메인(재무·주식수·분할)만 seed하는 좁은 버전이 맞다.
+- **고치는 방법(하드코딩 없이)**: `prepare_pit_inputs(tickers, as_of, *, domains=(...))`로 분리하고 두 source_kind에서 호출. seed 키가 단건 계약과 같으므로 단건 API는 그대로. 동치성 테스트(배치 결과 == 단건 결과)를 둔다 — 테스트 픽스처가 리더보다 풍부하지 않게 실제 reader 계약(`limit`, 필터)으로 검증.
+- **위험**: 낮음(읽기 전용). 단, 배치와 단건이 `is_active_listing` 필터·`limit` 자르는 위치가 다르면 값이 달라질 수 있어 위 동치 테스트가 필수.
+- **확정**(실측), 난이도 낮음~중간, 사용자 결정 불필요.
+
+### PB-2 Research DuckDB는 연결마다 DDL 전체를 다시 적용한다
+- **근거**: `research/storage/repository.py:59-73` `_connect()` → `platform/db/duckdb.py:transactional_connection`이 **매번** `ddl_statements(dir)`를 읽고 10개 문장을 `execute`, 이어 `_migrate_legacy_*` 두 점검.
+- **실측**(운영 `research.duckdb`를 임시 사본으로 복사해 측정, 8.4MB):
+  | 단계 | 시간 |
+  |---|---|
+  | 파일 열고 닫기만 | 75ms |
+  | + DDL 10문장 | 212ms |
+  | 트랜잭션+DDL | 220ms |
+  | `ResearchStore._connect`(마이그레이션 점검 포함) | **242ms** |
+  | 실제 `upsert_allocation` 1건 | **255ms** (작은 빈 DB 66ms) |
+  DDL 파싱 자체(`ddl_statements`)는 1.1ms — 비용은 **`CREATE TABLE IF NOT EXISTS`×10 실행**(≈140ms)과 마이그레이션 점검(≈20ms)이다.
+- **호출 횟수 견적**: 저장 메서드가 행/묶음마다 `_connect()`를 부른다 — `strategies/etl.py:85,105,161` 백필은 (전략 수 × 개월 수)회 `upsert_allocation`(예: 8×60=480회 ≈ **2분**), `save_decision_experiences`·`save_evaluation`류 루프, `intelligence` 저장소도 같은 `duckdb_store`를 쓴다. 이 때문에 예전에 "종목마다 DuckDB를 열면 0.3초"(reader.py 주석)로 기술지표를 통째 읽게 우회했다.
+- **고치는 방법**: DDL 적용을 **프로세스당·파일당 1회**로(모듈 레벨 `set[(resolved_path, ddl_hash)]`), 이후 연결은 DDL·마이그레이션 점검 생략. DDL 파일 mtime/해시가 바뀌면 다시 적용. 쓰기 루프에서는 `with store.batch():`로 연결 하나를 재사용하는 API도 고려.
+- **위험**: 중간. DDL을 안 다시 적용하면 다른 프로세스가 스키마를 바꿨을 때 놓칠 수 있다(해시 키로 완화). 하네스가 여러 프로세스로 동시에 쓰는 구조(`_open_with_retry` 주석)라 트랜잭션 경계를 바꾸면 안 된다.
+- **확정**(실측), 난이도 중간, 사용자 결정 불필요.
+
+### PB-3 사후 평가가 케이스마다 SPY 경로와 ID 조회를 되풀이한다
+- **근거**: `research/evaluation/evaluator.py:33-34`(`price_path(ticker)`, `price_path(benchmark)` 케이스마다), `research/commands/build_decision_experiences.py:47-49`(`(ticker, "SPY")` 루프), `research/evidence/reader.py:630-633` `price_path`는 `market_db.price_path_from`을 memo 없이 호출(`market_prices`·`split_history`는 memo).
+- **견적**: `price_path_from` 1회 = 종목ID 조회 + 가격 조회 = 2왕복(실측 84ms). `evaluate_decisions --limit 200` → 케이스 200 × 2경로 × 2왕복 ≈ **800회 ≈ 67초**, 그중 SPY는 같은 날짜면 동일 결과. `existing_evaluation_horizons`도 `evaluated_horizons`가 케이스에 없으면 케이스마다 1회, `save_evaluation`은 케이스×horizon(3)당 단건 insert.
+- **고치는 방법**: `(ticker, start_date, limit)` 키로 `_memo` 적용(SPY 중복 제거), 케이스를 `as_of` 날짜별로 묶어 SPY 1회, `save_evaluation`은 케이스 묶음 insert. 
+- **확정**(코드 경로+단위 실측), 난이도 낮음, 사용자 결정 불필요. 빈도(하네스 어느 단계인지)는 미확인이라 절감 초는 견적.
+
+### PB-4 관심종목 동기화의 무변경 UPDATE
+HC-3과 같은 코드. `sync_toss_members`가 활성 50개를 전부 `_upsert_member`(=단건 UPDATE)하므로 동기화 1회 = 50~ 왕복(≈ 2~3초)이고 실제 변경은 보통 0~1건. HC-3의 "변경 없으면 쓰지 않는다"만 고쳐도 사라진다. 확정, 낮음.
+
+### PB-5 삭제·갱신이 행 단위인 곳 (배치 가능)
+- `data/fundamentals/infrastructure/supabase/segment_metrics.py:198-206` stale 세그먼트를 **행마다** DELETE(키 5개 eq). `share_class_snapshots.py:89-97` stale 스냅샷 행마다 DELETE. `company_financials.py:315-323` CIK마다 DELETE 1회(전체 재처리 때 CIK 수만큼, ≈503회), `data/universe/persistence.py:513-520`(`apply_toss_names` 이름별 UPDATE — PostgREST upsert는 NOT NULL 때문에 부분 컬럼 갱신이 안 돼 RPC가 필요, 메모리 참고), `data/macro/repository.py:135`(변경된 카탈로그 행별 UPDATE, 카탈로그 ≈ 30~100행).
+- 각 항목의 빈도가 낮다(재처리·백필·카탈로그 변경 시). 정상 일일 경로에서 발생 횟수는 보통 0~수 회라 심각도 낮음. 배치 방법: 세그먼트는 `(cik, accession_no)` 단위로 `in_` 삭제 후 keep 재삽입(멱등), stale이 있는 accession 목록만 대상으로 한다. **확정(코드)**, 실제 횟수는 데이터 의존(측정 안 함).
+
+### PB-6 정합성 점검의 count 9회 직렬
+`fundamentals/infrastructure/supabase/integrity.py:108-115`: `FILL_FLOORS` 9개 컬럼마다 `select(count="exact").not_.is_(col,"null")` 1회. 실측 1회 0.87초 → **≈ 7.8초** + 파생 부채 1회. 표가 커지면 8초 statement_timeout에 각각 근접한다(현재 각 0.87초로 여유). 개선: 뷰/RPC 하나에서 `count(*) filter (where col is not null)` 9개를 한 번에(RPC는 DDL이 얽히므로 **사용자 결정 필요**). 확정, 낮음.
+
+### PB-7 알림 카드마다 Chromium을 새로 띄운다
+`notifications/playwright.py:capture_html_to_png`(호출마다 `async_playwright()`·`chromium.launch()`), 호출부 `earnings_report/run.py:141`(공시 알림 건마다 `asyncio.run`), `macro/core.py:168`, `earnings_calendar/run.py:92`.
+- **실측**(로컬 Chromium, 단순 HTML): 1장 = 1.2초(콜드 3.4초), 브라우저 재사용 시 장당 0.65초 → **장당 ≈ 0.55초 절감**. 카드 수가 실적 시즌에 하루 최대 수십 장이면 절감은 ~10~30초 수준이고 브라우저 콜드 스타트는 Actions에서 더 크다.
+- 부수: `browser.close()`가 try/finally가 아니라 캡처 예외 시 Chromium이 남는다(`playwright.py:45-63`), 임시 파일명 `abs(hash(html)) % 10**8`은 프로세스마다 다른 값(PYTHONHASHSEED)이라 재실행이 같은 파일을 덮어쓰지 못한다(기능 영향 없음, 임시 파일 누적).
+- **고치는 방법**: 한 실행에서 여러 장이면 브라우저 하나로 `render_many(htmls)`. 규칙 15상 패키지별 `shoot_png` 래퍼는 유지하고 `capture_html_to_png`에 선택적 `browser=` 인자만 추가. 확정, 낮음.
+
+### PB-8 알림 엔진의 notice별 원장 조회
+`notifications/engine.py:140-142`(`replay`)·`:_without_unchanged`(`last_known` 1회/notice, `db.py:97`). 대상 topic이 `macro.alert`·`macro.daily`·`earnings.schedule`뿐이고 notice ≤ 수십이라 실제는 수십 왕복(수 초). reserve 자체는 100개씩 묶음(`RESERVE_CHUNK`)으로 이미 배치. 낮음. (`replay`는 사람이 부르는 `--force`에서만.)
+
+### PB-9 뉴스·소셜 저장 (의심)
+`intelligence/application/collect_news.py:85`, `collect_social.py:97`이 종목 루프 안에서 `store_news/store_mentions`를 호출하고 그 저장은 `_write_parquet`+DuckDB 연결을 열 가능성이 있다(`intelligence/repository.py:113,148,169,275,295`). 같은 `duckdb_store`를 쓰므로 PB-2와 같은 연결 비용이 종목마다 곱해질 수 있다. 저장 메서드 내부가 종목 하나당 연결을 여는지, 아니면 배치인지 **끝까지 확인하지 못했다**. 관심 종목(약 50개) × 240ms ≈ 12초 수준으로 추정. 의심, 낮음.
+
+### 측정으로 기각한 후보
+| 후보 | 측정 | 판정 |
+|---|---|---|
+| `release_catalog.series_config()`가 호출마다 `deepcopy` | 0.0106ms/호출(30개 시리즈) | 무시 가능 |
+| `series_definitions()`가 매번 JSON 읽음 | 0.28ms | 무시 가능 |
+| `ddl_statements()` 파일 파싱 | 1.1ms | 무시 가능(PB-2의 비용은 실행) |
+| `sb.schema()` 반복(0.4초 SSL) | `_LazyServiceClient.schema`·`Database`가 `SchemaClients`로 스키마별 캐시. 직접 `create_client` 호출은 `select_only.py`(읽기 gateway) 1곳뿐 | 이미 해결, 재발 없음 |
+| `platform.db.sqlite` 루프 내 `execute` | 마이그레이션 문장 반복(시작 시 1회) | 정상 |
+| `local_store.py:201` `risk_decisions` 조회를 행마다 | 로컬 SQLite 에뮬레이션, 행 수 작음 | N+1이나 로컬이라 무시 |
+| 그 밖 137개 루프 후보 | 대부분 청크 순회·로컬 SQLite·`gurus`/`macro` Streamlit 위젯 루프 | 결함 아님 |
+
+---
+
+## 4. 이전 목적지 표 (남은 하드코딩만)
+
+| 항목 | 지금 위치 | 이전 목적지 |
+|---|---|---|
+| KR 기준금리 공식 날짜(HC-1) | `schedule.py` 튜플 | `data/macro/releases/` JSON catalog + 만료 검사(코드 catalog) |
+| regime 인라인 임계(HC-2) | `regime.py` 함수 안 | `RegimeThresholds`(코드 catalog, version 올림) |
+| 하네스·artifacts 경로(HC-6,7) | 7~8개 파일 | `platform/storage_paths.py` |
+| 빈 env 기본값(HC-4) | `os.environ.get` 15곳 | `platform`의 `env_int/env_float` + `.env.example` 정리 |
+| 미문서 env 12개(HC-5) | 코드만 | `docs/ENV.md` + `test_docs_consistency`에 "src가 읽는 이름 ⊂ ENV.md" 가드 |
+| Toss/Discord/FRED 베이스 URL(HC-9) | 파일마다 `_BASE` | execution은 `brokers/toss` 상수, data·notifications는 platform 상수(+ 필요 시 ENV.md override) |
+| 성향 문구(HC-13) | dashboard 튜플 | `MANAGER_PRESENTATION`(CIK 키, 코드 catalog) |
+| 표·컬럼 상수 복제(HC-11,12) | reporting/research/execution | 각 data owner `db.py` 상수를 import(규칙 16) |
+| 배치 크기(HC-15) | 파일별 리터럴 | `platform/db/postgres.py`의 `IN_FILTER_CHUNK`/`WRITE_CHUNK` |
+| 폰트 경로(HC-8) | `playwright.py` | 저장소 `assets/` 폰트 또는 이름 지정 |
+| DB 이름 리터럴 2개(HC-10) | `local_store.py` | `db.py`/`local_store` 모듈 상수 + 테스트 확장 |
+
+`config/*.toml`은 만들지 않는다. hard risk limit(`trading/risk/gate.py`)은 감사에서 제외했다.
+
+## 5. 사용자 결정이 얽힌 항목
+- **HC-2**: 임계값 값과 version 올림(regime 배율은 사용자 승인된 임시 원칙).
+- **HC-6**: 실주문 lockdown 경로를 건드리므로 정비 보류(`harness_switch --maintenance on`) 하에서만.
+- **PB-6**: RPC/뷰 신설은 Supabase DDL이라 사용자 승인 필요(메모리: DDL 전에 물을 것).
+- 그 밖(HC-1,3,4,5,7~16, PB-1~5,7,8)은 코드·문서·테스트만이며 DDL·실주문·알림 재발송이 얽히지 않는다. HC-3은 관심종목 표 갱신 방식이 바뀌므로 반영 후 한 번 `sync` 결과를 확인하면 충분하다.
+
+## 6. 정리한 임시 물건
+- 측정용 임시 파일(`$TEMP` 아래 `rcopy.duckdb`, 스크립트, `pbaudit_*.png`)만 만들었다. 저장소 파일·운영 DB·Discord·하네스는 건드리지 않았다.

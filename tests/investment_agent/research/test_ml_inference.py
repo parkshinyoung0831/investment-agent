@@ -1,6 +1,8 @@
 """저장한 ML artifact가 학습 때와 같은 예측기로 되살아나는지."""
 from __future__ import annotations
 
+import importlib.util
+
 import unittest
 
 import numpy as np
@@ -69,6 +71,9 @@ class LoadModelTest(unittest.TestCase):
         rows = np.asarray([[0.1, -0.2, 0.3], [0.5, 0.1, -0.4], [-0.3, 0.2, 0.0]])
         for kind in ("lightgbm", "xgboost"):
             with self.subTest(kind=kind):
+                # xgboost는 pyproject에서 python>=3.12에만 설치된다(CI는 3.11).
+                if importlib.util.find_spec(kind) is None:
+                    self.skipTest(f"{kind} 미설치")
                 trained, payload = _fitted(kind)
                 reloaded = load_model(payload)
                 np.testing.assert_allclose(reloaded.predict(rows), trained.predict(rows), rtol=1e-6, atol=1e-9)
@@ -98,9 +103,9 @@ class ConfidenceFromEvidenceTest(unittest.TestCase):
         model = load_model(_artifact("ridge", rank_correlation=-0.3))
         self.assertEqual(model.confidence, 0.0)
 
-    def test_confidence_is_capped_so_one_model_cannot_dominate(self):
+    def test_pooled_rank_correlation_cannot_authorize_serving(self):
         model = load_model(_artifact("ridge", rank_correlation=0.99))
-        self.assertEqual(model.confidence, 0.8)
+        self.assertEqual(model.confidence, 0.0)
 
     def test_probability_up_follows_measured_direction_accuracy(self):
         model = load_model(_artifact("ridge", direction_accuracy=0.62))

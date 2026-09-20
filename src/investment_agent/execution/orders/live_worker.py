@@ -29,6 +29,7 @@ from investment_agent.execution.safety.control import (
     TRADING_STATE_REDUCING,
     LiveTradingControls,
     RuntimeRiskState,
+    assert_order_budget_available,
     classify_order_risk,
     resolve_trading_state,
 )
@@ -484,6 +485,10 @@ class TossLiveExecutionWorker:
             captured_at=current,
         )
         trading_state = resolve_trading_state(self.controls, risk_state)
+        assert_order_budget_available(
+            controls=self.controls, state=risk_state,
+            notionals=tuple(command.estimated_notional_usd for command in commands),
+        )
         if trading_state == TRADING_STATE_REDUCING:
             increasing = sorted(
                 command.symbol for command in commands
@@ -728,7 +733,7 @@ class TossLiveExecutionWorker:
                 ),
                 realized_pnl_usd=state.realized_pnl_usd,
                 drawdown_fraction=state.drawdown_fraction,
-                captured_at=submit_time.isoformat(),
+                captured_at=state.captured_at,
             )
 
         return LiveExecutionResult(

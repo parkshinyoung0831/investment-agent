@@ -1,8 +1,8 @@
 """저장된 ML artifact를 오늘의 feature에 적용해 수치 예측을 만든다.
 
 `fit_baseline`이 학습만 하고 끝나면 모델은 파일로만 남는다. 이 모듈이 그 artifact를
-다시 세우고, **측정된 OOS 성능을 confidence로 환산**한다. 판단 경로에서 LLM 의견과 섞는
-일은 `ml_serving`이 한다. naive·ridge는 계수로, LightGBM·XGBoost는 저장한 booster 원문으로 복원한다.
+다시 세우고, **측정된 OOS 성능을 confidence로 환산**한다. `ml_serving`이 예측을 공급하고
+Trading ALPHA가 factor 사전값과 합친다. naive·ridge는 계수로, 부스팅은 저장한 booster 원문으로 복원한다.
 
 confidence를 상수로 두지 않는 것이 핵심이다. 순위 상관이 0에 가까운 모델은 낮은
 가중치로 합쳐져야 하고, 그 판단 근거는 사람이 정한 숫자가 아니라 OOS 실측이어야 한다.
@@ -16,6 +16,7 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 
 from investment_agent.platform.serialization import ContractError
+from investment_agent.research.evaluation.alpha import IC_INFERENCE_METHOD
 
 # artifact 상태만으로 같은 예측을 다시 만들 수 있는 모델. 부스팅은 booster 원문을 저장한다.
 RELOADABLE_KINDS = ("naive", "ridge", "lightgbm", "xgboost")
@@ -66,6 +67,20 @@ class LoadedModel:
         return values @ self.coefficients + self.intercept
 
     @property
+    def has_dependence_aware_oos(self) -> bool:
+        """옛 IID 통계나 다른 label 기간으로 현재 모델의 신뢰도를 승인하지 않는다."""
+        alpha = self.oos_alpha or {}
+        try:
+            return (
+                alpha.get("inference_method") == IC_INFERENCE_METHOD
+                and alpha.get("horizon_days") == self.horizon_days
+                and alpha.get("hac_lags") == self.horizon_days - 1
+                and int(alpha.get("date_count") or 0) > self.horizon_days
+            )
+        except (TypeError, ValueError, OverflowError):
+            return False
+
+    @property
     def confidence(self) -> float:
         """OOS 순위 능력을 0~1 신뢰도로 옮긴다.
 
@@ -75,13 +90,13 @@ class LoadedModel:
         옮기고, 단일 모델이 LLM 의견을 압도하지 못하게 0.8에서 자른다. 음의 상관은 신호가
         아니라 잡음이므로 0으로 깎는다.
         """
-        if self.oos_alpha:
+        if self.has_dependence_aware_oos:
             mean_ic = float(self.oos_alpha.get("mean_ic") or 0.0)
             t_stat = float(self.oos_alpha.get("ic_t_stat") or 0.0)
             if not math.isfinite(mean_ic) or not math.isfinite(t_stat) or t_stat < MIN_IC_T_STAT:
                 return 0.0
             return float(min(0.8, max(0.0, mean_ic * 10.0)))
-        return float(min(0.8, max(0.0, self.rank_correlation)))
+        return 0.0
 
     def probability_up(self, prediction: float) -> float:
         """방향 정확도를 그대로 상승 확률로 쓴다. 근거 없는 0.5 고정을 피한다."""

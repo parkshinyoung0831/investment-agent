@@ -125,6 +125,20 @@ class SyncTossMembersTest(unittest.TestCase):
             ["0001652044"], [terms["cik"] for (_k, terms) in self.fake.update_filters]
         )
 
+    def test_unchanged_members_are_not_written(self) -> None:
+        result = watchlist_db.sync_toss_members(["AAPL"])
+        self.assertEqual(0, result["added"] + result["removed"])
+        self.assertEqual([], self.fake.updates, "바뀐 것이 없으면 UPDATE도 없어야 한다")
+
+    def test_an_already_released_company_keeps_its_released_at(self) -> None:
+        """해제 시각은 활성→비활성 전환 순간이다. 동기화가 돌 때마다 움직이면 이력이 아니다."""
+        self.fake.put(SCHEMA, T_ENTITIES, [
+            _entity(CIK_AAPL, ["toss"]),
+            _entity(CIK_MSFT, [], removed_at="2026-03-01T00:00:00+00:00"),
+        ])
+        watchlist_db.sync_toss_members(["AAPL"])
+        self.assertEqual([], self.fake.updates)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -145,6 +145,8 @@ def champion_forecast(
     if not model.predicts_excess_return:
         return ChampionForecast(reason=f"model label is not a benchmark excess return: {model.label_definition or 'unknown'}",
                                 **identity)
+    if not model.has_dependence_aware_oos:
+        return ChampionForecast(reason="adopted ML model requires horizon-matched HAC OOS re-evaluation", **identity)
     if model.confidence <= 0.0:
         return ChampionForecast(reason="adopted ML model has no statistically significant OOS IC", **identity)
     if model.horizon_days != SIGNAL_HORIZON_DAYS:

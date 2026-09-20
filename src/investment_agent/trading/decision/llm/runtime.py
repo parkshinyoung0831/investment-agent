@@ -13,6 +13,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 
+from investment_agent.platform.env import env_float, env_int
 from investment_agent.trading.contracts import parse_datetime
 from investment_agent.research.adapters.trading import EvidenceBundle
 from investment_agent.platform.serialization import canonical_json
@@ -140,7 +141,7 @@ def _external_block_reason(bundle: EvidenceBundle | None = None) -> str | None:
     if active.source_kind != "live_shadow":
         return f"external news/social is forbidden in {active.source_kind}"
     try:
-        maximum_age = float(os.environ.get("AI_INVESTOR_EXTERNAL_MAX_AGE_HOURS", "24"))
+        maximum_age = env_float("AI_INVESTOR_EXTERNAL_MAX_AGE_HOURS", 24.0)
     except ValueError:
         return "AI_INVESTOR_EXTERNAL_MAX_AGE_HOURS is invalid"
     if not 0.0 < maximum_age <= 72.0:
@@ -232,7 +233,7 @@ def _sanitize_external_text(raw: str) -> tuple[str, int, bool]:
     )
     cleaned, redactions = _INSTRUCTION_RE.subn("[external instruction redacted]", cleaned)
     try:
-        maximum_chars = int(os.environ.get("AI_INVESTOR_EXTERNAL_MAX_CHARS", "12000"))
+        maximum_chars = env_int("AI_INVESTOR_EXTERNAL_MAX_CHARS", 12000)
     except ValueError:
         maximum_chars = 12000
     maximum_chars = min(max(maximum_chars, 1000), 50000)

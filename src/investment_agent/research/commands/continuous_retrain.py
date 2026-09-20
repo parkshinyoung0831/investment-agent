@@ -30,11 +30,11 @@ from investment_agent.research.rl.bundle import load_policy_bundle, save_policy_
 from investment_agent.research.features.layer import FEATURE_COLUMNS, FEATURE_VERSION
 from investment_agent.research.datasets.universe import DataUniverseReader
 from investment_agent.research.storage.repository import ResearchStore
-from investment_agent.platform.storage_paths import repository_root
+from investment_agent.platform.storage_paths import rl_policy_dir
 
 log = get_logger(__name__)
 
-_POLICY_DIR = repository_root() / "artifacts" / "trading" / "rl_policies"
+_POLICY_DIR = rl_policy_dir()
 _ACTIVE_POLICY_NAME = "active_policy.json"
 # 마지막으로 후보를 학습한 데이터 구간. 새 성숙 구간이 쌓였는지 판단하는 기준이다.
 _LAST_TRAINING_NAME = "last_training.json"

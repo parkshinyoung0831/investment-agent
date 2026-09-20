@@ -54,7 +54,7 @@ from investment_agent.trading.risk.stress import STRESS_PROXIES, scenario_sensit
 
 log = get_logger(__name__)
 
-SYSTEM_TARGET_VERSION = "system-target-v2"
+SYSTEM_TARGET_VERSION = "system-target-v3"
 _PRICE_ROWS = 260
 _WEIGHT_EPSILON = 1e-6
 

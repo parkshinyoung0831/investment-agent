@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from investment_agent.notifications.earnings_flash.quickchart import flash_performance_chart_url
+from investment_agent.notifications.earnings_flash.surprise import compute_surprise, judge
 from investment_agent.reporting.services.earnings.guidance import format_guidance_headline
 
 # 색상 토큰 (DESIGN-system.md)
@@ -26,13 +27,6 @@ def format_eps(val: float | None) -> str:
     if val is None:
         return "—"
     return f"${val:.2f}"
-
-
-def compute_surprise(actual: float | None, estimate: float | None) -> float | None:
-    """실제값과 예상값으로부터 서프라이즈 비율(%)을 동적으로 계산한다."""
-    if actual is not None and estimate is not None and estimate != 0:
-        return round(((actual - estimate) / abs(estimate)) * 100.0, 2)
-    return None
 
 
 def build_flash_embed(item: dict[str, Any]) -> dict[str, Any]:
@@ -58,13 +52,11 @@ def build_flash_embed(item: dict[str, Any]) -> dict[str, Any]:
     surp_rev = flash.get("surprise_revenue_pct") or compute_surprise(rev_act, rev_est)
 
     # 서프라이즈 판정
-    is_beat = (surp_eps is not None and surp_eps > 0.0) or (surp_rev is not None and surp_rev > 0.0)
-    is_miss = (surp_eps is not None and surp_eps < -1.0) or (surp_rev is not None and surp_rev < -1.0)
-
-    if is_beat:
+    verdict = judge([surp_eps, surp_rev])
+    if verdict == "beat":
         color = COLOR_BEAT
         badge_text = "🟢 어닝 서프라이즈 (예상 상회)"
-    elif is_miss:
+    elif verdict == "miss":
         color = COLOR_MISS
         badge_text = "🔴 예상 하회"
     else:

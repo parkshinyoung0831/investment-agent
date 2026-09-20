@@ -13,6 +13,7 @@ import re
 import time
 from datetime import datetime, timedelta, timezone
 
+from investment_agent.platform.env import env_int
 from investment_agent.forecasting import SIGNAL_HORIZON_DAYS
 from investment_agent.trading.decision.agents.engine import (
     TradingAgentsDecisionEngine,
@@ -133,7 +134,7 @@ def verify_runtime(pool, *, verify=verify_tradingagents_runtime) -> str:
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="investment_agent.trading.decision.analysis")
     parser.add_argument("--ticker", action="append")
-    parser.add_argument("--limit", type=int, default=int(os.environ.get("AI_INVESTOR_DAILY_LIMIT", "5")))
+    parser.add_argument("--limit", type=int, default=env_int("AI_INVESTOR_DAILY_LIMIT", 5))
     parser.add_argument("--as-of")
     parser.add_argument("--dry-run", action="store_true")
     # 이 시간이 지나면 새 종목을 시작하지 않는다. 하네스가 자기 timeout보다 짧게 넘겨, 강제 종료로
@@ -185,7 +186,7 @@ def main(argv: list[str] | None = None) -> int:
         log.info("analysis skipped: no candidates are due for analysis as_of=%s", as_of.isoformat())
         return 0
     tickers = list(universe.selected)
-    signal_ttl_hours = int(os.environ.get("AI_INVESTOR_SIGNAL_TTL_HOURS", "24"))
+    signal_ttl_hours = env_int("AI_INVESTOR_SIGNAL_TTL_HOURS", 24)
     if signal_ttl_hours < 1 or signal_ttl_hours > 72:
         raise RuntimeError("AI_INVESTOR_SIGNAL_TTL_HOURS must be between 1 and 72")
     builder = ContextBuilder(repository)

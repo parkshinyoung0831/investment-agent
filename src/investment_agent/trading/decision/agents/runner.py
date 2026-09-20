@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from datetime import timedelta
 from typing import Any
 
 from investment_agent.platform.logging import get_logger
@@ -29,12 +30,13 @@ from investment_agent.trading.decision.llm.vendor.yfinance_news import get_news_
 
 
 log = get_logger(__name__)
+NEWS_LOOKBACK_DAYS = 7
 
 
 class TradingAgentsRunner:
     """분석가 5명 → Bull/Bear 토론 → Trader → Risk 3자 토론 → Portfolio Manager를 로컬로 실행한다."""
 
-    version = "0.7.0-local-graph-macro-h20"
+    version = "0.7.1-local-graph-macro-h20-news7d"
 
     def run(self, bundle: EvidenceBundle, *, memory_text: str) -> dict[str, Any]:
         manifests_token = runtime._EXTERNAL_MANIFESTS.set([])
@@ -59,13 +61,15 @@ class TradingAgentsRunner:
                 os.environ.get("AI_INVESTOR_TRADINGAGENTS_NEWS_VENDOR", "yfinance")
             )
             client = OpenAICompatibleClient.from_env()
-            curr_date = parse_datetime(bundle.as_of_at).date().isoformat()
+            point = parse_datetime(bundle.as_of_at)
+            curr_date = point.date().isoformat()
+            news_start = (point - timedelta(days=NEWS_LOOKBACK_DAYS)).date().isoformat()
 
             news_fetchers = {"yfinance": get_news_yfinance, "alpha_vantage": _get_news_alpha_vantage}
 
             def fetch_news_evidence() -> str:
                 return runtime.fetch_external_news(
-                    bundle.ticker, curr_date, curr_date,
+                    bundle.ticker, news_start, curr_date,
                     requested_vendor=requested_vendor, get_bundle=runtime._bundle,
                     external_fetch=runtime._external_fetch, record_external=runtime._record_external,
                     upstream_fetcher=news_fetchers.get(requested_vendor),

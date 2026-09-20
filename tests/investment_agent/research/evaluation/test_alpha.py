@@ -8,6 +8,34 @@ from investment_agent.research.evaluation.alpha import cross_sectional_alpha_met
 
 
 class CrossSectionalAlphaTest(unittest.TestCase):
+    def test_overlapping_labels_do_not_get_iid_significance(self):
+        dates, actual, predicted = [], [], []
+        for day in range(100):
+            for name in range(10):
+                dates.append(day)
+                predicted.append(name)
+                actual.append(name if day < 60 else -name)
+        score = cross_sectional_alpha_metrics(dates, actual, predicted, horizon_days=20)
+        self.assertGreater(score.ic_t_stat_iid, 2.0)
+        self.assertLess(score.ic_t_stat, 2.0)
+        self.assertEqual(score.hac_lags, 19)
+        self.assertEqual(score.horizon_days, 20)
+        self.assertEqual(score.inference_method, "newey_west_bartlett_iid_floor_v1")
+        # 독립적으로 만든 Bartlett kernel의 이중합과 비교한다.
+        values = np.r_[np.ones(60), -np.ones(40)]
+        residual = values - values.mean()
+        kernel = np.fromfunction(lambda i, j: np.maximum(0, 1 - np.abs(i - j) / 20), (100, 100))
+        variance = float(residual @ kernel @ residual) / (100 * 99)
+        self.assertAlmostEqual(score.ic_t_stat, values.mean() / np.sqrt(variance))
+
+    def test_no_inference_with_fewer_dates_than_label_horizon(self):
+        score = cross_sectional_alpha_metrics(
+            [day for day in range(4) for _ in range(5)],
+            [name * (1 if day < 3 else -1) for day in range(4) for name in range(5)],
+            list(range(5)) * 4, horizon_days=20,
+        )
+        self.assertEqual(score.ic_t_stat, 0.0)
+
     def test_perfect_ranking_has_ic_one_and_positive_spread(self):
         dates, actual, predicted = [], [], []
         for day in range(4):

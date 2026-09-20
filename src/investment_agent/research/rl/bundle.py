@@ -9,6 +9,7 @@ from typing import Any, Mapping
 import numpy as np
 from investment_agent.platform.serialization import canonical_json
 from investment_agent.research.rl.environment import action_to_weights
+from investment_agent.portfolio_weights import CASH_SYMBOL
 
 SCHEMA = "ppo-policy-v1"
 
@@ -38,8 +39,8 @@ class PPOPolicy:
     def predict_weights(self, frame, *, current_weights=None):
         if (frame.symbols, frame.feature_names, frame.feature_version) != (self.symbols, self.feature_names, self.feature_version):
             raise ValueError("policy observation axes mismatch")
-        weights = {"CASH": 1.0} if current_weights is None else current_weights
-        axis = (*self.symbols, "CASH")
+        weights = {CASH_SYMBOL: 1.0} if current_weights is None else current_weights
+        axis = (*self.symbols, CASH_SYMBOL)
         if set(weights) - set(axis): raise ValueError("holdings outside policy axes")
         values=np.array([weights.get(k, 0.0) for k in axis], dtype=float)
         if not np.isfinite(values).all() or (values < 0).any() or not np.isclose(values.sum(), 1):
@@ -59,7 +60,7 @@ def save_policy_bundle(model, directory: Path, *, dataset, score: Mapping, train
     payload={"schema": SCHEMA, "algorithm":"ppo", "symbols":list(dataset.symbols),
              "feature_names":list(dataset.feature_names), "feature_version":dataset.feature_version,
              "normalization":{"kind":"identity", "observation_dtype":"float32"},
-             "action_axis":[*dataset.symbols,"CASH"], "model_sha256":digest,
+             "action_axis":[*dataset.symbols,CASH_SYMBOL], "model_sha256":digest,
              "model_binary":digest+".zip", "score":dict(score), "training":dict(training)}
     identity=hashlib.sha256(canonical_json(payload).encode()).hexdigest()
     payload["artifact_id"]=identity
@@ -84,8 +85,8 @@ def load_policy_bundle(path: Path) -> PPOPolicy:
     if payload["schema"]!=SCHEMA or payload["algorithm"]!="ppo": raise ValueError("unsupported policy schema")
     if payload["normalization"]!={"kind":"identity", "observation_dtype":"float32"}: raise ValueError("unsupported normalization")
     symbols=payload["symbols"]; names=payload["feature_names"]
-    if not symbols or len(set(symbols))!=len(symbols) or "CASH" in symbols or not names or len(set(names))!=len(names): raise ValueError("invalid policy axes")
-    if payload["action_axis"]!=[*symbols,"CASH"]: raise ValueError("action axes mismatch")
+    if not symbols or len(set(symbols))!=len(symbols) or CASH_SYMBOL in symbols or not names or len(set(names))!=len(names): raise ValueError("invalid policy axes")
+    if payload["action_axis"]!=[*symbols,CASH_SYMBOL]: raise ValueError("action axes mismatch")
     probability=float(payload["score"]["dsr_probability"])
     if not math.isfinite(probability) or not 0<=probability<=1: raise ValueError("invalid policy score")
     binary=path.parent/payload["model_binary"]

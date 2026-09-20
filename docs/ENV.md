@@ -57,6 +57,19 @@ Actions secrets/variables(CI)에 주입하며, 이 파일에는 이름·용도·
 | `AI_INVESTOR_GEMINI_API_KEY`, `GROQ_API_KEY` | 선택적인 provider credential. 각 provider의 현재 요금·rate limit·약관을 직접 확인 |
 | `AI_INVESTOR_LLM_MAX_RETRIES` | 429를 견딜 SDK 재시도 횟수(기본 15, 0~20). 대기는 provider가 준 Retry-After를 따른다 |
 | `AI_INVESTOR_API_KEY`, `AI_INVESTOR_PROVIDER`, `AI_INVESTOR_TIMEOUT_SEC`, `AI_INVESTOR_DAILY_LIMIT` | 선택 API 키·공급자 라벨·호출 제한·하루 종목 한도 |
+| `AI_INVESTOR_EXTERNAL_MAX_AGE_HOURS`, `AI_INVESTOR_EXTERNAL_MAX_CHARS` | 판단 입력에 넣는 외부 뉴스의 최대 나이(기본 24시간)와 최대 글자 수(기본 12000) |
+| `AI_INVESTOR_SIGNAL_TTL_HOURS` | 판단 신호의 유효 시간(기본 24) |
+| `AI_INVESTOR_MODEL_POOL_LEDGER_PATH` | 모델 풀 원장 경로. 비어 있으면 기본 위치 |
+| `FLASH_NOTIFY_LOOKBACK_DAYS` | 실적 속보가 되돌아볼 일수(기본 7) |
+| `FUNDAMENTALS_SEGMENT_LOOKBACK_DAYS`, `FUNDAMENTALS_SEGMENT_WORKERS` | 세그먼트 재처리 창(기본 7일)과 동시 작업 수 |
+| `GURUS_HISTORICAL_START_DATE` | 13F backfill 기본 시작일(기본 2014-01-01) |
+| `DASHBOARD_OFFLINE` | `1`이면 화면이 저장소를 열지 않고 오프라인 상태로 렌더한다(테스트·화면 점검용) |
+| `DASHBOARD_HARNESS_STALE_SECONDS` | 하네스 신호가 이 초 이상 없으면 대시보드가 멈춘 것으로 표시(기본 180, 30~86400) |
+| `DASHBOARD_NEWS_PROVIDER`, `FINNHUB_API_KEY` | 대시보드 뉴스 provider 선택(기본 yfinance)과 Finnhub 키 |
+| `DISCORD_SYSTEM_LOG_URL`, `GITHUB_ACTIONS_URL` | 대시보드 운영 화면의 바로가기 버튼 URL(https만) |
+| `DISCORD_APPROVAL_HMAC_SECRET_FILE` | 승인 버튼 서명 키 파일 경로. 보안 점검(`security_audit`)이 존재를 확인한다 |
+| `HARNESS_NY_SESSION_START`, `HARNESS_NY_SESSION_END`, `HARNESS_NY_RISK_START`, `HARNESS_NY_RISK_END` | 보안 점검이 검증하는 뉴욕 세션·위험 창 시각(기본 09:40·14:30·09:15·16:30, `HH:MM`) |
+| `SOURCE_CONCLUSION` | `workflow_failure`가 보고할 상류 워크플로 결론(기본 failure). 워크플로가 주입한다 |
 | `AI_INVESTOR_TRADINGAGENTS_PROVIDER` | TradingAgents provider 이름. Ollama는 `ollama` |
 | `AI_INVESTOR_TRADINGAGENTS_NEWS_VENDOR` | live News upstream vendor. 기본 `yfinance` |
 | `ALPHA_VANTAGE_API_KEY` | News vendor가 `alpha_vantage`이면 필수 |

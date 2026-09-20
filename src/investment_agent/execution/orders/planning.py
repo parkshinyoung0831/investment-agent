@@ -17,12 +17,11 @@
 
 ## 한도를 넘으면 조용히 줄이지 않는다
 
-매수 한 건이 주문 한도를 넘으면 예외다. 잘라서 넣으면 "승인받은 계획"과 "실제 나간 주문"이
+매수·매도 한 건이 주문 한도를 넘으면 예외다. 잘라서 넣으면 "승인받은 계획"과 "실제 나간 주문"이
 달라지고, 그 차이는 아무 데도 기록되지 않는다.
 
-매도는 다르다. 보유를 줄이는 매도를 주문 한도 때문에 통째로 막으면 큰 포지션은 빠져나갈
-수 없다. 그래서 매도는 한도 이하의 자식 주문 여러 건으로 **계획 단계에서** 나눈다. 나뉜
-주문 전부가 승인 카드에 그대로 보이므로 승인한 것과 나가는 것이 같다. 총액 한도는 그대로다.
+실제 제출 게이트도 매도에 한도를 적용한다. 계획 때 같은 조건으로 거부해야 실행할 수 없는
+승인을 소비하지 않는다. 초과 포지션은 별도 검토한 계획이 필요하며 자동 분할로 한도를 우회하지 않는다.
 """
 from __future__ import annotations
 
@@ -174,9 +173,7 @@ class TargetWeightOrderPlanner:
                 # 수수료가 이득보다 큰 주문이다. 건너뛰는 것이 정상 동작이다.
                 continue
             side = "buy" if delta > 0.0 else "sell"
-            # 매수만 1건 한도로 막는다. 계좌가 수천 달러라 매도를 나눌 일이 없고, 위험을 줄이는 매도를
-            # 한도로 막으면 청산이 막힌다. 전체 한도는 아래에서 함께 본다.
-            if notional > self.limits.max_order_notional + EPSILON and side == "buy":
+            if notional > self.limits.max_order_notional + EPSILON:
                 raise ExecutionSafetyError(
                     f"{symbol} order notional {notional:.2f} exceeds "
                     f"{self.limits.max_order_notional:.2f}"

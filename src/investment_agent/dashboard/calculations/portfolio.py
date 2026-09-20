@@ -10,6 +10,7 @@ from investment_agent.dashboard.calculations._common import (
     finite_number,
 )
 from investment_agent.dashboard.calculations.strategy import _valid_weights
+from investment_agent.reporting.services.investment import CASH_SYMBOL
 
 def _price_mapping(prices: Any) -> dict[str, float]:
     """실시간 가격 응답에서 양수인 종목 가격만 추출한다."""
@@ -81,7 +82,7 @@ def rebalance_portfolio(
         or cash_value < 0.0
         or normalized_holdings is None
         or normalized_targets is None
-        or "CASH" not in {str(symbol).upper() for symbol in target_weights}
+        or CASH_SYMBOL not in {str(symbol).upper() for symbol in target_weights}
     ):
         return unavailable
 
@@ -116,7 +117,7 @@ def rebalance_portfolio(
     total_value = cash_value + securities_value
     if not math.isfinite(total_value) or total_value <= 0.0:
         return unavailable
-    symbols = sorted((set(holdings_by_symbol) | set(normalized_targets)) - {"CASH"})
+    symbols = sorted((set(holdings_by_symbol) | set(normalized_targets)) - {CASH_SYMBOL})
     missing_prices: set[str] = set()
     rows: list[dict[str, Any]] = []
     security_weights: list[float] = []
@@ -158,20 +159,20 @@ def rebalance_portfolio(
         security_weights.append(actual_weight)
     cash_weight = cash_value / total_value
     rows.append({
-        "ticker": "CASH",
+        "ticker": CASH_SYMBOL,
         "quantity": None,
         "current_quantity": None,
         "price": None,
         "current_price": None,
         "current_value": cash_value,
         "actual_weight": cash_weight,
-        "target_weight": normalized_targets["CASH"],
-        "weight_difference": normalized_targets["CASH"] - cash_weight,
-        "difference": normalized_targets["CASH"] - cash_weight,
-        "weight_gap": normalized_targets["CASH"] - cash_weight,
-        "target_value": normalized_targets["CASH"] * total_value,
-        "adjustment_amount": normalized_targets["CASH"] * total_value - cash_value,
-        "adjustment_value": normalized_targets["CASH"] * total_value - cash_value,
+        "target_weight": normalized_targets[CASH_SYMBOL],
+        "weight_difference": normalized_targets[CASH_SYMBOL] - cash_weight,
+        "difference": normalized_targets[CASH_SYMBOL] - cash_weight,
+        "weight_gap": normalized_targets[CASH_SYMBOL] - cash_weight,
+        "target_value": normalized_targets[CASH_SYMBOL] * total_value,
+        "adjustment_amount": normalized_targets[CASH_SYMBOL] * total_value - cash_value,
+        "adjustment_value": normalized_targets[CASH_SYMBOL] * total_value - cash_value,
         "guide_quantity": None,
         "quantity_delta": None,
         "guide_quantity_delta": None,

@@ -1,0 +1,220 @@
+# 감사: notifications / reporting / dashboard (읽기 전용)
+
+범위: `src/investment_agent/notifications/**`, `reporting/**`, `dashboard/**`(loader·readers·calculations).
+방법: graphify로 구조 확인 뒤 grep/AST로 후보 수집, 코드 경로 추적, 순수 함수 재현 또는 운영 DB(readonly) 수치로 확인.
+"확정"은 코드 경로를 끝까지 따라가 재현·수치로 확인한 것, "의심"은 경로는 있으나 오늘 데이터에서 발현을 못 본 것.
+사용자 결정 표기: 실주문/DDL/알림 재발송이 얽히면 "결정 필요".
+
+---------------------------------------------------------------------------------------------------
+
+## 확정 항목
+
+### DB-01 [높음] 대시보드 4곳이 `src/artifacts/...`를 가리킨다 — 하네스 상태·RL 정책이 항상 "없음"
+- 영역: dashboard 경로 상수
+- 증상: 하네스 상태 화면·홈·시스템 화면이 항상 "하네스 상태 파일이 없습니다"(empty)로 나온다. ML/RL 랩은 active_policy.json이 있어도 항상 None.
+- 근거:
+  - `dashboard/ops.py:18-19` `ROOT = Path(__file__).resolve().parents[2]` → `DEFAULT_HARNESS_STATE`
+  - `dashboard/app.py:11,227`, `dashboard/app_pages/system.py:26-27`(parents[3]), `dashboard/app_pages/ml_rl_lab.py:23-24`(parents[3])
+  - 저장소 루트는 `platform/storage_paths.py:26 repository_root()`가 표식(pyproject.toml+db/)으로 찾도록 이미 만들어 둠(그 docstring이 "parents[N]로 깊이를 세면 조용히 다른 폴더를 가리킨다"고 경고).
+- 재현: 실제 import 결과
+  - `DEFAULT_HARNESS_STATE = ...\investment-agent-main\src\artifacts\ops\investment_harness\state.json  exists=False`
+  - `ACTIVE_POLICY_PATH = ...\src\artifacts\trading\rl_policies\active_policy.json exists=False`
+  - `read_harness_state()` → status=empty "하네스 상태 파일이 없습니다"
+  - 실제 파일은 `artifacts/ops/investment_harness/state.json`(저장소 루트)에 존재. `src/artifacts`는 없다.
+- 원인: 모듈이 `src/investment_agent/dashboard/` 아래인데 깊이를 한 단계 잘못 셈. 테스트는 `DASHBOARD_OFFLINE=1`이라 경로가 실존하는지 안 본다.
+- 고치는 법: 4곳 모두 `platform.storage_paths.repository_root()` 또는 `operations/paths.py`의 `HARNESS_STATE_DIR`를 import. 하네스 상태 경로는 operations가 SSOT(`operations/paths.py:7`)이므로 중복 선언(`operations/control_center.py:26`, dashboard 3곳)도 함께 제거. 가드: 경로 상수가 실제 저장소 루트 하위인지 검사하는 테스트(존재 파일 기준, 위반 주입으로 확인).
+- 위험: 낮음(읽기 전용 화면). 고친 뒤 화면이 처음으로 실제 하네스 상태(예: failed 표시)를 보여준다 — 운영 판단 자료가 갑자기 나타남.
+- 확정 / 난이도 하 / 결정 불필요
+
+### RP-01 [높음] Altman Z'' 계산에 상수항 3.25 누락 — 재무건전성 게이지가 27% 종목에서 나쁘게 나옴
+- 영역: reporting/notifications/earnings_report.py `_altman_z`(646-680), 소비처 notifications/earnings_report/charts.py:103-118
+- 증상: 게이지 기준은 Z'' 표준 임계(양호 2.6 / 위험 1.1)인데 식은 `6.56·X1+3.26·X2+6.72·X3+1.05·X4`에서 상수 3.25가 빠져 있다. 모든 종목이 3.25만큼 낮게 나온다.
+- 재현(운영 DB, 관심종목 50개 중 Z 계산 가능 37개):
+  - 현재: 위험(<1.1) 3개, 주의(1.1~2.6) 7개, 양호 27개
+  - +3.25 보정: 위험 0개, 주의 1개
+  - 예: ORCL 0.97 → 4.22, CSCO 1.36 → 4.61, UNH 1.54 → 4.79, WMT 1.83 → 5.08 (현재는 전부 위험/주의 색)
+- 원인: 함수 docstring이 식을 적으면서 상수를 빼먹음. 카드 픽스처는 임계 안쪽 값이라 통과.
+- 고치는 법: 반환식에 `+ 3.25`(상수 이름으로 선언, 임계값 1.1/2.6과 같은 자리 charts.py 옆 palette/thresholds에 함께 둠). 임계와 식이 같은 논문 기준임을 한 곳에서 주장하게.
+- 위험: 이미 발송된 earnings.report 카드는 revision(basis=fiscal_year/period)이 바뀌지 않으므로 재발송되지 않음. 과거 카드는 그대로 남는다.
+- 확정 / 난이도 하 / 알림 재발송 여부는 사용자 결정(과거 카드 수정은 `notify --force`)
+
+### NT-01 [중] 카드 한 장마다 Chromium을 새로 띄운다
+- 영역: notifications/playwright.py:33-64, 호출부 earnings_report/run.py:141, macro/core.py:168, earnings_calendar/run.py:92
+- 증상: 렌더러가 카드 하나당 `asyncio.run(shoot_png(...))` → `async_playwright()` → `chromium.launch()` → 종료. 백필/시즌(관심종목 50개가 2주에 몰림)에 카드 N장이면 브라우저 N번 기동.
+- 근거: `capture_html_to_png`가 매 호출 `pw.chromium.launch()`; engine `_deliver`가 카드마다 `render(notices)`를 부르고 `render_card`가 `asyncio.run`을 씀.
+- 원인: engine.publish의 Renderer 계약이 동기 함수 하나씩이라 브라우저 수명을 publish 실행 단위로 물릴 곳이 없음.
+- 고치는 법: 모듈 수준 지연 싱글턴(프로세스당 browser 1개, 컨텍스트만 카드마다)이나 publish 종료 훅. `asyncio.run` 반복도 하나의 이벤트 루프 스레드로 모으면 launch 비용이 사라짐. CLAUDE.md 규칙 5(무거운 의존성 지연 import)는 유지.
+- 위험: 브라우저 크래시가 다음 카드로 번질 수 있어 카드 단위 예외 격리 유지 필요.
+- 확정 / 난이도 중 / 결정 불필요
+
+### RP-02 [중] `load_ready_filings`가 발송 대상 1건이어도 전 관심종목의 재무·가격을 반복해서 읽는다 + 카드마다 N+1
+- 영역: notifications/earnings_report/candidates.py:load_ready_filings(153-247), earnings_report/run.py:`_extras_by_ticker`, reporting/notifications/earnings_report.py
+- 증상/근거:
+  - `load_headline_rows`, `anomaly_keys`, `load_health`, `load_valuation`(→snapshots+price+shares), 이후 카드마다 `load_quality_history`·`load_valuation_snapshots`·`load_earnings_quality`가 각각 `_financial_rows(tickers)`를 부른다(한 실행에 최소 7회, 전 관심종목 대상). `_financial_rows`는 매번 `securities_by_ticker` + financials 청크 + filings 청크 조회.
+  - `run.py:_extras_by_ticker` docstring은 "티커별로 한 번만"인데 `render_card`가 `notice`마다 `_extras_by_ticker([ticker])`로 부른다(9개 로더 × 카드 수).
+  - `load_valuation`은 전 관심종목의 7년 일봉을 읽는다(아래 측정).
+  - 주석 "차트 보강 데이터는 발송 대상이 있을 때만 조회"는 맞지만, 대상이 아닌 종목까지 읽는다.
+- 재현(운영 DB 읽기, 관심종목 50개): `_financial_rows` 1,941행 2.8s × 7회, `load_price_history` 87,850행 9.4s → 후보 1건에도 약 30초 이상의 순수 낭비. watch_earnings가 1분 주기로 tickers를 좁혀 부르므로(좁혀진 경우엔 작음) 전체 배치·Actions 22:00/07:00에서 주로 발생.
+- 고치는 법: 후보 ticker(headlines의 ticker 집합)로만 `tickers`를 좁혀 health/valuation/anomaly를 부르고, `_financial_rows` 결과를 한 번만 만들어 `_quarterly_by_ticker`·headline·anomaly·quality가 공유(함수 인자로 rows 주입). `Database.from_config(load_config())`·`securities_by_ticker`도 호출마다 새로 만드는 것을 한 번으로.
+- 위험: 낮음. 값이 같아야 하므로 기존 카드 테스트로 검증.
+- 확정 / 난이도 중 / 결정 불필요
+
+### NT-02 [높음-중] earnings_flash 달성률: 컨센서스가 음수(적자)일 때 "상회"가 MISS로 칠해진다
+- 영역: notifications/earnings_flash/quickchart.py:47-52 (`rate = eps_act / abs(eps_est) * 100`, 기준선 100)
+- 증상: 예상 -1.00, 실제 -0.50(손실 축소=상회)이면 rate = -50%로 100 미만 → 빨강(MISS). 예상 -1.00 실제 -1.00(부합)도 -100%로 MISS.
+- 재현(운영 DB reporting.earnings_surprise): eps_estimate<0 행 37개 중 20개가 "실제가 음수이고 예상보다 큼(상회)" → 전부 달성률 음수/빨강.
+  같은 파일의 embeds `compute_surprise`는 `(actual-estimate)/abs(estimate)`라 방향이 맞다 — 같은 카드 안에서 embed(상회)와 차트(MISS)가 서로 다른 말을 할 수 있음.
+- 원인: 비율 정의가 양수 컨센서스만 가정. 매출 쪽은 `rev_est > 0` 가드가 있는데 EPS는 `!= 0`만 봄.
+- 고치는 법: 달성률 대신 `compute_surprise`와 같은 `(act-est)/abs(est)` 기반 수치를 한 함수(예: embeds.compute_surprise)에서 공유하고 기준선을 0%로. 규칙 15상 패키지 내부 공유이므로 같은 패키지에 두면 됨.
+- 위험: 낮음. 이미 발송된 속보(earnings.flash, on_revision=ignore)는 수정되지 않음.
+- 확정 / 난이도 하 / 재발송 결정 필요(과거 카드)
+
+### NT-03 [중] earnings_flash 판정: 한 축만 상회해도 초록, EPS 큰 하회는 가려지고, EPS 기준 불일치를 안 본다
+- 영역: notifications/earnings_flash/embeds.py:67-75, reporting/notifications/earnings_flash.py:load_flash_rows(columns)
+- 증상:
+  - `is_beat = EPS>0 또는 매출>0`이 `is_miss`보다 먼저 판정 — EPS -20% 하회 + 매출 +0.01%이면 "🟢 어닝 서프라이즈". 임계도 상회는 0.0, 하회는 -1.0으로 비대칭.
+  - `reporting.earnings_surprise`에는 `eps_actual_basis/eps_estimate_basis/eps_basis_match`가 있는데 flash 컬럼 목록에 없어 기준 불일치(GAAP 실제 vs adjusted 컨센서스)를 무시한다. 수치: (unknown/adjusted) 11행, (unknown/None) 113행이 있음. 정밀 카드(`card._beat_color(..., reliable=)`)는 이 신뢰도를 이미 쓴다 → 두 알림이 서로 다른 신뢰 규칙.
+- 원인: 속보 패키지가 정밀 카드의 신뢰도 규칙을 따라 하지 않고 독립 구현.
+- 고치는 법: load_flash_rows 컬럼에 basis 필드 추가, 둘 다 하회/상회가 같은 방향일 때만 색을 단정, 엇갈리면 중립(파랑) + 문구. 임계는 palette/thresholds 모듈 상수(하드코딩 -1.0/0.0 대신).
+- 확정 / 난이도 하 / 결정 불필요
+
+### RP-03 [중] 결측을 0으로 접어 순부채·EBITDA를 좋게 만든다
+- 영역: reporting/services/financial_row.py `total_debt`(21-33), reporting/notifications/earnings_report.py `_ebitda_ttm`(≈545), `_net_debt`, `load_quality_history`
+- 증상:
+  - `total_debt`는 `total_debt_including_current`가 NULL이고 부분 컬럼도 전부 NULL이면 `sum(v or 0)` = 0.0을 돌려준다 → 순부채 = 0 − 현금(순현금)으로 표시, 순부채/EBITDA·부채/자본이 "좋게" 나옴. `financial_row.total_debt`의 타입 힌트는 `float`이라 호출부가 None을 대비하지 않음(`_net_debt`의 `if debt is None`은 죽은 분기).
+  - `_ebitda_ttm`: `(_ttm(rows,"depreciation_amortization_cf") or 0.0)` → D&A가 없으면 EBITDA = 영업이익(과소) → net_debt_to_ebitda 과대.
+- 수치(운영 DB fundamentals.financials 18,915행): total_debt 계열이 전부 NULL인 행 6.3%, `depreciation_amortization_cf` NULL 10.6%.
+- 고치는 법: `total_debt`가 "모든 구성요소 없음"이면 None을 돌려주도록 하고(반환형 `float | None`), 호출부(`_net_debt`, `load_quality_history`의 `total_debt(r)/equity`)가 None을 그대로 전파. D&A는 없으면 EBITDA를 None으로(이미 "부분 합은 틀린 값" 원칙을 `_ttm`에서 쓰고 있음).
+- 위험: 일부 카드에서 해당 게이지가 사라짐(정직한 결과). 은행 등 부채 정의가 다른 업종은 원래 None이어야 맞음.
+- 확정 / 난이도 하 / 결정 불필요
+- 메모: 직전 감사의 "total_debt 이중 계산 의심"과는 별개(여기는 결측→0).
+
+### DB-02 [중] `cache_data` TTL이 오류 결과까지 그대로 캐시한다 (최대 30분)
+- 영역: reporting/readers/dashboard.py, platform/cache.py
+- 증상: `_read()`가 예외를 `DataResult.error(...)`로 돌려주면 `st.cache_data`가 그 반환값을 5m~30m 캐시한다. 일시적 Supabase 타임아웃(8초 statement_timeout)이 `load_tickers`·`load_guru_data`(30m), `load_econ_series`(10m) 화면을 TTL 동안 오류 상태로 고정. 재조회 버튼이 없으면 사용자는 원인이 사라진 뒤에도 "조회 실패"를 본다.
+- 근거: `load_*` 함수들이 예외를 던지지 않고 `DataResult`를 반환; `platform/cache.py`는 반환값 검사 없음.
+- 고치는 법: 캐시되는 내부 함수는 error/blocked에서 예외를 던져(캐시 안 됨) 바깥 래퍼가 `DataResult.error`로 바꾸거나, 캐시 데코레이터가 `status=="error"`이면 `st.cache_data.clear()` 대상 키만 무효화. TTL 상수는 reader 상단 한 곳(현재 각 함수에 흩어짐)에.
+- 확정(구조) / 난이도 중 / 결정 불필요
+
+### DB-03 [중] 실행 화면의 order_events·reconciliations는 로더가 한 번도 채우지 않는다
+- 영역: reporting/readers/dashboard.py:load_execution_data(≈245-256), dashboard/app_pages/execution.py:70,98,289-321, components/execution_view.py:34,82
+- 증상: payload에 `order_events`·`reconciliations` 키를 빈 리스트로 만들고 다섯 뷰(control_state/intents/approvals/orders/fills)만 채운다. 화면은 대사 횟수 "0회 / 기록 없음", 주문 이벤트 없음을 항상 표시. 동시에 `reporting/readers/runtime.py:read_runtime_rows`는 `order_events`·`reconciliation_runs` 데이터셋을 이미 지원한다.
+- 근거: 위 파일줄. 현재 로컬 원장에는 orders/intents 0행이라 오늘은 차이가 안 보이지만, 실주문이 시작되면 화면이 "대사가 한 번도 안 돌았다"를 조용히 주장한다(실제 대사 결과가 있어도).
+- 고치는 법: 로더에서 `read_runtime_rows("order_events")`·`("reconciliation_runs")`를 채우고, 원장이 없는 표는 "미수집"이 아니라 "기록 없음/조회 안 함"을 구분하는 상태를 화면에 추가.
+- 확정(코드 경로) / 난이도 하 / 결정 불필요
+
+### NT-04 [중] 스레드 재조회가 archived 100개에서 끊긴다 → 스레드 중복 생성
+- 영역: notifications/channels/discord.py:fetch_forum_threads(≈150-190) `.../threads/archived/public?limit=100`
+- 증상: `has_more`/`before`를 따라가지 않아 보관된 공개 스레드가 100개를 넘으면 오래된 종목의 스레드를 못 찾고, `deliver`가 `known_thread_id`(원장 threads 표)도 없으면 새 스레드를 만든다(=같은 종목 스레드 둘). 조회 자체가 실패하면 `_forum_destination`이 일부러 새 스레드 쪽으로 간다(docstring이 선택으로 명시).
+- 완화: 원장 `notifications.threads`가 기억한 종목은 이 경로를 안 탄다. 원장 도입 전 스레드/신규 종목에서만 발생.
+- 고치는 법: `has_more`면 마지막 `thread_metadata.archive_timestamp`를 `before`로 이어 받기(요청 상한 명시). 조회 실패 시 새 스레드 대신 `DeliveryUnknown`으로 미루는 대안은 정책 결정.
+- 확정(코드) / 난이도 중 / 스레드 생성 정책은 사용자 결정(Discord 실발송이 얽힘)
+
+### NT-05 [낮-중] 시계 기준이 섞여 있고 `kst_today`가 4벌 복제되어 있다
+- 영역: notifications/earnings_flash/candidates.py:22, earnings_report/candidates.py:44,123, macro/core.py:138,181, macro/embeds.py:137, econ_calendar/embeds.py:65, reporting/notifications/macro.py:102(`date.today()`), reporting/services/macro/freshness.py(KST), dashboard/calculations/_common.py `today_kst`, platform/clock.py `kst_today`, data/macro/commands `_kst_today`
+- 증상: 같은 매크로 카드 안에서 `occurrence`/카드 날짜/윈도 시작은 실행 환경 로컬 날짜(Actions=UTC, 로컬 하네스=KST), 신선도는 KST. UTC 러너가 00~09시 KST에 돌면 카드 날짜와 "stale" 판정이 하루 어긋나고, 같은 시장일이 Actions/로컬에서 서로 다른 occurrence로 각각 카드를 만든다(skip_unchanged가 내용이 같으면 막아 주므로 값이 다를 때만 노출).
+  `_cutoff()`의 lookback도 로컬 날짜 기준이라 경계 1일 오차.
+- 고치는 법: 전부 `platform.clock.kst_today()`(또는 UTC 명시) 하나로. `freshness.kst_today`·`dashboard._common.today_kst`·`data/macro._kst_today`는 그 함수를 재수출하거나 제거. 가드: 이 세 패키지에서 `date.today()` 금지 테스트(위반 주입으로 확인).
+- 확정 / 난이도 하 / 결정 불필요(재발송 없음)
+
+### DB-04 [낮-중] `load_alpha_lab_data`가 로컬 원장을 통째로 읽어 파이썬에서 자른다 + 예외를 이름만 남기고 버림
+- 영역: reporting/readers/dashboard.py:load_alpha_lab_data(≈320-400), load_latest_target, reporting/readers/runtime.py:read_runtime_rows
+- 증상: `signals`, `risk_decisions`, `portfolio_proposals` 등을 `SELECT *` 전체로 가져와 `sort` 후 `[:200]`/`[:80]`로 자른다. `load_latest_target`은 `portfolio_proposals`를 두 번 전체 읽는다. 2분 TTL마다 원장이 커질수록 선형 증가. 각 데이터셋 실패는 `except Exception: failures.append(key)`로 이유·로그 없이 삼켜 "일부 데이터셋 조회 실패: signals" 문구만 남는다.
+- 고치는 법: `read_runtime_rows(dataset, *, order_by=None, limit=None)`로 SQL `ORDER BY ... LIMIT`를 넘기고(allowlist 안 컬럼만), 한 로더 안에서 같은 표를 한 번만 읽음. 실패는 `log.warning(..., exc_info=True)`.
+- 확정 / 난이도 중 / 결정 불필요
+
+### DB-05 [낮] ml_rl_lab의 policy 로더가 손상 JSON과 "파일 없음"을 같은 None으로 삼킨다
+- 영역: dashboard/app_pages/ml_rl_lab.py:29-35
+- 증상: `except Exception: return None`. (DB-01 때문에 현재는 도달도 못 함.) 고친 뒤 손상 파일이 "아직 챔피언 없음"으로 보인다.
+- 고치는 법: `json.JSONDecodeError`/`OSError`만 잡아 화면에 오류 문구.
+- 확정 / 난이도 하 / 결정 불필요
+
+### RP-04 [낮] `_ttm`이 최근 4행의 연속성(분기 간격)을 확인하지 않는다
+- 영역: reporting/notifications/earnings_report.py:`_ttm`, `_quarterly_by_ticker`
+- 증상: `rows[-4:]`가 실제로 연속한 4분기인지 보지 않아, 중간 분기가 비면 5분기 걸친 합이 TTM으로 나간다(TTM 밸류·이익의 질·건전성 전부에 파급).
+- 수치(운영 fundamentals.financials): 인접 period_end 간격이 110일 초과인 곳 83/18,415(0.45%).
+- 고치는 법: 창의 period_end 간격이 (80~100일) 범위 밖이면 None(정직한 결측). 간격 상수는 이 모듈 상단 한 곳.
+- 확정 / 난이도 하 / 결정 불필요
+
+### RP-05 [낮] 응답 없는 stub과 죽은 경로가 카드 파이프라인에 남아 있다
+- 영역: reporting/notifications/earnings_report.py:`load_sector_rows`(→[]), `load_price_targets`(→[]), `HEADLINE_PERIODS`의 "FY"(DB에 FY 행 0개), candidates.py의 `sector_row/sector_prev/sector_history`, run.py `price_targets`; operations/commands/notify.py `_dispatch`의 `iscoroutinefunction` 분기(async run 함수 0개)
+- 증상: 항상 빈 값을 흘려보내는 경로 — 규칙 10(지금 왜 이런지) 위반, 그리고 값이 채워진 척하는 자리. 
+- 수치: financials fiscal_period 분포 Q1/Q2/Q3/Q4만(4.7천행씩), FY 0.
+- 고치는 법: 소비처가 있는지 확인 후 stub 제거(소비 코드도 함께).
+- 확정 / 난이도 하 / 결정 불필요
+
+### NT-06 [낮] 임시 PNG·중복 헬퍼
+- 영역: notifications/playwright.py:42(`abs(hash(html)) % 10**8`), earnings_report/run.py:`_persist_png` vs playwright.persist_png(같은 구현 복제), earnings_report/render.py:20-22(`inject_windows_font_fallback`를 render에서 한 번, capture_html_to_png에서 또 한 번 → @font-face 이중 주입), `Path("artifacts")` 상대경로
+- 증상: `hash(str)`는 프로세스마다 랜덤(PYTHONHASHSEED)이라 같은 HTML도 실행마다 다른 파일명이고, 원본 임시 PNG는 `persist_png` 뒤에도 안 지워져 %TEMP%에 누적. `persist_png`는 CWD 상대경로(`artifacts/notifications/...`)라 harness 작업 디렉터리가 저장소 루트가 아니면 다른 곳에 쓰고 dispatcher가 못 찾음(현재는 루트에서 실행).
+- 고치는 법: `content_hash`(platform.serialization) 기반 이름, 복사 후 원본 삭제, `repository_root()` 기준 경로, 중복 `_persist_png` 삭제.
+- 확정 / 난이도 하 / 결정 불필요
+
+### NT-07 [낮] 환경변수 문서 누락
+- `FLASH_NOTIFY_LOOKBACK_DAYS`(notifications/earnings_flash/candidates.py), `DASHBOARD_HARNESS_STALE_SECONDS`(dashboard/ops.py)가 docs/ENV.md에 없다(다른 lookback 3개는 있음). `int(env)`가 음수·0을 검증하지 않아 `FUNDAMENTALS_NOTIFY_LOOKBACK_DAYS=-1`이면 조회 창이 미래가 되어 카드가 조용히 0장.
+- 고치는 법: docs/ENV.md 추가, 공통 `int_env(name, default, lo, hi)` 도우미(예: `AI_INVESTOR_TRADE_LOOKBACK_HOURS`는 이미 범위 검사가 있음 → 같은 형식으로 통일).
+- 확정 / 난이도 하 / 결정 불필요
+
+### RP-06 [낮] 경제발표 화면 두 목록 사이의 사각지대
+- 영역: reporting/readers/dashboard.py:`load_econ_upcoming`(status in scheduled/not_available_yet, 창 [now, now+d]) vs `load_econ_recent_results`(status=="released", 창 [now-d, now])
+- 증상: 예정 시각이 지났는데 실제값이 안 들어온 발표(status=not_available_yet, 전부 과거)는 두 목록 어디에도 안 나온다.
+- 수치(운영): not_available_yet 86건 전부 과거(최근 60일 안 2건: US_MICHIGAN_SENTIMENT 2026-08-01, KR_EXPORT 2026-08-01).
+- 고치는 법: recent 목록에 "예정 지남·미수집" 상태를 포함하거나 별도 섹션. (원천 미수집 자체는 macro owner 몫)
+- 확정 / 난이도 하 / 결정 불필요
+
+---------------------------------------------------------------------------------------------------
+
+## 의심 항목 (경로는 있으나 오늘 발현 미확인)
+
+### RP-07 [의심·중] 대시보드 13F가 정정공시(NEW HOLDINGS)를 모르고 "최신/직전"을 고른다
+- 영역: dashboard/app_pages/gurus.py:632-660(`filings_by_manager` 정렬 후 [0]=latest, [1]=previous), reporting/readers/dashboard.py:load_guru_data
+- 사실: 같은 (manager, period)에 정정공시가 있다(운영: BRK 2023-09-30 [152,152,1행], 2025-03-31 [110,4행], 2021-12-31 등 5건). `data/institutional/domain/analysis.py:_authoritative_filings`는 기준+NEW HOLDINGS 결합을 이미 구현했는데 대시보드 경로는 accession 하나만 본다.
+- 현재 안전한 이유: 지금 각 매니저의 최신 공시는 전부 정정이 아님(distinct on 조회). 그러나 previous(직전 분기) 선택이 정정 있는 분기에 걸리면 4행짜리 정정공시가 "직전 장부"가 되어 나머지 106종이 전부 "신규"로 뜬다(`_long_equity_book`은 accession 1개만 받음).
+- 고치는 법: 대시보드도 domain의 authoritative 결합을 reporting 경계로 노출해 사용(중복 진실 제거).
+- 의심(잠복) / 난이도 중 / 결정 불필요
+
+### RP-08 [의심·낮] 정렬이 유일하지 않은 페이지네이션
+- 영역: reporting/readers/financial.py VIEWS `order_by`, reporting/readers/earnings.py `_canonical_segment_rows`(order period_end,cik,segment_type,axis), `_canonical_processing_rows`(updated_at,accession_no)
+- 사실(운영 수치): `institutional_filings`의 order_by(manager_cik,period_end) 145행 중 distinct 139 — 동률 있음. `segment_metrics`는 (cik,period_end,segment_type,axis) 동률 그룹 9,085개(멤버가 여럿이므로 당연). 나머지 reporting 뷰(prices_daily 913,277행, macro_* 등)는 order 키가 유일함을 확인.
+- 영향: 현재는 각 조회가 1,000행 미만(institutional_filings 145, 세그먼트는 limit 600 단일 페이지)이라 안 터진다. 행이 1,000을 넘어 2페이지가 되면 `range()` 경계에서 행이 중복/누락된다.
+- 고치는 법: 유일키(accession_no/segment_hash/member)를 order 끝에 붙이는 규칙을 `ViewSpec` 검증 테스트로(order_by가 뷰의 PK를 포함하는지). 
+- 의심(잠복) / 난이도 하 / 결정 불필요
+
+### RP-09 [의심·낮] `select_rows`가 상한에서 조용히 자른다
+- 영역: reporting/readers/select_only.py:`read`(rows[:ceiling]), earnings.py의 `max_rows`(financials 전종목 8,000, consensus 5,000, prices 2,000)
+- 사실: 상한 도달 여부를 호출자에게 알리지 않는다. 전종목 재무는 관심종목 50×~40분기라 현재 8,000 안. consensus 5,000은 snapshot_date 내림차순이라 초과 시 오래된 스냅샷이 사라짐(카드 서프라이즈는 발표 직전 스냅샷 의존 — 메모리 참조).
+- 고치는 법: 상한에 닿으면 `DataResult.message`에 "N행에서 잘림"을 싣는 반환 형태.
+- 의심(잠복) / 난이도 하 / 결정 불필요
+
+### NT-08 [의심·낮] 'sending' 상태에서 죽으면 영구 미발송이고 어디에도 안 드러난다
+- 영역: db/postgres/v1/60_notifications.sql:36(주석: "sending은 만료돼도 자동으로 다시 잡지 않는다"), notifications/engine.py `_deliver`, `unsettled()`
+- 사실: `begin_send` 뒤 프로세스가 죽거나 `finish`가 예외(engine이 삼키고 note_problem)면 행이 `sending`으로 남는다. reserve는 `reserved`(lease 만료)·`failed`만 다시 잡고, `unsettled()`도 `failed/reserved`만 보며, Python 쪽에 `sending` 스윕/경보가 없다(SQL에는 60번 줄 부분 인덱스만 있음). 중복 방지에는 옳은 선택이지만 "안 나간 카드"가 조용히 남는다.
+- 현재: 운영 notices에 sending/failed/unknown/abandoned 행 0개(확인함) → 미발현.
+- 고치는 법: 일정 시간 넘은 `sending`을 `unknown`으로 넘기고 `note_problem`으로 올리는 점검(operations/monitoring 쪽), 재발송은 사람이 `notify --force`.
+- 의심 / 난이도 중 / 알림 재발송 정책은 사용자 결정
+
+### NT-09 [의심·낮] 프로세스 수명 캐시(길드 디렉터리·스레드 색인)에 TTL이 없다
+- 영역: notifications/channels/directory.py:`_CACHE`, discord.py:`DiscordChannel._threads`
+- 사실: `reset_cache`는 정의돼 있으나 부르는 곳이 없다(operations에서 grep 0건). 장기 실행 하네스에서는 새 포럼 태그·채널·다른 실행이 만든 스레드가 프로세스가 죽을 때까지 안 보인다. 새 종목 태그가 안 붙는 것으로 조용히 나타남.
+- 고치는 법: TTL(예: 1시간) 또는 실행마다 `PublishContext` 생성 시 리셋.
+- 의심 / 난이도 하 / 결정 불필요
+
+### RP-10 [의심·낮] `security_identity`의 `by_cik` 충돌
+- 영역: reporting/readers/select_only.py:security_identity(≈55-60)
+- 사실: 같은 CIK에 티커가 둘(GOOG/GOOGL, BRK-A/B, FOX/FOXA, NWS/NWSA 운영 확인)이면 `by_cik`가 정렬상 마지막 티커 하나만 남아 재무·세그먼트 행이 그 티커로만 붙는다. 현재 호출 경로는 `watchlist_members`가 회사당 대표 1티커만 주므로(그 함수가 보장) 발현 안 함. 다중 티커를 넘기는 새 호출자가 생기면 조용히 한쪽이 비는 구조.
+- 고치는 법: `by_cik`를 `dict[cik, list]`로 하거나 docstring/가드로 "회사당 대표 1티커만" 계약을 명시.
+- 의심 / 난이도 하 / 결정 불필요
+
+### NT-10 [의심·낮] `recent_orders`의 `updated_at >= since_at` 문자열 비교
+- 영역: reporting/notifications/investment/db.py:recent_orders, run_trades.py
+- 사실: `since.isoformat()`(+00:00, 마이크로초)과 SQLite `updated_at` 텍스트를 사전순으로 비교. 원장 쪽 직렬화 형식이 다르면(예: 'Z', 공백 구분) 조회 창 경계에서 어긋난다. 현재 orders 0행이라 확인 불가.
+- 고치는 법: 파싱해 aware datetime으로 비교.
+- 의심 / 난이도 하 / 결정 불필요
+
+---------------------------------------------------------------------------------------------------
+
+## 검토했으나 결함 아님(참고)
+- engine.publish: reserve→begin_send→전송→finish 순서와 nonce 재시도(`_create`)는 정합. 새 스레드 생성 시 nonce 없음을 알고 재시도 안 함 — 올바름.
+- 원장 `states()`/`select_in_chunks`는 order_by를 주고 청크·페이지 모두 처리.
+- `watchlist_members`는 회사당 대표 1티커 — earnings_report `_financial_rows`의 `by_cik` 충돌은 이 계약 덕에 실제로 안 터짐(RP-10 참고).
+- 첨부 PNG 크기(약 300KB, 2160×~3050px)는 Discord 한도 내.
+- reporting 뷰 order_by 유일성: prices_daily·macro_*·securities·company_financials_latest·earnings_* 확인 완료(동률 없음).

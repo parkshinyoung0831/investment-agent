@@ -14,8 +14,8 @@ import math
 from typing import Any, Mapping, Sequence
 
 from investment_agent.trading.system.accounting import performance_summary
+from investment_agent.portfolio_weights import CASH_SYMBOL
 
-CASH_SYMBOL = "CASH"
 # 주문 원장에서 아직 끝나지 않은 상태. 실행 화면(`dashboard.components.execution_view`)과 같은 기준이다.
 _OPEN_ORDER_STATES = frozenset({"planned", "submitted", "partially_filled", "outcome_unknown", "reconciling"})
 

@@ -109,7 +109,7 @@ def build_approval_card(
                 ),
                 "inline": False,
             },
-            {"name": "승인 만료", "value": request.expires_at, "inline": False},
+            {"name": "승인 만료", "value": f"<t:{int(request.expires_at.timestamp())}:F>", "inline": False},
         ],
         "footer": {
             "text": f"{request.approval_id} · 자유문장/답장/emoji는 승인되지 않습니다"

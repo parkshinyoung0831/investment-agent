@@ -80,15 +80,26 @@ class WriterTest(unittest.TestCase):
         self.assertEqual(db._times(row, now)["collected_at"], now.isoformat())
         self.assertEqual(db._times(row, now)["effective_at"], "2020-08-01T00:00:00+00:00")
 
-    def test_model_history_uses_release_periods_instead_of_dense_policy_rate_days(self) -> None:
-        with patch.object(db, "_select", return_value=[{"ref_period": "2026-08-01", "value": 3.5, "effective_at": "2026-08-02", "collected_at": "2026-08-02"}, {"ref_period": "2026-09-01", "value": 4.0, "effective_at": "2026-09-02", "collected_at": "2026-09-02"}]):
-            values = db.primary_history("US_FOMC_FED_FUNDS")
-        self.assertEqual(values, [3.5, 4.0])
+    def test_history_is_in_the_units_of_the_forecast_measure_not_the_raw_index(self) -> None:
+        """CPI 지수(332→333)로 MOM 예상을 이으면 예상이 335로 저장된다. 이력은 MOM(%)이어야 한다."""
+        rows = [
+            {"ref_period": "2026-06-01", "value": 100.0, "effective_at": "2026-07-01", "collected_at": "2026-07-01"},
+            {"ref_period": "2026-07-01", "value": 101.0, "effective_at": "2026-08-01", "collected_at": "2026-08-01"},
+            {"ref_period": "2026-08-01", "value": 101.0, "effective_at": "2026-09-01", "collected_at": "2026-09-01"},
+        ]
+        measure = {"measure_id": "US_CPI.MOM", "transform": "pct_change_1"}
+        with patch.object(db, "_select", return_value=rows), patch.object(db, "_series_key", return_value=1):
+            values = db.measure_actual_history("US_CPI", measure, "monthly")
+        self.assertEqual(len(values), 2)
+        self.assertAlmostEqual(values[0], 1.0)
+        self.assertAlmostEqual(values[1], 0.0)
 
-    def test_nonprimary_forecast_target_reads_its_own_measure_history(self) -> None:
-        with patch.object(db, "_select", return_value=[{"ref_period": "2026-08-01", "value": 2.0, "effective_at": "2026-08-02", "collected_at": "2026-08-02"}, {"ref_period": "2026-09-01", "value": 1.0, "effective_at": "2026-09-02", "collected_at": "2026-09-02"}]):
-            values = db.measure_history("US_M2", "US_M2.YOY")
-        self.assertEqual(values, [2.0, 1.0])
+    def test_level_measure_history_is_the_raw_history(self) -> None:
+        rows = [{"ref_period": "2026-08-01", "value": 3.5, "effective_at": "2026-08-02", "collected_at": "2026-08-02"},
+                {"ref_period": "2026-09-01", "value": 4.0, "effective_at": "2026-09-02", "collected_at": "2026-09-02"}]
+        measure = {"measure_id": "US_FOMC_FED_FUNDS.LEVEL", "transform": "level"}
+        with patch.object(db, "_select", return_value=rows), patch.object(db, "_series_key", return_value=1):
+            self.assertEqual(db.measure_actual_history("US_FOMC_FED_FUNDS", measure, "monthly"), [3.5, 4.0])
 
 
 class IngestTest(unittest.TestCase):
@@ -109,15 +120,13 @@ class IngestTest(unittest.TestCase):
         with (patch.object(db, "releases_within", return_value=[release]),
               patch.object(db, "measures_by_series", return_value=definitions),
               patch.object(db, "enabled_series", return_value=[setting]),
-              patch.object(db, "measure_history", return_value=[1.0, 2.0]) as history,
-              patch.object(db, "primary_history") as primary_history,
+              patch.object(db, "measure_actual_history", return_value=[1.0, 2.0]) as history,
               patch.object(etl.baseline, "drift_forecast", return_value={"method": "naive", "value": 2.0}),
               patch.object(db, "append_forecasts", return_value=1) as append):
             inserted, failures = etl.snapshot_forecasts(now=now)
         self.assertEqual(inserted, 1)
         self.assertEqual(failures, [])
-        history.assert_called_once_with("US_M2", "US_M2.YOY")
-        primary_history.assert_not_called()
+        history.assert_called_once_with("US_M2", definitions["US_M2"][1], "monthly")
         self.assertEqual(append.call_args.args[0][0]["measure_id"], "US_M2.YOY")
 
     def test_first_calculable_value_is_detected_without_writing_an_actual_copy(self) -> None:

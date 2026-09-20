@@ -19,11 +19,11 @@ from typing import Any, Callable
 
 from investment_agent.operations.harness.switch import get_harness_status
 from investment_agent.operations.palette import CONTROL_CENTER_PALETTE
-from investment_agent.platform.storage_paths import repository_root
+from investment_agent.platform.storage_paths import harness_state_dir, repository_root
 
 
 ROOT = repository_root()
-STATE_DIR = ROOT / "artifacts" / "ops" / "investment_harness"
+STATE_DIR = harness_state_dir()
 FONT_SANS = "Pretendard"
 MODE_LABELS = {
     "모의투자 · analysis_only": "analysis_only",

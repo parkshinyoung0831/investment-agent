@@ -21,6 +21,7 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
+from investment_agent.data.market.domain.calendar import bar_available_at, completed_bar_cutoff
 from investment_agent.trading.contracts import ContractError, parse_datetime
 from investment_agent.trading.decision.contracts import MarketRegime
 from investment_agent.trading.decision.regime import DEFAULT_THRESHOLDS, RegimeThresholds, build_market_regime
@@ -41,7 +42,7 @@ REGIME_LIMITS: Mapping[str, RegimeLimits] = {
     "RISK_OFF": RegimeLimits(0.8, 0.8, 0.15, True),
     "CRISIS": RegimeLimits(0.5, 0.6, 0.40, False),
 }
-REGIME_BUDGET_VERSION = "regime-risk-budget-v1"
+REGIME_BUDGET_VERSION = "regime-risk-budget-v2"
 
 
 @dataclass(frozen=True)
@@ -56,12 +57,16 @@ class MarketRiskPolicy:
     volatility_window: int = 20
     drawdown_window: int = 252
     minimum_observations: int = 60
+    # 거래소 달력을 추측하지 않는 보수적 유효기간. 주말+휴일을 허용하되 장기 정체는 차단한다.
+    max_price_age_days: int = 4
 
     def __post_init__(self) -> None:
         if set(self.limits) != set(REGIME_LIMITS):
             raise ValueError("market risk limits must define every regime state")
         if min(self.trend_window, self.volatility_window, self.drawdown_window, self.minimum_observations) < 2:
             raise ValueError("market risk windows must be at least 2")
+        if isinstance(self.max_price_age_days, bool) or not isinstance(self.max_price_age_days, int) or self.max_price_age_days < 0:
+            raise ValueError("max_price_age_days must be a non-negative integer")
 
     def to_dict(self) -> dict[str, Any]:
         return {**asdict(self), "limits": {state: asdict(limit) for state, limit in sorted(self.limits.items())}}
@@ -109,12 +114,20 @@ def regime_from_benchmark_prices(
             close = float(row["close"])
         except (KeyError, TypeError, ValueError) as exc:
             raise ContractError("benchmark price row is invalid") from exc
-        if trade_date <= as_of.date() and math.isfinite(close) and close > 0:
-            closes[trade_date] = close
+        if bar_available_at(trade_date, row.get("ingested_at")) > as_of:
+            continue
+        if not math.isfinite(close) or close <= 0:
+            raise ContractError("benchmark close must be positive and finite")
+        if trade_date in closes and not math.isclose(closes[trade_date], close, rel_tol=0.0, abs_tol=1e-10):
+            raise ContractError(f"conflicting benchmark prices for {trade_date.isoformat()}")
+        closes[trade_date] = close
     ordered = np.asarray([closes[key] for key in sorted(closes)], dtype=float)
     needed = max(policy.minimum_observations, policy.trend_window, policy.volatility_window) + 1
     if len(ordered) < needed:
         raise ContractError("insufficient benchmark history for a market regime")
+    latest = max(closes)
+    if (completed_bar_cutoff(as_of) - latest).days > policy.max_price_age_days:
+        raise ContractError(f"stale benchmark history: last close {latest.isoformat()}")
     returns = ordered[1:] / ordered[:-1] - 1.0
     window = ordered[-policy.drawdown_window:]
     return build_market_regime(

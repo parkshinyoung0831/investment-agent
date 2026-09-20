@@ -10,6 +10,7 @@ from investment_agent.execution.orders.intents import ExecutionIntent
 from investment_agent.trading.portfolio.contracts import RiskDecision
 from investment_agent.platform.logging import get_logger
 from investment_agent.execution.db import ExecutionRepository
+from investment_agent.portfolio_weights import CASH_SYMBOL
 
 log = get_logger(__name__)
 
@@ -39,7 +40,7 @@ def validate_paper_scope(
     eligible = {str(symbol).upper() for symbol in current_tracked} | preserved
     outside = sorted(
         str(symbol).upper() for symbol, weight in approved_weights.items()
-        if str(symbol).upper() != "CASH"
+        if str(symbol).upper() != CASH_SYMBOL
         and float(weight) > 0.0
         and str(symbol).upper() not in eligible
     )

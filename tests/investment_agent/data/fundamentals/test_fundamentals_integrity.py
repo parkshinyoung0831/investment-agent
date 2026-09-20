@@ -76,7 +76,7 @@ class SemanticPolicyTest(unittest.TestCase):
             "current_portion_of_long_term_debt": 10,
             "long_term_debt": 80,
         }
-        self.assertEqual(metrics._total_debt(row), 100)
+        self.assertEqual(metrics.total_debt(row), 100)
 
 
 class ManifestTest(unittest.TestCase):

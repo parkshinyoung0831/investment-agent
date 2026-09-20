@@ -12,11 +12,12 @@ from typing import Any
 
 from investment_agent.dashboard.calculations import inspect_harness_state
 from investment_agent.platform.cache import cache_data
+from investment_agent.platform.storage_paths import harness_state_dir, repository_root
 from investment_agent.reporting.models import DataResult, public_exception_message
 
 
-ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_HARNESS_STATE = ROOT / "artifacts" / "ops" / "investment_harness" / "state.json"
+ROOT = repository_root()
+DEFAULT_HARNESS_STATE = harness_state_dir() / "state.json"
 LOCAL_SOURCE_HARNESS = "로컬 읽기 · investment harness state.json"
 
 

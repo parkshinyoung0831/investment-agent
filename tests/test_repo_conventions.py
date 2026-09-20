@@ -271,11 +271,17 @@ class DatabaseNameConstantsTest(unittest.TestCase):
             for node in ast.walk(_tree(path)):
                 if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
                     continue
-                if node.func.attr not in {"table", "rpc", "schema"} or not node.args:
+                if node.func.attr not in {"table", "rpc", "schema"}:
                     continue
-                first = node.args[0]
-                if isinstance(first, ast.Constant) and isinstance(first.value, str):
-                    literals.append(f"{_posix(path)}:{node.lineno} .{node.func.attr}({first.value!r})")
+                # `.table(SCHEMA, "리터럴")`처럼 둘째 위치 인자와 `table=`/`schema=`/`rpc=` 키워드도 본다.
+                # 첫 인자만 보면 표 이름이 두 번째 자리에 있는 호출이 조용히 통과한다.
+                candidates = list(node.args) + [
+                    keyword.value for keyword in node.keywords
+                    if keyword.arg in {"table", "schema", "rpc"}
+                ]
+                for value in candidates:
+                    if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                        literals.append(f"{_posix(path)}:{node.lineno} .{node.func.attr}({value.value!r})")
         self.assertEqual([], literals, "DB 이름 리터럴 — 모듈 상수를 쓰세요")
 
 

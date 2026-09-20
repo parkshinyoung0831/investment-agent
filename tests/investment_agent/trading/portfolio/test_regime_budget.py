@@ -5,6 +5,7 @@ from dataclasses import asdict
 from datetime import date, datetime, timedelta, timezone
 
 from investment_agent.trading.decision.regime import build_market_regime
+from investment_agent.trading.contracts import ContractError
 from investment_agent.trading.portfolio.contracts import PortfolioProposal
 from investment_agent.trading.portfolio.optimizer import ExpectedReturnSignal, OptimizerPolicy, RiskAwareOptimizer
 from investment_agent.trading.risk.gate import DeterministicRiskGate, PortfolioRiskPolicy, portfolio_turnover
@@ -31,6 +32,28 @@ def _prices(returns: list[float]) -> list[dict]:
 
 
 class RegimeBudgetTest(unittest.TestCase):
+    def test_stale_benchmark_does_not_reopen_normal_risk_budget(self):
+        with self.assertRaisesRegex(ContractError, "stale benchmark"):
+            regime_from_benchmark_prices(_prices([0.001] * 120), as_of_at=AS_OF + timedelta(days=30))
+
+    def test_unfinalized_same_day_bar_is_not_a_close(self):
+        rows = _prices([0.001] * 120)
+        baseline = regime_from_benchmark_prices(rows, as_of_at=AS_OF)
+        rows.append({"trade_date": AS_OF.date().isoformat(), "close": 1.0})
+        self.assertEqual(regime_from_benchmark_prices(rows, as_of_at=AS_OF), baseline)
+
+    def test_conflicting_or_nonfinite_benchmark_rows_are_not_silently_dropped(self):
+        rows = _prices([0.001] * 120)
+        for close in (float("nan"), float("inf"), -1.0, 99.0):
+            with self.subTest(close=close), self.assertRaises(ContractError):
+                regime_from_benchmark_prices(rows + [{**rows[-1], "close": close}], as_of_at=AS_OF)
+
+    def test_weekend_holiday_gap_is_accepted(self):
+        # 금요일 확정 봉은 월요일 휴장 다음 화요일 장전에도 사용할 수 있다.
+        rows = [row for row in _prices([0.001] * 120) if row["trade_date"] <= "2026-09-11"]
+        regime = regime_from_benchmark_prices(rows, as_of_at="2026-09-15T13:00:00+00:00")
+        self.assertIn(regime.risk_state, {"RISK_ON", "NORMAL"})
+
     def test_no_regime_ever_loosens_the_base_policy(self):
         base = PortfolioRiskPolicy()
         for inputs in ({"benchmark_return": 0.05, "volatility": 0.10}, {}, {"volatility": 0.35}, {"drawdown": 0.3}):

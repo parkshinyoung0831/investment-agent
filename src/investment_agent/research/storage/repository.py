@@ -67,10 +67,13 @@ class ResearchStore:
         with duckdb_store.transactional_connection(
             self.path,
             ddl_dir=_PROJECT_ROOT / RESEARCH_DDL_DIR,
+            after_ddl=self._migrate_legacy,
         ) as connection:
-            self._migrate_legacy_strategy_allocations(connection)
-            self._migrate_legacy_bulk_tables(connection)
             yield connection
+
+    def _migrate_legacy(self, connection: Any) -> None:
+        self._migrate_legacy_strategy_allocations(connection)
+        self._migrate_legacy_bulk_tables(connection)
 
     @staticmethod
     def _columns(connection: Any, table: str) -> set[str]:

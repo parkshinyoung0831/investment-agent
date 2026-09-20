@@ -12,11 +12,12 @@ from typing import Any
 
 import requests
 
+from investment_agent.platform.env import env_float
 from investment_agent.platform.retry import transient_retry
 
 DATA_BASE = "https://data.sec.gov"
 ARCHIVE_BASE = "https://www.sec.gov/Archives"
-_REQUEST_GAP_SEC = float(os.environ.get("SEC_REQUEST_GAP_SEC", "0.12"))
+_REQUEST_GAP_SEC = env_float("SEC_REQUEST_GAP_SEC", 0.12)
 
 _RATE_LOCK = threading.Lock()
 _NEXT_REQUEST_AT = 0.0

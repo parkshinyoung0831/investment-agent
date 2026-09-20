@@ -318,7 +318,35 @@ def _measure_value(measure: dict[str, Any], frequency: str, series_rows: list[di
     return values.get(date.fromisoformat(ref_period[:10]), {}).get(str(measure["measure_id"]))
 
 
-def _summary_rows(*, start: datetime, end: datetime, as_of: datetime) -> list[dict[str, Any]]:
+def _events_scheduled_within(
+    events: list[dict[str, Any]],
+    schedules: dict[tuple[Any, ...], dict[str, Any]],
+    *,
+    start: datetime,
+    end: datetime,
+) -> list[dict[str, Any]]:
+    """발표 시각(`scheduled_at`)이 창 안인 이벤트만 고른다.
+
+    창은 "언제 발표되나"를 묻는다. `ref_period`(관측 기간)로 거르면 월간 지표는 전월 1일,
+    주간 청구는 발표 5일 전이라 창 밖이 되어, 15분 감시가 그 발표를 보지 못한다.
+    """
+    selected = []
+    for event in events:
+        schedule_row = schedules.get((str(event["series_id"]), str(event["ref_period"])))
+        if schedule_row is None:
+            continue
+        if start <= datetime.fromisoformat(_utc_iso(schedule_row["scheduled_at"])) <= end:
+            selected.append(event)
+    return selected
+
+
+def _summary_rows(
+    *,
+    as_of: datetime,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    event_keys: set[tuple[str, str]] | None = None,
+) -> list[dict[str, Any]]:
     """발표 하나 = 한 행. 실제·예상·서프라이즈는 전부 대표 measure 단위다.
 
     `reporting.macro_release_summary`와 같은 규칙이다. 최초 발표 값은 최초 빈티지로 계산하고,
@@ -327,8 +355,14 @@ def _summary_rows(*, start: datetime, end: datetime, as_of: datetime) -> list[di
     """
     series = {str(row["series_id"]): row for row in _series_rows() if row["domain"] == "economic_release"}
     primary = primary_measures()
-    events = _select(lambda: _table(T_RELEASE_EVENTS).select("series_key,ref_period").gte("ref_period", start.date().isoformat()).lte("ref_period", end.date().isoformat()), order_by="series_key,ref_period")
     schedules = _latest_by(_select(lambda: _table(T_SCHEDULE_VERSIONS).select("*"), order_by="series_key,ref_period,collected_at"), ("series_id", "ref_period"), as_of=as_of)
+    if event_keys is not None:
+        events = [{"series_id": series_id, "ref_period": ref_period} for series_id, ref_period in sorted(event_keys)]
+    else:
+        if start is None or end is None:
+            raise ValueError("a release window needs both start and end")
+        all_events = _select(lambda: _table(T_RELEASE_EVENTS).select("series_key,ref_period"), order_by="series_key,ref_period")
+        events = _events_scheduled_within(all_events, schedules, start=start, end=end)
     observations = _select(lambda: _table(T_OBSERVATIONS).select("*"), order_by="series_key,observation_date,vintage_at,available_at")
     obs_by_series: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in observations:
@@ -427,25 +461,28 @@ def due_releases(*, now: datetime | None = None, limit: int = 50) -> list[dict[s
 def summaries_for(event_keys: set[str]) -> dict[str, dict[str, Any]]:
     if not event_keys:
         return {}
-    periods = [split_event_key(key)[1] for key in event_keys]
-    start = datetime.fromisoformat(f"{min(periods)}T00:00:00+00:00") - timedelta(days=1)
-    end = datetime.fromisoformat(f"{max(periods)}T00:00:00+00:00") + timedelta(days=1)
     wanted = set(event_keys)
-    return {row_event_key(row): row for row in calendar_window(start=start, end=end) if row_event_key(row) in wanted}
+    rows = _summary_rows(as_of=datetime.now(_UTC), event_keys={split_event_key(key) for key in wanted})
+    return {row_event_key(row): row for row in rows if row_event_key(row) in wanted}
 
 
-def primary_history(series_id: str, limit: int = 60) -> list[float]:
-    rows = _select(lambda: _table(T_OBSERVATIONS).select("series_key,observation_date,value,vintage_at,available_at").eq("series_key", _series_key(series_id)), order_by="observation_date,vintage_at,available_at")
+def measure_actual_history(series_id: str, measure: dict[str, Any], frequency: str, limit: int = 60) -> list[float]:
+    """예상 대상 measure의 **실제값** 이력. 원값 빈티지에서 measure 변환을 적용해 얻는다.
+
+    자체 예상은 이 이력의 다음 값을 잇는다. 원값(지수 수준·고용자 수)을 그대로 쓰면
+    MOM·MONTHLY_CHANGE 같은 변환 measure의 예상이 원값 수준으로 저장된다(CPI MOM=335).
+    발표 실제값(`_measure_value`)과 같은 `calculate_family` 규칙이다.
+    """
+    rows = _select(
+        lambda: _table(T_OBSERVATIONS).select("series_key,observation_date,value,vintage_at,available_at").eq("series_key", _series_key(series_id)),
+        order_by="observation_date,vintage_at,available_at",
+    )
     latest = _latest_by(rows, ("ref_period",))
-    return [float(row["value"]) for row in sorted(latest.values(), key=lambda row: str(row["ref_period"]))][-max(1, min(limit, 500)):]
-
-
-def measure_history(series_id: str, measure_id: str, limit: int = 60) -> list[float]:
-    if not measure_id.startswith(f"{series_id}."):
-        raise ValueError("history measure and series must match")
-    rows = [row for row in _select(lambda: _table(T_FORECAST_VERSIONS).select("series_key,ref_period,value,effective_at,collected_at").eq("series_key", _series_key(series_id)).eq("measure_id", measure_id), order_by="ref_period,effective_at,collected_at") if row.get("value") is not None]
-    latest = _latest_by(rows, ("ref_period",))
-    return [float(row["value"]) for row in sorted(latest.values(), key=lambda row: str(row["ref_period"]))][-max(1, min(limit, 500)):]
+    raw = {date.fromisoformat(str(row["ref_period"])[:10]): float(row["value"]) for row in latest.values()}
+    values = normalize.calculate_family([{**measure, "frequency": frequency}], raw)
+    measure_id = str(measure["measure_id"])
+    history = [values[period][measure_id] for period in sorted(values) if measure_id in values[period]]
+    return history[-max(1, min(limit, 500)):]
 
 
 def forecast_history(key: str) -> list[dict[str, Any]]:

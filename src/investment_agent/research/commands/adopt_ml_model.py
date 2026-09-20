@@ -41,6 +41,8 @@ def check_adoptable(payload: Mapping[str, Any]) -> AdoptionCheck:
     alpha = payload.get("out_of_sample_alpha")
     if not isinstance(alpha, Mapping):
         return AdoptionCheck(False, ("artifact has no out_of_sample_alpha; retrain with the current trainer",))
+    if not model.has_dependence_aware_oos:
+        reasons.append("OOS IC requires horizon-matched HAC inference; re-evaluate before explicit adoption")
     mean_ic = float(alpha.get("mean_ic") or 0.0)
     t_stat = float(alpha.get("ic_t_stat") or 0.0)
     dates = int(alpha.get("date_count") or 0)
@@ -50,7 +52,8 @@ def check_adoptable(payload: Mapping[str, Any]) -> AdoptionCheck:
         reasons.append(f"OOS IC t-stat must be >= {MIN_IC_T_STAT} (got {t_stat:.2f})")
     if dates < MIN_OOS_DATES:
         reasons.append(f"OOS must span >= {MIN_OOS_DATES} dates (got {dates})")
-    if float(alpha.get("mean_quantile_spread") or 0.0) <= 0.0:
+    spread = float(alpha.get("mean_quantile_spread") or 0.0)
+    if not math.isfinite(spread) or spread <= 0.0:
         reasons.append("top-minus-bottom quantile spread must be positive")
     if model.confidence <= 0.0:
         reasons.append("model confidence resolves to zero")

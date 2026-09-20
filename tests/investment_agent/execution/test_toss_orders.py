@@ -225,6 +225,47 @@ class TossOrderApiTest(unittest.TestCase):
             )
         self.assertEqual(caught.exception.code, "order-hours-closed")
 
+    def test_invalid_success_body_is_unknown_and_never_retried(self):
+        for body in (ValueError("invalid JSON"), [], None):
+            with self.subTest(body=body):
+                self.session.post.reset_mock()
+                self.session.post.return_value = FakeResponse(200, body)
+                with self.assertRaises(TossOrderOutcomeUnknown) as caught:
+                    self.api.create_order(
+                        command(), permit=permit(), controls=controls(), risk_state=risk_state(),
+                        manifest_hash=PLAN_HASH, now=NOW,
+                    )
+                self.assertEqual(caught.exception.client_order_id, command().client_order_id)
+                self.assertEqual(caught.exception.status_code, 200)
+                self.session.post.assert_called_once()
+
+    def test_invalid_modify_and_cancel_success_bodies_are_unknown(self):
+        modification = TossOrderModification(
+            client_order_id="modify-broker-1", order_type="LIMIT", existing_quantity="2",
+            reference_price_usd="100", limit_price_usd="99.5",
+        )
+        cancellation = LiveCancellationPermit(
+            approval_id="cancel-approval", broker_order_id="broker-1", account_seq=7,
+            approved_by_user_id="discord-user", issued_at="2026-08-22T00:59:00+00:00",
+            expires_at="2026-08-22T01:05:00+00:00", reason="test",
+        )
+        for operation in ("modify", "cancel"):
+            for body in (ValueError("invalid JSON"), []):
+                with self.subTest(operation=operation, body=body):
+                    self.session.post.reset_mock()
+                    self.session.post.return_value = FakeResponse(200, body)
+                    with self.assertRaises(TossOrderOutcomeUnknown):
+                        if operation == "modify":
+                            self.api.modify_order(
+                                account_seq=7, order_id="broker-1", modification=modification,
+                                permit=permit(allowed_client_order_ids=("modify-broker-1",)),
+                                controls=controls(), risk_state=risk_state(), manifest_hash=PLAN_HASH, now=NOW,
+                            )
+                        else:
+                            self.api.cancel_order(account_seq=7, order_id="broker-1", permit=cancellation,
+                                                  controls=controls(), now=NOW)
+                    self.session.post.assert_called_once()
+
     def test_list_preserves_unknown_status(self):
         self.session.get.return_value = FakeResponse(
             200,

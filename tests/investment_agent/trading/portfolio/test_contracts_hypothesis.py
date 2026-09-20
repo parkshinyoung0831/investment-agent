@@ -10,8 +10,11 @@ from __future__ import annotations
 import math
 import unittest
 
-from hypothesis import given, settings
-from hypothesis import strategies as st
+try:
+    from hypothesis import given, settings
+    from hypothesis import strategies as st
+except ImportError as error:  # dev 의존성 그룹에 없어 CI(3.11, --locked)에는 설치되지 않는다
+    raise unittest.SkipTest(f"hypothesis 미설치: {error}") from error
 
 from investment_agent.platform.serialization import ContractError
 from investment_agent.portfolio_weights import CASH_SYMBOL, validated_weights

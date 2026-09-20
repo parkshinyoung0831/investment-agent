@@ -109,25 +109,35 @@ def _aligned_returns(
     normalized = tuple(str(symbol).upper().strip() for symbol in symbols)
     if not normalized or len(normalized) != len(set(normalized)) or CASH_SYMBOL in normalized:
         raise ContractError("covariance symbols must be unique risky assets")
-    return_rows: dict[str, dict[date, float]] = {}
+    closes_by_symbol: dict[str, dict[date, float]] = {}
     for symbol in normalized:
         raw = price_rows_by_symbol.get(symbol)
         if not raw:
             raise ContractError(f"missing market price history: {symbol}")
-        closes = _close_by_date(raw, symbol)
-        ordered = sorted(closes.items())
-        return_rows[symbol] = {
-            current_date: (close / previous_close) - 1.0
-            for (previous_date, previous_close), (current_date, close) in zip(ordered, ordered[1:])
-            if current_date > previous_date
-        }
-    common_dates = sorted(set.intersection(*(set(values) for values in return_rows.values())))
+        closes_by_symbol[symbol] = _close_by_date(raw, symbol)
+    # 시작일이 다른 이력은 겹치는 구간만 쓴다. 내부 결측은 채우거나 압축하지 않는다.
+    # 종료일만 맞추면 이틀 수익률과 하루 수익률이 섞이고, 빈 구간을 버리면 CVaR의
+    # '연속 5거래일' 의미까지 달라진다. 복구된 가격으로 재시도하기 전까지 차단한다.
+    first = max(min(values) for values in closes_by_symbol.values())
+    last = min(max(values) for values in closes_by_symbol.values())
+    dates_by_symbol = {
+        symbol: {day for day in values if first <= day <= last}
+        for symbol, values in closes_by_symbol.items()
+    }
+    reference_dates = set.union(*dates_by_symbol.values())
+    for symbol, dates in dates_by_symbol.items():
+        missing = sorted(reference_dates - dates)
+        if missing:
+            raise ContractError(f"unaligned price intervals: {symbol} missing {missing[0].isoformat()}")
+    price_dates = sorted(reference_dates)
+    common_dates = price_dates[1:]
     if len(common_dates) < minimum_observations:
         raise ContractError(
             f"insufficient aligned market return history: {len(common_dates)} < {minimum_observations}"
         )
     matrix = np.asarray(
-        [[return_rows[symbol][trade_date] for symbol in normalized] for trade_date in common_dates],
+        [[closes_by_symbol[symbol][day] / closes_by_symbol[symbol][previous] - 1.0
+          for symbol in normalized] for previous, day in zip(price_dates, price_dates[1:])],
         dtype=float,
     )
     if not np.isfinite(matrix).all():
@@ -351,7 +361,7 @@ def calculate_market_risk(
         if not np.isfinite(upper).all():
             raise ContractError("pairwise correlation is undefined for market return history")
         max_pairwise_correlation = float(np.max(upper))
-    wealth = np.cumprod(1.0 + portfolio_returns)
+    wealth = np.concatenate(([1.0], np.cumprod(1.0 + portfolio_returns)))
     drawdown_fraction = float(np.max(1.0 - wealth / np.maximum.accumulate(wealth)))
     tail = historical_tail_losses(portfolio_returns)
     return MarketRiskMetrics(

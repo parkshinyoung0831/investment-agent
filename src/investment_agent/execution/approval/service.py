@@ -191,10 +191,9 @@ class ApprovalWorkflow:
             raise ExecutionSafetyError("Discord user was removed from the runtime allowlist")
         self._validate_identity(request, interaction, now=current)
         self._signer.verify(request, interaction)
-        action = "approved" if interaction.action == "approve" else "rejected"
         decided = self._repository.decide_approval(
             request.approval_id,
-            action=action,
+            action=interaction.action,
             discord_guild_id=interaction.discord_guild_id,
             discord_channel_id=interaction.discord_channel_id,
             discord_message_id=interaction.discord_message_id,

@@ -1,13 +1,13 @@
 """최근 SEC 공시를 발견해 기업 전체·세그먼트 재무를 증분 동기화한다."""
 from __future__ import annotations
 
-import os
 import traceback
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from investment_agent.platform.env import env_int
 from investment_agent.platform.cli.backfill import resolve_backfill_window
 from investment_agent.platform.logging import get_logger
 from investment_agent.data.fundamentals.application import (
@@ -330,7 +330,7 @@ def sync_segment_filings(
         return metrics
 
     worker_count = min(
-        int(os.environ.get("FUNDAMENTALS_SEGMENT_WORKERS", str(_MAX_SEGMENT_WORKERS))),
+        env_int("FUNDAMENTALS_SEGMENT_WORKERS", _MAX_SEGMENT_WORKERS),
         len(candidate_ciks),
     )
     with ThreadPoolExecutor(max_workers=max(worker_count, 1)) as executor:

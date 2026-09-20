@@ -113,7 +113,8 @@ confidence, 논지 상태, 제약 하나, 근거(`alpha_signals` metadata)뿐이
 - **논지는 검증자다**(유효 28일). TradingAgents는 `thesis`(positive·neutral·negative)·`hard_constraint`·`key_risks`를
   적는다. 명시 필드가 없는 옛 기록만 행동 단어를 한 번 해석한다(`ThesisView.thesis_state`).
 - **confidence는 근거 일치도다**: factor·ML·논지 중 방향을 말한 근거가 최종 기대초과수익과 같은 방향인 비율.
-  LLM이 스스로 적은 확신은 쓰지 않는다. optimizer가 기대수익에 곱한다.
+  이 일치도 계산에는 LLM의 자기평가 확신을 쓰지 않는다. optimizer가 기대수익에 곱한다.
+  단, 아래 positive 논지의 소폭 조정에는 `ThesisView.confidence`가 쓰인다. 이는 보정된 성공 확률이 아니다.
 
 | 논지 상태 | 조건 | ALPHA 출력 |
 |---|---|---|
@@ -230,7 +231,9 @@ flowchart TD
 
 ## TradingAgents와 LLM의 역할
 
-TradingAgents는 Market/Fundamental/News/Social 분석, Bull/Bear 토론과 risk reasoning을 수행한다.
+저장소 소유 `decision/agents/orchestrator.py`가 Market → Fundamentals → News → Sentiment → Macro,
+Bull/Bear → Research Manager → Trader → Risk 3자 → Portfolio Manager를 실행한다.
+외부 TradingAgents/LangGraph runtime이나 설치 패키지 monkey patch는 사용하지 않는다.
 자연어 토론은 설명 자료이지 주문 계약이 아니다. 최종 parser는 다음과 같은 구조화 필드만
 허용한다.
 
@@ -256,7 +259,10 @@ TradingAgents의 질문은 "숫자(factor·ML)가 놓친 기업·공시·뉴스�
 
 뉴스·소셜은 live 계열에서만 untrusted evidence로 사용할 수 있다. URL/content 중복 제거,
 instruction-like text 제거, 길이 제한과 provider quota/cache를 적용한다. broker key와 execution
-control은 prompt/context에 포함하지 않는다.
+control은 prompt/context에 포함하지 않는다. runner는 뉴스 조회를 판단 날짜에서 7일 전부터 요청한다.
+historical에서 외부 뉴스 호출 금지와 bundle·요청 날짜의 as-of 검증은 그대로 적용된다. 기사별 발행 시각이
+없는 provider 텍스트의 정확한 intraday PIT는 보장하지 못한다. 7일은 성과 최적값이 아니라
+주말·직전 사건을 같은 날짜 조회로 누락하지 않기 위한 명시적 조회 정책이다.
 
 ```text
 tracked universe
@@ -273,7 +279,8 @@ model, prompt와 engine version이 달라지면 별도 artifact로 기록하고 
 ## Memory와 평가
 
 `memory.py`는 horizon이 끝나고 `evaluator.py`가 실제 결과를 기록한 case만 같은 ticker의 참고
-기억으로 사용한다. 아직 미래 가격이 확정되지 않았거나 benchmark가 없으면 0점으로 만들지 않고
+기억으로 사용한다. 현재 이 기억은 최종 구조화 프롬프트에 들어가며 개별 analyst나 debate의 학습 기억은 아니다.
+아직 미래 가격이 확정되지 않았거나 benchmark가 없으면 0점으로 만들지 않고
 미평가로 남긴다. 기억은 현재 evidence를 대체하지 않고 주문 권한도 없다.
 
 평가된 사례와 별도로 **직전 판단**(결과 미확인)을 함께 넘긴다. 어제 무엇을 근거로 무엇이라고 했는지를
@@ -373,6 +380,9 @@ RMSE/MAE와 방향 정확도 외에,
 학습 결과에는 **OOS 날짜별 단면 IC**(`research/evaluation/alpha.py`: 평균 IC·ICIR·t-통계량·
 상위-하위 분위 spread)가 `out_of_sample_alpha`로 남는다. 날짜를 섞은 순위 상관은 시장 전체의
 공통 움직임을 순위 능력으로 착각하므로 채택·신뢰도 판단에 쓰지 않는다.
+겹치는 h일 label의 t는 Bartlett Newey–West HAC(h−1 lag), 유한표본 보정과 IID 분산 하한으로 계산한다.
+`inference_method`, `horizon_days`, `hac_lags`, 비교용 `ic_t_stat_iid`를 함께 저장한다. ICIR 자체는
+기존 평균/표준편차 정의다. 유효 IC 날짜가 h 이하이면 t=0이다. HAC는 calibration이나 OOS 우월성 증명이 아니다.
 
 ### ML을 판단에 합치는 경로
 
@@ -383,10 +393,12 @@ TradingAgents 논지 ───────────────────�
 
 - 채택은 `python -m investment_agent.research.commands.adopt_ml_model --artifact <json>` 하나다.
   재로딩 가능한 모델(naive·ridge는 계수, LightGBM·XGBoost는 저장한 booster 원문 — 단일 스레드·deterministic
-  학습이라 같은 dataset이 같은 artifact hash를 낸다)이고, OOS 평균 IC > 0, IC t ≥ 2, OOS 20일 이상, 분위 spread > 0일
+  학습이라 같은 dataset이 같은 artifact hash를 낸다)이고, 기간과 일치하는 HAC 기록, OOS 평균 IC > 0,
+  IC t ≥ 2, OOS 날짜 수 > label 기간(20일), 유한한 분위 spread > 0일
   때만 `artifacts/trading/ml_models/active_ml_model.json`으로 복사된다.
-- ML 반영 비중은 사람이 정하지 않는다. ML 몫 = 신뢰도 = min(0.8, 평균 IC × 10)이고 나머지가 TradingAgents
-  몫이다. t < 2면 0이라 합치지 않는다. LLM이 스스로 적는 confidence는 검증된 적이 없어 비율에 쓰지 않는다.
+- ML과 factor를 합치는 비율은 OOS 측정치에서 계산한다. ML 몫 = min(0.8, 평균 IC × 10)이고 나머지는 factor
+  사전값이다. 이 배율과 상한은 정책값이며 확률 calibration 결과는 아니다. t < 2 또는 HAC 기록이 없는 구형
+  artifact는 서빙하지 않고 factor로 되돌린다. 기존 active 파일을 자동 수정하거나 새 모델을 자동 채택하지 않는다.
 - ML은 TradingAgents 의견과 섞지 않는다. 부정 논지의 거부권은 ML 예측이 좋아도 그대로다.
 - 추론 feature는 판단 시점 이전에 공개된 가장 최근 한 날짜의 **전 종목** snapshot으로 결측을 대체한다
   (학습 dataset과 같은 규칙). 분석한 몇 종목만으로 중앙값을 내면 training-serving skew가 생긴다.
@@ -600,7 +612,10 @@ optimizer 결과도 반드시 RiskGate를 통과한다.
 ### Regime 위험 예산
 
 `trading/risk/regime_budget.py`가 판단 시점까지의 SPY 일봉(20일 수익률·20일 실현 변동성·252일
-고점 대비 낙폭)으로 regime을 정하고, 기본 한도를 **조이기만** 한다. 시장위험은 종목을 고르지 않는 Portfolio
+고점 대비 낙폭)으로 regime을 정하고, 기본 한도를 **조이기만** 한다. 미확정·미공개 봉은 제외하고,
+확정 봉 cutoff 대비 마지막 SPY 날짜가 4일(calendar day)을 넘으면 실패한다. 비정상 가격과 같은 날짜의
+충돌 가격도 거부한다. 이 허용기간은 휴일 여유이며 정확한 거래소 세션 달력 검사는 아니다.
+시장위험은 종목을 고르지 않는 Portfolio
 Engine 내부 입력이다. 경계(낙폭 8%·20%, 변동성 30%·50% 등)·기간·배율은 자연법칙이 아니라 정책값이라
 `MarketRiskPolicy`(`RegimeThresholds` 포함, 버전 있음) 하나에 모으고 Ablation 재현으로 다른 값과 비교한다.
 

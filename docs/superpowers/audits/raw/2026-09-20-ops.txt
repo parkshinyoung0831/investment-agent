@@ -1,0 +1,187 @@
+# 감사: operations / workflows / scripts (OP·WF·SC)
+
+기준일 2026-09-21. 실행 이력은 `gh run list --limit 1000`(2026-08-21~09-20, scratchpad/runs.json) 실측.
+
+---
+## WF-01 econ_calendar_watch의 `*/15 12-15` 스케줄이 사실상 안 돈다 (확정, 실측)
+- 영역: .github/workflows/econ_calendar_watch.yml:17, notify_econ_calendar_release.yml:11-14
+- 증상: 설계는 평일 하루 16회(발표 직후 8:30 ET = 12:30 UTC 포착). 실측은 08-21~09-20 한 달간 schedule 실행 **17회**(설계상 약 350회), 그것도 대부분 하루 1~2번, 시각은 15:24~19:05 UTC. 즉 12:30 UTC 발표 속보가 3~6시간 늦게 나간다. 파일 머리주석이 "발표 직후를 잡는 watcher"라 약속한 기능이 실제로는 안 된다.
+- 근거: runs.json의 econ_calendar_watch 목록(9/14 17:12, 9/15 15:52, 9/16 15:44·19:05 ...). notify_econ_calendar_release도 cron 03:20/09:20/15:20/21:20 UTC인데 실제 생성 시각은 08:09/13:38/18:38/23:18 UTC 부근(2~5시간 지연). market_daily도 cron 23:30 UTC가 실제 01:12~01:38 UTC(+1.7~2h).
+- 원인: GitHub Actions schedule은 고빈도 cron·정시 근처 혼잡에서 큐잉/드롭된다(공식 보장 없음). 코드는 "정시에 돈다"를 전제로 시각을 가정한다(예: watchlist_fast 21:30 UTC가 earnings_watch 22:00 UTC 직전).
+- 고치는 법: 속보 경로는 Actions cron에 기대지 않는다. (a) 로컬 하네스가 이미 같은 `watch_releases` entrypoint를 부를 수 있다고 주석에 적혀 있으므로 하네스 job으로 1~5분 주기 등록하고 Actions는 안전망으로만 유지, 또는 (b) cron을 정각·15분 배수(`*/15`)가 아닌 비정렬 분(`7,22,37,52`)으로 옮겨 드롭률을 줄인다. 어느 쪽이든 하드코딩 신설 없이 워크플로/하네스 등록만 바뀐다.
+- 위험: 낮음(알림 지연만). 알림 재발송 위험은 outbox가 막는다.
+- 난이도: 하네스 등록이면 중간, cron 분 옮기기면 낮음. 사용자 결정 필요: 로컬 하네스 job으로 옮길지(고정 IP 머신 상시 가동 전제).
+
+## SC-01 actions_budget.py 추정이 실제와 두 방향으로 어긋난다 (확정)
+- 영역: scripts/actions_budget.py:79-117, 143-149
+- 증상 A(과소): 분은 잡 단위로 **올림 과금**되는데 `updatedAt-startedAt` 중앙값(예 econ_calendar_watch 0.69분)을 그대로 곱한다. 측정 목록의 runs×ceil(min)을 다시 합치면 **1,790분/월(90%)**, 스크립트는 1,329분(67%)이라 출력한다. 이 스크립트의 자체 경고 기준(70% 초과=exit 1)이 올림을 반영하면 넘는다.
+- 증상 B(과대): 스케줄 실행이 실제로는 대량 드롭(WF-01)되어 econ_calendar_watch 347.9 runs/mo(240.6분, 전체 최대 항목)는 허구다. 실측 월 ~17-25회.
+- 증상 C: `gh run list --limit 400`는 전 워크플로 통틀어 최신 400건이라 11일 치(09-09~09-20)뿐이다. 월 1회·주 1회 워크플로(strategy_monthly, universe_monthly, revision_audit, notify_strategy)는 이력이 없어 `default` 2.0분으로 채워진다. 그리고 ci 70건이 창을 차지한다.
+- 참고: 저장소가 PUBLIC(`gh repo view` visibility=PUBLIC)이므로 표준 러너 분은 무료·무제한이다. 2,000분 한도 전제(CLAUDE.md "할당 넘기면 조용히 안 돈다") 자체가 이 저장소에는 해당하지 않는다. 다만 문서가 그 가정을 유지하고 있어 판단이 왜곡된다.
+- 고치는 법: 잡 단위 `ceil()` 반영, 관측 빈도(최근 N일 실제 실행 수)와 설계 빈도를 함께 출력, `--limit`를 워크플로별 조회(`gh run list --workflow`)로. 하드코딩 신설 없음.
+- 난이도: 낮음. 사용자 결정 불필요(단, PUBLIC 전제 문서 정정은 사용자 판단).
+
+## WF-02 econ_calendar_ics 매일 2회 연속 실패 (확정, 운영 조치 필요)
+- 영역: .github/workflows/econ_calendar_ics.yml, src/investment_agent/data/macro/commands/econ_calendar_publish_ics.py:35-41
+- 증상: 최근 최소 7일간(09-14~09-20) workflow_run 1회 + 안전망 schedule 1회가 **매번 failure**(1000건 중 26건). 원인 로그: Supabase Storage 공개 버킷 `econ-calendar`(또는 `ECON_CALENDAR_ICS_BUCKET`)이 없다. 실패마다 Discord failure report가 나간다.
+- 근거: run 35503192076 로그의 RuntimeError "Supabase Storage에 공개 버킷 ... 없습니다".
+- 원인: 버킷은 사람이 만든다는 계약(ENV.md:50)인데 생성되지 않았고, 실패가 경보 소음이 될 뿐 워크플로가 계속 재시도된다.
+- 고치는 법: 버킷 생성(사용자 작업). 재발 방지로 없으면 exit code 구분해 첫 실패 뒤엔 소음 억제하는 것은 과설계라 비권장.
+- 사용자 결정 필요: Storage 공개 버킷 생성(DDL성/운영 변경).
+
+## WF-03 fundamentals_integrity 8일 연속 failure (데이터 문제, 확정)
+- 영역: fundamentals_integrity.yml → verify_integrity segment_tracked_coverage
+- 증상: 09-13 이후 매일 red. 로그: "세그먼트 처리 상태가 없는 추적 ticker 3개 ['FDXF','HONA','XOM']" errors=1. 기록상 9/5~9/10 red, 9/11~12 green(수동 재실행 뒤), 9/13~ red.
+- 원인: 데이터 적재 결함(fundamentals 담당). 워크플로 관점 문제는 같은 사유가 8일 반복 경보된다는 점(중복 억제가 없어 Discord failure report가 매일 나갈 수 있음; incident_id로 dedupe하는지는 OP 항목에서 확인).
+
+## WF-01b 모든 schedule 실행이 nominal cron보다 중앙값 2~5시간 늦는다 (확정, 실측)
+- 근거: cron.matches()로 각 schedule 실행의 "직전 nominal 발화"와 createdAt 차이를 계산(runs 1000건). 중앙값(분): macro_etl 266, notify_macro_watch 276, ops_heartbeat 304, fundamentals_daily 284, fundamentals_integrity 269, econ_calendar_daily 296, institutional_13f 268, notify_econ_calendar_release 214, market_daily 108, fundamentals_watchlist_fast 118, earnings_watch 199; 최대 위 표 700분 부근. 예: macro_etl "25 0 * * 2-6"(09:25 KST)은 실제 04:45~05:02 UTC(13:45~14:02 KST), ops_heartbeat "40 6"은 11:31~13:20 UTC.
+- 영향: (1) 파일 주석의 KST 시각·"A 뒤 B" 순서 가정(예: macro_etl "after Market Daily", integrity "09:00은 체인이 끝난 뒤", notify 안전망 시각)은 nominal일 뿐 실제와 무관하다. 순서는 workflow_run/concurrency만이 보장한다. (2) digest.evaluate는 `fires_between(nominal)`로 "돌았어야 함"을 판정하므로 지연이 창(24h) 끝을 넘기면 false `missing`, 창 앞으로 밀리면 이중 집계가 가능하다(WF 지연 분산 실측 max 11시간). (3) 속보성 워크플로(econ_calendar_watch, earnings_watch)는 의도한 "발표 직후" 지연 목표를 못 지킨다.
+- 원인: GitHub schedule 큐 지연(저활동 저장소, 정각 혼잡). 코드로 통제 불가.
+- 고치는 법: nominal 시각에 의미를 두지 않고 (a) 시간 민감 경로는 하네스(고정 머신)로, (b) heartbeat의 expected 판정에 지연 grace(관측 지연 p95를 실행 이력에서 계산해 쓰기, 하드코딩 금지)를 둔다, (c) 주석의 KST 시각 삭제 또는 "nominal" 표기.
+- 위험: 낮음~중간(모니터링 오경보/누락). 난이도: 중간. 사용자 결정: 시간 민감 경로의 이전 여부.
+
+---
+## OP-01 NYSE 휴장일 표가 틀리다: Good Friday 누락, 12/31(금) 오휴장, 조기폐장 없음 (확정, 순수 함수 재현)
+- 영역: src/investment_agent/operations/harness/market_schedule.py:33-92 (`is_us_market_holiday`), `SessionWindow.is_open/seconds_until_open` (:111-130)
+- 증상: 재현 `is_us_market_holiday(date(2027,3,26))`(Good Friday) -> **False**(NYSE 휴장). `is_us_market_holiday(date(2027,12,31))` -> **True**이나 NYSE는 1/1이 토요일일 때 직전 금요일 12/31을 **연말 결산일이라 연다**(2021-12-31도 개장). 조기폐장(추수감사절 다음 금·12/24·7/3, 13:00 폐장)도 없다.
+- 영향: SessionWindow는 하네스의 신규 판단창(09:40~14:30 NY)과 위험 스냅샷창(09:15~16:30)을 정한다(harness_adapters.py:134-135,235-, adapters/execution.py:138,153). Good Friday에는 "장 열림"으로 판정해 스테이지가 돌고(주문 계획·승인 요청·실주문 시도), 조기폐장일에는 폐장(13:00) 뒤 14:30까지 창이 열려 있다. 실주문 경로라 다음 발생(2027-03-26, 2027-11-26 조기, 2027-12-31)이 사용자 안전 이슈. 다음 휴장 2026-11-26 추수감사절은 표에 있어 정상.
+- 원인: 하드코딩한 규칙 표에 부활절 계산·NYSE 예외 규칙이 없다. `test_architecture.py:40`에 `pandas_market_calendars`가 DOMAIN_LIBRARIES로 허용돼 있으나 사용처가 없다(의존성/가이드만 있음).
+- 고치는 법: 자체 규칙 표를 유지하려면 부활절(Computus)로 Good Friday를 추가하고 12/31 규칙을 제거, 조기폐장 집합(day-after-Thanksgiving, 12/24 평일, 7/3 평일 규칙)을 두어 `SessionWindow.end`를 min(end, 13:00)으로 절단. 더 나은 길은 이미 허용 목록에 있는 `pandas_market_calendars`(pyproject에 group 추가)로 교체. 새 config 파일 불필요.
+- 위험: 실주문 시각 게이트라 높음(라이브가 켜져 있으면). 난이도: 낮음~중간. 사용자 결정: 실주문 창 변경이므로 정비 보류 후 적용 확인 필요(코드 수정 자체는 라이브 스위치와 무관).
+
+## OP-02 job 정의에 stage가 추가되면, 기존 waiting/paused 실행이 있는 하네스가 tick마다 KeyError로 죽는다 (확정, 순수 함수 재현)
+- 영역: src/investment_agent/operations/harness/runtime.py:104-111 (`_next_stage`), :117-, service.py:run_forever `except Exception -> return 1`
+- 재현: stage [a]인 job이 waiting인 state.json을 저장 → stage [a,b]로 정의를 바꿔 새 스케줄러로 `tick()` → `KeyError: 'b'`(실제 재현 완료). `_new_job`만 현재 정의로 stage 표를 만들고, 이미 저장된 active job의 `job.stages`에는 새 stage가 없다.
+- 영향: run_forever는 tick 예외를 잡아 `service_failed` 후 종료(exit 1). Windows 작업 스케줄러가 PT1M 간격으로 999회 재시작(service_install.py:105-107)하지만 같은 state에서 같은 예외로 계속 죽는다. 실제 state.json에도 과거 정의 잔재 job(`investment_pipeline` stages select_signal/portfolio, `entry_watch`)이 paused로 남아 있다(레지스트리에 없어 tick이 무시하므로 지금은 안전).
+- 원인: 저장된 job과 현재 정의의 stage 집합 불일치에 대한 조정(reconcile)이 없다. `state.validate()`도 정의를 모른다.
+- 고치는 법: tick에서 `set(job.stages) != {s.stage_id for s in definition.stages}`이면 그 run을 취소(status cancelled, pause_reason "definition_changed")하고 새 run으로 교체. 레지스트리에 없는 job은 state 로드 시 정리(또는 health에서 `orphan_jobs`로 표시). 하드코딩 없음.
+- 위험: 중간(재배포 직후 하네스 무한 재시작 = 주문 감시 정지). 난이도: 낮음. 사용자 결정 불필요(단 하네스 정비 보류 하에서 수정).
+
+## OP-03 `--adaptive-schedule`의 주기가 시작 시각 한 번만 계산돼 실제로는 적응하지 않는다 (확정, 코드 경로)
+- 영역: src/investment_agent/operations/commands/investment_harness.py:168-176
+- 증상: `phase_info = get_us_market_phase()`를 main()에서 **한 번** 호출해 `reconciliation_interval`로 고정한 뒤 `build_registry`에 넘긴다. JobDefinition은 frozen이고 interval_seconds는 등록 시 고정된다. 하네스를 밤(STANDBY 300초)에 띄우면 다음 날 정규장(권장 60초) 내내 300초 주기로 체결 대사를 하고, 장중에 띄우면 밤새 60초로 돈다.
+- 근거: investment_harness.py:171-176, market_schedule.py:HEARTBEAT/RECONCILIATION 상수. tick은 `definition.interval_seconds`만 읽는다(runtime.py:_is_due).
+- 고치는 법: `_is_due`가 정의의 `interval_seconds` 대신 `interval_provider(now)`를 받게 하거나 reconcile stage 안에서 phase를 보고 wait. 상수 신설 없이 market_schedule.py의 기존 상수를 재사용.
+- 위험: 낮음~중간(체결 대사 지연 최대 5배). 난이도: 낮음. 사용자 결정 불필요.
+
+## OP-04 `HarnessService`의 heartbeat 스레드가 모든 active job의 heartbeat를 갱신해 stale 판정이 무력화된다 (확정, 코드 경로) + 스레드 경합 (의심)
+- 영역: src/investment_agent/operations/harness/runtime.py:170-178 (`update_process_heartbeat`), service.py:59-66, health.py:48-53
+- 증상: heartbeat 스레드(5초)가 `for job in state.jobs.values(): if job.active: job.heartbeat_at = now`를 한다. `inspect_health`의 `stale_jobs`는 `job.heartbeat_at` 오래됨을 본다 → 핸들러가 멈춰 있어도(프로세스는 살아 있음) job heartbeat가 계속 갱신돼 stale이 절대 안 된다. 잡별 `stale_after_seconds`(예: reconcile 5분, feature_store 30시간) 설정이 사실상 죽은 코드다. 레지스트리에서 사라진 orphan job(`investment_pipeline`)도 같은 이유로 stale이 되지 않고 `paused_jobs`에 영원히 남는다.
+- 의심: 이 스레드가 메인 tick과 같은 `self.state`를 잠금 없이 변경·저장(`store.save`)한다. tick이 jobs 딕셔너리에 job을 추가하는 순간 스레드의 `asdict/validate` 순회가 `RuntimeError: dictionary changed size`를 던져도 `except Exception: pass`로 삼켜진다(재현은 타이밍 의존이라 못 함).
+- 고치는 법: process heartbeat는 프로세스 필드에만 쓰고 job heartbeat는 tick/stage 진행에서만 갱신. state 접근을 `threading.Lock`으로 감싸기.
+- 위험: 낮음(감시 실효성). 난이도: 낮음.
+
+## WF-04 (=OP-05) Actions fundamentals_earnings_watch의 세션 창 판정이 GitHub 지연 때문에 대부분 빈 대상으로 "성공" 종료한다 (확정, 실측)
+- 영역: .github/workflows/fundamentals_earnings_watch.yml:13-18,60-71 → operations/commands/watch_earnings.py:68-90,`if not tickers: return 0` → data/fundamentals/domain/services/classify_report_session.py:29-36,100-105
+- 증상: 워크플로는 cron "0 13"→`--session bmo`, "0 22"→`--session amc`로 부른다. 대상 선정은 **현재 ET 시각이 세션 수집 창 안**일 때만 종목을 낸다(BMO 06:00~10:30 ET, AMC 16:00~20:00 ET). 그런데 실제 실행 시각(createdAt→ET, 최근 14회)은 BMO 12:45~14:14 ET(=창 밖 100%), AMC 19:40~20:22 ET(창 끝 20:00을 넘긴 것 6/8회 중 다수: 9/14 20:22, 9/15 20:01, 9/16 20:10). 창 밖이면 `select_session_targets`가 빈 목록을 내고 watch_earnings는 "지금 수집 창이 열린 관심종목 없음"으로 **exit 0**. 안전망이 초록 불로 아무것도 안 한다(31회 success).
+- 원인: (a) wall-clock 창 판정 vs 2~5시간 지연되는 Actions schedule(WF-01b). (b) 창을 넘긴 실행을 실패나 경고가 아닌 성공으로 처리.
+- 영향: 로컬 하네스가 꺼져 있으면(현재 하네스는 09-15 이후 정지, MAINTENANCE_HOLD) 관심종목 실적 8-K 속보의 유일한 수집 경로가 사실상 fundamentals_daily/notify 안전망뿐이라 속보가 최대 1일 지연될 수 있다.
+- 고치는 법: 안전망 경로는 wall-clock 창에 의존하지 않는다. Actions에서는 `--session any`(예정일 ±1일 종목만) 또는 "마지막 성공 실행 이후 접수된 공시 조회"로 바꾸고, 창 판정은 하네스 1분 폴링에만 쓴다. 창 경계를 상수로 더 늘리는 것은 지연 분산(최대 8h)을 못 덮으므로 비권장.
+- 위험: 중간(알림 지연). 난이도: 낮음(워크플로 인자 변경). 사용자 결정: 안전망 의미 변경(재발송 위험은 outbox가 막음).
+
+## WF-05 CI(ci.yml)가 최근 push마다 red: `hypothesis` 미선언 + `xgboost`는 3.11에 미설치인데 테스트가 무조건 사용 (확정, 실측)
+- 영역: .github/workflows/ci.yml, pyproject.toml `[dependency-groups] dev`(hypothesis 없음), pyproject.toml:49 `xgboost==3.4.1; python_version >= '3.12'`
+- 증상: 1000건 이력 중 ci 232회, 2026-09-20 하루 15회 전부 failure. 최신(35521112576) 로그: `Ran 3164 tests ... FAILED (errors=2)` -> (1) `tests.investment_agent.trading.portfolio.test_contracts_hypothesis` ImportError: No module named 'hypothesis', (2) `test_ml_inference ... test_boosted_models_round_trip_to_identical_predictions (kind='xgboost')` ModuleNotFoundError: xgboost.
+- 원인: CI는 Python 3.11(CLAUDE.md), xgboost는 3.12 전용 marker라 설치되지 않는데 테스트가 skip 가드 없이 import. hypothesis는 pyproject 어느 그룹에도 없어 `uv sync --locked --group dev`가 설치하지 않는다.
+- 영향: CI가 항상 red라 진짜 회귀가 묻힌다(notify-error가 매 push Discord 발송). "테스트 강제" 규칙이 CI에서 실효가 없다.
+- 고치는 법: 테스트에 `unittest.skipUnless(importlib.util.find_spec("xgboost"))`, hypothesis는 dev group에 추가(`uv lock` 필요) 또는 try-import skip. CI python을 3.12로 올리는 선택지는 CLAUDE.md의 3.11 기준과 충돌하므로 사용자 결정.
+- 위험: 중간(CI 신호 상실). 난이도: 낮음. 사용자 결정: hypothesis를 dev 의존성으로 승격할지, CI 파이썬 버전.
+
+## WF-06 킬스위치 if 게이트가 fundamentals/gurus/econ_calendar 3계열에만 있다 (확정, 설계 공백)
+- 영역: .github/workflows/*.yml 전수(`vars.*_KILL` 사용: FUNDAMENTALS_KILL 9곳, ECON_CALENDAR_KILL 6곳, GURUS_KILL 2곳)
+- 증상: market_daily/market_backfill, macro_etl/macro_etl_monday/macro_backfill, tech_indicators(+backfill), universe_monthly/universe_membership_check, strategy_monthly/backfill, notify_macro_core/watch, notify_strategy, ops_heartbeat에는 워크플로 레벨 끄기 수단이 없다(workflow disable뿐). test_workflow_wiring.py:537은 FUNDAMENTALS_KILL만 검사한다. 규칙 7은 대상 도메인을 명시하지 않는다.
+- 영향: macro/market 사고(잘못된 값 적재) 때 `vars`로 통일된 절차로 끌 수 없다. 정상 운영엔 영향 없음.
+- 고치는 법: 필요하면 도메인별 `MARKET_KILL`, `MACRO_KILL`을 docs/ENV.md 표에 추가하고 같은 if 패턴 적용. 필요 없으면 규칙 7 문구를 3계열로 한정. 사실은 확정, 필요성은 사용자 판단. 난이도 낮음.
+
+## WF-07 죽은 placeholder 스텝 9개 + 사실상 항상 통과하는 게이트 스텝 (확정, 코드 정리)
+- 영역: `run: true # dependency group prepared above` 8곳(ci.yml:28, fundamentals_dimensions_backfill.yml:71, fundamentals_watchlist_fast.yml:67, notify_fundamentals.yml:61,89,93, notify_fundamentals_calendar.yml:59,82) + `run: ":"` institutional_13f.yml:79. 아무 일도 하지 않는 과거 install 스텝의 잔재.
+- 추가: fundamentals_watchlist_fast.yml:69-77 `Check earnings season`은 파일 주석 스스로 "현재 항상 fail-open으로 통과, 비용 절감 효과 없음"이라 적은 순수 비용이다. 같은 파일은 python-job composite를 쓰지 않고 setup-python+uv sync(core)를 손으로 복제한 뒤 조건부로 `--group data`를 한 번 더 sync한다. notify_fundamentals.yml:57-59의 `test -n` 검증은 python-job의 `require-env`와 중복이다.
+- 고치는 법: placeholder 삭제(test_workflow_wiring이 스텝 이름을 참조하는지 확인 후), watchlist_fast를 python-job으로 통일. 사용자 결정 불필요.
+
+## WF-08 워크플로 주석의 타이밍·경로가 실측/코드와 모순 (확정)
+- fundamentals_watchlist_fast.yml:19-21 "GitHub cron 실측 최대 25분 지연": 실측 중앙값 118분·최대 480분(WF-01b).
+- tech_indicators.yml / strategy_monthly.yml: 아티팩트 경로 `data/local/research/research.duckdb`가 워크플로에 문자열로 박혀 있고 `RESEARCH_DB` env는 **파이썬 코드가 읽지 않는다**(src에서 RESEARCH_DB grep 0건; 실제 변수는 `INVESTMENT_AGENT_RESEARCH_ROOT`, 기본값이 우연히 일치). storage_paths.py 기본 경로가 바뀌면 되찾기·보존은 옛 경로, 계산은 새 경로를 봐서 조용히 전 구간 재계산한다("세 단계가 같은 자리를 본다"는 주석이 거짓). 고치는 법: 워크플로에서 `INVESTMENT_AGENT_RESEARCH_ROOT`를 env로 주고 경로를 거기서 파생(docs/ENV.md에 이미 있음).
+- fundamentals_earnings_watch.yml 주석의 09:00/18:00 ET는 서머타임(EDT) 전용. 2026-11-01 이후 13:00 UTC=08:00 ET, 22:00 UTC=17:00 ET(창 06~10:30/16~20 안에는 든다). 잠재 주석 오류, 낮음.
+
+## WF-09 "안전망 cron"이 workflow_run과 이중 실행된다 (확정, 중복)
+- 근거: fundamentals_dimensions schedule 17 + workflow_run 15, econ_calendar_ics schedule 23(13 fail)+workflow_run 29(13 fail), notify_fundamentals schedule 20 + workflow_run 71, notify_macro_watch schedule 43 + workflow_run 25. 안전망 cron이 매일 항상 돌아 같은 잡을 한 번 더 돈다(지연 4~5시간이라 상류 체인이 이미 끝난 뒤).
+- 영향: PUBLIC 저장소라 분 비용은 무관. 실패하는 잡(ICS)은 하루 2회 경보(WF-02).
+- 고치는 법: 안전망을 "최근 N시간 내 workflow_run 성공 실행이 없을 때만" 돌리는 fail-open 게이트로 바꾸거나 제거. 난이도 중간. 사용자 결정: 안전망 정책.
+
+---
+## OP-05 하네스 job 주기가 "완료 시각 + interval"이라 일별 job이 매일 실행시간만큼 밀린다 (확정, 상태 실측)
+- 영역: src/investment_agent/operations/harness/runtime.py:88-96 (`_is_due`: anchor = completed_at or started_at)
+- 근거: state.json의 `feature_store` scheduled 09-14T12:22:01 -> completed 13:14:31(52분). 다음 due = 13:14:31+24h. 하루 52분씩 밀려 약 28일에 하루가 통째로 빠진다. `decision_experience`(86400s)·`continuous_learning`(7d)도 동일. pipeline.py 주석은 "하루라도 거르면 PIT 관측값을 되살릴 수 없다"고 하나 스케줄이 그 보장을 못 한다.
+- 원인: 시작(scheduled_at) 기준이 아니라 완료 기준 간격. 날짜 정렬 개념이 없다.
+- 고치는 법: anchor = scheduled_at(시작 기준)으로 바꾸거나, 일별 job은 "마지막 성공 NY 날짜 < 오늘이면 due"로 판정. 새 상수 불필요.
+- 위험: 낮음~중간(PIT 하루 결손). 난이도: 낮음. 정비 보류 하에서 수정, 사용자 결정 불필요.
+
+## OP-06 TRADING_KILL_SWITCH를 해석하는 곳이 4가지 다른 규칙이다 (확정, 코드 경로)
+- 영역: (1) operations/harness/kill_switches.py:10-23 OFF={0,off,false,no}, ON={1,on,true,yes}, 그 외 ON. (2) execution/safety/control.py:115 `!= "off"`이면 ON("false"/"0"/"no"도 ON). (3) operations/harness/switch.py:193,203 `startswith("on")` 아니면 OFF로 보고 mode를 approval_workflow로 표시. (4) dashboard/app_pages/system.py:30-39 (1)과 같은 집합.
+- 재현(논리): `TRADING_KILL_SWITCH=false`이면 하네스(1)는 차단 아님 -> trading_sensitive 스테이지(선정, intent, Discord 승인 요청)가 돌고 실행 게이트(2)는 켜짐이라 마지막에 거절한다. 대시보드는 OFF로 보이는데 실주문은 막힌다. 위험한 방향(하네스 ON·실행 OFF)은 없다(실행 OFF는 정확히 "off"뿐).
+- 영향: 안전 방향으로만 어긋나지만 운영자가 화면을 믿고 OFF로 알았는데 주문이 막히거나 불필요한 승인 카드가 나간다. 해석이 SSOT가 아니다.
+- 고치는 법: 순수 함수 하나(platform 쪽 `is_kill_switch_on`)로 통일하고 네 곳이 호출. 가장 엄격한 execution 규칙("정확히 off만 해제")을 SSOT로 채택. 하드 리스크 한도가 아니므로 코드 변경은 허용.
+- 위험: 중간. 난이도: 낮음. 사용자 결정: 어느 규칙을 SSOT로 할지(엄격안 권장).
+
+## OP-07 하네스 state에 레지스트리에 없는 job이 영구 잔존하고 집계를 왜곡한다 (확정, 실측)
+- 영역: artifacts/ops/investment_harness/state.json의 `investment_pipeline`(2026-08-22, 옛 stage select_signal/portfolio, paused), `entry_watch`(paused), `virtual_books`(succeeded). src에 이 job 정의가 없다(grep). harness/switch.py:get_harness_status가 `state.jobs` 전체를 세어 `active_jobs_count`·jobs_summary에 포함하고 health.inspect_health도 `paused_jobs`에 포함하나 stale은 OP-04 때문에 절대 안 걸린다.
+- 고치는 법: HarnessScheduler.start에서 registry에 없는 job을 orphan으로 표시·삭제(리포터 이벤트). 난이도 낮음. 사용자 결정 불필요.
+
+## OP-08 intelligence job이 모든 예외를 skipped로 삼켜 영구 장애가 어디에도 안 드러난다 (확정, 코드 경로)
+- 영역: operations/harness/pipeline.py:_intelligence_stage (`except Exception: log.warning; return StageOutcome.skipped`), intelligence_job max_attempts=1
+- 증상: 뉴스/소셜 수집이 영구 실패(자격증명 삭제, 403)해도 job status=succeeded, health.healthy=True, Discord 신호 없음. `error_type`이 stage metadata에만 남고 counters·heartbeat는 읽지 않는다(counters는 fundamentals/calendar/gurus 3개뿐).
+- 원인: 주석이 "job 전체가 멈추는 것을 막는다"로 정당화하나 실패 가시성이 없다. 결과 실패가 성공으로 보인다.
+- 고치는 법: skipped 유지 + 연속 실패 횟수를 metadata로 누적해 N회 넘으면 reporter.error를 내거나 heartbeat counters에 "intelligence 마지막 성공 N일 전" 줄 추가. 임계값은 job interval에서 파생.
+- 위험: 낮음~중간. 난이도: 낮음.
+
+## OP-09 incident 분류 정규식이 숫자·단어 부분일치라 오분류가 흔하다 (확정, 코드 경로)
+- 영역: operations/monitoring/incidents.py:_CATEGORY_RULES
+- 근거: `configuration`이 bare `401|403`(경계 없음)이라 요약문의 어떤 숫자열(예 "4030행")에도 걸려 "secret 점검" 행동안이 붙는다. `provider`의 `http|request|connection`은 URL이 든 거의 모든 요약에 걸린다. 첫 매치 규칙이라 `database`(supabase 단어)가 실제 원인(ICS 버킷 없음: "Supabase Storage에 공개 버킷...")을 "DB 연결/스키마 배포 확인" 행동안으로 안내한다(WF-02). incident_id가 category를 seed로 써서 분류가 흔들리면 같은 원인의 ID가 바뀐다.
+- 고치는 법: 숫자 패턴에 `\b40[13]\b`와 HTTP 근접 조건, 카테고리 근거를 step 이름·예외 타입 우선으로 재정렬. 순수 함수라 단위 테스트로 재현 가능.
+- 위험: 낮음. 난이도: 낮음.
+
+## OP-10 heartbeat 관련 소소한 결함들 (확정/의심 혼합)
+- (의심) monitoring/channels.py `OPS_DIGEST` quiet_hours=30은 실측 heartbeat 간격(24h ± 수 시간, 지연 최대 ~12h 편차, WF-01b)에 얇다: 지연이 몰린 날 30h를 넘겨 거짓 "조용함" 경보가 가능하다. 표시 cadence 문구("매일 15:40", "월~토 12:20")도 nominal이라 실제와 4~5시간 다르다.
+- (확정) monitoring/discord.py:activity `limit=100` 응답 길이를 창 내 건수로 쓴다. 100건 이상이면 100으로 잘리고 `after` 조회는 창의 가장 오래된 100건이라 "최근" 건수가 아니다(표시용이라 영향 작음).
+- (확정, 성능 낮음) monitoring/counters.py:_ledger가 카운터 3개마다 `load_config()+default_context()`를 새로 만든다(memory 노트 "schema() 한 번이 0.4초"). 한 번 만들어 공유하면 된다.
+
+## OP-11 control_center.py: 종료 코드를 무시하고 마지막 출력 줄만 보여준다 (확정, 코드 경로)
+- 영역: operations/control_center.py:_run (`subprocess.run(..., check=False)` 뒤 `message = output[-1]`, `returncode` 미사용)
+- 증상: 하네스 시작/정지 subprocess가 비정상 종료해도 stdout 마지막 줄만 로그줄에 표시돼 성공으로 오해할 수 있다. 정지 실패가 "완료"처럼 보이는 것은 안전 UX상 위험.
+- 추가: `dashboard_url()`이 8501~8510에서 HTTP 응답(4xx 포함 <500)이 오는 아무 서버나 대시보드로 착각. tkinter `window.after`를 워커 스레드에서 호출(Tk는 스레드 안전이 아님; 의심). 라벨 "모의투자 · analysis_only"는 규칙 14의 `mode` 축약(화면 라벨 한정).
+- 고치는 법: returncode != 0이면 "실패(코드 N)"와 stderr 마지막 줄 표시. 난이도 낮음.
+
+---
+## SC-01 요약 (본문은 위 SC-01)
+- 실행 결과(2026-09-21): SCHEDULED TOTAL 1330.1 min/month, 67% used, headroom 669.9, unmeasured 17.7분(1%). 올림 반영 재계산 1,790분(90%). 설계 빈도와 실측 빈도가 크게 다른 워크플로: econ_calendar_watch(설계 348 vs 실측 ~20/월).
+
+## SC-02 verify_integration.py가 "0건"과 삼켜진 실패를 모두 OK로 센다 (확정, 코드 경로)
+- 영역: scripts/verify_integration.py:check (`isinstance(value, (list,...))` -> "N건", OK), `check("ops.counters.collect", ...)`
+- 증상: `counters.collect()`는 내부에서 모든 예외를 잡아 빈 리스트를 돌려주므로(counters.py:57-64) 세 카운터가 전부 실패해도 "OK 0건". 같은 식으로 빈 결과를 돌려주는 리더는 전부 통과. docstring이 "DataResult 실패를 OK로 세던 사고"를 이미 겪었는데 빈 컬렉션 경로는 남아 있다.
+- 고치는 법: check에 `min_count` 인자를 주거나 counters에 예외를 올리는 strict 경로를 둔다. 난이도 낮음.
+
+## SC-03 db_bootstrap.py / db_capacity.py의 project-ref 확인이 fail-open이다 (확정, 순수 함수 재현)
+- 영역: scripts/db_bootstrap.py:cmd_apply `if ref and args.confirm != ref:` (`--drop-first`는 앱 스키마 전체 DROP CASCADE), scripts/db_capacity.py:245 같은 패턴(VACUUM FULL). `_project_ref()`는 pooler/`db.<ref>.supabase.co`만 인식하고 그 외(127.0.0.1, 사설 IP, 커스텀 도메인)는 빈 문자열 -> **확인을 건너뛴다**(`--confirm anything` 통과).
+- 재현: `_project_ref("postgresql://postgres:pw@127.0.0.1:5432/postgres") == ""`. 현재 .env URL은 ref가 추출돼 오늘은 안전.
+- 추가: scripts/v1_reset.py는 `--confirm-reset` 불리언 플래그만 있고 project ref 확인이 아예 없다(앱 스키마 전체 DROP CASCADE). db_capacity의 `PROJECT_REF_RE`는 URL의 첫 소문자 20자 토큰을 취하므로 비밀번호가 20자 소문자면 그것을 ref로 오인(의심).
+- 고치는 법: `if not ref or args.confirm != ref: abort`, v1_reset에도 같은 확인 추가(공용 함수). 파괴적 DDL 도구라 수정 시 사용자 확인 필요.
+- 위험: 높음(파괴적), 발생 가능성 낮음. 난이도 낮음.
+
+## SC-04 db_capacity.py report가 Windows cp949 콘솔에서 UnicodeEncodeError로 중단된다 (확정, 실행 재현)
+- 영역: scripts/db_capacity.py:219 `print("행당 비용 — ...")` (U+2014는 cp949에 없음). 같은 이유로 scripts/db_bootstrap.py:129(경고 경로)도 위험. export_diagram_svg.py는 stdout reconfigure(:34)로 회피했다.
+- 재현: 오늘 `python scripts/db_capacity.py report` -> 표 출력 후 `UnicodeEncodeError: 'cp949' codec can't encode character '—'`, 행당 비용·미사용 인덱스 섹션 미출력, 비정상 종료. 수치는 앞부분에 나왔다: database 242.6MB / 500MB (48.5%), 최대 표 market.prices_daily 126.7MB, 모든 표 waste 0.0MB.
+- 고치는 법: 진입점에서 `sys.stdout.reconfigure(encoding="utf-8", errors="replace")` 또는 em dash를 "-"로. 난이도 낮음.
+
+## SC-05 verify_data.py가 읽기 전용을 강제하지 않는다 (확정, 방어 부재)
+- 영역: scripts/verify_data.py:main — `psycopg2.connect(url)` 후 세션 옵션이 없다. 현재 CHECKS는 전부 SELECT이고 오늘 실행 41/41 통과(위반 0건).
+- 고치는 법: `conn.set_session(readonly=True, autocommit=True)`(그러면 except의 rollback도 불필요). 난이도 낮음.
+
+---
+## 확인했으나 문제 없던 것 (오탐 제외용 기록)
+- monitoring/cron.py: cron 요일 변환(일=0)·dom/dow OR 규칙·스텝 해석 정상. 워크플로가 쓰는 cron 문법 범위에서 verified.
+- 조건 게이트: notify_*/tech_indicators/fundamentals_dimensions/expectations의 `conclusion != 'cancelled'` 게이트 일관(규칙 준수). 상류 둘 이상인 notify_macro_core/watch·notify_fundamentals는 모든 상류를 듣는다.
+- ops_failure_report 재사용 워크플로는 `failure() || cancelled()`로 호출되며 actions:read 권한을 호출 측이 준다. 리포터 실패는 원 결론을 가리지 않는다.
+- strategy_monthly/notify_strategy KST 1일 게이트: 22:00 UTC 발화 + 최대 관측 지연(11h)에서도 KST 날짜가 1일로 유지된다.
+- verify_data 41개 불변식 전부 통과(오늘 실측).
+- 유효하지 않은 것: harness/emergency.py 재사용 PID 오살은 기존 memory(하네스 실운영 결함 2026-09-15) 항목이라 재집계하지 않음.

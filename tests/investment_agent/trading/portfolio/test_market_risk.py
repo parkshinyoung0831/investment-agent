@@ -26,6 +26,32 @@ def _rows(start: float, returns: list[float]) -> list[dict[str, object]]:
 
 
 class MarketRiskTest(unittest.TestCase):
+    def test_missing_internal_price_cannot_mix_one_and_two_day_returns(self):
+        returns = [0.01, -0.02, 0.03, -0.01] * 20
+        complete = _rows(100, returns)
+        missing = complete[:40] + complete[41:]
+        with self.assertRaisesRegex(ContractError, "unaligned price intervals"):
+            calculate_market_covariance(
+                {"AAPL": missing, "MSFT": complete}, symbols=("AAPL", "MSFT"), horizon_days=20,
+            )
+
+    def test_different_history_starts_are_allowed_when_overlap_is_complete(self):
+        rows = _rows(100, [0.01, -0.02, 0.03, -0.01] * 25)
+        result = calculate_market_covariance(
+            {"AAPL": rows[10:], "MSFT": rows}, symbols=("AAPL", "MSFT"), horizon_days=20,
+        )
+        self.assertEqual(result.observation_count, 90)
+
+    def test_drawdown_includes_loss_from_initial_capital(self):
+        returns = [-0.2] + [0.001, -0.001] * 40
+        metrics = calculate_market_risk(
+            {"AAPL": _rows(100, returns), "SPY": _rows(100, returns)},
+            target_weights={"AAPL": 1.0, "CASH": 0.0},
+        )
+        wealth = np.r_[1.0, np.cumprod(1.0 + np.asarray(returns))]
+        self.assertAlmostEqual(metrics.drawdown_fraction, float(np.max(1 - wealth / np.maximum.accumulate(wealth))))
+        self.assertGreaterEqual(metrics.drawdown_fraction, 0.2)
+
     def test_covariance_uses_signal_order_and_horizon(self):
         base_returns = [0.001 + (index % 5 - 2) * 0.0004 for index in range(80)]
         covariance = calculate_market_covariance(

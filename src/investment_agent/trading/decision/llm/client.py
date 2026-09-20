@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import os
+
+from investment_agent.platform.env import env_float
 import re
 from typing import Any, Mapping, Protocol
 
@@ -91,7 +93,7 @@ class OpenAICompatibleClient:
             model=model,
             api_key=os.environ.get("AI_INVESTOR_API_KEY", ""),
             provider=os.environ.get("AI_INVESTOR_PROVIDER", "openai_compatible"),
-            timeout_sec=float(os.environ.get("AI_INVESTOR_TIMEOUT_SEC", "180")),
+            timeout_sec=env_float("AI_INVESTOR_TIMEOUT_SEC", 180.0),
         )
 
     @property

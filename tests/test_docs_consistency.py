@@ -339,5 +339,51 @@ class DiagramArtifactTest(unittest.TestCase):
         self.assertEqual([], orphan, "python scripts/build_diagrams.py 를 돌려라")
 
 
+class EnvironmentVariableDocumentedTest(unittest.TestCase):
+    """코드가 읽는 환경변수는 docs/ENV.md에 있다(HC-5).
+
+    문서에 없으면 운영자가 그 스위치가 있는 줄 모른다. 러너·OS가 주입하는 이름은 제외한다.
+    """
+
+    PROVIDED_BY_PLATFORM = re.compile(r"^(GITHUB_.*|USERNAME|USERDOMAIN)$")
+    READERS = {"get", "getenv", "env_int", "env_float", "env_str"}
+
+    def _read_names(self) -> dict[str, str]:
+        import ast
+
+        names: dict[str, str] = {}
+        for path in sorted((ROOT / "src").rglob("*.py")):
+            try:
+                tree = ast.parse(path.read_text(encoding="utf-8"))
+            except SyntaxError:
+                continue
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call) or not node.args:
+                    continue
+                func = node.func
+                name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+                first = node.args[0]
+                if name not in self.READERS or not (
+                    isinstance(first, ast.Constant) and isinstance(first.value, str)
+                ):
+                    continue
+                target = ast.unparse(func)
+                if "environ" not in target and "getenv" not in target and not name.startswith("env_"):
+                    continue
+                if re.fullmatch(r"[A-Z][A-Z0-9_]{3,}", first.value):
+                    names.setdefault(first.value, path.relative_to(ROOT).as_posix())
+        return names
+
+    def test_every_variable_the_code_reads_is_documented(self) -> None:
+        documented = (ROOT / "docs" / "ENV.md").read_text(encoding="utf-8")
+        names = self._read_names()
+        self.assertGreater(len(names), 50, "환경변수를 거의 못 찾았다 — 이 가드가 공허하게 통과하는 중이다")
+        missing = sorted(
+            f"{name}  ({where})" for name, where in names.items()
+            if name not in documented and not self.PROVIDED_BY_PLATFORM.match(name)
+        )
+        self.assertEqual([], missing, "docs/ENV.md에 없는 환경변수")
+
+
 if __name__ == "__main__":
     unittest.main()

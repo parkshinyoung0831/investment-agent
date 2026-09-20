@@ -104,7 +104,7 @@ class HarnessScheduler:
             return False
         anchor = parse_datetime(job.completed_at or job.started_at)
         return now.astimezone(timezone.utc) >= anchor + timedelta(
-            seconds=definition.interval_seconds
+            seconds=definition.interval_at(now)
         )
 
     @staticmethod
@@ -144,6 +144,14 @@ class HarnessScheduler:
                     if changed:
                         self.reporter.event("job_paused", job_id=job.job_id, reason=job.pause_reason)
                 continue
+            if job is not None and not job.terminal and set(job.stages) != {s.stage_id for s in definition.stages}:
+                # 배포로 stage 정의가 바뀌었는데 저장된 실행 중 job이 옛 stage 집합을 갖고 있다.
+                # 그대로 두면 `_next_stage`가 KeyError를 내고 하네스가 같은 상태에서 재시작만 반복한다.
+                self.reporter.event(
+                    "job_replaced", job_id=job.job_id, run_id=job.run_id, reason="definition_changed",
+                )
+                job = None
+                self.state.jobs.pop(definition.job_id, None)
             if self._is_due(job, definition, now):
                 job = self._new_job(definition, now)
                 self.state.jobs[definition.job_id] = job

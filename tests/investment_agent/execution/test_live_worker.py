@@ -375,6 +375,22 @@ def worker(repository, api, *, fresh=None):
 
 
 class LiveWorkerTest(unittest.TestCase):
+    def test_exhausted_daily_budget_does_not_consume_approval(self):
+        for limits in ({"max_daily_orders": 0}, {"max_daily_notional_usd": 500}):
+            with self.subTest(limits=limits):
+                repository, api = FakeRepository(), FakeApi()
+                subject = worker(repository, api)
+                # 유효한 운영 한도와 이미 사용한 일일 예산의 조합을 만든다.
+                if "max_daily_orders" in limits:
+                    original = repository.runtime_risk_state
+                    repository.runtime_risk_state = lambda **kw: replace(original(**kw), submitted_order_count=20)
+                else:
+                    subject.controls = replace(subject.controls, **limits)
+                with self.assertRaisesRegex(ExecutionSafetyError, "daily"):
+                    subject.execute(repository.approval.approval_id, now=NOW)
+                self.assertNotIn("consume", repository.trace)
+                self.assertEqual(api.posts, 0)
+
     def test_approved_plan_reserves_before_exactly_one_post(self):
         repository = FakeRepository()
         api = FakeApi()
@@ -493,6 +509,22 @@ class LiveWorkerTest(unittest.TestCase):
         second_id = repository.handoff.tickets[1].client_order_id
         self.assertEqual(repository.orders[second_id]["status"], "failed")
         self.assertIn("event:failed", repository.trace)
+
+    def test_submission_does_not_refresh_unobserved_risk_state(self):
+        repository = FakeRepository(
+            value_intent=two_order_intent(), value_handoff=two_order_handoff(),
+        )
+        with TemporaryDirectory() as state_dir:
+            api = FakeApi(buying_power=Decimal(3000), enforce_safety=True,
+                          lockdown_state_dir=Path(state_dir))
+            instance = worker(repository, api, fresh=two_order_snapshot())
+            times = iter((NOW, NOW + timedelta(seconds=20), NOW + timedelta(seconds=40)))
+            instance.clock = lambda: next(times)
+            with self.assertRaisesRegex(ExecutionSafetyError, "runtime risk state is stale"):
+                instance.execute(repository.approval.approval_id)
+        self.assertEqual(api.posts, 1)
+        second_id = repository.handoff.tickets[1].client_order_id
+        self.assertEqual(repository.orders[second_id]["status"], "failed")
 
     def test_intent_cancelled_after_first_order_blocks_the_second(self):
         repository = FakeRepository(

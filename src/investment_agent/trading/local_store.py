@@ -20,6 +20,8 @@ IMMUTABLE = frozenset({"policies", "model_versions", "signal_runs", "signals", "
 SCHEMA_TRADING = "trading"
 SCHEMA_REPORTING = "reporting"
 V_CURRENT_MODEL_STAGE = "current_model_stage"
+T_MODEL_PROMOTIONS = "model_promotions"
+T_RISK_DECISIONS = "risk_decisions"
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
@@ -123,7 +125,7 @@ class LocalTradingDatabase:
                 if not current or current[0]["stage"] != params["p_from_stage"]:
                     raise ValueError("model promotion stage changed")
                 row = {"artifact_id": params["p_artifact_id"], "from_stage": params["p_from_stage"], "to_stage": params["p_to_stage"], "status": "approved", "evidence": params["p_evidence"], "approved_by": params["p_approved_by"], "approved_at": params["p_approved_at"], "confirmation_text": params["p_confirmation_text"]}
-                return self.table(SCHEMA_TRADING, "model_promotions").insert(row).execute()
+                return self.table(SCHEMA_TRADING, T_MODEL_PROMOTIONS).insert(row).execute()
         return SimpleNamespace(execute=run)
 
 
@@ -201,9 +203,9 @@ class _Query:
                 for row in rows:
                     projected = {}
                     for field in fields:
-                        if field == "risk_decisions(approved_weights)":
-                            risk = self.database.table(SCHEMA_TRADING, "risk_decisions").select("approved_weights").eq("risk_decision_id", row["risk_decision_id"]).execute().data
-                            projected["risk_decisions"] = risk[0] if risk else None
+                        if field == f"{T_RISK_DECISIONS}(approved_weights)":
+                            risk = self.database.table(SCHEMA_TRADING, T_RISK_DECISIONS).select("approved_weights").eq("risk_decision_id", row["risk_decision_id"]).execute().data
+                            projected[T_RISK_DECISIONS] = risk[0] if risk else None
                         elif field in row:
                             projected[field] = row[field]
                         else:
