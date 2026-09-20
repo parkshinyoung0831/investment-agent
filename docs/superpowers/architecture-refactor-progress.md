@@ -530,7 +530,8 @@
 - 테스트 결과: 계약 테스트는 모듈 부재로 RED, 소유권 guard는 `trading/portfolio/contracts.py`의 두 정의를 검출해 RED, 제거한 pending 세 쌍은 정확한 위반 세 건으로 RED, `rl_challenger` 테스트는 모듈 부재로 RED였다. 위반 주입: research에 `validated_weights` 재정의 파일 → 소유권 guard 실패, research가 `trading.portfolio.contracts` import → architecture 실패(둘 다 원복). 최종 전체 offline suite 3,071개 OK, skip 1개.
 - 남은 dependency debt(11쌍, 모두 Research→Trading): `commands/{backfill_research_history,build_decision_experiences,build_features(×2: evidence.context·supabase_repository),build_labels,build_valuations,evaluate,system_ablation}`과 `promotion/cli`가 `trading/supabase_repository.py`(또는 `trading/evidence/context.py`)를 가져온다. 대부분 CLI `main()`이 구체 `SupabaseRepository()`를 만드는 자리이므로 이것은 operations 조립 책임일 가능성이 크다. 다만 이 CLI 모듈 경로는 하네스·workflow가 호출하므로 경로 호환을 함께 검증하는 설계가 필요하다. 그 밖에 broker runtime(Phase 5), `dashboard/db.py` 잔여 화면 3개(Phase 6), ResearchStore 분리 판단(Phase 7), 최종 architecture guard 강화(Phase 10)가 남았다.
 - 다음 재개 지점: 위 11쌍을 메서드 단위로 분류한다. `build_labels`/`build_valuations`/`build_features`는 가격·재무·membership·local mirror(PIT replay)를 함께 읽으므로 read 계약을 먼저 고정하고, `evaluate`·`promotion/cli`·`system_ablation`·`backfill_research_history`·`build_decision_experiences`의 CLI 조립부는 operations로 옮길 수 있는지 workflow·하네스 호출 경로와 함께 재검증한다.
-- 관련 커밋: 이 배치의 코드·문서 커밋(아래 git log 참조).
+- 관련 커밋: `088ed3a`(코드·테스트·문서). 로컬 `main`이 원격보다 앞서 있고 아직 push하지 않았다(원격 `b0d0786`).
+- 사용자 결정 대기(다음 배치 진입 전): 남은 pending 11쌍 중 `evaluate`·`promotion/cli`·`system_ablation`·`backfill_research_history`·`build_decision_experiences`·`build_features`·`build_labels`·`build_valuations`는 CLI `main()`이 구체 `SupabaseRepository()`를 조립하는 자리다. 이 모듈 경로는 `operations/harness_adapters.py`·`operations/adapters/research.py`(하네스 코드, maintenance 선행 필요)와 `docs/OPERATIONS.md`·research/trading README 여러 곳이 명령으로 호출한다. (A) 조립부를 operations 명령으로 옮기고 경로를 함께 바꾸거나, (B) system_validation처럼 조립 진입점만 좁은 예외로 선언하는 두 방향 중 무엇으로 갈지 정해야 한다.
 
 ## 향후 milestone
 
