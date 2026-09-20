@@ -1,0 +1,6 @@
+id: no-naive-datetime-now
+message: "인자 없는 datetime.now()는 naive datetime을 생성합니다. datetime.now(timezone.utc) 또는 platform.clock을 사용하세요."
+severity: error
+language: python
+rule:
+  pattern: datetime.now()

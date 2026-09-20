@@ -19,6 +19,7 @@ ALLOWED_IMPORTS = {
     "investment_agent.platform.db.postgres", "investment_agent.research.storage.repository", "investment_agent.platform.cache",
     "investment_agent.platform.db.sqlite",
     "investment_agent.reporting.models", "investment_agent.reporting.services.strategy_labels",
+    "investment_agent.reporting.services.investment",
     "investment_agent.intelligence.infrastructure.sources.news.provider",
     "investment_agent.intelligence.infrastructure.sources.news",
     "investment_agent.data.institutional.domain.managers",

@@ -35,7 +35,9 @@ LEGACY_RUNTIME_PATHS = (
     Path("src/investment_agent/dashboard/cache.py"),
     Path("src/investment_agent/notifications/text.py"),
     Path("src/investment_agent/dashboard/models.py"),
+    Path("scripts/service/register_windows_tasks.ps1"),
 )
+
 
 LEGACY_TEST_PATHS = (
     Path("tests/ai_investor"),
@@ -51,6 +53,26 @@ class RepositoryLayoutTest(unittest.TestCase):
     def test_legacy_runtime_paths_are_absent(self) -> None:
         present = [path.as_posix() for path in LEGACY_RUNTIME_PATHS if path.exists()]
         self.assertEqual([], present, "폐기한 런타임 경로가 남아 있다")
+
+    def test_graphify_tracked_artifacts_match_policy(self) -> None:
+        """graphify-out은 정책상 오직 4개 최종 아티팩트만 Git 추적을 허용한다."""
+        import subprocess
+
+        res = subprocess.run(
+            ["git", "ls-files", "graphify-out"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        tracked = sorted(line.strip().replace("\\", "/") for line in res.stdout.splitlines() if line.strip())
+        allowed = [
+            "graphify-out/GRAPH_REPORT.md",
+            "graphify-out/graph.html",
+            "graphify-out/graph.json",
+            "graphify-out/manifest.json",
+        ]
+        self.assertEqual(allowed, tracked, "graphify-out 추적 파일이 허용 목록과 다릅니다")
+
 
     def test_legacy_ops_directory_has_no_python_sources(self) -> None:
         legacy_root = SRC.parent / "ops"

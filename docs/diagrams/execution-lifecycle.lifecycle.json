@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "ExecutionIntent 주문 실행 수명주기",
+    "output": "execution-lifecycle.html",
+    "viewBox": [1030, 630],
+    "animation": "trace",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "happy-path",
+        "label": "정상 실행 경로",
+        "focus": ["created", "approved", "executing", "reconciling", "completed"],
+        "note": "의도 생성부터 리스크 승인, 토스 전송, 체결 대사, 원장 확정까지의 5단계"
+      },
+      {
+        "id": "safety-lock",
+        "label": "안전 대기 및 락다운",
+        "focus": ["executing", "wait_quote", "reconciling", "locked"],
+        "note": "호가 유효성 대기 및 포지션 불일치 감지 시 즉시 락다운"
+      },
+      {
+        "id": "recovery-exits",
+        "label": "예외 복구 및 최종 종료",
+        "focus": ["executing", "failed", "locked", "cancelled", "expired"],
+        "note": "네트워크 일시 오류 재시도와 TTL 15분 만료 및 운영자 취소 터미널"
+      }
+    ]
+  },
+  "lanes": [
+    { "id": "main", "label": "실행 의도 수명주기" },
+    { "id": "waiting", "label": "안전 대기 및 락다운" },
+    { "id": "exceptions", "label": "복구 루프" },
+    { "id": "terminal", "label": "종료 상태" }
+  ],
+  "states": [
+    { "id": "created", "type": "start", "label": "Created", "sublabel": "의도 생성 · 비중 합1", "lane": "main", "col": 0, "step": "01", "tag": "entry" },
+    { "id": "approved", "type": "active", "label": "Approved", "sublabel": "리스크 게이트 승인", "lane": "main", "col": 1, "step": "02", "tag": "gate" },
+    { "id": "executing", "type": "active", "label": "Executing", "sublabel": "워커 선점 · 토스 전송", "lane": "main", "col": 2, "step": "03", "tag": "work" },
+    { "id": "reconciling", "type": "decision", "label": "Reconciling", "sublabel": "체결 감시 · 대사", "lane": "main", "col": 3, "step": "04", "tag": "check" },
+    { "id": "completed", "type": "success", "label": "Completed", "sublabel": "체결 완료 · 원장 확정", "lane": "main", "col": 4, "step": "05", "tag": "settled" },
+    { "id": "wait_quote", "type": "waiting", "label": "Wait Quote", "sublabel": "호가 유효성 대기", "lane": "waiting", "col": 0, "tag": "pause" },
+    { "id": "locked", "type": "waiting", "label": "Locked", "sublabel": "포지션 불일치 격리", "lane": "waiting", "col": 1, "tag": "wait" },
+    { "id": "failed", "type": "failure", "label": "Failed", "sublabel": "네트워크 일시 오류", "lane": "exceptions", "col": 0, "yOffset": 78, "tag": "retryable" },
+    { "id": "cancelled", "type": "failure", "label": "Cancelled", "sublabel": "운영자 명시 취소", "lane": "terminal", "col": 0, "tag": "terminal" },
+    { "id": "expired", "type": "failure", "label": "Expired", "sublabel": "TTL 15분 만료", "lane": "terminal", "col": 1, "tag": "terminal" }
+  ],
+  "transitions": [
+    { "id": "quote-wait", "from": "executing", "to": "wait_quote", "variant": "security", "fromSide": "bottom", "toSide": "top", "route": "straight" },
+    { "id": "mismatch-lock", "from": "reconciling", "to": "locked", "variant": "default", "route": "drop" },
+    { "id": "execution-failed", "from": "executing", "to": "failed", "variant": "security", "fromSide": "left", "toSide": "left", "via": [[320, 157], [320, 385]] },
+    { "id": "failed-retry", "from": "failed", "to": "executing", "variant": "emphasis", "fromSide": "left", "toSide": "top", "via": [[20, 385], [20, 80], [402, 80]] },
+    { "id": "block-expired", "from": "locked", "to": "expired", "variant": "security", "fromSide": "bottom", "toSide": "top", "route": "straight" },
+    { "id": "wait-cancelled", "from": "wait_quote", "to": "cancelled", "variant": "security", "fromSide": "bottom", "toSide": "top", "via": [[480, 336], [480, 432], [402, 432]] }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "주문 의도 검증과 정상 실행 경로",
+      "items": [
+        "ExecutionIntent는 현금을 포함한 비중 합이 반드시 1이어야 승인된다",
+        "리스크 게이트 통과 후 워커가 멱등하게 선점(claimed)하여 토스에 매도 우선 전송한다"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "안전 락다운과 TTL 만료",
+      "items": [
+        "체결 대사(Reconciling)에서 불일치 감지 시 즉시 Locked로 시스템 락다운된다",
+        "유효시간(15분)을 넘기면 만료(Expired)되며, 미승인/긴급 상황 시 Cancelled로 종료된다"
+      ]
+    }
+  ]
+}

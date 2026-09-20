@@ -15,7 +15,15 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+if str(ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(ROOT / "src"))
+
+from dotenv import load_dotenv
+
+load_dotenv(ROOT / ".env")
+
 
 PROBE_TOPIC = "probe.ledger_check"
 A, B = ("A", "1"), ("B", "1")

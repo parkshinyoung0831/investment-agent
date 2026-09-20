@@ -42,23 +42,15 @@ load_dotenv(ROOT / ".env")
 
 import psycopg2
 
+from scripts.postgres_schema_layout import application_schemas
+
 # Supabase Free: database size 500MB 초과 시 read-only.
 FREE_PLAN_LIMIT_BYTES = 500 * 1000 * 1000
 WARNING_RATIO = 0.70
 CRITICAL_RATIO = 0.85
 
-APP_SCHEMAS = (
-    "universe",
-    "market",
-    "fundamentals",
-    "macro",
-    "institutional",
-    "trading",
-    "execution",
-    "notifications",
-    "operations",
-    "reporting",
-)
+APP_SCHEMAS = application_schemas()
+
 
 TABLE_RE = re.compile(r"^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$")
 PROJECT_REF_RE = re.compile(r"(?<![a-z0-9])([a-z]{20})(?![a-z0-9])")

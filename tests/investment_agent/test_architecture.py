@@ -227,6 +227,7 @@ class DashboardReportingBoundaryTest(unittest.TestCase):
         "app_pages/decision_flow.py",
         "app_pages/gurus.py",
         "app_pages/ml_rl_lab.py",
+        "app_pages/portfolio.py",
     }
     IDENTITY_GATE = "universe"
 
@@ -238,6 +239,19 @@ class DashboardReportingBoundaryTest(unittest.TestCase):
             if "investment_agent.dashboard.db" in path.read_text(encoding="utf-8"):
                 offenders.append(relative)
         self.assertEqual([], sorted(offenders))
+
+    def test_portfolio_page_guard_rejects_legacy_db_import(self) -> None:
+        read_text = Path.read_text
+        portfolio = PACKAGE / "dashboard" / "app_pages" / "portfolio.py"
+
+        def injected(path: Path, *args: object, **kwargs: object) -> str:
+            if path == portfolio:
+                return "from investment_agent.dashboard.db import load_latest_target"
+            return read_text(path, *args, **kwargs)
+
+        with patch.object(Path, "read_text", injected):
+            with self.assertRaises(AssertionError):
+                self.test_migrated_pages_do_not_import_dashboard_db()
 
     def test_price_reader_is_not_imported_from_dashboard_db(self) -> None:
         pages = (PACKAGE / "dashboard" / "app_pages").glob("*.py")

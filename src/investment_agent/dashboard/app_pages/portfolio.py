@@ -11,7 +11,9 @@ from investment_agent.dashboard.calculations import (
     covariance_to_correlation,
     rebalance_portfolio,
 )
-from investment_agent.dashboard.db import load_latest_account_snapshot, load_latest_target, load_system_portfolio_data
+from investment_agent.reporting.readers.dashboard import (
+    load_latest_account_snapshot, load_latest_target, load_system_portfolio_data,
+)
 from investment_agent.dashboard.components.theme import dashboard_palette, plotly_layout
 from investment_agent.dashboard.components.ui import (
     SOURCE_CALC,

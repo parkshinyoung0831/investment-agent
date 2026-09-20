@@ -62,7 +62,8 @@
 1. 프로젝트와 스키마 확인
 - 사용 가능한 Supabase 프로젝트를 확인한다.
 - 관련 스키마 목록을 확인한다.
-- Supabase에 실제로 있는 스키마는 여섯 개뿐이다.
+- Supabase에 실제로 있는 분석용 스키마는 6개다 (알림 발송 원장인 notifications 제외).
+
   · universe        기업 identity, 상장 증권, 지수 구성
   · market          일봉·분할·배당
   · fundamentals    공시·재무·세그먼트·실적·컨센서스

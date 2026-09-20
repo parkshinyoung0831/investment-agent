@@ -7,6 +7,7 @@
 artifacts/
 scratch/
 .superpowers/
+repomix-output.*
 *.log
 data/local/*.duckdb
 data/local/*.duckdb.*

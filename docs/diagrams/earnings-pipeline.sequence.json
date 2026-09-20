@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "SEC 실적 공시 감지 및 2단계 알림 시퀀스",
+    "output": "earnings-pipeline.html",
+    "column_fit": "spread",
+    "viewBox": [920, 960],
+    "animation": "trace",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "flash-phase",
+        "label": "1단계: 실적 속보",
+        "focus": ["sec", "watcher", "ledger", "discord"],
+        "note": "Form 8-K Item 2.02 보도자료를 즉시 감지하여 Embed 알림 발송"
+      },
+      {
+        "id": "card-phase",
+        "label": "2단계: 정밀 카드 렌더링",
+        "focus": ["watcher", "ledger", "renderer", "discord"],
+        "note": "Form 10-Q/K 정식 공시 접수 후 Playwright 캡처 및 포럼 스레드 발행"
+      }
+    ]
+  },
+  "participants": [
+    { "id": "sec", "type": "external", "label": "SEC EDGAR", "sublabel": "공시 피드" },
+    { "id": "watcher", "type": "backend", "label": "감시 하네스", "sublabel": "watch_earnings" },
+    { "id": "ledger", "type": "database", "label": "Supabase 원장", "sublabel": "financials + ledger" },
+    { "id": "renderer", "type": "backend", "label": "Playwright", "sublabel": "Chromium 렌더러" },
+    { "id": "discord", "type": "frontend", "label": "Discord", "sublabel": "속보 및 포럼 스레드" }
+  ],
+  "segments": [
+    { "from": 150, "to": 400, "label": "1단계: Form 8-K 실적 속보 (발표 당일)" },
+    { "from": 430, "to": 840, "label": "2단계: Form 10-Q/K 정밀 분석 카드 (정식 공시 후)" }
+  ],
+  "messages": [
+    { "from": "sec", "to": "watcher", "y": 190, "label": "8-K Item 2.02 보도자료 접수", "variant": "emphasis" },
+    { "from": "watcher", "to": "ledger", "y": 232, "label": "속보 알림 원장 선점 (reserve)", "variant": "emphasis" },
+    { "from": "ledger", "to": "watcher", "y": 274, "label": "선점 승인 (중복 없음)", "variant": "return" },
+    { "from": "watcher", "to": "discord", "y": 316, "label": "매출·EPS 서프라이즈 Embed 즉시 발송", "variant": "emphasis" },
+    { "from": "watcher", "to": "ledger", "y": 358, "label": "속보 발송 완료 기록", "variant": "dashed" },
+    { "from": "sec", "to": "watcher", "y": 470, "label": "정식 Form 10-Q/K 공시 접수", "variant": "emphasis" },
+    { "from": "watcher", "to": "ledger", "y": 512, "label": "financial_versions 버전 적재", "variant": "emphasis" },
+    { "from": "watcher", "to": "ledger", "y": 554, "label": "정밀 카드 알림 선점", "variant": "default" },
+    { "from": "watcher", "to": "renderer", "y": 606, "label": "13분기 추세·현금흐름 브릿지 렌더 요청", "variant": "emphasis" },
+    { "from": "renderer", "to": "watcher", "y": 668, "label": "고해상도 PNG 캡처 바이트 반환", "variant": "return" },
+    { "from": "watcher", "to": "discord", "y": 730, "label": "PNG 카드 + 섹터 포럼 스레드 발행", "variant": "emphasis" },
+    { "from": "watcher", "to": "ledger", "y": 792, "label": "정밀 알림 원장 완료 기록", "variant": "dashed" }
+  ],
+  "activations": [
+    { "participant": "watcher", "from": 184, "to": 364, "type": "backend" },
+    { "participant": "ledger", "from": 226, "to": 280, "type": "database" },
+    { "participant": "watcher", "from": 464, "to": 798, "type": "backend" },
+    { "participant": "ledger", "from": 506, "to": 560, "type": "database" },
+    { "participant": "renderer", "from": 600, "to": 674, "type": "backend" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "1단계: 초저지연 실적 속보 (Flash)",
+      "items": [
+        "로컬 하네스가 관심종목의 Form 8-K 공시를 1분 주기로 정밀 감시한다",
+        "Item 2.02 실적 보도자료 감지 즉시 중복 방지 원장을 선점하고 단문 Embed를 송출한다"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "2단계: 고해상도 시각화 카드 (Earnings)",
+      "items": [
+        "정식 10-Q/K 재무제표가 접수되면 financial_versions에 공시별 버전을 격리 보존한다",
+        "Playwright Chromium이 13분기 추세와 6단계 현금흐름 브릿지 차트를 PNG로 캡처하여 포럼에 발행한다"
+      ]
+    }
+  ]
+}

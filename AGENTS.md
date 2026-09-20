@@ -37,6 +37,11 @@ Codex는 스킬을 자동 발견하지 않습니다. 아래 표에서 지금 만
 | 스킬 | 언제 | 경로 |
 |---|---|---|
 | `graphify` | 코드 구조·의존성 파악 (grep보다 먼저) | `.codex/skills/graphify/SKILL.md` |
+| `archify` | C4 아키텍처·실행 런북 다이어그램 빌드 | `.codex/skills/archify/SKILL.md` |
+| `repomix` | 모듈별 컨텍스트 압축·토큰 집계 | `.codex/skills/repomix/SKILL.md` |
+| `ast-grep` | AST 기반 구조적 검색·대규모 리팩터링 | `.codex/skills/ast-grep/SKILL.md` |
+| `hypothesis` | 포트폴리오 비중·리스크 계약 불변식 테스트 | `.codex/skills/hypothesis/SKILL.md` |
+| `developing-with-streamlit` | Streamlit 대시보드 UI 개발·캐싱·최적화 | `.codex/skills/developing-with-streamlit/SKILL.md` |
 
 스킬과 [CLAUDE.md](CLAUDE.md)가 충돌하면 **CLAUDE.md가 우선**입니다.
 

@@ -1,0 +1,10 @@
+id: no-bare-except
+message: "bare except: 구문은 사용하지 마세요. 구체적인 예외 타입이나 Exception을 지정해야 합니다."
+severity: warning
+language: python
+rule:
+  pattern: |
+    try:
+      $$$
+    except:
+      $$$

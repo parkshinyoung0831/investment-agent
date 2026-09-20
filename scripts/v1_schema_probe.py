@@ -29,9 +29,11 @@ load_dotenv(ROOT / ".env")
 import psycopg2
 
 from scripts.postgres_schema_layout import (
+    POSTGRES_V1_DIR,
     SCHEMA_OF_INSTALLATION_FILE,
     installation_files,
 )
+
 
 PROBE_PREFIX = "v1probe_"
 STRUCTURE_SQL_FILES = tuple(path.name for path in installation_files())

@@ -482,7 +482,7 @@
 
 #### Notification channel 배치 — 공유 전송 계약 + 운영 조립 분리
 
-- 근거: `notifications.engine`이 Discord 모듈의 전송 결과·오류·스레드·nonce 상한과 `DiscordChannel` 생성에 결합돼 있었다. 13개 알림 producer와 4개 Operations caller가 `engine.default_context`를 사용했고, 실제 production 채널은 Discord 하나다.
+- 근거: 알림 엔진이 Discord 모듈의 전송 결과·오류·스레드·nonce 상한과 `DiscordChannel` 생성에 결합돼 있었다. 13개 알림 producer와 4개 Operations caller가 `engine.default_context`를 사용했고, 실제 production 채널은 Discord 하나다.
 - 변경 파일·방향: `notifications/channels/contracts.py`에 기존 결과·오류·스레드·25자 nonce 계약과 최소 `NotificationChannel` protocol을 두고 engine·Discord adapter·producer·직접 테스트가 이를 소비한다. `notifications/context.py`가 기존 Postgres ledger + Discord channel을 조립하고 모든 기존 caller를 직접 이관했다. `engine`의 Discord import와 legacy `default_context`를 삭제했다. `tests/investment_agent/test_architecture.py`, 알림 계약 테스트, `tests/test_repo_conventions.py`의 공유 조립 경계만 갱신했다. DB schema·알림 내용·발송/재시도·결과 불명 규칙은 불변이다.
 - 검증: concrete import architecture guard는 RED 후 GREEN이며 합성 위반도 검출한다. 알림 251개, architecture·workflow·Discord 91개, repository owner 재검증 30개 통과. 첫 전체 suite에서 repository 패키지 규칙이 새 공유 조립 모듈을 producer로 오분류한 실패 1건을 조사·수정했고, 재실행 3,043개는 기준선과 같은 선택적 `lightgbm`/`xgboost` 미설치 오류 4개·skip 1개 외 새 실패가 없다. source/test의 이전 `engine.default_context`·Discord 계약 import caller 0건.
 - 남은 부채: `PENDING_DEPENDENCIES` 19쌍 불변. 아직 broker runtime, dashboard reporting read, ResearchStore·Operations ownership과 최종 architecture guard가 남는다. 다음 배치는 현재 caller를 다시 확인해 broker 또는 dashboard read 중 동일 책임 경계 2~3개를 묶는다.

@@ -20,6 +20,7 @@ from investment_agent.execution import db as execution_db
 from investment_agent.execution.orders.intents import ExecutionIntent
 from investment_agent.platform.db.sqlite import runtime_connection
 from investment_agent.reporting.models import DataResult
+from investment_agent.reporting.readers import dashboard as reporting_dashboard
 from investment_agent.reporting.readers import news as reporting_news
 
 
@@ -282,7 +283,7 @@ class SelectOnlyGatewayTests(unittest.TestCase):
                     "earnings": _uncached(db.load_earnings_data)(),
                     "guru": _uncached(db.load_guru_data)(),
                     "strategy": _uncached(db.load_strategy_data)(),
-                    "target": _uncached(db.load_latest_target)(),
+                    "target": _uncached(reporting_dashboard.load_latest_target)(),
                 }
 
         self.assertEqual(
@@ -629,7 +630,7 @@ class SelectOnlyGatewayTests(unittest.TestCase):
                     "raw_snapshot": {"must_not_be_read": True},
                 })
 
-                result = _uncached(db.load_latest_account_snapshot)()
+                result = _uncached(reporting_dashboard.load_latest_account_snapshot)()
 
         self.assertEqual(result.status, "ok")
         self.assertEqual(result.value["equity"], 1_250.0)
@@ -862,9 +863,6 @@ class DashboardStaticBoundaryTests(unittest.TestCase):
             "load_earnings_extended",
             "load_guru_data",
             "load_strategy_data",
-            "load_latest_target",
-            "load_system_portfolio_data",
-            "load_latest_account_snapshot",
             "load_price_history",
             "load_reporting_view",
         }
@@ -876,6 +874,9 @@ class DashboardStaticBoundaryTests(unittest.TestCase):
             "load_econ_series_history",
             "load_econ_detail",
             "load_macro_window",
+            "load_latest_target",
+            "load_system_portfolio_data",
+            "load_latest_account_snapshot",
         }
         from investment_agent.reporting.readers import dashboard as reporting_dashboard
 

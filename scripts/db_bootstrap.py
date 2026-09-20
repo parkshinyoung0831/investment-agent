@@ -8,8 +8,9 @@
     python scripts/db_bootstrap.py apply --confirm <project-ref>
     python scripts/db_bootstrap.py apply --confirm <project-ref> --drop-first
 
-``--drop-first``는 10개 application schema를 CASCADE로 지우고 다시 만든다. **데이터가
+``--drop-first``는 application schema(7개)를 CASCADE로 지우고 다시 만든다. **데이터가
 전부 사라진다.** Supabase 자체 영역(auth/storage/realtime/extensions/vault와 migration
+
 metadata)은 건드리지 않는다.
 
 드롭과 재생성은 한 트랜잭션에서 돈다. 중간에 실패해 스키마가 사라진 채로 남으면
@@ -144,8 +145,9 @@ def main() -> int:
     p_apply.add_argument(
         "--drop-first",
         action="store_true",
-        help="application schema 10개를 CASCADE로 지우고 다시 만든다 (데이터 전부 삭제)",
+        help="application schema(7개)를 CASCADE로 지우고 다시 만든다 (데이터 전부 삭제)",
     )
+
     p_apply.set_defaults(func=cmd_apply)
 
     args = parser.parse_args()

@@ -19,6 +19,7 @@ from investment_agent.reporting.models import DataResult, normalize_observed_at,
 from investment_agent.reporting.readers.financial import ReportingQueries
 from investment_agent.reporting.readers.research import load_local_research_records
 from investment_agent.reporting.readers.runtime import read_local_rows, read_runtime_rows
+from investment_agent.reporting.services.investment import build_system_portfolio_read_model
 
 SOURCE = "DB 저장 데이터 · v1 Supabase"
 MACRO_LOOKBACK_DAYS = 400
@@ -248,6 +249,87 @@ def load_execution_data() -> DataResult:
             return result
         payload[key] = result.rows
     return DataResult.empty(value=payload, source="reporting execution", message="아직 저장된 실행·체결 기록이 없습니다.") if not any(payload.values()) else DataResult.ok(value=payload, source="reporting execution")
+
+
+@cache_data(ttl="30s", max_entries=2)
+def load_latest_account_snapshot() -> DataResult:
+    """실행 원장의 안전한 일일 계좌 스냅샷을 화면에 투영한다."""
+    source = "로컬 Runtime · account_snapshots"
+    try:
+        accounts = read_runtime_rows("account_snapshots")
+        if not accounts:
+            return DataResult.empty(
+                source=source, value={"holdings": []}, message="저장된 계좌 스냅샷이 없습니다.",
+            )
+        payload = dict(max(accounts, key=lambda row: str(row.get("captured_at") or "")))
+        payload.setdefault("holdings", [])
+        return DataResult.ok(source=source, value=payload, observed_at=payload.get("captured_at"))
+    except Exception as error:
+        return DataResult.error(
+            source=source, message=public_exception_message("계좌 스냅샷 조회에 실패했습니다.", error),
+        )
+
+
+@cache_data(ttl="2m", max_entries=2)
+def load_system_portfolio_data() -> DataResult:
+    """System Portfolio 원장과 최신 계좌·성과 보고서를 비교 read model로 묶는다."""
+    source = "로컬 Runtime · system_nav/system_targets"
+    if os.environ.get("DASHBOARD_OFFLINE", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return DataResult.offline(source=source)
+    from investment_agent.reporting.notifications.investment.performance import performance_reports
+    try:
+        nav_rows = read_runtime_rows("system_nav")
+        target_rows = read_runtime_rows("system_targets")
+        accounts = read_runtime_rows("account_snapshots")
+        account = max(accounts, key=lambda row: str(row.get("captured_at") or "")) if accounts else None
+        model = build_system_portfolio_read_model(
+            nav_rows=nav_rows, target_rows=target_rows, proposals=read_runtime_rows("portfolio_proposals"),
+            account=account, performance_reports=performance_reports(),
+            approvals=read_runtime_rows("approvals"), orders=read_runtime_rows("orders"),
+        )
+    except Exception as error:
+        return DataResult.error(source=source, message=public_exception_message("System Portfolio 조회에 실패했습니다.", error))
+    if not nav_rows and not target_rows:
+        return DataResult.empty(source=source, value=model, message="System Portfolio가 아직 첫 목표를 만들지 않았어요.")
+    observed = nav_rows and max(str(row["trade_date"]) for row in nav_rows)
+    return DataResult.ok(source=source, value=model, observed_at=observed or None)
+
+
+@cache_data(ttl="2m", max_entries=2)
+def load_latest_target() -> DataResult:
+    """최신 System Portfolio 승인 목표와 입력 제안을 읽고 실계좌 추종 계획은 제외한다."""
+    source = "로컬 Runtime · risk_decisions/portfolio_proposals"
+    payload: dict[str, dict[str, Any] | None] = {"risk_decision": None, "proposal": None}
+    try:
+        system_proposals = {
+            str(row.get("proposal_id")) for row in read_runtime_rows("portfolio_proposals")
+            if (row.get("metadata") or {}).get("system_policy")
+        }
+        decisions = [row for row in read_runtime_rows("risk_decisions")
+                     if row.get("is_approved") and str(row.get("proposal_id")) in system_proposals]
+        decisions.sort(key=lambda row: str(row.get("decided_at") or ""), reverse=True)
+        decisions = decisions[:1]
+        risk_decision = decisions[0] if decisions else None
+        proposals = [
+            row for row in read_runtime_rows("portfolio_proposals")
+            if risk_decision and row.get("proposal_id") == risk_decision.get("proposal_id")
+        ]
+        proposals.sort(key=lambda row: str(row.get("as_of_at") or ""), reverse=True)
+        proposals = proposals[:1]
+        proposal = proposals[0] if proposals else None
+        payload = {"risk_decision": risk_decision, "proposal": proposal}
+        observed_at = _latest_at(((decisions, ("decided_at",)), (proposals, ("as_of_at", "created_at"))))
+        if not risk_decision and not proposal:
+            return DataResult.empty(
+                source=source, value=payload, observed_at=observed_at,
+                message="저장된 승인 목표 또는 포트폴리오 제안이 없습니다.",
+            )
+        return DataResult.ok(value=payload, source=source, observed_at=observed_at)
+    except Exception as error:
+        return DataResult.error(
+            source=source, value=payload,
+            message=public_exception_message("최신 승인 목표 DB 조회에 실패했습니다.", error),
+        )
 
 
 def _as_datetime(value: object) -> datetime | None:
