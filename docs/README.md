@@ -176,6 +176,7 @@ switch가 이 폴더에 있다. AI Investor는 broker key에 접근하지 않는
 | `EXECUTION_AND_SAFETY.md` | 승인, broker, Paper/Live와 안전장치는 무엇인가? |
 | `OPERATIONS.md` | 설치, Actions, 하네스, 상태 확인과 장애 해결은 어떻게 하는가? |
 | `STORAGE_MAP.md` | 어떤 사실이 네 저장소 중 어디에 사는가? |
+| `SYSTEM_ARCHITECTURE.md` | 시스템 전체 계층 구조, 8대 컴포넌트와 대화형 아키텍처 다이어그램은 어떠한가? |
 
 각 문서는 **지금 무엇인가**만 적는다. 무엇을 왜 바꿨는지는 git이 갖는다.
 

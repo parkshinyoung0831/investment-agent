@@ -323,6 +323,7 @@ class LayerDirectionTest(unittest.TestCase):
         # 수집·연구 코드는 실행 하네스의 기술 helper를 직접 알지 않는다. monitoring은
         # 파이프라인 실패를 Discord ops에 알리는 정당한 운영 행위라 예외로 남긴다.
         "data": ("operations",),
+        "intelligence": ("research", "trading", "execution", "operations", "notifications", "dashboard"),
         "research": ("operations", "trading"),
         # execution은 판단이 어떻게 만들어졌는지 알 필요가 없다. 승인된 계획만 받는다.
         "execution": ("trading", "research", "data", "notifications", "dashboard", "operations"),
@@ -360,7 +361,6 @@ class LayerDirectionTest(unittest.TestCase):
             ("src/investment_agent/research/backtest/simulator.py", "investment_agent.trading.portfolio.contracts"),
             ("src/investment_agent/research/commands/backfill_research_history.py", "investment_agent.trading.supabase_repository"),
             ("src/investment_agent/research/commands/build_decision_experiences.py", "investment_agent.trading.supabase_repository"),
-            ("src/investment_agent/research/commands/build_events.py", "investment_agent.trading.evidence.cache"),
             ("src/investment_agent/research/commands/build_features.py", "investment_agent.trading.evidence.context"),
             ("src/investment_agent/research/commands/build_features.py", "investment_agent.trading.supabase_repository"),
             ("src/investment_agent/research/commands/build_labels.py", "investment_agent.trading.supabase_repository"),
@@ -407,6 +407,17 @@ class LayerDirectionTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=PACKAGE / "research" / "system_validation") as temporary:
             probe = Path(temporary) / "probe.py"
             probe.write_text("from investment_agent.trading.system.engine import run_system\n", encoding="utf-8")
+            with self.assertRaises(AssertionError) as caught:
+                self.test_layers_do_not_import_downstream()
+            self.assertIn("probe.py", str(caught.exception))
+
+    def test_intelligence_cannot_import_trading_implementation(self) -> None:
+        with tempfile.TemporaryDirectory(dir=PACKAGE / "intelligence") as temporary:
+            probe = Path(temporary) / "probe.py"
+            probe.write_text(
+                "from investment_agent.trading.evidence.context import ContextBuilder\n",
+                encoding="utf-8",
+            )
             with self.assertRaises(AssertionError) as caught:
                 self.test_layers_do_not_import_downstream()
             self.assertIn("probe.py", str(caught.exception))

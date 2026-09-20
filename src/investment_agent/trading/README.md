@@ -283,7 +283,7 @@ python -m investment_agent.research.commands.evaluate --limit 200
 python -m investment_agent.research.backtest.cli --input <INPUT.json> --output <OUTPUT.json>
 
 # cache retention
-python -m investment_agent.trading.evidence.cleanup --retention-days 90
+python -m investment_agent.intelligence.commands.prune_evidence_cache --retention-days 90
 ```
 
 승격과 intent 명령은 실제 ID와 저장된 평가 근거가 필요합니다.

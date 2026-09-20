@@ -90,7 +90,7 @@ System·실계좌 경로에는 RL 추론 진입점이 없다. 비중을 기대�
   실행·승인·판단·체결은 로컬 runtime SQLite가 소유한다.
 - ResearchStore는 재계산 가능한 feature/label·training sample·event 파생물의 local
   source of truth다. 이 데이터에는 별도 Production Supabase schema를 만들지 않는다.
-- DuckDB `src/investment_agent/trading/evidence/cache.py`는 뉴스·Reddit·StockTwits 등
+- DuckDB `src/investment_agent/intelligence/evidence_cache.py`는 뉴스·Reddit·StockTwits 등
   원문을 **기사·게시물 한 건당 한 행**으로 보관하고(canonical URL/content hash 포함)
   90일 retention을 적용한다. 원문은 Supabase로 복제하지 않는다. ResearchStore로 가는 것은
   research command가 만든 재계산 가능한 파생물이며, 뉴스·소셜은

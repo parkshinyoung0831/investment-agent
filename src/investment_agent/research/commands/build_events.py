@@ -19,7 +19,7 @@ from investment_agent.platform.cli.runtime import run_log_payload
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.serialization import parse_datetime
 from investment_agent.research.storage.repository import ResearchStore
-from investment_agent.trading.evidence.cache import LocalEvidenceCache
+from investment_agent.intelligence.evidence_cache import LocalEvidenceCache
 from investment_agent.research.features.event_intelligence import (
     NormalizedContent,
     extract_events,

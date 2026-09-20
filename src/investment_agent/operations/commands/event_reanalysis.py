@@ -23,7 +23,7 @@ MAX_TICKERS_PER_RUN = 3
 def _refresh_events(now: datetime) -> dict[str, Any]:
     """로컬 뉴스·소셜 원문을 사건으로 다시 압축한다. 실패해도 공시 기반 재분석은 계속한다."""
     from investment_agent.research.commands.build_events import build_events
-    from investment_agent.trading.evidence.cache import LocalEvidenceCache
+    from investment_agent.intelligence.evidence_cache import LocalEvidenceCache
     from investment_agent.trading.supabase_repository import SupabaseRepository
 
     repository = SupabaseRepository()

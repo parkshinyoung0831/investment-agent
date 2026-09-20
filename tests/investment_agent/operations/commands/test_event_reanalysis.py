@@ -17,7 +17,7 @@ class EventRefreshCompositionTest(unittest.TestCase):
             patch(
                 "investment_agent.trading.supabase_repository.SupabaseRepository"
             ) as repository_factory,
-            patch("investment_agent.trading.evidence.cache.LocalEvidenceCache") as cache_factory,
+            patch("investment_agent.intelligence.evidence_cache.LocalEvidenceCache") as cache_factory,
             patch("investment_agent.research.commands.build_events.build_events") as build,
         ):
             repository_factory.return_value.current_tracked_tickers.return_value = ["AAPL"]

@@ -26,6 +26,7 @@ DIAGRAMS = [
     ("lifecycle", "execution-lifecycle.lifecycle.json", "execution-lifecycle.html"),
     ("workflow", "execution-runbook.workflow.json", "execution-runbook.html"),
     ("sequence", "earnings-pipeline.sequence.json", "earnings-pipeline.html"),
+    ("architecture", "system-architecture.architecture.json", "system-architecture.html"),
 ]
 
 

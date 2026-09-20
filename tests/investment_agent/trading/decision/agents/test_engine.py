@@ -614,7 +614,7 @@ class LocalEvidencePersistenceTest(unittest.TestCase):
     """뉴스·소셜 원문이 기사 단위로 남아야 사건 추출이 그것을 읽을 수 있다."""
 
     def _fetch_once(self, temporary: str, raw: str, *, domain: str, provider: str):
-        from investment_agent.trading.evidence.cache import LocalEvidenceCache
+        from investment_agent.intelligence.evidence_cache import LocalEvidenceCache
 
         bundle_token = adapter._ACTIVE_BUNDLE.set(_bundle())
         manifest_token = adapter._EXTERNAL_MANIFESTS.set([])

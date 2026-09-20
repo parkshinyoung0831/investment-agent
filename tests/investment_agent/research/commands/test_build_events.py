@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from investment_agent.research.commands.build_events import build_events
-from investment_agent.trading.evidence.cache import ExternalContent, LocalEvidenceCache
+from investment_agent.intelligence.evidence_cache import ExternalContent, LocalEvidenceCache
 
 AS_OF = datetime(2026, 8, 20, tzinfo=timezone.utc)
 

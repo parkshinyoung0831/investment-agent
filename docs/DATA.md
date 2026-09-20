@@ -243,8 +243,8 @@ hard risk는 deterministic code가 강제한다.
 ### Retention과 복구
 
 ```powershell
-python -m investment_agent.trading.evidence.cleanup
-python -m investment_agent.trading.evidence.cleanup --path data/local/news_social.duckdb --retention-days 90
+python -m investment_agent.intelligence.commands.prune_evidence_cache
+python -m investment_agent.intelligence.commands.prune_evidence_cache --path data/local/news_social.duckdb --retention-days 90
 
 # 로컬 원문 → ResearchStore의 events / event_feature_snapshots
 # (하네스 feature_store 잡의 마지막 단계; Supabase trading 표에는 쓰지 않는다)

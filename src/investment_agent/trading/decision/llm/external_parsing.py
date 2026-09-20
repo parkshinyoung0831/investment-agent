@@ -10,7 +10,7 @@ import re
 from typing import Any, Mapping
 
 from investment_agent.trading.contracts import parse_datetime
-from investment_agent.trading.evidence.cache import ExternalContent
+from investment_agent.intelligence.evidence_cache import ExternalContent
 
 # "### <title> (source: <publisher>)" — yfinance news formatter의 항목 경계다.
 _ARTICLE_HEADING = re.compile(r"^###\s+(?P<title>.+?)(?:\s+\(source:\s*(?P<source>[^)]*)\))?\s*$")

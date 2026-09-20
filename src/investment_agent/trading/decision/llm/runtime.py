@@ -31,7 +31,7 @@ from investment_agent.trading.decision.llm.vendor.stocktwits import (
 from investment_agent.trading.decision.llm.vendor.reddit import (
     fetch_reddit_posts as _vendor_fetch_reddit,
 )
-from investment_agent.trading.evidence.cache import (
+from investment_agent.intelligence.evidence_cache import (
     LocalEvidenceCache,
     LocalEvidenceCacheError,
     request_hash as local_request_hash,

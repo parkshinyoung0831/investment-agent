@@ -101,6 +101,11 @@ class IntelligenceArchitectureTest(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertFalse((ROOT / name).exists())
 
+    def test_external_evidence_cache_is_distinct_from_archive_and_not_trading_owned(self) -> None:
+        self.assertTrue((ROOT / "evidence_cache.py").is_file())
+        self.assertFalse(Path("src/investment_agent/trading/evidence/cache.py").exists())
+        self.assertFalse(Path("src/investment_agent/trading/evidence/cleanup.py").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

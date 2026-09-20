@@ -537,7 +537,7 @@ historical replay에서 의도적으로 제외한다. 최신 데이터 상태는
 
 ```powershell
 python -m pip install duckdb==1.5.5
-python -m investment_agent.trading.evidence.cleanup
+python -m investment_agent.intelligence.commands.prune_evidence_cache
 ```
 
 `data/local/news_social.duckdb`는 재생성 가능한 cache다. 사용하는 프로세스를 종료하고 손상 파일을
