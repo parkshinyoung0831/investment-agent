@@ -11,8 +11,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from investment_agent.research.evaluation.costs import TransactionCostModel
+from investment_agent.research.evaluation.outcomes import TradeOutcome, make_trade_outcome
 from investment_agent.platform.serialization import ContractError
-from investment_agent.trading.performance.pnl import TradeOutcome, make_trade_outcome
 
 # 비용을 비율로 환산할 때 쓰는 기준 금액. commission_rate와 slippage_bps가 모두
 # 비례 항이라 결과 비율은 이 값과 무관하다. minimum_commission을 0보다 크게 두면

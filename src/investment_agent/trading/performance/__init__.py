@@ -5,11 +5,8 @@ from investment_agent.trading.performance.attribution import (
     AttributionReport,
     build_attribution_report,
 )
-from investment_agent.trading.performance.pnl import TradeOutcome, make_trade_outcome
 
 __all__ = [
     "AttributionReport",
-    "TradeOutcome",
     "build_attribution_report",
-    "make_trade_outcome",
 ]

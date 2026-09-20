@@ -1,4 +1,4 @@
-"""거래 단위 손익의 결정론적 회계 계약."""
+"""Research shadow 거래 단위 손익의 결정론적 회계 계약."""
 from __future__ import annotations
 
 import hashlib

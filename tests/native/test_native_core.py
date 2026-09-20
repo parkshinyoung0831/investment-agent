@@ -7,7 +7,8 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 
 from investment_agent.trading.contracts import EvidenceBundle, EvidenceItem
-from investment_agent.trading.performance import build_attribution_report, make_trade_outcome
+from investment_agent.trading.performance import build_attribution_report
+from investment_agent.research.evaluation.outcomes import make_trade_outcome
 from investment_agent.execution.orders.market_state import MarketState
 from investment_agent.trading.decision.contracts import Event, ExpectedReturnSignal
 from investment_agent.research.features.event_intelligence import (
