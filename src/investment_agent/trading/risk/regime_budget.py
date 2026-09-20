@@ -10,7 +10,7 @@
 - **LLM·모델이 아니라 가격 이력이 정한다.** regime 입력은 판단 시점까지의 SPY 일봉뿐이다.
 
 배율·경계·기간은 정책값이다. `MarketRiskPolicy` 하나에 버전과 함께 모아 두고, 연구의 과거 재현
-(`research.ablation`)에서 다른 값과 비교한다.
+(`research.system_validation.ablation`)에서 다른 값과 비교한다.
 """
 from __future__ import annotations
 

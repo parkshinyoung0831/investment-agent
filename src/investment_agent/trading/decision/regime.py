@@ -1,7 +1,7 @@
 """공통 시장 환경을 계산하는 결정론적 regime 모듈.
 
 경계값(낙폭 8%·20%, 변동성 30%·50% 등)은 자연법칙이 아니라 정책값이다. `RegimeThresholds`에 버전과 함께
-두어 연구(`research.ablation`)에서 과거 재현으로 다른 값과 비교할 수 있게 한다.
+두어 연구(`research.system_validation.ablation`)에서 과거 재현으로 다른 값과 비교할 수 있게 한다.
 """
 from __future__ import annotations
 

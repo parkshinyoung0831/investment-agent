@@ -288,7 +288,7 @@ class BoundaryTest(unittest.TestCase):
         # 연구 후보는 사람이 채택하기 전에는 System에 닿지 않는다(champion ML은 채택 파일로만 들어온다).
         "investment_agent.research.commands",
         "investment_agent.research.training",
-        "investment_agent.research.ablation",
+        "investment_agent.research.system_validation.ablation",
         "investment_agent.research.promotion",
         "investment_agent.research.evaluation.challenger",
         "investment_agent.research.rl.continuous_learner",

@@ -8,8 +8,8 @@
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
 - 현재 단계: Phase 2~3의 Research artifact/Data read owner 이관과 실제 caller 기준 역방향 import 제거를 독립 단위로 진행 중이다.
-- 현재 계획: `docs/superpowers/plans/2026-09-20-research-evaluation-ownership.md` (Task 1~3 완료). 다음 독립 단위는 현재 caller·replay 의미를 다시 조사해 선택한다.
-- 완료 단계: Phase 1 조사, Phase 2의 feature snapshot·training label·valuation·event·training sample·decision experience owner 이관, Phase 3 공통 serialization·forecast·평가 계약 및 일부 Data read 역방향 import 정리. 평가 계약 이관 후 `PENDING_DEPENDENCIES`는 29쌍이다.
+- 현재 계획: `docs/superpowers/plans/2026-09-20-system-ablation-validation-boundary.md` (Task 1~3 완료). 다음 독립 단위는 남은 Research caller와 Phase 4~8 후보를 재검증해 선택한다.
+- 완료 단계: Phase 1 조사, Phase 2의 feature snapshot·training label·valuation·event·training sample·decision experience owner 이관, Phase 3 공통 serialization·forecast·평가 계약 및 일부 Data read 역방향 import 정리, production Trading 알고리즘 검증의 명시적 경계 설정. 현재 `PENDING_DEPENDENCIES`는 22쌍이다.
 - maintenance 상태: 확인·설정하지 않았다. 하네스 또는 execution 코드를 수정하기 전에 `harness_switch --maintenance on`을 수행하고 상태를 확인한다. live flag는 변경하지 않는다.
 
 ## 검증 기준선
@@ -448,6 +448,18 @@
 - 제거된 debt: Research→Trading 3쌍. `PENDING_DEPENDENCIES` 32→29, 새 pending 없음.
 - 남은 debt: 일반 Research→Trading 26쌍과 Trading→Execution 3쌍. `evaluate` command의 decision case/read-write façade는 실제 Trading 원장과 연관돼 별도 read/write 경계 검증이 필요하다. broker/dashboard/notification 등 숫자 밖의 phase도 남았다.
 - 다음 독립 작업: remaining Research import 중 단순 계약과 실제 Trading 알고리즘 검증을 구별한다. 특히 `trading.evidence.cache`는 Research event builder가 읽지만 별도 Intelligence Parquet 저장소와 생명주기가 달라 이름만 보고 합치지 않는다.
+
+#### System ablation Task 1~3 — 운영 알고리즘 검증 경계 명시
+
+- 변경 전 실제 호출 관계: 이전 `research/ablation.py`는 운영 Trading의 AlphaPolicy, portfolio 현금 계약, risk benchmark, System Portfolio 계산·엔진·SQLite store·target을 직접 import해 같은 PIT replay에서 variant를 돌렸다. production caller는 `research.commands.system_ablation` 한 곳, 관련 test는 Research ablation과 Trading system 격리 guard였다. 운영 원장 write는 replay adapter에서 차단했다.
+- 변경 이유: 이 코드는 일반 Research feature/model 계산이 아니라 production Trading 알고리즘을 실제로 검증하는 system validation이다. 독립 구현으로 교체하면 검증 대상과 운영 코드가 달라진다. 따라서 허용된 명시적 검증 경계로 이동하되 예외를 단일 파일·실제 7개 import로 제한한다.
+- 수정 파일: `src/investment_agent/research/commands/system_ablation.py`, Trading decision/risk 설명 2곳, `tests/investment_agent/test_architecture.py`, Trading system 격리 test, 새 plan과 이 원장.
+- 이동·삭제 파일: `research/ablation.py`를 `research/system_validation/ablation.py`로, `tests/investment_agent/research/test_ablation.py`를 같은 owner의 `system_validation/test_ablation.py`로 이동했다. package init 2개를 추가했다. 이전 module alias는 없다. CLI module path·artifact 출력·schema·algorithm·risk·execution 코드는 변경하지 않았다.
+- import·runtime 방향: CLI는 새 검증 모듈을 직접 호출한다. 일반 Research→Trading 의존성은 금지 그대로이며, 해당 검증 파일만 명시 7개 production Trading import를 허용한다. 임시 `system_validation/probe.py`에서 Trading engine을 import하면 guard가 실패하는 테스트를 추가했다.
+- 테스트 결과: test owner import error 1건과 제거한 pending 정확한 7건으로 RED였다. 구현 후 ablation·Trading system·architecture·workflow·docs 96개 통과. 전체 offline suite 3,034개는 기준선과 같은 선택적 `lightgbm`/`xgboost` 미설치 오류 4개·skip 1개 외 새 실패가 없다. legacy source/test caller 검색 0건.
+- 제거된 debt: 일반 Research namespace에 있던 production Trading algorithm import 7쌍. `PENDING_DEPENDENCIES` 29→22, 새 pending 없음. 이 7개는 사라진 의존성이 아니라 명시적으로 제한된 system validation 의존성이다.
+- 남은 debt: 일반 Research→Trading 19쌍, Trading→Execution 3쌍. 검증 경계 자체도 architecture 예외로 문서화해야 하고, broker/dashboard/notification/operations 등 pending 집합 밖 단계는 여전히 남았다.
+- 다음 독립 작업: 19쌍의 Research import를 저장 원장·PIT/replay reader·Trading 계약별로 다시 분류한다. 별개로 Phase 4~8의 실제 runtime caller를 조사해 안전한 다음 구현 단위를 선택한다.
 
 ## 향후 milestone
 

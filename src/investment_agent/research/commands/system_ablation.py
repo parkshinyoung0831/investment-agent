@@ -38,7 +38,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    from investment_agent.research.ablation import default_variants, run_ablation
+    from investment_agent.research.system_validation.ablation import default_variants, run_ablation
     from investment_agent.trading.supabase_repository import SupabaseRepository
 
     variants = default_variants(cvar_limits=tuple(float(value) for value in args.cvar_limits.split(",") if value.strip()))

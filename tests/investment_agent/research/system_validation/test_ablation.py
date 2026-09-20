@@ -6,7 +6,7 @@ import unittest
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 
-from investment_agent.research.ablation import (
+from investment_agent.research.system_validation.ablation import (
     ReplayRepository,
     default_variants,
     ml_artifact_lookahead,

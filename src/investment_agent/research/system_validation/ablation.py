@@ -1,4 +1,4 @@
-"""Ablation: 각 모듈이 System Portfolio 성과를 실제로 개선하는지 같은 과거 재현에서 비교한다.
+"""System validation: 운영 Trading 엔진을 그대로 재생해 ablation을 비교한다.
 
 ```
 같은 기간 · 같은 PIT 데이터 · 같은 비용 · 같은 유니버스

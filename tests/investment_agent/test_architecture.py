@@ -312,6 +312,18 @@ class LayerDirectionTest(unittest.TestCase):
         }
     )
 
+    # 운영 Trading 엔진을 실제로 재생하는 단일 검증 모듈만 예외다. 다른 Research
+    # 모듈이나 같은 폴더의 새 파일로 예외가 자동 확장되지 않는다.
+    SYSTEM_VALIDATION_DEPENDENCIES = frozenset({
+        "investment_agent.trading.decision.alpha",
+        "investment_agent.trading.portfolio.contracts",
+        "investment_agent.trading.risk.budget",
+        "investment_agent.trading.system.accounting",
+        "investment_agent.trading.system.engine",
+        "investment_agent.trading.system.store",
+        "investment_agent.trading.system.target",
+    })
+
     # 허용 목록이 아니라 현재 의존성 부채의 기준선이다. 새 항목도, 해소된 항목의
     # 잔류도 실패시켜 이후 phase에서 이 집합이 줄어들기만 하게 한다.
     PENDING_DEPENDENCIES = frozenset(
@@ -319,13 +331,6 @@ class LayerDirectionTest(unittest.TestCase):
             ("src/investment_agent/trading/risk/gate.py", "investment_agent.execution.orders.intents"),
             ("src/investment_agent/trading/supabase_repository.py", "investment_agent.execution.db"),
             ("src/investment_agent/trading/supabase_repository.py", "investment_agent.execution.orders.snapshots"),
-            ("src/investment_agent/research/ablation.py", "investment_agent.trading.decision.alpha"),
-            ("src/investment_agent/research/ablation.py", "investment_agent.trading.portfolio.contracts"),
-            ("src/investment_agent/research/ablation.py", "investment_agent.trading.risk.budget"),
-            ("src/investment_agent/research/ablation.py", "investment_agent.trading.system.accounting"),
-            ("src/investment_agent/research/ablation.py", "investment_agent.trading.system.engine"),
-            ("src/investment_agent/research/ablation.py", "investment_agent.trading.system.store"),
-            ("src/investment_agent/research/ablation.py", "investment_agent.trading.system.target"),
             ("src/investment_agent/research/backtest/contracts.py", "investment_agent.trading.portfolio.contracts"),
             ("src/investment_agent/research/backtest/simulator.py", "investment_agent.trading.portfolio.contracts"),
             ("src/investment_agent/research/commands/backfill_research_history.py", "investment_agent.trading.supabase_repository"),
@@ -350,7 +355,8 @@ class LayerDirectionTest(unittest.TestCase):
 
     @classmethod
     def _is_allowed(cls, path: Path, name: str) -> bool:
-        if path.is_relative_to(PACKAGE / "research" / "system_validation") and name.startswith("investment_agent.trading."):
+        if (path == PACKAGE / "research" / "system_validation" / "ablation.py"
+                and name in cls.SYSTEM_VALIDATION_DEPENDENCIES):
             return True
         if name == "investment_agent.execution.contracts":
             return True
@@ -367,6 +373,21 @@ class LayerDirectionTest(unittest.TestCase):
         path = PACKAGE / "trading" / "supabase_repository.py"
         self.assertTrue(self._is_allowed(path, "investment_agent.research.adapters.trading"))
         self.assertFalse(self._is_allowed(path, "investment_agent.research.adapters.trading.private"))
+
+    def test_system_validation_allowance_is_exact_file_and_import(self) -> None:
+        path = PACKAGE / "research" / "system_validation" / "ablation.py"
+        self.assertTrue(self._is_allowed(path, "investment_agent.trading.system.engine"))
+        self.assertFalse(self._is_allowed(path, "investment_agent.trading.system.engine.private"))
+        self.assertFalse(self._is_allowed(path, "investment_agent.trading.supabase_repository"))
+        self.assertFalse(self._is_allowed(PACKAGE / "research" / "commands" / "new.py", "investment_agent.trading.system.engine"))
+
+    def test_new_system_validation_file_does_not_inherit_trading_allowance(self) -> None:
+        with tempfile.TemporaryDirectory(dir=PACKAGE / "research" / "system_validation") as temporary:
+            probe = Path(temporary) / "probe.py"
+            probe.write_text("from investment_agent.trading.system.engine import run_system\n", encoding="utf-8")
+            with self.assertRaises(AssertionError) as caught:
+                self.test_layers_do_not_import_downstream()
+            self.assertIn("probe.py", str(caught.exception))
 
     def test_layers_do_not_import_downstream(self) -> None:
         offenders: list[str] = []
