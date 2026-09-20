@@ -22,9 +22,9 @@ LEARNING_STAGES = (
     ("build_features", "investment_agent.research.commands.build_features"),
     ("build_labels", "investment_agent.research.commands.build_labels"),
     ("build_training_samples", "investment_agent.research.commands.build_training_samples"),
-    ("evaluate_decisions", "investment_agent.research.commands.evaluate"),
+    ("evaluate_decisions", "investment_agent.operations.commands.evaluate_decisions"),
     ("build_events", "investment_agent.research.commands.build_events"),
-    ("build_decision_experiences", "investment_agent.research.commands.build_decision_experiences"),
+    ("build_decision_experiences", "investment_agent.operations.commands.build_decision_experiences"),
     ("update_performance", "investment_agent.operations.commands.update_performance"),
 )
 

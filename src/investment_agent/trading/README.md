@@ -274,10 +274,10 @@ python -m investment_agent.operations.commands.system_portfolio
 python -m investment_agent.operations.commands.system_portfolio --summary
 
 # 운영 엔진 그대로 과거 구간에서 구성 요소 ablation 비교
-python -m investment_agent.research.commands.system_ablation --start 2025-01-01 --end 2025-12-31
+python -m investment_agent.operations.commands.system_ablation --start 2025-01-01 --end 2025-12-31
 
 # 성숙한 case 평가
-python -m investment_agent.research.commands.evaluate --limit 200
+python -m investment_agent.operations.commands.evaluate_decisions --limit 200
 
 # 완전한 JSON manifest로 Native backtest
 python -m investment_agent.research.backtest.cli --input <INPUT.json> --output <OUTPUT.json>
@@ -289,7 +289,7 @@ python -m investment_agent.intelligence.commands.prune_evidence_cache --retentio
 승격과 intent 명령은 실제 ID와 저장된 평가 근거가 필요합니다.
 
 ```powershell
-python -m investment_agent.research.promotion.cli --artifact-id <ARTIFACT_ID> --to-stage paper --approved-by owner --confirm "PROMOTE <ARTIFACT_ID> shadow->paper"
+python -m investment_agent.operations.commands.promote_model --artifact-id <ARTIFACT_ID> --to-stage paper --approved-by owner --confirm "PROMOTE <ARTIFACT_ID> shadow->paper"
 
 python -m investment_agent.operations.commands.create_execution_intent --risk-decision-id <RISK_DECISION_ID> --execution-mode paper --confirm <RISK_DECISION_ID>
 ```
@@ -305,7 +305,7 @@ python -m investment_agent.operations.commands.create_execution_intent --risk-de
 실제 계좌 수익률과 구분합니다.
 
 ```powershell
-python -m investment_agent.research.commands.build_decision_experiences --as-of <TIMEZONE_ISO_TIMESTAMP>
+python -m investment_agent.operations.commands.build_decision_experiences --as-of <TIMEZONE_ISO_TIMESTAMP>
 python -m investment_agent.research.commands.continuous_retrain --dry-run
 python -m investment_agent.operations.commands.update_performance
 ```

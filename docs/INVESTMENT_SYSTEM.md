@@ -477,7 +477,7 @@ RL 정책은 System Portfolio를 움직이지 않는 연구 후보다. 비교는
 
 ## Ablation — 모듈이 실제로 성과를 개선하는가
 
-`python -m investment_agent.research.commands.system_ablation --start <날짜> --end <날짜>`가 같은 기간·PIT 데이터·
+`python -m investment_agent.operations.commands.system_ablation --start <날짜> --end <날짜>`가 같은 기간·PIT 데이터·
 비용·유니버스에서 운영 System 엔진을 변형별로 돌린다(`research/ablation.py`).
 
 | 변형 | 바꾸는 것 |

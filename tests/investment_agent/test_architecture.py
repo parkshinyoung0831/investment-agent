@@ -396,18 +396,8 @@ class LayerDirectionTest(unittest.TestCase):
         "investment_agent.trading.system.target",
     })
 
-    # Research CLI 진입점은 구체 Trading 협력자를 조립한다. 조립은 operations 책임이지만
-    # 이 명령의 모듈 경로를 하네스·workflow·문서가 직접 호출하므로, 진입점 모듈과 그가
-    # 만드는 구체 협력자만 파일별로 정확히 선언한다. 순수 계산은 이미 repository를 주입받는다.
-    # 목록에 없는 모듈이나 다른 Trading 구현으로 예외가 넓어지지 않으며 `main()`이 없는
-    # 모듈은 실패한다.
-    COMPOSITION_REPOSITORY = "investment_agent.trading.supabase_repository"
-    COMPOSITION_ROOTS = {
-        "src/investment_agent/research/commands/build_decision_experiences.py": frozenset({COMPOSITION_REPOSITORY}),
-        "src/investment_agent/research/commands/evaluate.py": frozenset({COMPOSITION_REPOSITORY}),
-        "src/investment_agent/research/commands/system_ablation.py": frozenset({COMPOSITION_REPOSITORY}),
-        "src/investment_agent/research/promotion/cli.py": frozenset({COMPOSITION_REPOSITORY}),
-    }
+    # 구체 Trading 저장소를 만드는 진입점은 operations에 둔다. Research에는 조립 예외가 없다.
+    TRADING_REPOSITORY = "investment_agent.trading.supabase_repository"
 
     # 허용 목록이 아니라 현재 의존성 부채의 기준선이다. 새 항목도, 해소된 항목의
     # 잔류도 실패시켜 이후 phase에서 이 집합이 줄어들기만 하게 한다.
@@ -417,8 +407,6 @@ class LayerDirectionTest(unittest.TestCase):
     def _is_allowed(cls, path: Path, name: str) -> bool:
         if (path == PACKAGE / "research" / "system_validation" / "ablation.py"
                 and name in cls.SYSTEM_VALIDATION_DEPENDENCIES):
-            return True
-        if name in cls.COMPOSITION_ROOTS.get(path.relative_to(ROOT).as_posix(), frozenset()):
             return True
         if name == "investment_agent.execution.contracts":
             return True
@@ -489,29 +477,13 @@ class LayerDirectionTest(unittest.TestCase):
             "해소된 계층 의존성 부채를 PENDING_DEPENDENCIES에서 지우세요",
         )
 
-    def test_composition_roots_are_cli_entry_modules_that_use_the_repository(self) -> None:
-        for relative, allowed in sorted(self.COMPOSITION_ROOTS.items()):
-            with self.subTest(module=relative):
-                path = ROOT / relative
-                tree = ast.parse(path.read_text(encoding="utf-8"))
-                entry_points = [node.name for node in tree.body if isinstance(node, ast.FunctionDef)]
-                self.assertIn("main", entry_points, "예외는 CLI 진입점에만 준다")
-                self.assertIn(self.COMPOSITION_REPOSITORY, allowed)
-                self.assertEqual(set(), allowed - _imported_names(path), "쓰지 않는 예외는 지운다")
-
     def test_a_new_research_module_cannot_import_the_concrete_trading_repository(self) -> None:
         with tempfile.TemporaryDirectory(dir=PACKAGE / "research" / "commands") as temporary:
             probe = Path(temporary) / "probe.py"
-            probe.write_text(f"from {self.COMPOSITION_REPOSITORY} import SupabaseRepository\n", encoding="utf-8")
+            probe.write_text(f"from {self.TRADING_REPOSITORY} import SupabaseRepository\n", encoding="utf-8")
             with self.assertRaises(AssertionError) as caught:
                 self.test_layers_do_not_import_downstream()
             self.assertIn("probe.py", str(caught.exception))
-
-    def test_composition_roots_may_not_import_other_trading_implementations(self) -> None:
-        path = ROOT / "src/investment_agent/research/commands/evaluate.py"
-        self.assertTrue(self._is_allowed(path, self.COMPOSITION_REPOSITORY))
-        self.assertFalse(self._is_allowed(path, "investment_agent.trading.risk.gate"))
-        self.assertFalse(self._is_allowed(path, self.COMPOSITION_REPOSITORY + ".private"))
 
     def test_the_rule_covers_layers_that_exist(self) -> None:
         """검사 대상이 하나도 없으면 위 검사는 아무것도 지키지 않는다."""

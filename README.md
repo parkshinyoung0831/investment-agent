@@ -230,7 +230,7 @@ python -m investment_agent.operations.commands.harness_switch --status
 python -m investment_agent.trading.decision.analysis --limit 5
 
 # 성숙한 판단 평가
-python -m investment_agent.research.commands.evaluate --limit 200
+python -m investment_agent.operations.commands.evaluate_decisions --limit 200
 
 # 뉴스·소셜 cache 90일 retention
 python -m investment_agent.trading.evidence.cleanup

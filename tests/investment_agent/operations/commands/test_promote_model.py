@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from investment_agent.research.promotion.cli import main
+from investment_agent.operations.commands.promote_model import main
 from investment_agent.research.promotion.gate import EvaluationSummary
 
 
@@ -47,7 +47,7 @@ class PromoteModelEntryTest(unittest.TestCase):
     def test_exact_stage_scoped_confirmation_promotes_once(self):
         repository = _Repository()
         with patch(
-            "investment_agent.research.promotion.cli.SupabaseRepository",
+            "investment_agent.operations.commands.promote_model.SupabaseRepository",
             return_value=repository,
         ):
             result = main([
@@ -69,7 +69,7 @@ class PromoteModelEntryTest(unittest.TestCase):
             }
         ))
         with patch(
-            "investment_agent.research.promotion.cli.SupabaseRepository",
+            "investment_agent.operations.commands.promote_model.SupabaseRepository",
             return_value=repository,
         ):
             with self.assertRaisesRegex(RuntimeError, "research-only"):
@@ -85,7 +85,7 @@ class PromoteModelEntryTest(unittest.TestCase):
     def test_skipping_paper_stage_fails_closed(self):
         repository = _Repository()
         with patch(
-            "investment_agent.research.promotion.cli.SupabaseRepository",
+            "investment_agent.operations.commands.promote_model.SupabaseRepository",
             return_value=repository,
         ):
             with self.assertRaisesRegex(RuntimeError, "one step"):

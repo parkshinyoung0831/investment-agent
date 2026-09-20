@@ -239,7 +239,7 @@ python -m investment_agent.data.market.commands.sync_local_mirror
 python -m investment_agent.data.market.commands.sync_local_mirror --full
 python -m investment_agent.research.commands.backfill_research_history --start 2023-01-06 --end 2025-12-31 --every-days 7 --audit-only
 python -m investment_agent.research.commands.backfill_research_history --start 2023-01-06 --end 2025-12-31 --every-days 7
-python -m investment_agent.research.commands.system_ablation --start 2025-01-01 --end 2025-12-31
+python -m investment_agent.operations.commands.system_ablation --start 2025-01-01 --end 2025-12-31
 ```
 
 과거 재현 백필은 날짜별 manifest(`historical_replay_runs`)와 실제 feature snapshot을 함께 확인한다.

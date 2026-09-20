@@ -11,7 +11,7 @@ log = get_logger(__name__)
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="investment_agent.research.commands.evaluate")
+    parser = argparse.ArgumentParser(prog="investment_agent.operations.commands.evaluate_decisions")
     parser.add_argument("--limit", type=int, default=200)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)

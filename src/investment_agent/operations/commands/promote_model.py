@@ -12,7 +12,7 @@ log = get_logger(__name__)
 
 def _args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        prog="investment_agent.research.promotion.cli",
+        prog="investment_agent.operations.commands.promote_model",
         epilog=(
             "confirmation format: PROMOTE <artifact-id> "
             "<current-stage>-><target-stage>"

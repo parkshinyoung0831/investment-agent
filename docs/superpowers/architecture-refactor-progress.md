@@ -598,6 +598,14 @@
 - 테스트: 소유권 가드(`test_evidence_ownership.py`)가 `PitReader`·캐시 정의 위치, Trading 저장소가 PIT 메서드를 재정의하지 않고 상속만 하는지, `research/evidence`가 Trading을 import하지 않는지를 강제한다. `SupabaseRepository`에 `market_prices`를 재정의해 넣으면 실패함을 확인하고 원복했다. 예외 4개를 먼저 뺀 상태에서 architecture가 RED였고 import 전환 뒤 통과했다. 옛 모듈을 patch하던 테스트는 새 소유 위치(`research.evidence.reader`)를 가리키게 고쳤고, econ·mirror 테스트는 `PitReader`를 직접 검증한다. 전체 suite 3,110 OK.
 - 남은 일: G3(Trading 원장 job의 진입점을 operations로), 후보 선정 분리, `dashboard/db.py` 이동.
 
+#### 배치 G3 — Trading 원장 job의 진입점을 operations로 (2026-09-20)
+
+- 변경 전: `research/commands/{evaluate,system_ablation,build_decision_experiences}`와 `research/promotion/cli.py`의 `main()`이 구체 `SupabaseRepository`로 Trading 판단 원장을 읽고 써서 Research의 조립 예외 4개로 남아 있었다. 이 경로는 하네스 허용 목록·어댑터·문서·테스트가 명령으로 직접 호출한다.
+- 변경(정비 보류가 걸린 상태에서 하네스 코드 수정, hold·kill switch·`TOSS_LIVE_ENABLED` 불변): `evaluate.py` → `operations/commands/evaluate_decisions.py`, `promotion/cli.py` → `operations/commands/promote_model.py`, `system_ablation.py` → `operations/commands/system_ablation.py`로 이동했다. `build_decision_experiences`는 경험 계산(`run`·`build_experience`)을 Research에 두고 `main()`만 `operations/commands/build_decision_experiences.py`로 분리했다. 하네스 허용 목록(`harness_adapters.py`)과 어댑터(`operations/adapters/research.py`)의 모듈 문자열, 문서 명령 8곳, 하네스 단계 테스트를 새 경로로 갱신했다. 옛 경로 호환 shim은 없다.
+- 테스트: 프로모션 CLI 테스트를 `tests/investment_agent/operations/commands/test_promote_model.py`로 옮겼다. 마지막 조립 예외 4개를 먼저 뺀 상태에서 architecture가 RED였고 이동 뒤 통과했다. 비어 버린 조립 예외 메커니즘(`COMPOSITION_ROOTS`와 전용 테스트 2개)은 삭제하고 "Research 모듈이 구체 Trading 저장소를 import하면 실패한다"는 주입 테스트만 남겼다. CLAUDE.md의 조립 예외 행을 현재 사실로 바꿨다. 전체 suite 3,110 중 실패 1건은 사용자 동시 작업인 `data/news/` 디렉터리를 금지하는 intelligence 가드이며 이 변경과 무관하다.
+- 결과: Research → Trading import 예외는 `research/system_validation/ablation.py`의 6개 import뿐이다. 조립 예외는 0개다.
+- 남은 일: 후보 선정·Trading 원장 위임 분리, `dashboard/db.py` 이동.
+
 ## 향후 milestone
 
 | 묶음 | 해당 phase | 독립 완료 조건 |

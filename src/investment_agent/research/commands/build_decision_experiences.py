@@ -1,11 +1,10 @@
 """원본 판단의 당시 신호와 독립적인 비용 반영 가상 성과를 연결한다."""
 from __future__ import annotations
 
-import argparse
 import copy
 import hashlib
 import math
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from investment_agent.forecasting import SIGNAL_HORIZON_DAYS
 from investment_agent.platform.logging import get_logger
@@ -105,23 +104,3 @@ def run(
         if saved >= limit:
             break
     return saved
-
-
-def main(argv: list[str] | None = None) -> int:
-    from investment_agent.trading.supabase_repository import SupabaseRepository
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--limit", type=int, default=200)
-    parser.add_argument("--as-of", help="타임존을 포함한 평가 기준 시각")
-    parser.add_argument("--dry-run", action="store_true")
-    args = parser.parse_args(argv)
-    if args.limit < 1:
-        parser.error("--limit must be positive")
-    count = run(SupabaseRepository(), as_of_at=parse_datetime(args.as_of) if args.as_of else datetime.now(timezone.utc), limit=args.limit, dry_run=args.dry_run)
-    log.info("decision experiences saved=%d dry_run=%s", count, args.dry_run)
-    return 0
-
-
-if __name__ == "__main__":
-    from investment_agent.bootstrap import start_cli
-    start_cli()
-    raise SystemExit(main())

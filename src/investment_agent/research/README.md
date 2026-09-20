@@ -56,11 +56,11 @@ python -m investment_agent.research.commands.build_features
 python -m investment_agent.research.commands.build_labels
 python -m investment_agent.research.commands.build_training_samples
 python -m investment_agent.research.commands.train_baseline
-python -m investment_agent.research.commands.evaluate
+python -m investment_agent.operations.commands.evaluate_decisions
 python -m investment_agent.research.commands.export_dataset
 python -m investment_agent.research.commands.backfill_research_history --start 2023-01-06 --end 2025-12-31 --every-days 7 --audit-only
 python -m investment_agent.research.commands.backfill_research_history --start 2023-01-06 --end 2025-12-31 --every-days 7
-python -m investment_agent.research.commands.system_ablation --start 2025-01-01 --end 2025-12-31
+python -m investment_agent.operations.commands.system_ablation --start 2025-01-01 --end 2025-12-31
 python -m investment_agent.research.strategies.etl            # 월간 전략 배분
 ```
 

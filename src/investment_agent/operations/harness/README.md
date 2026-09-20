@@ -120,7 +120,7 @@ stateDiagram-v2
 로컬 사본의 수동 증분 동기화는
 `python -m investment_agent.data.market.commands.sync_local_mirror`로 한다.
 Research 구성 요소 비교는
-`python -m investment_agent.research.commands.system_ablation --start 2025-01-01 --end 2025-12-31`로 한다.
+`python -m investment_agent.operations.commands.system_ablation --start 2025-01-01 --end 2025-12-31`로 한다.
 
 
 

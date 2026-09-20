@@ -1,7 +1,7 @@
 """System Portfolio Ablation 재현을 돌려 결과 JSON을 남긴다. 운영 원장·실계좌에는 닿지 않는다.
 
-    python -m investment_agent.research.commands.system_ablation --start 2025-01-01 --end 2025-12-31
-    python -m investment_agent.research.commands.system_ablation --start 2025-01-01 --end 2025-12-31 \\
+    python -m investment_agent.operations.commands.system_ablation --start 2025-01-01 --end 2025-12-31
+    python -m investment_agent.operations.commands.system_ablation --start 2025-01-01 --end 2025-12-31 \\
         --variants factor_only,factor_ml --ml-artifact artifacts/trading/ml_models/candidates/<id>.json
 
 결과는 `artifacts/research/ablation/`에 시각별 파일과 `latest.json`으로 쓴다. 채택·정책 변경은 사람이 결과를
@@ -26,7 +26,7 @@ def default_output_dir() -> Path:
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(prog="investment_agent.research.commands.system_ablation")
+    parser = argparse.ArgumentParser(prog="investment_agent.operations.commands.system_ablation")
     parser.add_argument("--start", required=True, type=date.fromisoformat, help="재현 시작일(YYYY-MM-DD)")
     parser.add_argument("--end", required=True, type=date.fromisoformat, help="재현 종료일(YYYY-MM-DD)")
     parser.add_argument("--variants", help="쉼표로 구분한 변형 이름. 기본은 전체")

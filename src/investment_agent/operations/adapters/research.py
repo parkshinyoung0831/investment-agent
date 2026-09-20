@@ -60,7 +60,7 @@ class ResearchAdapters:
     def build_decision_experiences(self, context: StageContext) -> StageOutcome:
         """승인 여부와 무관하게 원본 판단의 확정된 결과를 학습 원장에 기록한다."""
         self.command_runner.run(PythonModuleCommand(
-            "investment_agent.research.commands.build_decision_experiences",
+            "investment_agent.operations.commands.build_decision_experiences",
             ("--as-of", context.now.isoformat()),
             self.timeouts.get("build_decision_experiences", 60 * 60),
         ), stop_event=context.stop_event)
@@ -83,7 +83,7 @@ class ResearchAdapters:
         """
         self.command_runner.run(
             PythonModuleCommand(
-                "investment_agent.research.commands.evaluate",
+                "investment_agent.operations.commands.evaluate_decisions",
                 (),
                 self.timeouts.get("evaluate_decisions", 30 * 60),
             ),
