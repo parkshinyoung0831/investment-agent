@@ -32,7 +32,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from investment_agent.notifications.earnings_report.capital import f
+from investment_agent.reporting.services.financial_row import f
 
 # 회계기간 종료일과 발표 행의 기준일 사이에서 미래 분기를 가르는 허용 폭.
 _PERIOD_END_TOLERANCE_DAYS = 25

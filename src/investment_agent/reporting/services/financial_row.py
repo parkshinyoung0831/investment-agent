@@ -1,7 +1,7 @@
 """financial_versions 한 행에서 값을 읽는 순수 함수.
 
-DB에 접근하지 않으므로 조회 경계(reporting)와 카드 계산 양쪽에서 같이 쓴다.
-EV 가산분 자체는 reporting/notifications/earnings_report.py가 소유한다 — 현금 정의가
+DB에 접근하지 않으므로 read model 계산과 카드 계산 양쪽에서 같이 쓴다. 계산의 owner는
+reporting이고 알림 카드는 이것을 소비한다. EV 가산분 자체는 reporting/notifications/earnings_report.py가 소유한다 — 현금 정의가
 카드의 표시 규칙과 함께 움직여서 여기 굳혀 두면 두 답이 갈린다.
 """
 from __future__ import annotations

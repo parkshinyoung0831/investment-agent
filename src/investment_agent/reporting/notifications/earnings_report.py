@@ -19,7 +19,7 @@ from investment_agent.platform.logging import get_logger
 from investment_agent.data.market.domain.actions import merge_corporate_actions
 from investment_agent.data.market.repository import MarketRepository
 from investment_agent.data.universe.repository import UniverseRepository
-from investment_agent.notifications.earnings_report.capital import f, total_debt
+from investment_agent.reporting.services.financial_row import f, total_debt
 from investment_agent.data.fundamentals.domain.services.classify_dimensions import display_member_name
 
 # --- DB 식별자 (SSOT) ---------------------------------------------------

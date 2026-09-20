@@ -61,7 +61,7 @@ db/duckdb/{research,intelligence}/v1/  로컬 연구·텍스트 저장소 선언
 
 ### 일부러 다르게 둔 모양
 
-"더 줄이자"는 제안이 반복해서 닿는 자리들이다. 넷 다 줄이면 **에러 없이** 기능이
+"더 줄이자"는 제안이 반복해서 닿는 자리들이다. 이 표의 것을 줄이면 **에러 없이** 기능이
 빈다. 고치기 전에 여기 적힌 이유가 아직 유효한지 먼저 확인하세요.
 
 | 자주 나오는 제안 | 왜 안 하는가 | 지키는 것 |
@@ -70,6 +70,9 @@ db/duckdb/{research,intelligence}/v1/  로컬 연구·텍스트 저장소 선언
 | 워크플로 36→6개로 합치기 | 36개는 중복이 아니라 **서로 다른 스케줄 36개**다(장 마감 뒤·상류 뒤·혼잡 회피). 공통 설치 단계는 이미 `.github/actions/`로 빠져 34개가 그것을 쓴다. 합치면 cron이 `if:` 자기 게이트로 바뀐다 | 워크플로당 명시적 cron |
 | `notifications`를 `service.py`+`discord/`로 합치기 | 카드 패키지가 `render.py`/`templates/`를 공유하면 조용히 서로를 끌고 간다 — 규칙 15와 DESIGN-system.md가 그래서 분리를 강제한다. 공통 원시값은 이미 `notifications/quickchart.py`·`renderers/`·`channels/`에 있다 | 규칙 15, 알림별 패키지 |
 | research DuckDB를 4표로 줄이기 | 여덟 표는 세 묶음이다 — Parquet 뿌리 catalog 2, 연구 lineage 4, 전략 배분 2. 넷만 남기면 feature store 신선도와 월간 전략 계약이 사라진다 | `db/duckdb/research/v1/10_datasets.sql` 머리주석 |
+| Research CLI의 구체 `SupabaseRepository` 조립을 operations로 옮기기 | `research/commands/*`·`promotion/cli.py`의 모듈 경로를 하네스·workflow·문서가 명령으로 직접 호출한다. 옮기면 경로가 바뀌어 조용히 안 돈다. 예외는 `tests/investment_agent/test_architecture.py`의 `COMPOSITION_ROOTS`에 파일별 정확 일치로만 선언돼 있고 `main()`이 없으면 실패한다 | 명령 경로, 계층 방향 가드 |
+| Research·Trading 공유 계약을 `research`나 `trading`에 두기 | Trading은 Research를 import할 수 없고 Research는 Trading을 import할 수 없다. 그래서 `forecasting.py`·`portfolio_weights.py`처럼 platform만 아는 최상위 공유 모듈에 둔다. 목록은 `SharedTopLevelModulesTest`가 고정한다 | 최상위 모듈은 선언된 4개 |
+| `execution`의 비중 검증을 `portfolio_weights.py`와 합치기 | execution 사본은 다른 오류 타입(`IntentError`)과 더 좁은 티커 규칙을 갖는 안전 계약이다. 합치면 주문 경계가 Trading 검증 변경에 딸려 간다 | execution의 독립 계약 |
 
 `fundamentals`는 기업 전체 재무·차원 재무·시장 예상치·실적 이벤트가 한 스키마와
 회계기간 모델을 공유하므로 예외적으로 `domain/` → `application/` → `infrastructure/`와

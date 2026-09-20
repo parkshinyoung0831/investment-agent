@@ -156,6 +156,43 @@ class PlatformBoundaryTest(unittest.TestCase):
         self.assertEqual([], sorted(offenders))
 
 
+class SharedTopLevelModulesTest(unittest.TestCase):
+    """최상위 공유 모듈은 소수만 두고, 도메인을 아는 코드가 들어오지 못하게 한다.
+
+    Research와 Trading이 함께 쓰는 금융 계약은 어느 한쪽이 소유하면 방향이 뒤집힌다. 그래서
+    최상위에 두지만, 목록이 자라면 `platform`처럼 아무거나 넣는 곳이 된다. 새 모듈은 이 목록과
+    이유를 함께 고쳐야만 들어온다.
+    """
+
+    ALLOWED_MODULES = {
+        "bootstrap",        # 프로세스 시작 지점의 환경 준비
+        "config",           # 값을 받아오는 통로
+        "forecasting",      # Research label·model과 Trading 판단이 공유하는 예측 기간
+        "portfolio_weights",  # Research 시뮬레이션과 Trading 판단이 공유하는 비중 벡터 계약
+    }
+    SHARED_CONTRACTS = ("forecasting", "portfolio_weights")
+
+    def _found(self, package: Path = PACKAGE) -> set[str]:
+        return {p.stem for p in package.glob("*.py") if p.stem != "__init__"}
+
+    def test_top_level_modules_are_the_declared_set(self) -> None:
+        self.assertEqual(self.ALLOWED_MODULES, self._found())
+
+    def test_guard_detects_an_undeclared_top_level_module(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            package = Path(temporary)
+            for name in (*self.ALLOWED_MODULES, "utils"):
+                (package / f"{name}.py").write_text("", encoding="utf-8")
+            self.assertEqual({"utils"}, self._found(package) - self.ALLOWED_MODULES)
+
+    def test_shared_contracts_know_only_platform(self) -> None:
+        for name in self.SHARED_CONTRACTS:
+            with self.subTest(module=name):
+                internal = {n for n in _imported_names(PACKAGE / f"{name}.py") if n.startswith("investment_agent.")}
+                self.assertTrue(all(n == "investment_agent.platform" or n.startswith("investment_agent.platform.")
+                                    for n in internal), internal)
+
+
 class DataBoundaryTest(unittest.TestCase):
     """data 파이프라인끼리 서로를 부르지 않는다.
 
@@ -324,12 +361,19 @@ class LayerDirectionTest(unittest.TestCase):
         # 파이프라인 실패를 Discord ops에 알리는 정당한 운영 행위라 예외로 남긴다.
         "data": ("operations",),
         "intelligence": ("research", "trading", "execution", "operations", "notifications", "dashboard"),
-        "research": ("operations", "trading"),
+        # 연구는 판단·실행·표시를 모른다. 연구가 하류를 알면 하류 변경이 학습 결과를 바꾼다.
+        "research": ("operations", "trading", "reporting", "notifications", "dashboard", "execution"),
         # execution은 판단이 어떻게 만들어졌는지 알 필요가 없다. 승인된 계획만 받는다.
-        "execution": ("trading", "research", "data", "notifications", "dashboard", "operations"),
+        "execution": ("trading", "research", "data", "notifications", "dashboard", "operations",
+                      "reporting", "intelligence"),
         # review §32의 dependency map에 따라 trading은 stable execution contract를 소비한다.
-        # 주문 mutation은 여전히 execution 내부에서만 일어난다.
-        "trading": ("notifications", "dashboard", "execution", "research"),
+        # 주문 mutation은 여전히 execution 내부에서만 일어난다. reporting은 판단의 소비자다.
+        "trading": ("notifications", "dashboard", "execution", "research", "operations", "reporting"),
+        # reporting은 읽기 전용 read model이라 그것을 소비하는 알림·화면과 실행·운영을 알지 않는다.
+        "reporting": ("notifications", "dashboard", "execution", "operations"),
+        # 알림·화면은 reporting을 소비한다. 판단·실행 구현과 운영 조립을 직접 알지 않는다.
+        "notifications": ("trading", "execution", "dashboard", "operations"),
+        "dashboard": ("trading", "execution", "operations", "data"),
     }
 
     # operations monitoring은 pipeline 실패를 Discord ops에 알리는 운영 경계다.
@@ -374,6 +418,9 @@ class LayerDirectionTest(unittest.TestCase):
     # 잔류도 실패시켜 이후 phase에서 이 집합이 줄어들기만 하게 한다.
     PENDING_DEPENDENCIES = frozenset(
         {
+            # Trading 후보 선정이 자기 판단 원장을 reporting reader로 읽는다. 읽기 구현을
+            # Trading이 갖고 reporting이 그것을 소비하도록 뒤집어야 한다.
+            ("src/investment_agent/trading/supabase_repository.py", "investment_agent.reporting.readers.runtime"),
         }
     )
 

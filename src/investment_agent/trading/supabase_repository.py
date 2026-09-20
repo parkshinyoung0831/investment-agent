@@ -23,7 +23,6 @@ from investment_agent.trading.decision.candidate_ranker import (
     validate_live_candidate_as_of,
 )
 from investment_agent.trading.contracts import ContractError, parse_datetime
-from investment_agent.platform.serialization import canonical_json
 from investment_agent.research.adapters.trading import (
     FEATURE_VERSION,
     EvaluationSummary,
@@ -1015,9 +1014,6 @@ class SupabaseRepository:
 
     def save_policy(self, row: dict) -> None:
         self._trading_repository().record_policy(row)
-
-    def case_exists(self, case_key: str) -> bool:
-        return self._trading_repository().decision_exists(case_key)
 
     def save_case(self, row: dict) -> None:
         payload = dict(row)

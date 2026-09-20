@@ -144,20 +144,23 @@ def run() -> int:
     import inspect
 
     from investment_agent.dashboard import db as dash_db
-    for name in sorted(dir(dash_db)):
-        if not name.startswith("load_"):
-            continue
-        fn = getattr(dash_db, name)
-        if not callable(fn):
-            continue
-        try:
-            params = inspect.signature(fn).parameters.values()
-        except (TypeError, ValueError):
-            continue
-        if any(p.default is inspect.Parameter.empty
-               and p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD) for p in params):
-            continue  # 인자가 필요한 조회는 대시보드 화면에서만 의미가 있다
-        check(f"dashboard.{name}", fn)
+    from investment_agent.reporting.readers import dashboard as reporting_dashboard
+    # 화면이 쓰는 reader는 두 모듈에 나뉘어 있다. 어느 쪽이든 인자 없이 부를 수 있는 조회는 모두 확인한다.
+    for module in (dash_db, reporting_dashboard):
+        for name in sorted(dir(module)):
+            if not name.startswith("load_"):
+                continue
+            fn = getattr(module, name)
+            if not callable(fn) or getattr(fn, "__module__", module.__name__) != module.__name__ and module is dash_db:
+                continue
+            try:
+                params = inspect.signature(fn).parameters.values()
+            except (TypeError, ValueError):
+                continue
+            if any(p.default is inspect.Parameter.empty
+                   and p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD) for p in params):
+                continue  # 인자가 필요한 조회는 대시보드 화면에서만 의미가 있다
+            check(f"{module.__name__.rsplit('.', 1)[-1]}.{name}", fn)
 
     return 0
 

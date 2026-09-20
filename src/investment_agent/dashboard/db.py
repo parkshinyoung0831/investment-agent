@@ -10,10 +10,8 @@ import os
 import re
 from collections.abc import Iterator, Mapping, Sequence
 from itertools import product
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from typing import Any
-
-import pandas as pd
 
 from investment_agent.reporting.services.fundamental_segments import enrich_segment_rows
 from investment_agent.platform.cache import cache_data
@@ -26,23 +24,9 @@ from investment_agent.reporting.services.investment import (
     build_decision_cases_read_model,
 )
 from investment_agent.reporting.readers.runtime import read_local_rows, read_runtime_rows
-from investment_agent.reporting.readers.research import (
-    load_local_features,
-    load_local_strategy_data,
-)
+from investment_agent.reporting.readers.research import load_local_features
 
 DB_SOURCE = "DB 저장 데이터 · v1 Supabase"
-MACRO_KPI_SERIES: tuple[str, ...] = ("FEAR_GREED", "TNX", "DXY", "WTI", "VIX")
-PRICE_PERIOD_DAYS = {
-    "1mo": 31,
-    "3mo": 93,
-    "6mo": 186,
-    "1y": 366,
-    "2y": 731,
-    "5y": 1_826,
-    "10y": 3_653,
-    "max": None,
-}
 
 _IDENTIFIER_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 _TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
@@ -334,85 +318,6 @@ def _canonical_price_rows(
     ]
 
 
-def _price_frame(rows: list[dict[str, Any]], symbols: Sequence[str]) -> pd.DataFrame:
-    """저장된 일봉 행을 기존 화면의 단일·복수 종목 DataFrame 계약으로 만든다."""
-
-    if not rows:
-        return pd.DataFrame()
-    frame = pd.DataFrame(rows)
-    frame["Date"] = pd.to_datetime(frame["trade_date"], errors="coerce", utc=True).dt.tz_localize(None)
-    frame = frame.dropna(subset=["Date", "close"])
-    frame = frame.sort_values(["Date", "ticker"])
-    fields = {
-        "open": "Open",
-        "high": "High",
-        "low": "Low",
-        "close": "Close",
-        "volume": "Volume",
-    }
-    if len(symbols) == 1:
-        result = frame.set_index("Date")[[*fields]]
-        result = result.rename(columns=fields)
-        result.index.name = "Date"
-        return result
-    wide = frame.pivot_table(index="Date", columns="ticker", values=list(fields), aggfunc="last")
-    wide = wide.reindex(columns=pd.MultiIndex.from_product(
-        [list(fields), list(symbols)], names=["Price", "Ticker"]
-    ))
-    wide.columns = pd.MultiIndex.from_tuples(
-        [(fields[str(field)], str(ticker).upper()) for field, ticker in wide.columns],
-        names=["Price", "Ticker"],
-    )
-    wide.index.name = "Date"
-    return wide
-
-
-@cache_data(ttl="2m", max_entries=32)
-def load_price_history(tickers: str | Sequence[str], period: str = "6mo") -> DataResult:
-    """저장된 ``market.prices_daily``만 읽어 가격 화면 계약으로 투영한다."""
-
-    source = f"{DB_SOURCE} · market.prices_daily"
-    values = (tickers,) if isinstance(tickers, str) else tuple(tickers)
-    symbols = tuple(dict.fromkeys(str(value or "").strip().upper() for value in values if str(value or "").strip()))
-    if not symbols or len(symbols) > 40 or any(not re.fullmatch(r"[A-Z0-9][A-Z0-9.^-]{0,14}", symbol) for symbol in symbols):
-        return DataResult.blocked(source=source, message="유효한 종목 코드가 필요합니다.")
-    selected_period = str(period or "").strip().lower()
-    if selected_period not in PRICE_PERIOD_DAYS:
-        return DataResult.blocked(source=source, message="허용되지 않은 가격 조회 기간입니다.")
-    blocked = _preflight()
-    if blocked:
-        return blocked
-    try:
-        # 전략 재현(max)은 23개 자산의 수년치 일봉을 한 번에 읽을 수 있어야 한다.
-        rows = _canonical_price_rows(_gateway(), symbols, limit=200_000)
-        days = PRICE_PERIOD_DAYS[selected_period]
-        if days is not None:
-            start = date.today() - timedelta(days=days)
-            rows = [row for row in rows if str(row.get("trade_date")) >= start.isoformat()]
-        value = _price_frame(rows, symbols)
-        observed_at = _latest_at(((rows, ("trade_date",)),))
-        available = {str(row.get("ticker")).upper() for row in rows}
-        missing = sorted(set(symbols) - available)
-        if value.empty:
-            return DataResult.empty(
-                source=source,
-                value=value,
-                observed_at=observed_at,
-                message="저장된 가격 관측값이 없습니다.",
-            )
-        return DataResult.ok(
-            source=source,
-            value=value,
-            observed_at=observed_at,
-            message=f"가격 누락 종목: {', '.join(missing)}" if missing else None,
-        )
-    except Exception as error:
-        return DataResult.error(
-            source=source,
-            message=public_exception_message("저장 가격 조회에 실패했습니다.", error),
-        )
-
-
 def _canonical_share_rows(
     gateway: Any, tickers: Sequence[str], *, limit: int = 240
 ) -> list[dict[str, Any]]:
@@ -690,18 +595,6 @@ def _latest_at(groups: Sequence[tuple[Sequence[Mapping[str, Any]], Sequence[str]
     return normalize_observed_at(max(candidates)) if candidates else None
 
 
-def _empty_or_ok(
-    *,
-    rows: list[dict[str, Any]],
-    source: str,
-    observed_at: object | None,
-    empty_message: str,
-) -> DataResult:
-    if not rows:
-        return DataResult.empty(source=source, observed_at=observed_at, message=empty_message)
-    return DataResult.ok(rows=rows, source=source, observed_at=observed_at)
-
-
 def _active_watchlist_rows(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     """SQL의 ``cardinality(sources) > 0`` 활성 조건을 메모리에서 그대로 적용한다."""
 
@@ -778,46 +671,7 @@ def _watchlist_rows(
     return active
 
 
-@cache_data(ttl="2m", max_entries=2)
-def load_macro_data() -> DataResult:
-    """핵심 5개 지표의 메타데이터와 최신 관측 구간을 읽는다."""
-
-    blocked = _preflight()
-    if blocked:
-        return blocked
-    source = f"{DB_SOURCE} · reporting.macro_series/macro_observations"
-    try:
-        indicator_result = load_reporting_view(
-            "macro_series", in_values={"series_id": MACRO_KPI_SERIES}
-        )
-        observation_result = load_reporting_view(
-            "macro_observations", in_values={"series_id": MACRO_KPI_SERIES}
-        )
-        if indicator_result.status in {"error", "offline", "unconfigured"}:
-            return indicator_result
-        if observation_result.status in {"error", "offline", "unconfigured"}:
-            return observation_result
-        indicators = indicator_result.rows
-        observations = observation_result.rows
-        payload = {"indicators": indicators, "observations": observations}
-        observed_at = _latest_at(((observations, ("obs_date",)),))
-        if not observations:
-            return DataResult.empty(
-                source=source,
-                value=payload,
-                observed_at=observed_at,
-                message="핵심 매크로 지표의 저장 관측값이 없습니다.",
-            )
-        return DataResult.ok(value=payload, source=source, observed_at=observed_at)
-    except Exception as error:
-        return DataResult.error(
-            source=source,
-            message=public_exception_message("매크로 DB 조회에 실패했습니다.", error),
-        )
-
-
 # 매크로 화면이 읽는 지표 집합. Discord 코어/감시 카드의 SSOT를 그대로 인용한다.
-MACRO_LOOKBACK_DAYS = 400
 
 
 @cache_data(ttl="15m", max_entries=64)
@@ -1006,71 +860,6 @@ def load_ai_data(ticker: str) -> DataResult:
             value=payload,
             message=public_exception_message("AI 투자 DB 조회에 실패했습니다.", error),
         )
-
-
-@cache_data(ttl="2m", max_entries=2)
-def load_execution_data() -> DataResult:
-    """실행·체결·비용·정산 원장에서 화면에 안전한 관측 필드만 읽는다."""
-
-    source = "로컬 Runtime · execution observability"
-    payload: dict[str, list[dict[str, Any]]] = {
-        "control_state": [],
-        "intents": [],
-        "approvals": [],
-        "orders": [],
-        "order_events": [],
-        "fills": [],
-        "reconciliations": [],
-    }
-    queries = {
-        "control_state": ("execution_control", "updated_at", 20),
-        "intents": ("intents", "created_at", 120),
-        "approvals": ("approvals", "requested_at", 160),
-        "orders": ("orders", "updated_at", 400),
-        "order_events": ("order_events", "occurred_at", 600),
-        "fills": ("fills", "filled_at", 400),
-        "reconciliations": ("reconciliation_runs", "started_at", 120),
-    }
-    failures: list[str] = []
-    for key, (dataset, order_column, limit) in queries.items():
-        try:
-            rows = read_runtime_rows(dataset)
-            rows.sort(key=lambda row: str(row.get(order_column) or ""), reverse=True)
-            payload[key] = rows[:limit]
-        except Exception:
-            failures.append(key)
-    observed_at = _latest_at(
-        (
-            (payload["control_state"], ("updated_at",)),
-            (payload["intents"], ("completed_at", "created_at")),
-            (payload["approvals"], ("updated_at", "requested_at")),
-            (payload["orders"], ("updated_at", "submitted_at")),
-            (payload["order_events"], ("occurred_at",)),
-            (payload["fills"], ("filled_at", "created_at")),
-            (payload["reconciliations"], ("completed_at", "started_at")),
-        )
-    )
-    # TCA 원문·상세 계산은 artifact 또는 Research 소유라 runtime 원장에 중복하지 않는다.
-    if len(failures) == len(queries):
-        return DataResult.error(
-            source=source,
-            value=payload,
-            observed_at=observed_at,
-            message="실행 관측 원장을 읽지 못했습니다.",
-        )
-    if not any(payload.values()):
-        return DataResult.empty(
-            source=source,
-            value=payload,
-            observed_at=observed_at,
-            message="아직 저장된 실행·체결·정산 기록이 없습니다.",
-        )
-    return DataResult.ok(
-        source=source,
-        value=payload,
-        observed_at=observed_at,
-        message=f"일부 실행 데이터셋 조회 실패: {', '.join(failures)}" if failures else None,
-    )
 
 
 @cache_data(ttl="15m", max_entries=32)
@@ -1570,203 +1359,13 @@ def load_earnings_extended(ticker: str, *, section: str = "all") -> DataResult:
         )
 
 
-@cache_data(ttl="30m", max_entries=2)
-def load_guru_data() -> DataResult:
-    """v1 institutional 원장을 대시보드 표시 계약으로 투영한다.
-
-    13F의 정정 선택과 변화 계산은 institutional 도메인이 소유한다. 대시보드는
-    v1 원천 표를 읽고, ticker 매핑을 붙인 뒤 화면이 필요한 평면 행만 전달한다.
-    구 institutional Smart View는 v1에 존재하지 않으므로 조회하지 않는다.
-    """
-
-    blocked = _preflight()
-    if blocked:
-        return blocked
-    source = f"{DB_SOURCE} · institutional 13F 원장"
-    payload: dict[str, list[dict[str, Any]]] = {
-        "managers": [],
-        "filings": [],
-        "positions": [],
-        "cusip_map": [],
-        "smart_changes": [],
-    }
-    try:
-        gateway = _gateway()
-        from investment_agent.reporting.readers.dashboard import guru_managers
-
-        managers = guru_managers()
-        manager_ciks = [str(row["manager_cik"]) for row in managers]
-        filings = gateway.select_rows(
-            schema=SCHEMA_INSTITUTIONAL,
-            table=T_INSTITUTIONAL_FILINGS,
-            columns=(
-                "accession_no,manager_cik,period_end,form_type,report_type,filing_date,"
-                "accepted_at,amendment_type,amendment_no,reported_value_usd,"
-                "reported_line_count,confidential_omitted,source_url,content_sha256"
-            ),
-            in_values={"manager_cik": manager_ciks} if manager_ciks else None,
-            order=(("manager_cik", False), ("period_end", True), ("accepted_at", True)),
-            page_size=1_000,
-            max_rows=20_000,
-        )
-        accessions = sorted({str(row["accession_no"]) for row in filings})
-        positions = gateway.select_rows(
-            schema=SCHEMA_INSTITUTIONAL,
-            table=T_INSTITUTIONAL_POSITIONS,
-            columns=(
-                "accession_no,source_row_no,issuer_name,identifier,identifier_type,"
-                "value_usd,quantity,quantity_type,position_kind"
-            ),
-            in_values={"accession_no": accessions} if accessions else None,
-            order=(("accession_no", False), ("source_row_no", False)),
-            page_size=1_000,
-            max_rows=20_000,
-        )
-        identifier_values = sorted({str(row["identifier"]) for row in positions if row.get("identifier")})
-        identifier_rows: list[dict[str, Any]] = []
-        for start in range(0, len(identifier_values), 200):
-            identifier_rows.extend(gateway.select_rows(
-                schema=SCHEMA_UNIVERSE,
-                table=T_SECURITY_IDENTIFIERS,
-                columns="identifier,identifier_type,security_id,mapping_status,updated_at",
-                in_values={"identifier": identifier_values[start:start + 200]},
-                order=(("identifier", False), ("identifier_type", False), ("valid_from", True)),
-                page_size=1_000,
-                max_rows=20_000,
-            ))
-        security_ids = sorted({int(row["security_id"]) for row in identifier_rows if row.get("security_id") is not None})
-        securities: list[dict[str, Any]] = []
-        for start in range(0, len(security_ids), 200):
-            securities.extend(gateway.select_rows(
-                schema=SCHEMA_UNIVERSE,
-                table=T_SECURITIES,
-                columns="security_id,ticker",
-                in_values={"security_id": security_ids[start:start + 200]},
-                order=(("security_id", False),),
-                page_size=1_000,
-                max_rows=20_000,
-            ))
-        ticker_by_security_id = {int(row["security_id"]): row.get("ticker") for row in securities}
-        cusip_map_by_identifier: dict[str, dict[str, Any]] = {}
-        for row in identifier_rows:
-            identifier = str(row.get("identifier") or "")
-            if not identifier or identifier in cusip_map_by_identifier:
-                continue
-            security_id = row.get("security_id")
-            cusip_map_by_identifier[identifier] = {
-                "cusip": identifier,
-                "ticker": ticker_by_security_id.get(int(security_id)) if security_id is not None else None,
-                "updated_at": row.get("updated_at"),
-            }
-        cusip_map = list(cusip_map_by_identifier.values())
-        ticker_by_cusip = {str(row["cusip"]): row.get("ticker") for row in cusip_map}
-        display_positions = []
-        for row in positions:
-            display = dict(row)
-            display["cusip"] = display.pop("identifier")
-            display["ticker"] = ticker_by_cusip.get(str(display["cusip"]))
-            display_positions.append(display)
-        # 변화는 raw v1 원장으로 dashboard 계산 계층이 비교한다. 별도 Smart View를
-        # 되살려 amendment 선택 규칙을 두 군데에 만들지 않는다.
-        smart_changes: list[dict[str, Any]] = []
-        payload = {
-            "managers": managers,
-            "filings": filings,
-            "positions": display_positions,
-            "cusip_map": cusip_map,
-            "smart_changes": smart_changes,
-        }
-        observed_at = _latest_at(
-            ((filings, ("accepted_at", "filing_date")), (cusip_map, ("updated_at",)))
-        )
-        if not managers and not filings:
-            return DataResult.empty(
-                source=source,
-                value=payload,
-                observed_at=observed_at,
-                message="활성 13F 매니저 또는 공시 데이터가 없습니다.",
-            )
-        return DataResult.ok(value=payload, source=source, observed_at=observed_at)
-    except Exception as error:
-        return DataResult.error(
-            source=source,
-            value=payload,
-            message=public_exception_message("v1 13F DB 조회에 실패했습니다.", error),
-        )
-
-
-@cache_data(ttl="15m", max_entries=2)
-def load_strategy_data() -> DataResult:
-    """전략 메타데이터와 실제 배분 이력을 읽는다."""
-
-    source = "Research 로컬 · DuckDB strategy allocations"
-    try:
-        payload = load_local_strategy_data()
-        strategies = payload["strategies"]
-        allocations = payload["allocations"]
-        observed_at = _latest_at(((allocations, ("apply_date", "created_at")),))
-        if not strategies and not allocations:
-            return DataResult.empty(
-                source=source,
-                value=payload,
-                observed_at=observed_at,
-                message="저장된 전략 또는 배분 이력이 없습니다.",
-            )
-        return DataResult.ok(value=payload, source=source, observed_at=observed_at)
-    except Exception as error:
-        return DataResult.error(
-            source=source,
-            message=public_exception_message("전략 DB 조회에 실패했습니다.", error),
-        )
-
-
-def load_reporting_view(
-    view: str,
-    *,
-    equals: Mapping[str, Any] | None = None,
-    in_values: Mapping[str, Sequence[Any]] | None = None,
-    start: date | datetime | str | None = None,
-    end: date | datetime | str | None = None,
-) -> DataResult:
-    """v1 reporting 뷰를 표준 ReportingQueries로 조회한다."""
-    blocked = _preflight()
-    if blocked:
-        return blocked
-    try:
-        from investment_agent.platform.db.postgres import service_client
-        from investment_agent.reporting.readers.financial import ReportingQueries
-
-        client = service_client()
-        queries = ReportingQueries.from_client(client, is_offline=_offline_mode())
-        return queries.read(
-            view,
-            equals=equals,
-            in_values=in_values,
-            start=start,
-            end=end,
-        )
-    except Exception as error:
-        return DataResult.error(
-            source=f"{DB_SOURCE} · reporting.{view}",
-            message=public_exception_message(f"reporting.{view} 조회 실패", error),
-        )
-
-
 __all__ = [
     "DataResult",
     "EXTENDED_SECTIONS",
-    "MACRO_KPI_SERIES",
-    "MACRO_LOOKBACK_DAYS",
     "SelectOnlyGateway",
     "load_ai_data",
     "load_earnings_data",
     "load_earnings_discord_support",
     "load_earnings_extended",
-    "load_execution_data",
-    "load_guru_data",
-    "load_price_history",
-    "load_macro_data",
-    "load_reporting_view",
-    "load_strategy_data",
     "load_ticker_data_quality",
 ]

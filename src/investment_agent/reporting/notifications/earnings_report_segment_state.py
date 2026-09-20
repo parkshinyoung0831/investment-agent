@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 from investment_agent.data.fundamentals.domain.taxonomy.segment_concepts import profit_measure_label
-from investment_agent.notifications.earnings_report.capital import f
+from investment_agent.reporting.services.financial_row import f
 
 SEGMENT_TYPES = ("business", "product", "geographic")
 SEGMENT_TYPE_LABELS = {

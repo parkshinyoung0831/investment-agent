@@ -4,20 +4,15 @@ from __future__ import annotations
 
 import ast
 import json
-import sys
 import tempfile
 import unittest
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
-import pandas as pd
-
 from investment_agent.dashboard import db, ops
 from investment_agent.execution import db as execution_db
-from investment_agent.execution.orders.intents import ExecutionIntent
 from investment_agent.platform.db.sqlite import runtime_connection
 from investment_agent.reporting.models import DataResult
 from investment_agent.reporting.readers import dashboard as reporting_dashboard
@@ -214,48 +209,6 @@ class SelectOnlyGatewayTests(unittest.TestCase):
         self.assertEqual(sum(call[0] == "range" for call in client.calls), 3)
         self.assertGreaterEqual(sum(call[0] == "order" for call in client.calls), 3)
 
-    def test_macro_loader_keeps_requested_payload_shape(self) -> None:
-        client = _FakeClient(
-            {
-                ("reporting", "macro_series"): [
-                    {
-                        "series_id": "VIX",
-                        "name_ko": "변동성",
-                        "description": None,
-                        "country": None,
-                        "category": "sentiment",
-                        "base_unit": "pts",
-                        "timezone": None,
-                        "domain": "market_indicator",
-                        "series_kind": "oscillator",
-                        "source": "yfinance",
-                        "frequency": "daily",
-                    }
-                ],
-                ("reporting", "macro_observations"): [
-                    {
-                        "series_id": "VIX",
-                        "obs_date": "2026-08-21",
-                        "value": 18.0,
-                        "effective_at": "2026-08-21T00:00:00Z",
-                        "collected_at": "2026-08-21T00:00:00Z",
-                    }
-                ],
-            }
-        )
-        with (
-            patch.dict(
-                "os.environ",
-                {"DASHBOARD_OFFLINE": "0", "SUPABASE_URL": "https://db.test", "SUPABASE_SERVICE_KEY": "x"},
-                clear=False,
-            ),
-            patch("investment_agent.platform.db.postgres.service_client", return_value=client),
-        ):
-            result = _uncached(db.load_macro_data)()
-
-        self.assertEqual(result.status, "ok")
-        self.assertEqual(set(result.value), {"indicators", "observations"})
-        self.assertEqual(result.value["observations"][0]["value"], 18.0)
 
     def test_multi_dataset_loaders_keep_public_payload_keys(self) -> None:
         empty_gateway = db.SelectOnlyGateway(_FakeClient())
@@ -281,8 +234,6 @@ class SelectOnlyGatewayTests(unittest.TestCase):
                 results = {
                     "ai": _uncached(db.load_ai_data)("AAPL"),
                     "earnings": _uncached(db.load_earnings_data)(),
-                    "guru": _uncached(db.load_guru_data)(),
-                    "strategy": _uncached(db.load_strategy_data)(),
                     "target": _uncached(reporting_dashboard.load_latest_target)(),
                 }
 
@@ -301,77 +252,8 @@ class SelectOnlyGatewayTests(unittest.TestCase):
                 "earnings_flash",
             },
         )
-        self.assertEqual(
-            set(results["guru"].value),
-            {"managers", "filings", "positions", "cusip_map", "smart_changes"},
-        )
-        self.assertEqual(set(results["strategy"].value), {"strategies", "allocations"})
         self.assertEqual(set(results["target"].value), {"risk_decision", "proposal"})
 
-    def test_guru_loader_reads_v1_institutional_rows_and_maps_identifiers(self) -> None:
-        """manager_cik/name/fund_name/is_active는 코드 설정이 SSOT이므로
-        `institutional.managers`를 흉내 낼 필요가 없다 — 실제 추적 대상 중
-        하나(Warren Buffett)의 CIK로 filings/positions만 흉내 낸다."""
-        manager_cik = "0001067983"
-        client = _FakeClient(
-            {
-                ("institutional", "filings"): [
-                    {
-                        "accession_no": f"{manager_cik}-26-000001", "manager_cik": manager_cik,
-                        "period_end": "2026-03-31", "form_type": "13F-HR", "report_type": "13F HOLDINGS REPORT",
-                        "filing_date": "2026-05-15", "accepted_at": "2026-05-15T12:00:00Z",
-                        "amendment_type": None, "amendment_no": None, "reported_value_usd": 100,
-                        "reported_line_count": 1, "confidential_omitted": False, "source_url": "https://sec.test/1",
-                        "content_sha256": "a" * 64, "ingested_at": "2026-05-15T12:00:00Z",
-                    },
-                    {
-                        "accession_no": f"{manager_cik}-26-000002", "manager_cik": manager_cik,
-                        "period_end": "2026-06-30", "form_type": "13F-HR", "report_type": "13F HOLDINGS REPORT",
-                        "filing_date": "2026-08-15", "accepted_at": "2026-08-15T12:00:00Z",
-                        "amendment_type": None, "amendment_no": None, "reported_value_usd": 120,
-                        "reported_line_count": 1, "confidential_omitted": False, "source_url": "https://sec.test/2",
-                        "content_sha256": "b" * 64, "ingested_at": "2026-08-15T12:00:00Z",
-                    },
-                ],
-                ("institutional", "positions"): [
-                    {
-                        "accession_no": f"{manager_cik}-26-000001", "source_row_no": 1, "issuer_name": "Apple",
-                        "identifier": "037833100", "identifier_type": "CUSIP", "title_of_class": "COM",
-                        "value_usd": 100, "quantity": 10, "quantity_type": "SH", "position_kind": "SHARES",
-                        "investment_discretion": None, "other_manager": None, "voting_sole": 10,
-                        "voting_shared": 0, "voting_none": 0,
-                    },
-                    {
-                        "accession_no": f"{manager_cik}-26-000002", "source_row_no": 1, "issuer_name": "Apple",
-                        "identifier": "037833100", "identifier_type": "CUSIP", "title_of_class": "COM",
-                        "value_usd": 120, "quantity": 20, "quantity_type": "SH", "position_kind": "SHARES",
-                        "investment_discretion": None, "other_manager": None, "voting_sole": 20,
-                        "voting_shared": 0, "voting_none": 0,
-                    },
-                ],
-                ("universe", "security_identifiers"): [{
-                    "identifier": "037833100", "identifier_type": "CUSIP", "security_id": 7,
-                    "mapping_status": "mapped", "updated_at": "2026-08-15T12:00:00Z",
-                }],
-                ("universe", "securities"): [{"security_id": 7, "ticker": "AAPL", "is_active_listing": True}],
-            },
-        )
-        with (
-            patch.dict("os.environ", {"DASHBOARD_OFFLINE": "0", "SUPABASE_URL": "https://db.test", "SUPABASE_SERVICE_KEY": "x"}, clear=False),
-            patch.object(db, "_gateway", return_value=db.SelectOnlyGateway(client)),
-        ):
-            result = _uncached(db.load_guru_data)()
-
-        self.assertEqual(result.status, "ok")
-        self.assertIn(manager_cik, [row["manager_cik"] for row in result.value["managers"]])
-        self.assertEqual(result.value["cusip_map"][0]["ticker"], "AAPL")
-        self.assertEqual(result.value["positions"][0]["cusip"], "037833100")
-        self.assertEqual(result.value["positions"][0]["ticker"], "AAPL")
-        self.assertEqual(result.value["smart_changes"], [])
-        schemas = [call[1] for call in client.calls if call[0] == "schema"]
-        self.assertIn("institutional", schemas)
-        self.assertIn("universe", schemas)
-        self.assertNotIn("gurus", schemas)
 
     def test_earnings_view_queries_only_required_base_tables(self) -> None:
         client = _FakeClient(
@@ -581,36 +463,6 @@ class SelectOnlyGatewayTests(unittest.TestCase):
         # 관심에서 빠진 회사는 S&P 게이트에는 남아 있어도 관심은 아니다.
         self.assertFalse(by_ticker["REMOVED"]["watchlist_active"])
 
-    def test_execution_loader_keeps_observability_fields_read_only(self) -> None:
-        """execution 관측은 이제 Supabase가 아니라 로컬 runtime.sqlite3
-        (reporting.local_runtime)가 소유한다 — 실제 SQLite로 검증한다."""
-        with tempfile.TemporaryDirectory() as directory:
-            runtime_path = Path(directory) / "runtime.sqlite3"
-            universe = _FakeClient({("universe", "securities"): [{"security_id": 1, "ticker": "AAPL", "is_active_listing": True}]})
-            with (
-                patch.dict("os.environ", {"AI_INVESTOR_RUNTIME_DB_PATH": str(runtime_path)}, clear=False),
-                patch.object(execution_db, "sb", universe),
-            ):
-                now = datetime.now(timezone.utc)
-                intent = ExecutionIntent(
-                    intent_id="intent-1", proposal_id="proposal-1", risk_decision_id="risk-1",
-                    execution_mode="live", target_weights={"AAPL": .1, "CASH": .9}, input_hash="a" * 64,
-                    not_before=now - timedelta(minutes=1), expires_at=now + timedelta(hours=1),
-                )
-                repo = execution_db.ExecutionRepository()
-                repo.save_intent(intent.as_row())
-                repo.create_planned_order({
-                    "client_order_id": "order-1", "intent_id": "intent-1", "account_seq": 7,
-                    "ticker": "AAPL", "status": "planned",
-                })
-                repo.update_order_execution("order-1", status="submitted", broker_order_id="broker-1")
-                repo.update_order_execution("order-1", status="filled", broker_order_id="broker-1")
-
-                result = _uncached(db.load_execution_data)()
-
-        self.assertEqual(result.status, "ok")
-        self.assertEqual(result.value["orders"][0]["ticker"], "AAPL")
-        self.assertNotIn("raw_broker_response", result.value["orders"][0])
 
     def test_account_snapshot_loader_reports_the_safe_daily_rollup_only(self) -> None:
         """account_daily_snapshots는 안전한 롤업 필드만 갖는 표라 raw_snapshot이
@@ -632,63 +484,6 @@ class SelectOnlyGatewayTests(unittest.TestCase):
         self.assertEqual(result.value["holdings"], [])
         self.assertNotIn("raw_snapshot", result.value)
 
-    def test_price_loader_reads_persisted_market_rows_with_yfinance_shape(self) -> None:
-        client = _FakeClient(
-            {
-                ("universe", db.T_SECURITIES): [
-                    {"security_id": 1, "ticker": "AAPL", "cik": None},
-                    {"security_id": 2, "ticker": "SPY", "cik": None},
-                ],
-                ("market", db.T_PRICES_DAILY): [
-                    {
-                        "security_id": 1,
-                        "trade_date": "2026-09-01",
-                        "open": 10.0,
-                        "high": 12.0,
-                        "low": 9.0,
-                        "close": 11.0,
-                        "volume": 100.0,
-                        "source": "test",
-                        "ingested_at": "2026-09-01T00:00:00Z",
-                    },
-                    {
-                        "security_id": 2,
-                        "trade_date": "2026-09-01",
-                        "open": 20.0,
-                        "high": 22.0,
-                        "low": 19.0,
-                        "close": 21.0,
-                        "volume": 200.0,
-                        "source": "test",
-                        "ingested_at": "2026-09-01T00:00:00Z",
-                    },
-                ],
-            }
-        )
-        with (
-            patch.dict(
-                "os.environ",
-                {
-                    "DASHBOARD_OFFLINE": "0",
-                    "SUPABASE_URL": "https://db.test",
-                    "SUPABASE_SERVICE_KEY": "x",
-                },
-                clear=False,
-            ),
-            patch.object(db, "_gateway", return_value=db.SelectOnlyGateway(client)),
-        ):
-            result = _uncached(db.load_price_history)(["AAPL", "SPY"], period="1mo")
-            single_result = _uncached(db.load_price_history)("AAPL", period="1mo")
-
-        self.assertEqual(result.status, "ok")
-        self.assertEqual(result.observed_at, "2026-09-01T00:00:00+00:00")
-        self.assertEqual(result.value.columns.names, ["Price", "Ticker"])
-        self.assertEqual(result.value.loc[result.value.index[0], ("Close", "SPY")], 21.0)
-        self.assertEqual(single_result.status, "ok")
-        self.assertNotIsInstance(single_result.value.columns, pd.MultiIndex)
-        self.assertEqual(single_result.value.loc[single_result.value.index[0], "Close"], 11.0)
-        selected_columns = [call[1] for call in client.calls if call[0] == "select"]
-        self.assertFalse(any("*" in columns for columns in selected_columns))
 
 
 class OfflineBoundaryTests(unittest.TestCase):
@@ -696,13 +491,15 @@ class OfflineBoundaryTests(unittest.TestCase):
         with (
             patch.dict("os.environ", {"DASHBOARD_OFFLINE": "1"}, clear=False),
             patch.object(db, "_gateway", side_effect=AssertionError("network boundary crossed")),
+            patch.object(reporting_dashboard, "service_client", side_effect=AssertionError("network boundary crossed")),
         ):
-            result = _uncached(db.load_macro_data)()
-        self.assertEqual(result.status, "offline")
+            gateway_result = _uncached(db.load_ai_data)("AAPL")
+            reader_result = _uncached(reporting_dashboard.load_macro_window)()
+        self.assertEqual({gateway_result.status, reader_result.status}, {"offline"})
 
     def test_offline_external_loaders_do_not_import_network_clients(self) -> None:
         with patch.dict("os.environ", {"DASHBOARD_OFFLINE": "1"}, clear=False):
-            price = _uncached(db.load_price_history)(["SPY"])
+            price = _uncached(reporting_dashboard.load_price_history)(["SPY"])
             news = _uncached(reporting_news.load_live_news)("market", ticker="SPY")
         self.assertEqual({price.status, news.status}, {"offline"})
 
@@ -834,24 +631,15 @@ class DashboardStaticBoundaryTests(unittest.TestCase):
 
         self.assertEqual(violations, [], "\n".join(violations))
 
-    #: 두 모듈이 같은 이름으로 다른 조회를 구현하는 잔여 구간이다.
-    #: 실제 화면은 Reporting reader를 사용하며, 아래 중복은 별도 의미를 확인한 뒤 줄인다.
-    _KNOWN_OVERLAP = frozenset({
-        "load_execution_data", "load_guru_data", "load_price_history", "load_strategy_data",
-    })
+    #: 두 모듈이 같은 이름의 조회를 각자 구현하는 자리는 없다.
+    _KNOWN_OVERLAP: frozenset[str] = frozenset()
 
     def test_required_public_loader_names_exist(self) -> None:
         expected_db = {
-            "load_macro_data",
-            "load_execution_data",
             "load_ai_data",
             "load_earnings_data",
             "load_earnings_discord_support",
             "load_earnings_extended",
-            "load_guru_data",
-            "load_strategy_data",
-            "load_price_history",
-            "load_reporting_view",
         }
         expected_reporting = {
             "load_econ_upcoming",
@@ -888,21 +676,6 @@ class DashboardStaticBoundaryTests(unittest.TestCase):
         }
         self.assertEqual(self._KNOWN_OVERLAP, both)
 
-    def test_load_reporting_view_delegates_to_queries(self) -> None:
-        from investment_agent.reporting.readers.financial import VIEWS
-        row = dict.fromkeys(VIEWS["securities"].columns.split(","), "x") | {"ticker": "NVDA", "company_name": "NVIDIA"}
-        client = _FakeClient({("reporting", "securities"): [row]})
-        with (
-            patch.dict(
-                "os.environ",
-                {"DASHBOARD_OFFLINE": "0", "SUPABASE_URL": "https://db.test", "SUPABASE_SERVICE_KEY": "x"},
-                clear=False,
-            ),
-            patch("investment_agent.platform.db.postgres.service_client", return_value=client),
-        ):
-            result = db.load_reporting_view("securities", equals={"ticker": "NVDA"})
-        self.assertEqual(result.status, "ok")
-        self.assertEqual(result.rows, [row])
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@
 - 기준 원격 `main`: `b0d0786ae64aa21579bdacb7e19e0d6d05b8368b` (2026-09-20 재개 세션 시작 시 로컬 HEAD·`origin/main`과 일치, 작업 트리 깨끗). 이전 원장이 적은 `4181f6b`는 이 HEAD의 조상이다. 재개 세션 프롬프트는 Task 1~4가 미착수라고 서술했으나 실제로는 모두 완료돼 있었고, 실제 상태를 따랐다.
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
-- 현재 단계: Research→Trading 잔여 의존성 1쌍(`build_features`의 `ContextBuilder`)과 CLI 조립 예외 8개(아래 '재개 세션 배치 B')를 남겨두고, 실제 runtime caller를 확인하며 조회·발송 및 실행 경계를 배치별로 정리한다.
+- 현재 단계: 계층 의존성 pending 1쌍(`trading/supabase_repository.py → reporting.readers.runtime`, 배치 D)과 승인된 조립 예외를 남겨두고, 실제 runtime caller를 확인하며 조회·발송 및 실행 경계를 배치별로 정리한다.
 - 현재 작업 방식: 같은 책임 경계의 독립 변경 2~3개를 한 배치로 묶고, 관련·architecture/import 테스트를 배치 안에서 실행한다. 전체 suite는 배치 종료, 실행·승인·risk 안전 변경, 최종 통합 때 실행한다. 완료 task마다 별도 plan 문서를 만들지 않는다.
 - 완료 단계: Phase 1 조사, Phase 2의 feature snapshot·training label·valuation·event·training sample·decision experience owner 이관, Phase 3 공통 serialization·forecast·평가 계약 및 일부 Data read 역방향 import 정리, production Trading 알고리즘 검증의 명시적 경계 설정, Phase 4 RiskGate→ExecutionIntent 생성 책임 이관. Research 사건 feature·계약 배치까지 `PENDING_DEPENDENCIES`는 16쌍이다.
 - 단일 브랜치 통합 점검(2026-09-20): 로컬·GitHub의 실제 브랜치는 `main` 하나였다. 남아 있던 `phase-source/main` 추적 참조(`e9f6fc5`)의 10개 커밋은 `git range-diff 5801357..phase-source/main baf40e2..d2a0315`에서 `main`의 대응 커밋 10개와 일대일로 확인했다(8개 동일, 2개는 선행 Research factor 소유 경로에 맞춰 적용). 이전 코드를 재병합하지 않고 오래된 참조만 정리한다.
@@ -21,7 +21,7 @@
 | `git ls-remote origin refs/heads/main` | 로컬 HEAD와 동일 SHA | 최신 `main` 기준 확인 |
 | `python -m unittest tests.investment_agent.test_architecture tests.test_repo_conventions tests.test_workflow_wiring -q` | 100개 통과 | 구조·관례·workflow 현재 기준선 |
 | `python -m unittest discover -s tests -t .` | 3,071개 통과, skip 1개 (재개 세션 배치 A 종료 시점) | 이 환경에서는 `lightgbm`·`xgboost` 오류도 재현되지 않았다. 최초 기준선은 3,009개 중 오류 4개(ML 미설치)였다 |
-| `tests/investment_agent/test_architecture.py` | `PENDING_DEPENDENCIES` 1쌍(최초 69쌍) + `COMPOSITION_ROOTS` 8개 | 줄여야 하는 현재 import 부채와, 사용자가 승인한 좁은 조립 예외 |
+| `tests/investment_agent/test_architecture.py` | `PENDING_DEPENDENCIES` 1쌍(최초 69쌍) + `COMPOSITION_ROOTS` 8개 파일 | 줄여야 하는 현재 import 부채와, 사용자가 승인한 좁은 조립 예외 |
 
 ## 새 세션 재개 절차
 
@@ -552,6 +552,19 @@
 - 삭제: `src/investment_agent/execution/brokers/contracts.py`(호출자 0 확인). worker·주문 원장·reconciliation·`TOSS_LIVE_ENABLED`·maintenance hold는 변경하지 않았다. hold(정비 보류·kill switch ON·lockdown)는 그대로다.
 - 테스트: 새 broker 중립 계약 부재 테스트는 삭제 전 RED, 삭제 후 통과. execution 전체 211개, architecture·docs 통과.
 - 남은 debt: Phase 6(dashboard read 이관), Phase 7(ResearchStore), Phase 9(`SupabaseRepository` God façade 1,344줄 분해: 데이터 읽기 조립·후보 선정·Trading 원장 쓰기·모델 승격·research 읽기가 섞임), Phase 10(가드 강화).
+
+#### 재개 세션 배치 D — Phase 6·7·8·9·10 (2026-09-20, 사용자 지시: 권장 방향으로 전부 진행)
+
+- Phase 6(dashboard read): `dashboard/db.py`를 AST로 검사해 화면 caller가 없는 죽은 사본 6개(`load_macro_data`, `load_execution_data`, `load_guru_data`, `load_strategy_data`, `load_price_history`, `load_reporting_view`)와 전용 helper·상수를 찾았다. 화면은 이미 `reporting/readers/dashboard.py`의 같은 이름 reader를 쓰고 있었는데, 그 reader에는 전용 테스트가 하나도 없었고 계약 테스트는 죽은 사본만 보호했다. 그대로 지우면 실제 화면 로더가 무방비가 되므로 순서를 뒤집었다. 새 `tests/investment_agent/reporting/test_dashboard_reader_contracts.py` 10개가 살아 있는 reader의 계약(실제 SQLite로 execution 관측·raw broker 미노출, 가격 yfinance 모양·잘못된 종목/기간 거절, guru payload 키·reporting view만 요청, strategy 상태, macro 범위)을 먼저 고정했고, 통과를 확인한 뒤 사본과 그 전용 테스트를 삭제했다. `test_dashboard_readonly.py`의 오프라인 경계 테스트는 삭제하지 않고 살아 있는 reader에 다시 걸었으며 중복 가드 `_KNOWN_OVERLAP`는 빈 집합이 됐다. `scripts/verify_integration.py`는 두 모듈의 `load_*`를 모두 순회한다. `dashboard/db.py` 1,772→약 1,380줄, 남은 로더는 `load_ai_data`·earnings 3종·`load_ticker_data_quality`뿐이다.
+- Phase 6 판단 — `dashboard/db.py` 유지: 남은 파일은 SELECT 전용 gateway(`SelectOnlyGateway`, RPC 전면 거부)와 화면 3개(`ai_approval`, `intelligence`, `earnings`)가 쓰는 로더다. dashboard→reporting 방향은 이미 맞아 방향 위반이 아니고, 파일을 reporting으로 옮기는 것은 안전 경계 파일의 대규모 이동이며 CLAUDE.md·README·정적 경계 테스트의 경로 문자열이 함께 바뀐다. 이동 이득은 응집도뿐이라 이번에는 하지 않았다. 옮길 때는 gateway·canonical helper의 동등한 위치를 먼저 정하고 earnings 로더를 화면 단위로 나눈다.
+- Phase 7(ResearchStore) 판단 — 분리하지 않음: 1,105줄이지만 한 DuckDB 파일·Parquet 뿌리·연결 수명·마이그레이션을 공유하는 단일 저장소이고, 표 구조는 CLAUDE.md가 의도된 모양으로 보호한다. 메서드 수로 나누면 연결·마이그레이션 소유가 갈라지고 generic `records()` 엔진이 중복된다.
+- Phase 8 잔여(reporting→notifications): `notifications/earnings_report/capital.py`(DB 없는 순수 값 읽기 32줄)가 reporting 두 파일에서 거꾸로 import되고 있었다. `reporting/services/financial_row.py`로 옮기고 세 importer를 갱신해 알림이 reporting을 소비하는 방향이 됐다(알림 카드 계산·DB schema 불변).
+- Phase 9(façade 정리): `SupabaseRepository`의 public 메서드 중 src caller가 0인 것은 `case_exists` 하나(정의 외 참조 0)뿐이라 삭제했고 미사용 `canonical_json` import를 지웠다. 나머지 public 메서드는 전부 caller가 있으며, God façade(약 1,340줄)의 실질 분해는 데이터 읽기 조립·후보 선정·Trading 원장 쓰기·모델 승격이 뒤섞여 있고 Research 조립 진입점 8개가 이 façade에 의존하므로 여러 배치가 필요하다.
+- Phase 10(가드 강화): 패키지 간 실제 import 행렬을 AST로 계산해 목표 방향과 대조했다. `LayerDirectionTest.FORBIDDEN`에 `reporting`(notifications·dashboard·execution·operations 금지), `notifications`(trading·execution·dashboard·operations), `dashboard`(trading·execution·operations·data), `research`(+reporting·notifications·dashboard·execution), `trading`(+operations·reporting), `execution`(+reporting·intelligence)을 추가했다. 새 규칙 10개를 위반 주입으로 검증했고 모두 실패했다. `SharedTopLevelModulesTest`가 최상위 공유 모듈을 `{bootstrap, config, forecasting, portfolio_weights}`로 고정하고 공유 계약이 platform만 import하도록 강제하며 임시 `utils.py` 주입으로 실패를 확인했다. CLAUDE.md의 "일부러 다르게 둔 모양" 표에 조립 예외·공유 계약 위치·execution 비중 검증 분리 근거 3행을 추가했다.
+- 새 규칙이 드러낸 기존 부채(pending 1쌍): `trading/supabase_repository.py → reporting/readers/runtime.py`. 후보 선정(`_candidate_last_analyzed`, `_last_attempted`)이 Trading 자신의 로컬 판단 원장을 reporting reader(`read_local_rows("security_decisions", canonical_db=…)`)로 읽는다. 올바른 방향은 Trading이 그 읽기(security_id→ticker 신원 해석과 evidence 요약 결합)를 소유하고 reporting reader가 그것을 소비하는 것이다. 후보 선정은 과거에 PGRST106 장애가 있었던 자리이고 `test_candidate_ranker.py`가 "신원 조회기를 받아야 한다"는 동작을 고정하고 있어, Trading 로컬 원장 쿼리 빌더 계약(`in_` 지원 등)을 확인한 뒤 별도 단위로 처리해야 한다.
+- 수정·삭제·이동 파일: 새 `tests/investment_agent/reporting/test_dashboard_reader_contracts.py`, `reporting/services/financial_row.py`(`notifications/earnings_report/capital.py`에서 이동), `dashboard/db.py`(사본·상수·import 삭제), `test_dashboard_readonly.py`, `scripts/verify_integration.py`, `trading/supabase_repository.py`, `test_architecture.py`, `CLAUDE.md`, 이 원장.
+- 테스트: 신규 reader 계약 10개 통과, dashboard readonly 19개 통과, 규칙 강화 직후 실제 위반 3건 RED(reporting→notifications 2, trading→reporting 1), 수정 후 architecture 36개 통과. 사본 삭제 후 전체 suite 3,080개 OK(skip 1)였고, 이후 변경(façade 정리·capital 이동·가드) 뒤의 전체 실행 결과는 아래 최종 검증에 기록한다.
+- 남은 dependency debt: (1) pending 1쌍(위). (2) `COMPOSITION_ROOTS` 8개 파일과 `build_features`의 `ContextBuilder`(승인된 예외, 증거 조립기·`EvidenceBundle` 소유권은 Trading). (3) 시스템 검증 예외 6개 import. (4) `dashboard/db.py` 잔여 로더 이동, `SupabaseRepository` God façade 분해.
 
 ## 향후 milestone
 

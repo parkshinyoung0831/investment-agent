@@ -151,7 +151,7 @@ class ReportingGuardsTest(unittest.TestCase):
                 "readers/intelligence.py", "readers/news.py", "readers/research.py",
                 "readers/runtime.py",
                 "services/__init__.py", "services/economic_releases.py",
-                "services/fundamental_segments.py", "services/strategy_labels.py",
+                "services/financial_row.py", "services/fundamental_segments.py", "services/strategy_labels.py",
             },
             set(sources),
         )
