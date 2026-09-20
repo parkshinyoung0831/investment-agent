@@ -579,7 +579,7 @@
 
 - `SupabaseRepository` God façade 분해(보류): public 메서드 중 caller 0은 배치 D에서 지웠다. 남은 것은 세 군이다. (A) Trading 원장 forwarding 15개는 호출자가 `trading/decision/analysis.py`·`trading/my_portfolio.py`·`trading/system/engine.py`이고 데이터 읽기와 같은 `repository` 객체로 받으므로 분리하면 시그니처와 테스트 fake가 넓게 바뀐다. (C) 후보 선정 358줄은 façade 밖 멤버를 `current_tracked_tickers`·`market_prices`·`sp500_sector_map`·`_memo`·`_trading_repository`만 쓰는 응집된 조각이지만, 그중 `factor_cross_section`·`thesis_views`를 `trading/system/engine.py`(System Portfolio 실행)와 `research/system_validation/ablation.py`의 replay 어댑터가 같은 `repository` 객체의 메서드로 호출한다. 추출하려면 `run_system`의 인자와 replay 의미를 바꿔야 한다. (B) 데이터 읽기 조립(`market_prices`·`fundamentals`·`macro`·`segment`·`guru`·`econ`·replay mirror)은 Research 조립 진입점이 Trading 객체를 쓰는 이유지만, 이것을 Research 소유로 옮기면 `architecture-target.md`가 `trading/evidence`에 둔 증거 조립 설계를 뒤집는 것이라 사용자 결정이 필요하다. 재개 시 (C)를 하려면 `run_system`에 후보 원천을 주입하는 인자를 먼저 도입하고 replay 어댑터를 그 인자로 옮긴 뒤 façade 위임을 지운다.
 - `dashboard/db.py` 잔여 로더 이동(보류): dashboard→reporting 방향은 이미 맞다. 남은 파일은 SELECT 전용 gateway와 화면 3개가 쓰는 로더이며, 이동은 안전 경계 파일의 대규모 이동이라 CLAUDE.md·README·정적 경계 테스트의 경로 문자열이 함께 바뀌고 이득은 응집도뿐이다.
-- dashboard earnings 화면의 `notifications.earnings_report` import(유지): 이 화면은 Discord 카드 미리보기이며 `card`·`charts`·`candidates`를 그대로 써서 "화면에 보이는 것이 실제로 발송되는 카드"를 보장한다. 계산을 reporting으로 복제하면 미리보기와 발송이 어긋날 수 있다.
+- dashboard earnings 화면의 `notifications/earnings_report/` import(유지): 이 화면은 Discord 카드 미리보기이며 `card`·`charts`·`candidates`를 그대로 써서 "화면에 보이는 것이 실제로 발송되는 카드"를 보장한다. 계산을 reporting으로 복제하면 미리보기와 발송이 어긋날 수 있다.
 - 다음 재개 지점: 사용자가 (B) 증거 조립 소유권을 정하면 그에 따라 Research 조립 예외 8개(`COMPOSITION_ROOTS`)를 줄일 수 있다. 그 결정이 없으면 이 문서의 나머지는 응집도 개선 후보로만 남는다.
 
 ## 향후 milestone
