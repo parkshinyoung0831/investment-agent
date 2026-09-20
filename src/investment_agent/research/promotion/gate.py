@@ -4,17 +4,45 @@ from __future__ import annotations
 import math
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
-from typing import Any, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 from investment_agent.platform.serialization import finite_float as _finite, parse_datetime
 
-_TRANSITIONS = {
-    ("shadow", "backtest"),
-    ("backtest", "out_of_sample"),
-    ("out_of_sample", "walk_forward"),
-    ("walk_forward", "paper"),
-    ("paper", "live"),
-}
+#: 모델 수명주기. 승격은 이 순서를 한 칸씩만 오르고, 실행 단계(paper·live)는 앞 전이가 모두 승인돼야 열린다.
+PROMOTION_PATH = ("shadow", "backtest", "out_of_sample", "walk_forward", "paper", "live")
+_TRANSITIONS = set(zip(PROMOTION_PATH, PROMOTION_PATH[1:]))
+_EXECUTION_STAGES = frozenset({"paper", "live"})
+
+
+def approval_confirmation(artifact_id: str, from_stage: str, to_stage: str) -> str:
+    """다른 artifact나 단계에 재사용할 수 없는 수동 확인 문구의 유일한 정의다."""
+    return f"PROMOTE {artifact_id} {from_stage}->{to_stage}"
+
+
+def has_approved_chain(
+    *,
+    artifact_id: str,
+    current_stage: str | None,
+    to_stage: str,
+    audits: Iterable[Mapping[str, Any]],
+) -> bool:
+    """artifact가 실행 단계(`to_stage`) 이상이고, 거기까지 모든 전이가 정확한 확인 문구로 승인됐는가.
+
+    승인 기록 하나라도 빠지거나 문구가 다르면 닫힌다. 실주문 직전 검사가 쓴다.
+    """
+    if to_stage not in _EXECUTION_STAGES or current_stage not in PROMOTION_PATH:
+        return False
+    target = PROMOTION_PATH.index(to_stage)
+    if PROMOTION_PATH.index(current_stage) < target:
+        return False
+    approved = {
+        (str(row.get("from_stage")), str(row.get("to_stage")))
+        for row in audits
+        if row.get("status") == "approved"
+        and row.get("confirmation_text")
+        == approval_confirmation(artifact_id, str(row.get("from_stage")), str(row.get("to_stage")))
+    }
+    return set(zip(PROMOTION_PATH[:target], PROMOTION_PATH[1:target + 1])) <= approved
 
 
 @dataclass(frozen=True)
@@ -147,10 +175,7 @@ class ManualPromotionGate:
     @staticmethod
     def confirmation_text(decision: PromotionDecision) -> str:
         """다른 artifact나 단계에 재사용할 수 없는 수동 확인 문구다."""
-        return (
-            f"PROMOTE {decision.artifact_id} "
-            f"{decision.from_stage}->{decision.to_stage}"
-        )
+        return approval_confirmation(decision.artifact_id, decision.from_stage, decision.to_stage)
 
 
 def _covered_days(intervals: Sequence[tuple[datetime, datetime]]) -> int:
@@ -290,9 +315,12 @@ def aggregate_evaluations(rows: Sequence[Mapping[str, Any]]) -> EvaluationSummar
 
 
 __all__ = [
+    "PROMOTION_PATH",
     "EvaluationSummary",
     "ManualPromotionGate",
     "PromotionCriteria",
     "PromotionDecision",
     "aggregate_evaluations",
+    "approval_confirmation",
+    "has_approved_chain",
 ]

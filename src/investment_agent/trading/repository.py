@@ -459,43 +459,6 @@ class TradingRepository:
             if str(row["case_key"]) in by_case
         ][:limit]
 
-    # ── 운영 scorecard용 최신 row ───────────────────────────────────────
-    def latest_run(self) -> dict[str, Any] | None:
-        rows = (
-            self._db.table(SCHEMA, T_RUNS)
-            .select("run_id,stage,status,as_of_at,finished_at,failure_reason")
-            .order("as_of_at", desc=True)
-            .limit(1)
-            .execute()
-            .data
-            or []
-        )
-        return dict(rows[0]) if rows else None
-
-    def latest_model_version(self) -> dict[str, Any] | None:
-        rows = (
-            self._db.table(SCHEMA_REPORTING, V_CURRENT_MODEL_STAGE)
-            .select("artifact_id,algorithm,feature_version,stage,created_at")
-            .order("created_at", desc=True)
-            .limit(1)
-            .execute()
-            .data
-            or []
-        )
-        return dict(rows[0]) if rows else None
-
-    def latest_risk_decision(self) -> dict[str, Any] | None:
-        rows = (
-            self._db.table(SCHEMA, T_RISK_DECISIONS)
-            .select("risk_decision_id,is_approved,violations,decided_at")
-            .order("decided_at", desc=True)
-            .limit(1)
-            .execute()
-            .data
-            or []
-        )
-        return dict(rows[0]) if rows else None
-
     # ── 회차 ──────────────────────────────────────────────────────────────
     def finish_run(
         self,

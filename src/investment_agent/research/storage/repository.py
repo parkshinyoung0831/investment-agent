@@ -28,6 +28,7 @@ from investment_agent.research.promotion.gate import (
     EvaluationSummary,
     PromotionDecision,
     aggregate_evaluations,
+    approval_confirmation,
 )
 from investment_agent.research.rl.contracts import FeatureSnapshot, ForwardReturnLabel, normalize_symbols
 
@@ -989,7 +990,7 @@ class ResearchStore:
             raise RuntimeError("model promotion failed closed: artifact not found")
         if model_stage != decision.from_stage:
             raise RuntimeError("model promotion failed closed: artifact stage changed")
-        expected = f"PROMOTE {decision.artifact_id} {decision.from_stage}->{decision.to_stage}"
+        expected = approval_confirmation(decision.artifact_id, decision.from_stage, decision.to_stage)
         if confirmation != expected:
             raise ValueError(f"confirmation must exactly match: {expected}")
         return trading_repository.approve_model_promotion(

@@ -4,9 +4,12 @@ import unittest
 from datetime import datetime, timedelta, timezone
 
 from investment_agent.research.promotion.gate import (
+    PROMOTION_PATH,
     EvaluationSummary,
     ManualPromotionGate,
     aggregate_evaluations,
+    approval_confirmation,
+    has_approved_chain,
 )
 
 
@@ -138,6 +141,83 @@ class PromotionGateTest(unittest.TestCase):
         )
         self.assertEqual(decision.status, "rejected")
         self.assertGreater(summary.data_integrity_incidents, 0)
+
+
+def _audit(artifact_id: str, from_stage: str, to_stage: str, **overrides: object) -> dict:
+    row = {
+        "artifact_id": artifact_id, "from_stage": from_stage, "to_stage": to_stage,
+        "status": "approved", "confirmation_text": approval_confirmation(artifact_id, from_stage, to_stage),
+    }
+    return {**row, **overrides}
+
+
+def _chain(artifact_id: str, *, upto: str) -> list[dict]:
+    stop = PROMOTION_PATH.index(upto)
+    return [_audit(artifact_id, a, b) for a, b in zip(PROMOTION_PATH[:stop], PROMOTION_PATH[1:stop + 1])]
+
+
+class ApprovedChainTest(unittest.TestCase):
+    """실주문 직전 검사(`has_approved_chain`)가 승격 규칙과 같은 원본을 쓰는지 고정한다."""
+
+    def test_lifecycle_is_the_declared_order_and_transitions_follow_it(self):
+        self.assertEqual(("shadow", "backtest", "out_of_sample", "walk_forward", "paper", "live"), PROMOTION_PATH)
+
+    def test_lifecycle_matches_the_trading_stage_vocabulary(self):
+        # Research와 Trading은 서로 import할 수 없어 같은 목록을 각자 선언한다. 갈라지면 여기서 실패한다.
+        from investment_agent.trading.run_context import STAGES
+
+        self.assertEqual(tuple(STAGES), PROMOTION_PATH)
+
+    def test_confirmation_text_is_one_definition_for_gate_and_chain_check(self):
+        decision = ManualPromotionGate().propose(
+            "model-1", from_stage="paper", to_stage="live",
+            summary=EvaluationSummary(
+                out_of_sample_days=100, walk_forward_windows=4, paper_days=30,
+                excess_return=0.03, max_drawdown=-0.08, turnover=0.7, evaluation_count=6,
+            ),
+        )
+        self.assertEqual(approval_confirmation("model-1", "paper", "live"), ManualPromotionGate.confirmation_text(decision))
+        self.assertEqual("PROMOTE model-1 paper->live", approval_confirmation("model-1", "paper", "live"))
+
+    def test_complete_chain_reaches_paper_and_live_at_or_above_the_target_stage(self):
+        for target in ("paper", "live"):
+            self.assertTrue(has_approved_chain(
+                artifact_id="m", current_stage="live", to_stage=target, audits=_chain("m", upto="live"),
+            ), target)
+        self.assertTrue(has_approved_chain(
+            artifact_id="m", current_stage="paper", to_stage="paper", audits=_chain("m", upto="paper"),
+        ))
+
+    def test_missing_middle_transition_fails_closed(self):
+        audits = [row for row in _chain("m", upto="live") if row["to_stage"] != "walk_forward"]
+        self.assertFalse(has_approved_chain(artifact_id="m", current_stage="live", to_stage="live", audits=audits))
+
+    def test_live_needs_the_paper_to_live_transition_but_paper_does_not(self):
+        audits = _chain("m", upto="paper")
+        self.assertTrue(has_approved_chain(artifact_id="m", current_stage="live", to_stage="paper", audits=audits))
+        self.assertFalse(has_approved_chain(artifact_id="m", current_stage="live", to_stage="live", audits=audits))
+
+    def test_unapproved_or_mistyped_audits_do_not_count(self):
+        for override in ({"status": "proposed"}, {"status": "rejected"}, {"confirmation_text": "yes"},
+                         {"confirmation_text": "PROMOTE other paper->live"}):
+            audits = _chain("m", upto="live")
+            audits[-1] = {**audits[-1], **override}
+            self.assertFalse(has_approved_chain(
+                artifact_id="m", current_stage="live", to_stage="live", audits=audits,
+            ), override)
+
+    def test_artifact_must_currently_be_at_or_above_the_target_stage(self):
+        audits = _chain("m", upto="live")
+        for current in ("shadow", "backtest", "out_of_sample", "walk_forward"):
+            self.assertFalse(has_approved_chain(artifact_id="m", current_stage=current, to_stage="paper", audits=audits))
+        self.assertFalse(has_approved_chain(artifact_id="m", current_stage="paper", to_stage="live", audits=audits))
+
+    def test_only_execution_stages_and_known_current_stages_pass(self):
+        audits = _chain("m", upto="live")
+        for target in ("shadow", "backtest", "out_of_sample", "walk_forward", "unknown"):
+            self.assertFalse(has_approved_chain(artifact_id="m", current_stage="live", to_stage=target, audits=audits), target)
+        self.assertFalse(has_approved_chain(artifact_id="m", current_stage="unknown", to_stage="paper", audits=audits))
+        self.assertFalse(has_approved_chain(artifact_id="m", current_stage=None, to_stage="paper", audits=audits))
 
 
 if __name__ == "__main__":

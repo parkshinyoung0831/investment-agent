@@ -38,13 +38,8 @@ def _security_ids(tickers: Sequence[str]) -> dict[str, int]:
     return result
 
 
-#: 예상값 출처의 우선순위. 시장 컨센서스가 있으면 그것을, 없으면 nowcast를,
-#: 그것도 없으면 자체 모델을 쓴다.
-
-
 class SupabaseRepository(PitReader, CandidateSelection):
     """PIT reader에 Trading 원장 위임과 후보 선정을 얹은 Trading 저장소 경계."""
-
 
     @staticmethod
     def _research_store(*, read_only: bool = False) -> Any:
@@ -170,9 +165,6 @@ class SupabaseRepository(PitReader, CandidateSelection):
     def model_stage(self, artifact_id: str) -> str | None:
         return self._trading_repository().current_model_stage(artifact_id)
 
-    def model_evaluation_rows(self, artifact_id: str) -> list[dict[str, Any]]:
-        return self._research_store(read_only=True).model_evaluation_rows(artifact_id)
-
     def model_evaluation_summary(self, artifact_id: str) -> EvaluationSummary:
         """평가 원장 전체를 보수적인 승격 요약으로 집계한다."""
         if self.model_artifact(artifact_id) is None:
@@ -195,38 +187,15 @@ class SupabaseRepository(PitReader, CandidateSelection):
         )
 
     def has_approved_promotion(self, artifact_id: str, to_stage: str) -> bool:
+        """실주문 직전 검사. 규칙은 Research 승격 게이트가 갖고, 여기서는 원장 두 조각만 읽어 넘긴다."""
         if to_stage not in {"paper", "live"}:
             return False
-        stage = self.model_stage(artifact_id)
-        if stage is None:
-            return False
-        if {"shadow": 0, "backtest": 1, "out_of_sample": 2, "walk_forward": 3, "paper": 4, "live": 5}.get(stage, -1) < {
-            "paper": 4,
-            "live": 5,
-        }[to_stage]:
-            return False
-        rows = [
-            row for row in self._trading_repository().model_promotions(artifact_id)
-            if row.get("status") == "approved"
-        ]
-        approved_transitions = {
-            (str(row.get("from_stage")), str(row.get("to_stage")))
-            for row in rows
-            if row.get("confirmation_text")
-            == (
-                f"PROMOTE {artifact_id} {row.get('from_stage')}"
-                f"->{row.get('to_stage')}"
-            )
-        }
-        required = {
-            ("shadow", "backtest"),
-            ("backtest", "out_of_sample"),
-            ("out_of_sample", "walk_forward"),
-            ("walk_forward", "paper"),
-        }
-        if to_stage == "live":
-            required.add(("paper", "live"))
-        return required.issubset(approved_transitions)
+        return research_adapter.has_approved_chain(
+            artifact_id=artifact_id,
+            current_stage=self.model_stage(artifact_id),
+            to_stage=to_stage,
+            audits=self._trading_repository().model_promotions(artifact_id),
+        )
 
     def decision_cases_for_experiences(self) -> list[dict]:
         """체결 여부로 거르지 않은 원본 판단이다."""
@@ -272,29 +241,3 @@ class SupabaseRepository(PitReader, CandidateSelection):
             }
             for row in cases
         ][:limit]
-
-
-# ── 운영 scorecard용 최신 1행 읽기 ─────────────────────────────────────────
-# ops가 이 스키마를 직접 조회하면 테이블·컬럼 이름이 저장소 경계 밖으로 새어 나가고,
-# 오타가 import 에러가 아니라 런타임 PGRST 404로만 드러난다. 계약은 여기서 소유한다.
-
-
-def latest_decision_run() -> dict | None:
-    return SupabaseRepository._trading_repository().latest_run()
-
-
-def latest_model_artifact() -> dict | None:
-    return SupabaseRepository._trading_repository().latest_model_version()
-
-
-def latest_backtest_evaluation() -> dict | None:
-    rows = [
-        row for row in research_adapter.open_research_store(read_only=True).records("portfolio_evaluations")
-        if str(row.get("evaluation_kind") or "") == "backtest"
-    ]
-    rows.sort(key=lambda row: str(row.get("evaluated_at") or ""), reverse=True)
-    return rows[0] if rows else None
-
-
-def latest_risk_decision() -> dict | None:
-    return SupabaseRepository._trading_repository().latest_risk_decision()

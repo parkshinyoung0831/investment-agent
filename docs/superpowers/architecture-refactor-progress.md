@@ -629,6 +629,18 @@
 - 규모: `.py` 721개. 처음 기준 이후 커밋 74개. `SupabaseRepository`는 약 1,340줄에서 300줄이 됐고 PIT 읽기 635줄은 `research/evidence/reader.py`, 후보 선정 470줄은 `trading/decision/candidates.py`로 갔다.
 - 테스트: 전체 3,109 중 실패 1건은 사용자 동시 작업 `data/news/`를 금지하는 intelligence 가드다. 그 디렉터리를 제외하면 모두 통과한다.
 
+#### 배치 H1 — 승격 규칙을 한 곳으로 (2026-09-20)
+
+- 변경 전: 실주문 직전 검사인 `SupabaseRepository.has_approved_promotion`이 승격 규칙 — 수명주기 순서, 필요한 전이, 확인 문구 `PROMOTE <id> <from>-><to>` — 을 `research/promotion/gate.py`와 따로 복제하고 있었다. 확인 문구는 `research/storage/repository.py`까지 세 곳이었다. 게이트가 규칙을 바꿔도 실행 시점 검사는 옛 규칙으로 계속 통과시킬 수 있는 구조였다.
+- 변경: 원본을 `research/promotion/gate.py`에 둔다 — `PROMOTION_PATH`(순서 있는 수명주기, 전이 집합의 원천), `approval_confirmation`(확인 문구의 유일한 정의), `has_approved_chain`(현재 단계·전이 승인·문구 검사). `has_approved_promotion`은 원장에서 현재 단계와 승인 기록만 읽어 `research/adapters/trading.py`를 거쳐 원본에 넘긴다. Research 저장소의 승인 검증도 같은 문구 함수를 쓴다. 판정 의미(fail-closed 순서, 실행 단계는 paper·live뿐, 현재 단계가 목표 이상이어야 함)는 그대로다.
+- 테스트: `test_gate.py`에 새 계약 9개(수명주기 순서, 문구 단일 정의, 체인 완성·중간 누락·live 전이 필요·미승인/오타 기록·현재 단계 미달·비실행 단계·알 수 없는 단계, Trading `STAGES`와의 정합)를 먼저 쓰고 RED를 확인했다. 변이 주입 6건(부분집합→교집합, 현재 단계 비교·status·문구 검사 제거, 수명주기 순서 변경, Trading `STAGES` 순서 변경)이 모두 실패함을 확인하고 원복했다. 글자 수가 같은 변이를 같은 초에 원복하면 stale `.pyc`가 남아 오검출하므로 주입은 `python -B`로 돌린다.
+- 남은 일: Research와 Trading이 서로 import할 수 없어 수명주기 목록이 두 곳(`gate.PROMOTION_PATH`, `trading/run_context.STAGES`)에 있다. import로 합치지 않고 정합 테스트로 묶었다.
+
+#### 배치 H2 — 호출자 0인 원장 조회 삭제 (2026-09-20)
+
+- 삭제: `supabase_repository.py`의 모듈 함수 4개(`latest_decision_run`·`latest_model_artifact`·`latest_backtest_evaluation`·`latest_risk_decision`)와 `SupabaseRepository.model_evaluation_rows`, 그 함수들만 부르던 `TradingRepository.latest_run`·`latest_model_version`·`latest_risk_decision`. src·tests·scripts·docs·workflows 어디에도 호출자가 없고 문자열 진입점도 없다(`grep`으로 확인). 함께 지운 고아 주석 1개는 이미 없는 코드의 설명이었다.
+- 유지: `latest_signal_batch_id`는 `scripts/verify_integration.py`가 부르므로 남긴다.
+
 ## 향후 milestone
 
 | 묶음 | 해당 phase | 독립 완료 조건 |
