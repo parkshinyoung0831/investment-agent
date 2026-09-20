@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 
 from investment_agent.trading.promotion import PromotionLedger
-from investment_agent.research.promotion.gate import ManualPromotionGate
+from investment_agent.research.promotion.gate import PROMOTION_PATH, ManualPromotionGate
 from investment_agent.platform.logging import get_logger
 
 log = get_logger(__name__)
@@ -21,7 +21,7 @@ def _args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--artifact-id", required=True)
     parser.add_argument(
         "--to-stage",
-        choices=("backtest", "out_of_sample", "walk_forward", "paper", "live"),
+        choices=PROMOTION_PATH[1:],
         required=True,
     )
     parser.add_argument("--approved-by", required=True)

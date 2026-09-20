@@ -651,6 +651,12 @@
 - 판단(분해하지 않은 것): 판단 기록(`save_*`·`finish_decision_run`·`save_signal_batch`)과 평가·메모리 읽기는 별도 역할 클래스로 나누지 않았다. 호출자가 전부 데이터 읽기(`price_path`, `market_prices`, tracked 조회)와 같은 객체를 함께 받아서 나눠도 의존이 줄지 않고 파일만 옮기는 일이 된다. 합성 저장소에는 메서드 17개(약 190줄)가 남고, 대부분은 이름만 바꿔 넘기는 위임이며 ticker↔security_id 변환이 있는 것(`save_case`·`save_signal_batch`·`previous_decision`·`evaluated_memories`·평가 조회 2개)만 실제 로직이다. 이전에 "15개"라고 적은 숫자는 17개가 맞다. 이 위임을 없애려면 `analysis`·`system/engine`·`my_portfolio`와 fake 저장소를 쓰는 테스트의 시그니처가 함께 바뀌므로 필요가 생길 때 별도 배치로 한다.
 - 이름: `SupabaseRepository`는 실제로는 Trading 저장소 합성체다. 이름 변경은 호출자 9곳과 테스트 13개를 건드리는 순수 개명이라 이번에는 하지 않았다.
 
+#### 배치 H4 — 단계 목록 복제 두 곳 제거 (2026-09-20)
+
+- 변경 전: 모델 수명주기 여섯 단계 목록이 원본 두 곳(`research/promotion/gate.py`, `trading/run_context.py`) 밖에도 `trading/portfolio/contracts.py`의 `_STAGES`와 `operations/commands/promote_model.py`의 `--to-stage choices`로 복제돼 있었다. 앞의 것은 같은 패키지 안이라 import로 합칠 수 있었다.
+- 변경: `contracts.py`는 `run_context.STAGES`를, `promote_model`은 `PROMOTION_PATH[1:]`(shadow는 시작점이라 목표가 될 수 없다)을 쓴다. 동작은 같다.
+- 가드: `tests/investment_agent/trading/test_stage_vocabulary.py`가 단계 이름 4개 이상을 담은 set·tuple·list 리터럴이 원본 두 파일 밖에 있으면 실패시킨다. 복제 두 곳이 남은 상태에서 RED였고, 정리 뒤 통과한다. `promote_model.py`에 복사 목록을 넣는 주입은 실패함을 확인하고 원복했다. 원본이 사라지면 가드가 공허해지지 않도록 원본 두 곳의 존재도 단언한다.
+
 ## 향후 milestone
 
 | 묶음 | 해당 phase | 독립 완료 조건 |

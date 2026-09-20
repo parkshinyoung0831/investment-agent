@@ -11,6 +11,7 @@ from investment_agent.platform.serialization import (
     ContractError, json_value, parse_datetime, stable_id,
 )
 from investment_agent.portfolio_weights import TICKER_RE, validated_weights
+from investment_agent.trading.run_context import STAGES
 
 _SIGNALS = {"avoid", "watch", "open", "increase", "hold", "reduce", "exit"}
 # TradingAgents 논지 계약. 사고팔기 행동은 목표비중 변화에서 파생되므로 LLM이 정하지 않는다.
@@ -32,7 +33,6 @@ def legacy_signal(thesis: str, hard_constraint: str) -> str:
         return "avoid"
     return {"positive": "open", "negative": "reduce"}.get(thesis, "watch")
 _SOURCES = {"llm", "ml", "rl", "rule", "optimizer"}
-_STAGES = {"shadow", "backtest", "out_of_sample", "walk_forward", "paper", "live"}
 
 
 def _probability(value: Any, field_name: str) -> float:
@@ -165,7 +165,7 @@ class PortfolioProposal:
             raise ContractError("proposal_id, run_id, and source_version are required")
         if self.source_type not in _SOURCES:
             raise ContractError(f"invalid source_type: {self.source_type}")
-        if self.stage not in _STAGES:
+        if self.stage not in STAGES:
             raise ContractError(f"invalid stage: {self.stage}")
         parse_datetime(self.as_of_at)
         object.__setattr__(self, "weights", validated_weights(self.weights))
