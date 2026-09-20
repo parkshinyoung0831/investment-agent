@@ -105,9 +105,11 @@ python scripts/build_diagrams.py     # JSON → validate → HTML → SVG
 
 | Level | 다이어그램 | 답하는 질문 |
 |---|---|---|
-| L0 | `system-architecture` | 전체가 어떻게 생겼는가 (이 문서) |
+| L0 | `overview` | 수집에서 체결·성과까지 전체가 어떻게 이어지는가 (루트 README) |
+| L0 | `system-architecture` | 패키지 단위로 무엇이 무엇을 알아도 되는가 (이 문서) |
 | L1 | `pipeline` | 수집이 어디서 와서 어디로 가는가 |
 | L2 | `trading-analysis` · `trading-target` | 근거가 어떻게 신호가 되고 목표 비중이 되는가 |
+| L3 | `promotion-ladder` | 어느 단계까지 올라갈 수 있고 무엇이 막는가 |
 | L3 | `execution-lifecycle` · `execution-runbook` · `earnings-pipeline` | 주문·승인·공시 각각이 어떤 단계를 지나는가 |
 
 그림은 **지도**다. 왜 그런지와 지켜야 할 불변식은 그림이 아니라 각 문서 본문에 있다.

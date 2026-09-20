@@ -36,13 +36,15 @@ SVG를 붙이고, 인터랙티브 판은 `html/`을 브라우저로 직접 열�
 
 Archify CLI에는 SVG export 명령이 없다. `export_diagram_svg.py`가 납품 HTML 안의 inline
 `<svg>`를 떼고, 그것이 의존하는 CSS 변수와 클래스 규칙만 골라 SVG 안으로 인라인한다.
-기본은 light 팔레트이고 dark는 `prefers-color-scheme`에 실어 GitHub 테마를 따라간다.
+색 처리는 아래 「색은 다크가 기본이다」를 본다.
 
 ## 현재 다이어그램
 
 | 파일 | 유형 | 답하는 질문 | 실리는 곳 |
 |---|---|---|---|
-| `system-architecture` | architecture | 전체가 어떻게 생겼는가 | [시스템 아키텍처](../SYSTEM_ARCHITECTURE.md) |
+| `overview` | architecture | 수집에서 체결·성과까지 전체가 어떻게 이어지는가 | [루트 README](../../README.md) |
+| `promotion-ladder` | lifecycle | 어느 단계까지 올라갈 수 있고 무엇이 막는가 | [루트 README](../../README.md) |
+| `system-architecture` | architecture | 패키지 단위로 무엇이 무엇을 알아도 되는가 | [시스템 아키텍처](../SYSTEM_ARCHITECTURE.md) |
 | `pipeline` | dataflow | 수집이 어디서 와서 어디로 가는가 | [데이터](../DATA.md) |
 | `trading-analysis` | dataflow | 근거에서 신호까지 무엇이 계산되는가 | [투자 시스템](../INVESTMENT_SYSTEM.md) |
 | `trading-target` | dataflow | 신호가 어떻게 목표 비중이 되는가 | [투자 시스템](../INVESTMENT_SYSTEM.md) |
@@ -52,6 +54,13 @@ Archify CLI에는 SVG export 명령이 없다. `export_diagram_svg.py`가 납품
 
 모든 명세는 **showcase 품질**(9개 구성 검사, 오류·경고 0)을 통과해야 한다. 통과하지 못하면
 빌드가 실패한다.
+
+## 색은 다크가 기본이다
+
+Archify가 설계한 기본 모습이 dark라서 SVG도 그것을 기본으로 굽는다. 밝은 화면으로 보는
+사람을 위해 light 팔레트를 `@media (prefers-color-scheme: light)`에 함께 실어 두므로,
+GitHub의 어느 테마에서도 읽힌다. 배경은 `<rect fill="var(--bg)">`로 **명시적으로 칠한다** —
+칠하지 않으면 캔버스가 투명해져 반대 테마에서 글자가 바탕에 묻힌다.
 
 ## 조용히 틀리는 것
 

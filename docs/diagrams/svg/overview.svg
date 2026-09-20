@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- 생성물이다. 손으로 고치지 마라. docs/diagrams/*.json 을 고치고 python scripts/build_diagrams.py 를 돌려라. -->
-<svg viewBox="0 0 860 620" role="img" lang="en" aria-labelledby="archify-diagram-title archify-diagram-description" data-animation="trace" data-preset="classic" data-quality-profile="showcase" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<svg viewBox="0 0 880 1010" role="img" lang="en" aria-labelledby="archify-diagram-title archify-diagram-description" data-animation="trace" data-preset="classic" data-quality-profile="showcase" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
 <style>
 svg{
         --bg: #ffffff;
@@ -31,44 +31,6 @@ svg{
         --external-fill:    rgba(148, 163, 184, 0.18);
         --external-stroke:  #64748b;}
 svg{
-      --bg: #f8fafc;
-      --grid: #e2e8f0;
-      --text: #0f172a;
-      --text-muted: #64748b;
-      --text-dim: #94a3b8;
-      --text-faint: #64748b;
-
-      --panel: #ffffff;
-      --panel-border: #e2e8f0;
-      --lane-fill: rgba(248, 250, 252, 0.65);
-      --lane-stroke: #cbd5e1;
-
-      --arrow: #94a3b8;
-      --arrow-emphasis: #059669;
-
-      --mask: #ffffff;
-
-      --frontend-fill:    rgba(34, 211, 238, 0.15);
-      --frontend-stroke:  #0891b2;
-      --backend-fill:     rgba(52, 211, 153, 0.18);
-      --backend-stroke:   #059669;
-      --database-fill:    rgba(167, 139, 250, 0.2);
-      --database-stroke:  #7c3aed;
-      --cloud-fill:       rgba(251, 191, 36, 0.18);
-      --cloud-stroke:     #d97706;
-      --security-fill:    rgba(251, 113, 133, 0.15);
-      --security-stroke:  #e11d48;
-      --messagebus-fill:  rgba(251, 146, 60, 0.15);
-      --messagebus-stroke:#ea580c;
-      --external-fill:    rgba(148, 163, 184, 0.18);
-      --external-stroke:  #64748b;
-
-      --toolbar-bg:       rgba(255, 255, 255, 0.92);
-      --toolbar-border:   #cbd5e1;
-      --toolbar-text:     #334155;
-      --toolbar-hover:    #ffffff;
-      --toolbar-menu-bg:  #ffffff;}
-@media (prefers-color-scheme: dark){svg{
       --bg: #020617;
       --grid: #1e293b;
       --text: #ffffff;
@@ -107,7 +69,45 @@ svg{
       --toolbar-border:   #334155;
       --toolbar-text:     #e2e8f0;
       --toolbar-hover:    rgba(15, 23, 42, 0.95);
-      --toolbar-menu-bg:  #0f172a;}}
+      --toolbar-menu-bg:  #0f172a;}
+@media (prefers-color-scheme: light){svg{
+      --bg: #f8fafc;
+      --grid: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --text-dim: #94a3b8;
+      --text-faint: #64748b;
+
+      --panel: #ffffff;
+      --panel-border: #e2e8f0;
+      --lane-fill: rgba(248, 250, 252, 0.65);
+      --lane-stroke: #cbd5e1;
+
+      --arrow: #94a3b8;
+      --arrow-emphasis: #059669;
+
+      --mask: #ffffff;
+
+      --frontend-fill:    rgba(34, 211, 238, 0.15);
+      --frontend-stroke:  #0891b2;
+      --backend-fill:     rgba(52, 211, 153, 0.18);
+      --backend-stroke:   #059669;
+      --database-fill:    rgba(167, 139, 250, 0.2);
+      --database-stroke:  #7c3aed;
+      --cloud-fill:       rgba(251, 191, 36, 0.18);
+      --cloud-stroke:     #d97706;
+      --security-fill:    rgba(251, 113, 133, 0.15);
+      --security-stroke:  #e11d48;
+      --messagebus-fill:  rgba(251, 146, 60, 0.15);
+      --messagebus-stroke:#ea580c;
+      --external-fill:    rgba(148, 163, 184, 0.18);
+      --external-stroke:  #64748b;
+
+      --toolbar-bg:       rgba(255, 255, 255, 0.92);
+      --toolbar-border:   #cbd5e1;
+      --toolbar-text:     #334155;
+      --toolbar-hover:    #ffffff;
+      --toolbar-menu-bg:  #ffffff;}}
 @keyframes pulse{
       0%, 100% { opacity: 1; }
       50% { opacity: 0.5; }
@@ -145,6 +145,7 @@ svg{
 .c-frontend{ fill: var(--frontend-fill);   stroke: var(--frontend-stroke); }
 .c-backend{ fill: var(--backend-fill);    stroke: var(--backend-stroke); }
 .c-database{ fill: var(--database-fill);   stroke: var(--database-stroke); }
+.c-cloud{ fill: var(--cloud-fill);      stroke: var(--cloud-stroke); }
 .c-security{ fill: var(--security-fill);   stroke: var(--security-stroke); }
 .c-external{ fill: var(--external-fill);   stroke: var(--external-stroke); }
 .t-primary{ fill: var(--text); }
@@ -152,6 +153,7 @@ svg{
 .t-frontend{ fill: var(--frontend-stroke); }
 .t-backend{ fill: var(--backend-stroke); }
 .t-database{ fill: var(--database-stroke); }
+.t-cloud{ fill: var(--cloud-stroke); }
 .t-security{ fill: var(--security-stroke); }
 .t-external{ fill: var(--external-stroke); }
 svg .semantic-sigil{
@@ -168,6 +170,7 @@ svg .semantic-sigil .sigil-fill{ fill: currentColor; stroke: none; }
 svg .s-frontend{ color: var(--frontend-stroke); }
 svg .s-backend{ color: var(--backend-stroke); }
 svg .s-database{ color: var(--database-stroke); }
+svg .s-cloud{ color: var(--cloud-stroke); }
 svg .s-security{ color: var(--security-stroke); }
 svg .s-external{ color: var(--external-stroke); }
 .a-default{ stroke: var(--arrow); fill: none; }
@@ -178,6 +181,7 @@ svg .s-external{ color: var(--external-stroke); }
 .m-security{ fill: var(--security-stroke); }
 .m-dashed{ fill: var(--database-stroke); }
 .c-security-group{ fill: transparent; stroke: var(--security-stroke); stroke-dasharray: 4,4; }
+.c-region{ fill: rgba(251, 191, 36, 0.05); stroke: var(--cloud-stroke); stroke-dasharray: 8,4; }
 @keyframes archify-edge-flow{
       0% { stroke-dasharray: 10 8; stroke-dashoffset: 54; opacity: 0.42; }
       88% { stroke-dasharray: 10 8; stroke-dashoffset: 0; opacity: 1; }
@@ -263,7 +267,7 @@ svg .s-external{ color: var(--external-stroke); }
 </style>
 <rect width="100%" height="100%" fill="var(--bg)" />
 
-        <title id="archify-diagram-title">Investment Agent — 한눈에</title>
+        <title id="archify-diagram-title">데이터 수집에서 체결·성과까지</title>
         <desc id="archify-diagram-description">An architecture diagram generated by Archify.</desc>
         <!-- Definitions -->
         <defs>
@@ -288,147 +292,576 @@ svg .s-external{ color: var(--external-stroke); }
         <rect width="100%" height="100%" fill="url(#grid)" />
 
         <!-- Boundaries (behind everything) -->
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="security-group" data-composition-frame-id="0" data-composition-frame-label="사람 승인 없이 넘지 못한다" x="634" y="216" width="212" height="398" rx="8" class="c-security-group" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="0" data-composition-frame-label="① 수집 · 저장" x="0" y="20" width="876" height="128" rx="12" class="c-region" stroke-width="1"/>
+
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="1" data-composition-frame-label="② 텍스트 · 연구" x="0" y="158" width="876" height="128" rx="12" class="c-region" stroke-width="1"/>
+
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="2" data-composition-frame-label="③ 후보 · 판단" x="0" y="296" width="876" height="128" rx="12" class="c-region" stroke-width="1"/>
+
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="3" data-composition-frame-label="④ 위험 · 최적화" x="0" y="434" width="876" height="128" rx="12" class="c-region" stroke-width="1"/>
+
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="4" data-composition-frame-label="⑤ System 목표 · 실계좌 추종" x="0" y="572" width="876" height="128" rx="12" class="c-region" stroke-width="1"/>
+
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="security-group" data-composition-frame-id="5" data-composition-frame-label="⑥ 사람 승인 없이 넘지 못한다" x="0" y="710" width="876" height="128" rx="8" class="c-security-group" stroke-width="1"/>
+
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="6" data-composition-frame-label="⑦ 성과 · 피드백" x="0" y="848" width="876" height="128" rx="12" class="c-region" stroke-width="1"/>
 
         <!-- Connection paths (before components for correct z-order) -->
-        <path data-edge-from="sources" data-edge-to="stores" data-edge-key="0" data-edge-id="a" data-composition-points="200,87;230,87" d="M 200 87 L 230 87" class="a-emphasis" data-animate="edge" style="--step:0" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="stores" data-edge-to="research" data-edge-key="1" data-edge-id="b" data-composition-points="410,87;440,87" d="M 410 87 L 440 87" class="a-emphasis" data-animate="edge" style="--step:1" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="research" data-edge-to="decide" data-edge-key="2" data-edge-id="c" data-composition-points="620,87;650,87" d="M 620 87 L 650 87" class="a-emphasis" data-animate="edge" style="--step:2" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="decide" data-edge-to="risk" data-edge-label="목표 비중" data-edge-key="3" data-edge-id="d" data-composition-points="740,124;740,240" d="M 740 124 L 740 240" class="a-emphasis" data-animate="edge" style="--step:3" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="risk" data-edge-to="approval" data-edge-label="통과한 것만" data-edge-key="4" data-edge-id="e" data-composition-points="740,314;740,390" d="M 740 314 L 740 390" class="a-security" data-animate="edge" style="--step:4" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
-        <path data-edge-from="approval" data-edge-to="broker" data-edge-label="승인된 것만" data-edge-key="5" data-edge-id="f" data-composition-points="740,464;740,520" d="M 740 464 L 740 520" class="a-security" data-animate="edge" style="--step:5" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
-        <path data-edge-from="stores" data-edge-to="surface" data-edge-label="읽기 모델" data-edge-key="6" data-edge-id="g" data-composition-points="320,124;320,240" d="M 320 124 L 320 240" class="a-default" data-animate="edge" style="--step:6" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="pub" data-edge-to="ingest" data-edge-key="0" data-edge-id="pub-ingest" data-composition-points="160,86;188,86" d="M 160 86 L 188 86" class="a-emphasis" data-animate="edge" style="--step:0" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="ingest" data-edge-to="supabase" data-edge-key="1" data-edge-id="ingest-supabase" data-composition-points="336,86;364,86" d="M 336 86 L 364 86" class="a-emphasis" data-animate="edge" style="--step:1" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="supabase" data-edge-to="pit" data-edge-key="2" data-edge-id="supabase-pit" data-composition-points="512,86;540,86" d="M 512 86 L 540 86" class="a-emphasis" data-animate="edge" style="--step:2" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="pit" data-edge-to="feature" data-edge-key="3" data-edge-id="pit-feature" data-composition-points="688,86;716,86" d="M 688 86 L 716 86" class="a-emphasis" data-animate="edge" style="--step:3" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="txt" data-edge-to="harness" data-edge-key="4" data-edge-id="txt-harness" data-composition-points="160,224;188,224" d="M 160 224 L 188 224" class="a-default" data-animate="edge" style="--step:4" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="harness" data-edge-to="duckdb" data-edge-key="5" data-edge-id="harness-duckdb" data-composition-points="336,224;364,224" d="M 336 224 L 364 224" class="a-default" data-animate="edge" style="--step:5" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="duckdb" data-edge-to="factor" data-edge-key="6" data-edge-id="duckdb-factor" data-composition-points="512,224;540,224" d="M 512 224 L 540 224" class="a-default" data-animate="edge" style="--step:6" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="factor" data-edge-to="ml" data-edge-key="7" data-edge-id="factor-ml" data-composition-points="688,224;716,224" d="M 688 224 L 716 224" class="a-default" data-animate="edge" style="--step:7" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="tracked" data-edge-to="cand" data-edge-key="8" data-edge-id="tracked-cand" data-composition-points="160,362;188,362" d="M 160 362 L 188 362" class="a-default" data-animate="edge" style="--step:8" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="cand" data-edge-to="ranker" data-edge-key="9" data-edge-id="cand-ranker" data-composition-points="336,362;364,362" d="M 336 362 L 364 362" class="a-default" data-animate="edge" style="--step:9" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="ranker" data-edge-to="agents" data-edge-key="10" data-edge-id="ranker-agents" data-composition-points="512,362;540,362" d="M 512 362 L 540 362" class="a-default" data-animate="edge" style="--step:10" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="agents" data-edge-to="alpha" data-edge-key="11" data-edge-id="agents-alpha" data-composition-points="688,362;716,362" d="M 688 362 L 716 362" class="a-default" data-animate="edge" style="--step:11" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="regime" data-edge-to="budget" data-edge-key="12" data-edge-id="regime-budget" data-composition-points="716,500;688,500" d="M 716 500 L 688 500" class="a-emphasis" data-animate="edge" style="--step:12" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="budget" data-edge-to="optimizer" data-edge-key="13" data-edge-id="budget-optimizer" data-composition-points="540,500;512,500" d="M 540 500 L 512 500" class="a-emphasis" data-animate="edge" style="--step:12" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="optimizer" data-edge-to="band" data-edge-key="14" data-edge-id="optimizer-band" data-composition-points="364,500;336,500" d="M 364 500 L 336 500" class="a-emphasis" data-animate="edge" style="--step:12" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="band" data-edge-to="gate" data-edge-key="15" data-edge-id="band-gate" data-composition-points="188,500;160,500" d="M 188 500 L 160 500" class="a-emphasis" data-animate="edge" style="--step:12" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="target" data-edge-to="sysengine" data-edge-key="16" data-edge-id="target-sysengine" data-composition-points="160,638;188,638" d="M 160 638 L 188 638" class="a-emphasis" data-animate="edge" style="--step:12" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="sysengine" data-edge-to="sysacct" data-edge-key="17" data-edge-id="sysengine-sysacct" data-composition-points="336,638;364,638" d="M 336 638 L 364 638" class="a-emphasis" data-animate="edge" style="--step:12" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="tosssnap" data-edge-to="mypf" data-edge-key="18" data-edge-id="tosssnap-mypf" data-composition-points="688,638;716,638" d="M 688 638 L 716 638" class="a-default" data-animate="edge" style="--step:12" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="intent" data-edge-to="approval" data-edge-key="19" data-edge-id="intent-approval" data-composition-points="716,776;688,776" d="M 716 776 L 688 776" class="a-security" data-animate="edge" style="--step:12" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
+        <path data-edge-from="approval" data-edge-to="reserve" data-edge-key="20" data-edge-id="approval-reserve" data-composition-points="540,776;512,776" d="M 540 776 L 512 776" class="a-security" data-animate="edge" style="--step:12" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
+        <path data-edge-from="reserve" data-edge-to="toss" data-edge-key="21" data-edge-id="reserve-toss" data-composition-points="364,776;336,776" d="M 364 776 L 336 776" class="a-security" data-animate="edge" style="--step:12" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
+        <path data-edge-from="toss" data-edge-to="recon" data-edge-key="22" data-edge-id="toss-recon" data-composition-points="188,776;160,776" d="M 188 776 L 160 776" class="a-security" data-animate="edge" style="--step:12" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
+        <path data-edge-from="perf" data-edge-to="evaluate" data-edge-key="23" data-edge-id="perf-evaluate" data-composition-points="160,914;188,914" d="M 160 914 L 188 914" class="a-emphasis" data-animate="edge" style="--step:12" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="evaluate" data-edge-to="promote" data-edge-key="24" data-edge-id="evaluate-promote" data-composition-points="336,914;364,914" d="M 336 914 L 364 914" class="a-emphasis" data-animate="edge" style="--step:12" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="reporting" data-edge-to="surface" data-edge-key="25" data-edge-id="reporting-surface" data-composition-points="688,914;716,914" d="M 688 914 L 716 914" class="a-default" data-animate="edge" style="--step:12" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="feature" data-edge-to="ml" data-edge-label="학습 · 추론 공용" data-edge-key="26" data-edge-id="s1" data-composition-points="790,128;790,182" d="M 790 128 L 790 182" class="a-emphasis" data-animate="edge" style="--step:12" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="ml" data-edge-to="alpha" data-edge-label="ML 예측치" data-edge-key="27" data-edge-id="s2" data-composition-points="790,266;790,320" d="M 790 266 L 790 320" class="a-emphasis" data-animate="edge" style="--step:12" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="alpha" data-edge-to="regime" data-edge-label="기대초과수익" data-edge-key="28" data-edge-id="s3" data-composition-points="790,404;790,458" d="M 790 404 L 790 458" class="a-emphasis" data-animate="edge" style="--step:12" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="gate" data-edge-to="target" data-edge-label="승인된 비중만" data-edge-key="29" data-edge-id="s4" data-composition-points="86,542;86,596" d="M 86 542 L 86 596" class="a-emphasis" data-animate="edge" style="--step:12" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="mypf" data-edge-to="intent" data-edge-label="추종 제안" data-edge-key="30" data-edge-id="s5" data-composition-points="790,680;790,734" d="M 790 680 L 790 734" class="a-security" data-animate="edge" style="--step:12" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
+        <path data-edge-from="recon" data-edge-to="perf" data-edge-label="체결 사실" data-edge-key="31" data-edge-id="s6" data-composition-points="86,818;86,872" d="M 86 818 L 86 872" class="a-default" data-animate="edge" style="--step:12" stroke-width="1.5" marker-end="url(#arrowhead)"/>
 
         <!-- Components -->
-        <g id="node-sources" data-node-id="sources" data-node-label="공개 금융 데이터" tabindex="0" role="button" aria-label="Focus 공개 금융 데이터, SEC · yfinance · FRED, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="SEC · yfinance · FRED" data-node-tag="외부" data-node-context="Architecture component">
-          <title>공개 금융 데이터 · SEC · yfinance · FRED · Architecture component · 외부</title>
-          <rect x="20" y="50" width="180" height="74" rx="6" class="c-mask"/>
-          <rect x="20" y="50" width="180" height="74" rx="6" class="c-external" data-animate="node" style="--step:0" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(26 56) scale(0.6875)">
+        <g id="node-pub" data-node-id="pub" data-node-label="공개 금융 데이터" tabindex="0" role="button" aria-label="Focus 공개 금융 데이터, SEC · yfinance · FRED, ① 수집 · 저장" aria-pressed="false" data-node-kind="external" data-node-sublabel="SEC · yfinance · FRED" data-node-tag="외부" data-node-context="① 수집 · 저장">
+          <title>공개 금융 데이터 · SEC · yfinance · FRED · ① 수집 · 저장 · 외부</title>
+          <rect x="12" y="44" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="12" y="44" width="148" height="84" rx="6" class="c-external" data-animate="node" style="--step:0" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(18 50) scale(0.6875)">
             <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
             <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="110" y="85" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">공개 금융 데이터</text>
-        <text data-detail="context" x="110" y="101" class="t-muted" font-size="9" text-anchor="middle">SEC · yfinance · FRED</text>
-        <text data-detail="fine" x="110" y="116" class="t-external" font-size="7" text-anchor="middle">외부</text>
+          <text data-node-label="" data-detail-anchor="" x="86" y="84" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">공개 금융 데이터</text>
+        <text data-detail="context" x="86" y="100" class="t-muted" font-size="9" text-anchor="middle">SEC · yfinance · FRED</text>
+        <text data-detail="fine" x="86" y="120" class="t-external" font-size="7" text-anchor="middle">외부</text>
         </g>
 
-        <g id="node-stores" data-node-id="stores" data-node-label="저장소 4곳" tabindex="0" role="button" aria-label="Focus 저장소 4곳, Supabase · SQLite · DuckDB ×2, Architecture component" aria-pressed="false" data-node-kind="database" data-node-sublabel="Supabase · SQLite · DuckDB ×2" data-node-tag="적재" data-node-context="Architecture component">
-          <title>저장소 4곳 · Supabase · SQLite · DuckDB ×2 · Architecture component · 적재</title>
-          <rect x="230" y="50" width="180" height="74" rx="6" class="c-mask"/>
-          <rect x="230" y="50" width="180" height="74" rx="6" class="c-database" data-animate="node" style="--step:1" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(236 56) scale(0.6875)">
+        <g id="node-ingest" data-node-id="ingest" data-node-label="Actions cron 36" tabindex="0" role="button" aria-label="Focus Actions cron 36, 증분 수집 · 7일 겹침, ① 수집 · 저장" aria-pressed="false" data-node-kind="cloud" data-node-sublabel="증분 수집 · 7일 겹침" data-node-tag="스케줄" data-node-context="① 수집 · 저장">
+          <title>Actions cron 36 · 증분 수집 · 7일 겹침 · ① 수집 · 저장 · 스케줄</title>
+          <rect x="188" y="44" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="188" y="44" width="148" height="84" rx="6" class="c-cloud" data-animate="node" style="--step:1" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="cloud" class="semantic-sigil s-cloud" transform="translate(194 50) scale(0.6875)">
+            <path d="M4.3 12.5h7.3a2.4 2.4 0 0 0 .2-4.8 4 4 0 0 0-7.5-1.3A3.1 3.1 0 0 0 4.3 12.5Z"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="262" y="84" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Actions cron 36</text>
+        <text data-detail="context" x="262" y="100" class="t-muted" font-size="9" text-anchor="middle">증분 수집 · 7일 겹침</text>
+        <text data-detail="fine" x="262" y="120" class="t-cloud" font-size="7" text-anchor="middle">스케줄</text>
+        </g>
+
+        <g id="node-supabase" data-node-id="supabase" data-node-label="Supabase" tabindex="0" role="button" aria-label="Focus Supabase, PIT 도메인 원천, ① 수집 · 저장" aria-pressed="false" data-node-kind="database" data-node-sublabel="PIT 도메인 원천" data-node-tag="SSOT" data-node-context="① 수집 · 저장">
+          <title>Supabase · PIT 도메인 원천 · ① 수집 · 저장 · SSOT</title>
+          <rect x="364" y="44" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="364" y="44" width="148" height="84" rx="6" class="c-database" data-animate="node" style="--step:2" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(370 50) scale(0.6875)">
             <ellipse cx="8" cy="4" rx="5" ry="2"/>
             <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="320" y="85" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">저장소 4곳</text>
-        <text data-detail="context" x="320" y="101" class="t-muted" font-size="9" text-anchor="middle">Supabase · SQLite · DuckDB ×2</text>
-        <text data-detail="fine" x="320" y="116" class="t-database" font-size="7" text-anchor="middle">적재</text>
+          <text data-node-label="" data-detail-anchor="" x="438" y="84" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Supabase</text>
+        <text data-detail="context" x="438" y="100" class="t-muted" font-size="9" text-anchor="middle">PIT 도메인 원천</text>
+        <text data-detail="fine" x="438" y="120" class="t-database" font-size="7" text-anchor="middle">SSOT</text>
         </g>
 
-        <g id="node-research" data-node-id="research" data-node-label="근거 · Feature" tabindex="0" role="button" aria-label="Focus 근거 · Feature, 같은 시점 기준으로만, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="같은 시점 기준으로만" data-node-tag="연구" data-node-context="Architecture component">
-          <title>근거 · Feature · 같은 시점 기준으로만 · Architecture component · 연구</title>
-          <rect x="440" y="50" width="180" height="74" rx="6" class="c-mask"/>
-          <rect x="440" y="50" width="180" height="74" rx="6" class="c-backend" data-animate="node" style="--step:2" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(446 56) scale(0.6875)">
+        <g id="node-pit" data-node-id="pit" data-node-label="PitReader" tabindex="0" role="button" aria-label="Focus PitReader, cutoff 이전만 읽는다, ① 수집 · 저장" aria-pressed="false" data-node-kind="backend" data-node-sublabel="cutoff 이전만 읽는다" data-node-tag="시점" data-node-context="① 수집 · 저장">
+          <title>PitReader · cutoff 이전만 읽는다 · ① 수집 · 저장 · 시점</title>
+          <rect x="540" y="44" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="540" y="44" width="148" height="84" rx="6" class="c-backend" data-animate="node" style="--step:3" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(546 50) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="530" y="85" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">근거 · Feature</text>
-        <text data-detail="context" x="530" y="101" class="t-muted" font-size="9" text-anchor="middle">같은 시점 기준으로만</text>
-        <text data-detail="fine" x="530" y="116" class="t-backend" font-size="7" text-anchor="middle">연구</text>
+          <text data-node-label="" data-detail-anchor="" x="614" y="84" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">PitReader</text>
+        <text data-detail="context" x="614" y="100" class="t-muted" font-size="9" text-anchor="middle">cutoff 이전만 읽는다</text>
+        <text data-detail="fine" x="614" y="120" class="t-backend" font-size="7" text-anchor="middle">시점</text>
         </g>
 
-        <g id="node-decide" data-node-id="decide" data-node-label="신호 · 목표 비중" tabindex="0" role="button" aria-label="Focus 신호 · 목표 비중, LLM 논지 + ML + 팩터, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="LLM 논지 + ML + 팩터" data-node-tag="판단" data-node-context="Architecture component">
-          <title>신호 · 목표 비중 · LLM 논지 + ML + 팩터 · Architecture component · 판단</title>
-          <rect x="650" y="50" width="180" height="74" rx="6" class="c-mask"/>
-          <rect x="650" y="50" width="180" height="74" rx="6" class="c-backend" data-animate="node" style="--step:3" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(656 56) scale(0.6875)">
+        <g id="node-feature" data-node-id="feature" data-node-label="FeatureLayer" tabindex="0" role="button" aria-label="Focus FeatureLayer, 버전 · 해시 보존, ① 수집 · 저장" aria-pressed="false" data-node-kind="backend" data-node-sublabel="버전 · 해시 보존" data-node-tag="특징" data-node-context="① 수집 · 저장">
+          <title>FeatureLayer · 버전 · 해시 보존 · ① 수집 · 저장 · 특징</title>
+          <rect x="716" y="44" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="716" y="44" width="148" height="84" rx="6" class="c-backend" data-animate="node" style="--step:4" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(722 50) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="740" y="85" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">신호 · 목표 비중</text>
-        <text data-detail="context" x="740" y="101" class="t-muted" font-size="9" text-anchor="middle">LLM 논지 + ML + 팩터</text>
-        <text data-detail="fine" x="740" y="116" class="t-backend" font-size="7" text-anchor="middle">판단</text>
+          <text data-node-label="" data-detail-anchor="" x="790" y="84" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">FeatureLayer</text>
+        <text data-detail="context" x="790" y="100" class="t-muted" font-size="9" text-anchor="middle">버전 · 해시 보존</text>
+        <text data-detail="fine" x="790" y="120" class="t-backend" font-size="7" text-anchor="middle">특징</text>
         </g>
 
-        <g id="node-surface" data-node-id="surface" data-node-label="화면 · 알림" tabindex="0" role="button" aria-label="Focus 화면 · 알림, 읽기 전용 경로로만, Architecture component" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="읽기 전용 경로로만" data-node-tag="소비" data-node-context="Architecture component">
-          <title>화면 · 알림 · 읽기 전용 경로로만 · Architecture component · 소비</title>
-          <rect x="230" y="240" width="180" height="74" rx="6" class="c-mask"/>
-          <rect x="230" y="240" width="180" height="74" rx="6" class="c-frontend" data-animate="node" style="--step:7" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(236 246) scale(0.6875)">
+        <g id="node-txt" data-node-id="txt" data-node-label="뉴스 · 소셜" tabindex="0" role="button" aria-label="Focus 뉴스 · 소셜, 웹 수집, ② 텍스트 · 연구" aria-pressed="false" data-node-kind="external" data-node-sublabel="웹 수집" data-node-tag="외부" data-node-context="② 텍스트 · 연구">
+          <title>뉴스 · 소셜 · 웹 수집 · ② 텍스트 · 연구 · 외부</title>
+          <rect x="12" y="182" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="12" y="182" width="148" height="84" rx="6" class="c-external" data-animate="node" style="--step:4" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(18 188) scale(0.6875)">
+            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
+            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="86" y="222" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">뉴스 · 소셜</text>
+        <text data-detail="context" x="86" y="238" class="t-muted" font-size="9" text-anchor="middle">웹 수집</text>
+        <text data-detail="fine" x="86" y="258" class="t-external" font-size="7" text-anchor="middle">외부</text>
+        </g>
+
+        <g id="node-harness" data-node-id="harness" data-node-label="로컬 하네스" tabindex="0" role="button" aria-label="Focus 로컬 하네스, 상시 실행 · 순서 관리, ② 텍스트 · 연구" aria-pressed="false" data-node-kind="cloud" data-node-sublabel="상시 실행 · 순서 관리" data-node-tag="로컬" data-node-context="② 텍스트 · 연구">
+          <title>로컬 하네스 · 상시 실행 · 순서 관리 · ② 텍스트 · 연구 · 로컬</title>
+          <rect x="188" y="182" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="188" y="182" width="148" height="84" rx="6" class="c-cloud" data-animate="node" style="--step:5" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="cloud" class="semantic-sigil s-cloud" transform="translate(194 188) scale(0.6875)">
+            <path d="M4.3 12.5h7.3a2.4 2.4 0 0 0 .2-4.8 4 4 0 0 0-7.5-1.3A3.1 3.1 0 0 0 4.3 12.5Z"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="262" y="222" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">로컬 하네스</text>
+        <text data-detail="context" x="262" y="238" class="t-muted" font-size="9" text-anchor="middle">상시 실행 · 순서 관리</text>
+        <text data-detail="fine" x="262" y="258" class="t-cloud" font-size="7" text-anchor="middle">로컬</text>
+        </g>
+
+        <g id="node-duckdb" data-node-id="duckdb" data-node-label="DuckDB ×2" tabindex="0" role="button" aria-label="Focus DuckDB ×2, 원문 90일 · 연구 파생, ② 텍스트 · 연구" aria-pressed="false" data-node-kind="database" data-node-sublabel="원문 90일 · 연구 파생" data-node-tag="로컬" data-node-context="② 텍스트 · 연구">
+          <title>DuckDB ×2 · 원문 90일 · 연구 파생 · ② 텍스트 · 연구 · 로컬</title>
+          <rect x="364" y="182" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="364" y="182" width="148" height="84" rx="6" class="c-database" data-animate="node" style="--step:6" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(370 188) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="438" y="222" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">DuckDB ×2</text>
+        <text data-detail="context" x="438" y="238" class="t-muted" font-size="9" text-anchor="middle">원문 90일 · 연구 파생</text>
+        <text data-detail="fine" x="438" y="258" class="t-database" font-size="7" text-anchor="middle">로컬</text>
+        </g>
+
+        <g id="node-factor" data-node-id="factor" data-node-label="팩터 5종" tabindex="0" role="button" aria-label="Focus 팩터 5종, 가치·품질·모멘텀·성장·변동, ② 텍스트 · 연구" aria-pressed="false" data-node-kind="backend" data-node-sublabel="가치·품질·모멘텀·성장·변동" data-node-tag="사전값" data-node-context="② 텍스트 · 연구">
+          <title>팩터 5종 · 가치·품질·모멘텀·성장·변동 · ② 텍스트 · 연구 · 사전값</title>
+          <rect x="540" y="182" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="540" y="182" width="148" height="84" rx="6" class="c-backend" data-animate="node" style="--step:7" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(546 188) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="614" y="222" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">팩터 5종</text>
+        <text data-detail="context" x="614" y="238" class="t-muted" font-size="8.9" text-anchor="middle">가치·품질·모멘텀·성장·변동</text>
+        <text data-detail="fine" x="614" y="258" class="t-backend" font-size="7" text-anchor="middle">사전값</text>
+        </g>
+
+        <g id="node-ml" data-node-id="ml" data-node-label="ML Champion" tabindex="0" role="button" aria-label="Focus ML Champion, 잔여 초과수익 ±1σ, ② 텍스트 · 연구" aria-pressed="false" data-node-kind="backend" data-node-sublabel="잔여 초과수익 ±1σ" data-node-tag="예측" data-node-context="② 텍스트 · 연구">
+          <title>ML Champion · 잔여 초과수익 ±1σ · ② 텍스트 · 연구 · 예측</title>
+          <rect x="716" y="182" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="716" y="182" width="148" height="84" rx="6" class="c-backend" data-animate="node" style="--step:8" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(722 188) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="790" y="222" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">ML Champion</text>
+        <text data-detail="context" x="790" y="238" class="t-muted" font-size="9" text-anchor="middle">잔여 초과수익 ±1σ</text>
+        <text data-detail="fine" x="790" y="258" class="t-backend" font-size="7" text-anchor="middle">예측</text>
+        </g>
+
+        <g id="node-tracked" data-node-id="tracked" data-node-label="tracked 게이트" tabindex="0" role="button" aria-label="Focus tracked 게이트, 판단 대상 제한, ③ 후보 · 판단" aria-pressed="false" data-node-kind="backend" data-node-sublabel="판단 대상 제한" data-node-tag="범위" data-node-context="③ 후보 · 판단">
+          <title>tracked 게이트 · 판단 대상 제한 · ③ 후보 · 판단 · 범위</title>
+          <rect x="12" y="320" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="12" y="320" width="148" height="84" rx="6" class="c-backend" data-animate="node" style="--step:8" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(18 326) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="86" y="360" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">tracked 게이트</text>
+        <text data-detail="context" x="86" y="376" class="t-muted" font-size="9" text-anchor="middle">판단 대상 제한</text>
+        <text data-detail="fine" x="86" y="396" class="t-backend" font-size="7" text-anchor="middle">범위</text>
+        </g>
+
+        <g id="node-cand" data-node-id="cand" data-node-label="후보 선정" tabindex="0" role="button" aria-label="Focus 후보 선정, 새 정보 · 보유 우선, ③ 후보 · 판단" aria-pressed="false" data-node-kind="backend" data-node-sublabel="새 정보 · 보유 우선" data-node-tag="선정" data-node-context="③ 후보 · 판단">
+          <title>후보 선정 · 새 정보 · 보유 우선 · ③ 후보 · 판단 · 선정</title>
+          <rect x="188" y="320" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="188" y="320" width="148" height="84" rx="6" class="c-backend" data-animate="node" style="--step:9" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(194 326) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="262" y="360" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">후보 선정</text>
+        <text data-detail="context" x="262" y="376" class="t-muted" font-size="9" text-anchor="middle">새 정보 · 보유 우선</text>
+        <text data-detail="fine" x="262" y="396" class="t-backend" font-size="7" text-anchor="middle">선정</text>
+        </g>
+
+        <g id="node-ranker" data-node-id="ranker" data-node-label="분석 순서" tabindex="0" role="button" aria-label="Focus 분석 순서, 매수 점수가 아니다, ③ 후보 · 판단" aria-pressed="false" data-node-kind="backend" data-node-sublabel="매수 점수가 아니다" data-node-tag="순환" data-node-context="③ 후보 · 판단">
+          <title>분석 순서 · 매수 점수가 아니다 · ③ 후보 · 판단 · 순환</title>
+          <rect x="364" y="320" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="364" y="320" width="148" height="84" rx="6" class="c-backend" data-animate="node" style="--step:10" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(370 326) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="438" y="360" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">분석 순서</text>
+        <text data-detail="context" x="438" y="376" class="t-muted" font-size="9" text-anchor="middle">매수 점수가 아니다</text>
+        <text data-detail="fine" x="438" y="396" class="t-backend" font-size="7" text-anchor="middle">순환</text>
+        </g>
+
+        <g id="node-agents" data-node-id="agents" data-node-label="TradingAgents" tabindex="0" role="button" aria-label="Focus TradingAgents, 분석가 5 → 토론 → PM, ③ 후보 · 판단" aria-pressed="false" data-node-kind="cloud" data-node-sublabel="분석가 5 → 토론 → PM" data-node-tag="LLM" data-node-context="③ 후보 · 판단">
+          <title>TradingAgents · 분석가 5 → 토론 → PM · ③ 후보 · 판단 · LLM</title>
+          <rect x="540" y="320" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="540" y="320" width="148" height="84" rx="6" class="c-cloud" data-animate="node" style="--step:11" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="cloud" class="semantic-sigil s-cloud" transform="translate(546 326) scale(0.6875)">
+            <path d="M4.3 12.5h7.3a2.4 2.4 0 0 0 .2-4.8 4 4 0 0 0-7.5-1.3A3.1 3.1 0 0 0 4.3 12.5Z"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="614" y="360" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">TradingAgents</text>
+        <text data-detail="context" x="614" y="376" class="t-muted" font-size="9" text-anchor="middle">분석가 5 → 토론 → PM</text>
+        <text data-detail="fine" x="614" y="396" class="t-cloud" font-size="7" text-anchor="middle">LLM</text>
+        </g>
+
+        <g id="node-alpha" data-node-id="alpha" data-node-label="ALPHA 결합" tabindex="0" role="button" aria-label="Focus ALPHA 결합, 정밀도 가중 · 논지 검증, ③ 후보 · 판단" aria-pressed="false" data-node-kind="backend" data-node-sublabel="정밀도 가중 · 논지 검증" data-node-tag="기대수익" data-node-context="③ 후보 · 판단">
+          <title>ALPHA 결합 · 정밀도 가중 · 논지 검증 · ③ 후보 · 판단 · 기대수익</title>
+          <rect x="716" y="320" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="716" y="320" width="148" height="84" rx="6" class="c-backend" data-animate="node" style="--step:12" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(722 326) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="790" y="360" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">ALPHA 결합</text>
+        <text data-detail="context" x="790" y="376" class="t-muted" font-size="9" text-anchor="middle">정밀도 가중 · 논지 검증</text>
+        <text data-detail="fine" x="790" y="396" class="t-backend" font-size="7" text-anchor="middle">기대수익</text>
+        </g>
+
+        <g id="node-gate" data-node-id="gate" data-node-label="RiskGate" tabindex="0" role="button" aria-label="Focus RiskGate, 종목 10% · 절대 한도, ④ 위험 · 최적화" aria-pressed="false" data-node-kind="security" data-node-sublabel="종목 10% · 절대 한도" data-node-tag="게이트" data-node-context="④ 위험 · 최적화">
+          <title>RiskGate · 종목 10% · 절대 한도 · ④ 위험 · 최적화 · 게이트</title>
+          <rect x="12" y="458" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="12" y="458" width="148" height="84" rx="6" class="c-security" data-animate="node" style="--step:12" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(18 464) scale(0.6875)">
+            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
+            <path d="m5.8 8 1.5 1.5 3-3"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="86" y="498" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">RiskGate</text>
+        <text data-detail="context" x="86" y="514" class="t-muted" font-size="9" text-anchor="middle">종목 10% · 절대 한도</text>
+        <text data-detail="fine" x="86" y="534" class="t-security" font-size="7" text-anchor="middle">게이트</text>
+        </g>
+
+        <g id="node-band" data-node-id="band" data-node-label="no-trade band" tabindex="0" role="button" aria-label="Focus no-trade band, 1%p 미만 미거래, ④ 위험 · 최적화" aria-pressed="false" data-node-kind="backend" data-node-sublabel="1%p 미만 미거래" data-node-tag="허들" data-node-context="④ 위험 · 최적화">
+          <title>no-trade band · 1%p 미만 미거래 · ④ 위험 · 최적화 · 허들</title>
+          <rect x="188" y="458" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="188" y="458" width="148" height="84" rx="6" class="c-backend" data-animate="node" style="--step:12" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(194 464) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="262" y="498" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">no-trade band</text>
+        <text data-detail="context" x="262" y="514" class="t-muted" font-size="9" text-anchor="middle">1%p 미만 미거래</text>
+        <text data-detail="fine" x="262" y="534" class="t-backend" font-size="7" text-anchor="middle">허들</text>
+        </g>
+
+        <g id="node-optimizer" data-node-id="optimizer" data-node-label="CVXPY optimizer" tabindex="0" role="button" aria-label="Focus CVXPY optimizer, 평균-분산 + 회전율, ④ 위험 · 최적화" aria-pressed="false" data-node-kind="backend" data-node-sublabel="평균-분산 + 회전율" data-node-tag="최적화" data-node-context="④ 위험 · 최적화">
+          <title>CVXPY optimizer · 평균-분산 + 회전율 · ④ 위험 · 최적화 · 최적화</title>
+          <rect x="364" y="458" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="364" y="458" width="148" height="84" rx="6" class="c-backend" data-animate="node" style="--step:12" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(370 464) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="438" y="498" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">CVXPY optimizer</text>
+        <text data-detail="context" x="438" y="514" class="t-muted" font-size="9" text-anchor="middle">평균-분산 + 회전율</text>
+        <text data-detail="fine" x="438" y="534" class="t-backend" font-size="7" text-anchor="middle">최적화</text>
+        </g>
+
+        <g id="node-budget" data-node-id="budget" data-node-label="위험 예산" tabindex="0" role="button" aria-label="Focus 위험 예산, 오늘의 한도로 환산, ④ 위험 · 최적화" aria-pressed="false" data-node-kind="backend" data-node-sublabel="오늘의 한도로 환산" data-node-tag="예산" data-node-context="④ 위험 · 최적화">
+          <title>위험 예산 · 오늘의 한도로 환산 · ④ 위험 · 최적화 · 예산</title>
+          <rect x="540" y="458" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="540" y="458" width="148" height="84" rx="6" class="c-backend" data-animate="node" style="--step:12" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(546 464) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="614" y="498" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">위험 예산</text>
+        <text data-detail="context" x="614" y="514" class="t-muted" font-size="9" text-anchor="middle">오늘의 한도로 환산</text>
+        <text data-detail="fine" x="614" y="534" class="t-backend" font-size="7" text-anchor="middle">예산</text>
+        </g>
+
+        <g id="node-regime" data-node-id="regime" data-node-label="시장 regime" tabindex="0" role="button" aria-label="Focus 시장 regime, 낙폭·변동성 임계, ④ 위험 · 최적화" aria-pressed="false" data-node-kind="backend" data-node-sublabel="낙폭·변동성 임계" data-node-tag="환경" data-node-context="④ 위험 · 최적화">
+          <title>시장 regime · 낙폭·변동성 임계 · ④ 위험 · 최적화 · 환경</title>
+          <rect x="716" y="458" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="716" y="458" width="148" height="84" rx="6" class="c-backend" data-animate="node" style="--step:12" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(722 464) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="790" y="498" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">시장 regime</text>
+        <text data-detail="context" x="790" y="514" class="t-muted" font-size="9" text-anchor="middle">낙폭·변동성 임계</text>
+        <text data-detail="fine" x="790" y="534" class="t-backend" font-size="7" text-anchor="middle">환경</text>
+        </g>
+
+        <g id="node-target" data-node-id="target" data-node-label="System 목표 비중" tabindex="0" role="button" aria-label="Focus System 목표 비중, 실계좌·승인을 모른다, ⑤ System 목표 · 실계좌 추종" aria-pressed="false" data-node-kind="backend" data-node-sublabel="실계좌·승인을 모른다" data-node-tag="목표" data-node-context="⑤ System 목표 · 실계좌 추종">
+          <title>System 목표 비중 · 실계좌·승인을 모른다 · ⑤ System 목표 · 실계좌 추종 · 목표</title>
+          <rect x="12" y="596" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="12" y="596" width="148" height="84" rx="6" class="c-backend" data-animate="node" style="--step:12" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(18 602) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="86" y="636" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">System 목표 비중</text>
+        <text data-detail="context" x="86" y="652" class="t-muted" font-size="9" text-anchor="middle">실계좌·승인을 모른다</text>
+        <text data-detail="fine" x="86" y="672" class="t-backend" font-size="7" text-anchor="middle">목표</text>
+        </g>
+
+        <g id="node-sysengine" data-node-id="sysengine" data-node-label="System Portfolio" tabindex="0" role="button" aria-label="Focus System Portfolio, 평가 → 재조정 → 기록, ⑤ System 목표 · 실계좌 추종" aria-pressed="false" data-node-kind="backend" data-node-sublabel="평가 → 재조정 → 기록" data-node-tag="추적" data-node-context="⑤ System 목표 · 실계좌 추종">
+          <title>System Portfolio · 평가 → 재조정 → 기록 · ⑤ System 목표 · 실계좌 추종 · 추적</title>
+          <rect x="188" y="596" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="188" y="596" width="148" height="84" rx="6" class="c-backend" data-animate="node" style="--step:12" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(194 602) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="262" y="636" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">System Portfolio</text>
+        <text data-detail="context" x="262" y="652" class="t-muted" font-size="9" text-anchor="middle">평가 → 재조정 → 기록</text>
+        <text data-detail="fine" x="262" y="672" class="t-backend" font-size="7" text-anchor="middle">추적</text>
+        </g>
+
+        <g id="node-sysacct" data-node-id="sysacct" data-node-label="비중 기반 회계" tabindex="0" role="button" aria-label="Focus 비중 기반 회계, 가상 현금·수량 없음, ⑤ System 목표 · 실계좌 추종" aria-pressed="false" data-node-kind="backend" data-node-sublabel="가상 현금·수량 없음" data-node-tag="NAV" data-node-context="⑤ System 목표 · 실계좌 추종">
+          <title>비중 기반 회계 · 가상 현금·수량 없음 · ⑤ System 목표 · 실계좌 추종 · NAV</title>
+          <rect x="364" y="596" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="364" y="596" width="148" height="84" rx="6" class="c-backend" data-animate="node" style="--step:12" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(370 602) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="438" y="636" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">비중 기반 회계</text>
+        <text data-detail="context" x="438" y="652" class="t-muted" font-size="9" text-anchor="middle">가상 현금·수량 없음</text>
+        <text data-detail="fine" x="438" y="672" class="t-backend" font-size="7" text-anchor="middle">NAV</text>
+        </g>
+
+        <g id="node-tosssnap" data-node-id="tosssnap" data-node-label="Toss 계좌 스냅샷" tabindex="0" role="button" aria-label="Focus Toss 계좌 스냅샷, 실제 보유 · 현금, ⑤ System 목표 · 실계좌 추종" aria-pressed="false" data-node-kind="database" data-node-sublabel="실제 보유 · 현금" data-node-tag="실계좌" data-node-context="⑤ System 목표 · 실계좌 추종">
+          <title>Toss 계좌 스냅샷 · 실제 보유 · 현금 · ⑤ System 목표 · 실계좌 추종 · 실계좌</title>
+          <rect x="540" y="596" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="540" y="596" width="148" height="84" rx="6" class="c-database" data-animate="node" style="--step:12" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(546 602) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="614" y="636" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Toss 계좌 스냅샷</text>
+        <text data-detail="context" x="614" y="652" class="t-muted" font-size="9" text-anchor="middle">실제 보유 · 현금</text>
+        <text data-detail="fine" x="614" y="672" class="t-database" font-size="7" text-anchor="middle">실계좌</text>
+        </g>
+
+        <g id="node-mypf" data-node-id="mypf" data-node-label="My Portfolio" tabindex="0" role="button" aria-label="Focus My Portfolio, 목표 − 계좌 = 추종안, ⑤ System 목표 · 실계좌 추종" aria-pressed="false" data-node-kind="backend" data-node-sublabel="목표 − 계좌 = 추종안" data-node-tag="추종" data-node-context="⑤ System 목표 · 실계좌 추종">
+          <title>My Portfolio · 목표 − 계좌 = 추종안 · ⑤ System 목표 · 실계좌 추종 · 추종</title>
+          <rect x="716" y="596" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="716" y="596" width="148" height="84" rx="6" class="c-backend" data-animate="node" style="--step:12" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(722 602) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="790" y="636" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">My Portfolio</text>
+        <text data-detail="context" x="790" y="652" class="t-muted" font-size="9" text-anchor="middle">목표 − 계좌 = 추종안</text>
+        <text data-detail="fine" x="790" y="672" class="t-backend" font-size="7" text-anchor="middle">추종</text>
+        </g>
+
+        <g id="node-recon" data-node-id="recon" data-node-label="체결 대사" tabindex="0" role="button" aria-label="Focus 체결 대사, 원장 ↔ 계좌 대조, ⑥ 사람 승인 없이 넘지 못한다" aria-pressed="false" data-node-kind="security" data-node-sublabel="원장 ↔ 계좌 대조" data-node-tag="대사" data-node-context="⑥ 사람 승인 없이 넘지 못한다">
+          <title>체결 대사 · 원장 ↔ 계좌 대조 · ⑥ 사람 승인 없이 넘지 못한다 · 대사</title>
+          <rect x="12" y="734" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="12" y="734" width="148" height="84" rx="6" class="c-security" data-animate="node" style="--step:12" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(18 740) scale(0.6875)">
+            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
+            <path d="m5.8 8 1.5 1.5 3-3"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="86" y="774" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">체결 대사</text>
+        <text data-detail="context" x="86" y="790" class="t-muted" font-size="9" text-anchor="middle">원장 ↔ 계좌 대조</text>
+        <text data-detail="fine" x="86" y="810" class="t-security" font-size="7" text-anchor="middle">대사</text>
+        </g>
+
+        <g id="node-toss" data-node-id="toss" data-node-label="토스 주문" tabindex="0" role="button" aria-label="Focus 토스 주문, 결과 불명 시 락다운, ⑥ 사람 승인 없이 넘지 못한다" aria-pressed="false" data-node-kind="external" data-node-sublabel="결과 불명 시 락다운" data-node-tag="체결" data-node-context="⑥ 사람 승인 없이 넘지 못한다">
+          <title>토스 주문 · 결과 불명 시 락다운 · ⑥ 사람 승인 없이 넘지 못한다 · 체결</title>
+          <rect x="188" y="734" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="188" y="734" width="148" height="84" rx="6" class="c-external" data-animate="node" style="--step:12" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(194 740) scale(0.6875)">
+            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
+            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="262" y="774" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">토스 주문</text>
+        <text data-detail="context" x="262" y="790" class="t-muted" font-size="9" text-anchor="middle">결과 불명 시 락다운</text>
+        <text data-detail="fine" x="262" y="810" class="t-external" font-size="7" text-anchor="middle">체결</text>
+        </g>
+
+        <g id="node-reserve" data-node-id="reserve" data-node-label="전송 전 예약" tabindex="0" role="button" aria-label="Focus 전송 전 예약, 보낸 뒤 기록하지 않는다, ⑥ 사람 승인 없이 넘지 못한다" aria-pressed="false" data-node-kind="security" data-node-sublabel="보낸 뒤 기록하지 않는다" data-node-tag="원장" data-node-context="⑥ 사람 승인 없이 넘지 못한다">
+          <title>전송 전 예약 · 보낸 뒤 기록하지 않는다 · ⑥ 사람 승인 없이 넘지 못한다 · 원장</title>
+          <rect x="364" y="734" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="364" y="734" width="148" height="84" rx="6" class="c-security" data-animate="node" style="--step:12" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(370 740) scale(0.6875)">
+            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
+            <path d="m5.8 8 1.5 1.5 3-3"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="438" y="774" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">전송 전 예약</text>
+        <text data-detail="context" x="438" y="790" class="t-muted" font-size="9" text-anchor="middle">보낸 뒤 기록하지 않는다</text>
+        <text data-detail="fine" x="438" y="810" class="t-security" font-size="7" text-anchor="middle">원장</text>
+        </g>
+
+        <g id="node-approval" data-node-id="approval" data-node-label="Discord 승인" tabindex="0" role="button" aria-label="Focus Discord 승인, 사람 · TTL 15분, ⑥ 사람 승인 없이 넘지 못한다" aria-pressed="false" data-node-kind="security" data-node-sublabel="사람 · TTL 15분" data-node-tag="사람" data-node-context="⑥ 사람 승인 없이 넘지 못한다">
+          <title>Discord 승인 · 사람 · TTL 15분 · ⑥ 사람 승인 없이 넘지 못한다 · 사람</title>
+          <rect x="540" y="734" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="540" y="734" width="148" height="84" rx="6" class="c-security" data-animate="node" style="--step:12" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(546 740) scale(0.6875)">
+            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
+            <path d="m5.8 8 1.5 1.5 3-3"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="614" y="774" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Discord 승인</text>
+        <text data-detail="context" x="614" y="790" class="t-muted" font-size="9" text-anchor="middle">사람 · TTL 15분</text>
+        <text data-detail="fine" x="614" y="810" class="t-security" font-size="7" text-anchor="middle">사람</text>
+        </g>
+
+        <g id="node-intent" data-node-id="intent" data-node-label="ExecutionIntent" tabindex="0" role="button" aria-label="Focus ExecutionIntent, 넘길 수 있는 유일한 계약, ⑥ 사람 승인 없이 넘지 못한다" aria-pressed="false" data-node-kind="security" data-node-sublabel="넘길 수 있는 유일한 계약" data-node-tag="계약" data-node-context="⑥ 사람 승인 없이 넘지 못한다">
+          <title>ExecutionIntent · 넘길 수 있는 유일한 계약 · ⑥ 사람 승인 없이 넘지 못한다 · 계약</title>
+          <rect x="716" y="734" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="716" y="734" width="148" height="84" rx="6" class="c-security" data-animate="node" style="--step:12" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(722 740) scale(0.6875)">
+            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
+            <path d="m5.8 8 1.5 1.5 3-3"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="790" y="774" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">ExecutionIntent</text>
+        <text data-detail="context" x="790" y="790" class="t-muted" font-size="9" text-anchor="middle">넘길 수 있는 유일한 계약</text>
+        <text data-detail="fine" x="790" y="810" class="t-security" font-size="7" text-anchor="middle">계약</text>
+        </g>
+
+        <g id="node-perf" data-node-id="perf" data-node-label="성과 귀속" tabindex="0" role="button" aria-label="Focus 성과 귀속, 원가·현금흐름 증거, ⑦ 성과 · 피드백" aria-pressed="false" data-node-kind="backend" data-node-sublabel="원가·현금흐름 증거" data-node-tag="성과" data-node-context="⑦ 성과 · 피드백">
+          <title>성과 귀속 · 원가·현금흐름 증거 · ⑦ 성과 · 피드백 · 성과</title>
+          <rect x="12" y="872" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="12" y="872" width="148" height="84" rx="6" class="c-backend" data-animate="node" style="--step:12" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(18 878) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="86" y="912" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">성과 귀속</text>
+        <text data-detail="context" x="86" y="928" class="t-muted" font-size="9" text-anchor="middle">원가·현금흐름 증거</text>
+        <text data-detail="fine" x="86" y="948" class="t-backend" font-size="7" text-anchor="middle">성과</text>
+        </g>
+
+        <g id="node-evaluate" data-node-id="evaluate" data-node-label="판단 평가" tabindex="0" role="button" aria-label="Focus 판단 평가, 20일 뒤 채점, ⑦ 성과 · 피드백" aria-pressed="false" data-node-kind="backend" data-node-sublabel="20일 뒤 채점" data-node-tag="평가" data-node-context="⑦ 성과 · 피드백">
+          <title>판단 평가 · 20일 뒤 채점 · ⑦ 성과 · 피드백 · 평가</title>
+          <rect x="188" y="872" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="188" y="872" width="148" height="84" rx="6" class="c-backend" data-animate="node" style="--step:12" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(194 878) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="262" y="912" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">판단 평가</text>
+        <text data-detail="context" x="262" y="928" class="t-muted" font-size="9" text-anchor="middle">20일 뒤 채점</text>
+        <text data-detail="fine" x="262" y="948" class="t-backend" font-size="7" text-anchor="middle">평가</text>
+        </g>
+
+        <g id="node-promote" data-node-id="promote" data-node-label="모델 승격 게이트" tabindex="0" role="button" aria-label="Focus 모델 승격 게이트, 증거 없이 승격 없음, ⑦ 성과 · 피드백" aria-pressed="false" data-node-kind="security" data-node-sublabel="증거 없이 승격 없음" data-node-tag="승격" data-node-context="⑦ 성과 · 피드백">
+          <title>모델 승격 게이트 · 증거 없이 승격 없음 · ⑦ 성과 · 피드백 · 승격</title>
+          <rect x="364" y="872" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="364" y="872" width="148" height="84" rx="6" class="c-security" data-animate="node" style="--step:12" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(370 878) scale(0.6875)">
+            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
+            <path d="m5.8 8 1.5 1.5 3-3"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="438" y="912" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">모델 승격 게이트</text>
+        <text data-detail="context" x="438" y="928" class="t-muted" font-size="9" text-anchor="middle">증거 없이 승격 없음</text>
+        <text data-detail="fine" x="438" y="948" class="t-security" font-size="7" text-anchor="middle">승격</text>
+        </g>
+
+        <g id="node-reporting" data-node-id="reporting" data-node-label="Reporting" tabindex="0" role="button" aria-label="Focus Reporting, 저장소를 여는 유일한 곳, ⑦ 성과 · 피드백" aria-pressed="false" data-node-kind="backend" data-node-sublabel="저장소를 여는 유일한 곳" data-node-tag="읽기" data-node-context="⑦ 성과 · 피드백">
+          <title>Reporting · 저장소를 여는 유일한 곳 · ⑦ 성과 · 피드백 · 읽기</title>
+          <rect x="540" y="872" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="540" y="872" width="148" height="84" rx="6" class="c-backend" data-animate="node" style="--step:12" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(546 878) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="614" y="912" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Reporting</text>
+        <text data-detail="context" x="614" y="928" class="t-muted" font-size="9" text-anchor="middle">저장소를 여는 유일한 곳</text>
+        <text data-detail="fine" x="614" y="948" class="t-backend" font-size="7" text-anchor="middle">읽기</text>
+        </g>
+
+        <g id="node-surface" data-node-id="surface" data-node-label="대시보드 · 알림" tabindex="0" role="button" aria-label="Focus 대시보드 · 알림, 읽기 모델만 소비, ⑦ 성과 · 피드백" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="읽기 모델만 소비" data-node-tag="소비" data-node-context="⑦ 성과 · 피드백">
+          <title>대시보드 · 알림 · 읽기 모델만 소비 · ⑦ 성과 · 피드백 · 소비</title>
+          <rect x="716" y="872" width="148" height="84" rx="6" class="c-mask"/>
+          <rect x="716" y="872" width="148" height="84" rx="6" class="c-frontend" data-animate="node" style="--step:12" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(722 878) scale(0.6875)">
             <rect x="2" y="3" width="12" height="10" rx="2"/>
             <path d="M2 6.5h12"/>
             <circle cx="4.1" cy="4.8" r=".7" class="sigil-fill"/>
             <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="320" y="275" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">화면 · 알림</text>
-        <text data-detail="context" x="320" y="291" class="t-muted" font-size="9" text-anchor="middle">읽기 전용 경로로만</text>
-        <text data-detail="fine" x="320" y="306" class="t-frontend" font-size="7" text-anchor="middle">소비</text>
-        </g>
-
-        <g id="node-risk" data-node-id="risk" data-node-label="위험 한도" tabindex="0" role="button" aria-label="Focus 위험 한도, 결정론 · 종목 10%, 사람 승인 없이 넘지 못한다" aria-pressed="false" data-node-kind="security" data-node-sublabel="결정론 · 종목 10%" data-node-tag="게이트 1" data-node-context="사람 승인 없이 넘지 못한다">
-          <title>위험 한도 · 결정론 · 종목 10% · 사람 승인 없이 넘지 못한다 · 게이트 1</title>
-          <rect x="650" y="240" width="180" height="74" rx="6" class="c-mask"/>
-          <rect x="650" y="240" width="180" height="74" rx="6" class="c-security" data-animate="node" style="--step:4" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(656 246) scale(0.6875)">
-            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
-            <path d="m5.8 8 1.5 1.5 3-3"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="740" y="275" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">위험 한도</text>
-        <text data-detail="context" x="740" y="291" class="t-muted" font-size="9" text-anchor="middle">결정론 · 종목 10%</text>
-        <text data-detail="fine" x="740" y="306" class="t-security" font-size="7" text-anchor="middle">게이트 1</text>
-        </g>
-
-        <g id="node-approval" data-node-id="approval" data-node-label="사람 승인" tabindex="0" role="button" aria-label="Focus 사람 승인, Discord · TTL 15분, 사람 승인 없이 넘지 못한다" aria-pressed="false" data-node-kind="security" data-node-sublabel="Discord · TTL 15분" data-node-tag="게이트 2" data-node-context="사람 승인 없이 넘지 못한다">
-          <title>사람 승인 · Discord · TTL 15분 · 사람 승인 없이 넘지 못한다 · 게이트 2</title>
-          <rect x="650" y="390" width="180" height="74" rx="6" class="c-mask"/>
-          <rect x="650" y="390" width="180" height="74" rx="6" class="c-security" data-animate="node" style="--step:5" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(656 396) scale(0.6875)">
-            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
-            <path d="m5.8 8 1.5 1.5 3-3"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="740" y="425" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">사람 승인</text>
-        <text data-detail="context" x="740" y="441" class="t-muted" font-size="9" text-anchor="middle">Discord · TTL 15분</text>
-        <text data-detail="fine" x="740" y="456" class="t-security" font-size="7" text-anchor="middle">게이트 2</text>
-        </g>
-
-        <g id="node-broker" data-node-id="broker" data-node-label="토스 주문" tabindex="0" role="button" aria-label="Focus 토스 주문, 보내기 전에 기록, 사람 승인 없이 넘지 못한다" aria-pressed="false" data-node-kind="external" data-node-sublabel="보내기 전에 기록" data-node-tag="실행" data-node-context="사람 승인 없이 넘지 못한다">
-          <title>토스 주문 · 보내기 전에 기록 · 사람 승인 없이 넘지 못한다 · 실행</title>
-          <rect x="650" y="520" width="180" height="74" rx="6" class="c-mask"/>
-          <rect x="650" y="520" width="180" height="74" rx="6" class="c-external" data-animate="node" style="--step:6" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(656 526) scale(0.6875)">
-            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
-            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="740" y="555" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">토스 주문</text>
-        <text data-detail="context" x="740" y="571" class="t-muted" font-size="9" text-anchor="middle">보내기 전에 기록</text>
-        <text data-detail="fine" x="740" y="586" class="t-external" font-size="7" text-anchor="middle">실행</text>
+          <text data-node-label="" data-detail-anchor="" x="790" y="912" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">대시보드 · 알림</text>
+        <text data-detail="context" x="790" y="928" class="t-muted" font-size="9" text-anchor="middle">읽기 모델만 소비</text>
+        <text data-detail="fine" x="790" y="948" class="t-frontend" font-size="7" text-anchor="middle">소비</text>
         </g>
 
         <!-- Connection labels -->
 
 
 
-        <g data-detail="context" data-edge-from="decide" data-edge-to="risk" data-edge-label="목표 비중" data-edge-key="3" data-edge-id="d">
-          <rect x="765.4" y="172" width="53.199999999999996" height="14" rx="3" class="c-mask"/>
-          <text x="792" y="182" class="t-backend" font-size="8" text-anchor="middle">목표 비중</text>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <g data-detail="context" data-edge-from="feature" data-edge-to="ml" data-edge-label="학습 · 추론 공용" data-edge-key="26" data-edge-id="s1">
+          <rect x="756.6" y="150" width="86.8" height="14" rx="3" class="c-mask"/>
+          <text x="800" y="160" class="t-backend" font-size="8" text-anchor="middle">학습 · 추론 공용</text>
         </g>
-        <g data-detail="context" data-edge-from="risk" data-edge-to="approval" data-edge-label="통과한 것만" data-edge-key="4" data-edge-id="e">
-          <rect x="760.6" y="342" width="62.8" height="14" rx="3" class="c-mask"/>
-          <text x="792" y="352" class="t-security" font-size="8" text-anchor="middle">통과한 것만</text>
+        <g data-detail="context" data-edge-from="ml" data-edge-to="alpha" data-edge-label="ML 예측치" data-edge-key="27" data-edge-id="s2">
+          <rect x="773.4" y="288" width="53.199999999999996" height="14" rx="3" class="c-mask"/>
+          <text x="800" y="298" class="t-backend" font-size="8" text-anchor="middle">ML 예측치</text>
         </g>
-        <g data-detail="context" data-edge-from="approval" data-edge-to="broker" data-edge-label="승인된 것만" data-edge-key="5" data-edge-id="f">
-          <rect x="760.6" y="482" width="62.8" height="14" rx="3" class="c-mask"/>
-          <text x="792" y="492" class="t-security" font-size="8" text-anchor="middle">승인된 것만</text>
+        <g data-detail="context" data-edge-from="alpha" data-edge-to="regime" data-edge-label="기대초과수익" data-edge-key="28" data-edge-id="s3">
+          <rect x="766.2" y="426" width="67.6" height="14" rx="3" class="c-mask"/>
+          <text x="800" y="436" class="t-backend" font-size="8" text-anchor="middle">기대초과수익</text>
         </g>
-        <g data-detail="context" data-edge-from="stores" data-edge-to="surface" data-edge-label="읽기 모델" data-edge-key="6" data-edge-id="g">
-          <rect x="345.4" y="172" width="53.199999999999996" height="14" rx="3" class="c-mask"/>
-          <text x="372" y="182" class="t-muted" font-size="8" text-anchor="middle">읽기 모델</text>
+        <g data-detail="context" data-edge-from="gate" data-edge-to="target" data-edge-label="승인된 비중만" data-edge-key="29" data-edge-id="s4">
+          <rect x="59.8" y="546" width="72.4" height="14" rx="3" class="c-mask"/>
+          <text x="96" y="556" class="t-backend" font-size="8" text-anchor="middle">승인된 비중만</text>
+        </g>
+        <g data-detail="context" data-edge-from="mypf" data-edge-to="intent" data-edge-label="추종 제안" data-edge-key="30" data-edge-id="s5">
+          <rect x="773.4" y="702" width="53.199999999999996" height="14" rx="3" class="c-mask"/>
+          <text x="800" y="712" class="t-security" font-size="8" text-anchor="middle">추종 제안</text>
+        </g>
+        <g data-detail="context" data-edge-from="recon" data-edge-to="perf" data-edge-label="체결 사실" data-edge-key="31" data-edge-id="s6">
+          <rect x="69.4" y="822" width="53.199999999999996" height="14" rx="3" class="c-mask"/>
+          <text x="96" y="832" class="t-muted" font-size="8" text-anchor="middle">체결 사실</text>
         </g>
 
         <!-- Boundary labels (foreground masks keep routes out of titles) -->
-        <g data-graph-role="structural-frame-label" data-composition-frame-id="0" data-composition-frame-kind="security-group" data-composition-frame-label="사람 승인 없이 넘지 못한다">
-          <rect data-graph-role="structural-frame-label-mask" x="638" y="220" width="150.4" height="16" rx="3" class="c-mask"/>
-          <text data-boundary-label="" x="642" y="233" class="t-security" font-size="9" font-weight="600">사람 승인 없이 넘지 못한다</text>
+        <g data-graph-role="structural-frame-label" data-composition-frame-id="0" data-composition-frame-kind="region" data-composition-frame-label="① 수집 · 저장">
+          <rect data-graph-role="structural-frame-label-mask" x="4" y="24" width="80.2" height="16" rx="3" class="c-mask"/>
+          <text data-boundary-label="" x="8" y="37" class="t-cloud" font-size="9" font-weight="600">① 수집 · 저장</text>
+        </g>
+
+        <g data-graph-role="structural-frame-label" data-composition-frame-id="1" data-composition-frame-kind="region" data-composition-frame-label="② 텍스트 · 연구">
+          <rect data-graph-role="structural-frame-label-mask" x="4" y="162" width="91" height="16" rx="3" class="c-mask"/>
+          <text data-boundary-label="" x="8" y="175" class="t-cloud" font-size="9" font-weight="600">② 텍스트 · 연구</text>
+        </g>
+
+        <g data-graph-role="structural-frame-label" data-composition-frame-id="2" data-composition-frame-kind="region" data-composition-frame-label="③ 후보 · 판단">
+          <rect data-graph-role="structural-frame-label-mask" x="4" y="300" width="80.2" height="16" rx="3" class="c-mask"/>
+          <text data-boundary-label="" x="8" y="313" class="t-cloud" font-size="9" font-weight="600">③ 후보 · 판단</text>
+        </g>
+
+        <g data-graph-role="structural-frame-label" data-composition-frame-id="3" data-composition-frame-kind="region" data-composition-frame-label="④ 위험 · 최적화">
+          <rect data-graph-role="structural-frame-label-mask" x="4" y="438" width="91" height="16" rx="3" class="c-mask"/>
+          <text data-boundary-label="" x="8" y="451" class="t-cloud" font-size="9" font-weight="600">④ 위험 · 최적화</text>
+        </g>
+
+        <g data-graph-role="structural-frame-label" data-composition-frame-id="4" data-composition-frame-kind="region" data-composition-frame-label="⑤ System 목표 · 실계좌 추종">
+          <rect data-graph-role="structural-frame-label-mask" x="4" y="576" width="155.79999999999998" height="16" rx="3" class="c-mask"/>
+          <text data-boundary-label="" x="8" y="589" class="t-cloud" font-size="9" font-weight="600">⑤ System 목표 · 실계좌 추종</text>
+        </g>
+
+        <g data-graph-role="structural-frame-label" data-composition-frame-id="5" data-composition-frame-kind="security-group" data-composition-frame-label="⑥ 사람 승인 없이 넘지 못한다">
+          <rect data-graph-role="structural-frame-label-mask" x="4" y="714" width="161.2" height="16" rx="3" class="c-mask"/>
+          <text data-boundary-label="" x="8" y="727" class="t-security" font-size="9" font-weight="600">⑥ 사람 승인 없이 넘지 못한다</text>
+        </g>
+
+        <g data-graph-role="structural-frame-label" data-composition-frame-id="6" data-composition-frame-kind="region" data-composition-frame-label="⑦ 성과 · 피드백">
+          <rect data-graph-role="structural-frame-label-mask" x="4" y="852" width="91" height="16" rx="3" class="c-mask"/>
+          <text data-boundary-label="" x="8" y="865" class="t-cloud" font-size="9" font-weight="600">⑦ 성과 · 피드백</text>
         </g>
 
         <!-- Legend -->

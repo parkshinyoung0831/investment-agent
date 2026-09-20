@@ -492,9 +492,9 @@
     "semantic_hash": ""
   },
   "CLAUDE.md": {
-    "mtime": 1789900261.573422,
-    "seen": 1789900852.338777,
-    "ast_hash": "c14474c8d3c0557eb74b7be583a60cf7",
+    "mtime": 1789902987.7868593,
+    "seen": 1789903558.8605163,
+    "ast_hash": "f5fd188660278d7d1abccb8940800491",
     "semantic_hash": ""
   },
   "DESIGN-system.md": {
@@ -504,9 +504,9 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1789902052.7498739,
-    "seen": 1789902968.310458,
-    "ast_hash": "bce4ec22445bd82239c21175de44127b",
+    "mtime": 1789903279.4619765,
+    "seen": 1789903558.8605163,
+    "ast_hash": "f70ab4bc85231905c3599b54cd4b1ac9",
     "semantic_hash": ""
   },
   "docs/AUTONOMOUS_SYSTEM.md": {
@@ -7734,9 +7734,9 @@
     "semantic_hash": ""
   },
   "scripts/build_diagrams.py": {
-    "mtime": 1789902173.999827,
-    "seen": 1789902968.3084586,
-    "ast_hash": "da0aa1e0feab44d4bcbd8a51e1d9e56b",
+    "mtime": 1789903239.3306189,
+    "seen": 1789903558.857516,
+    "ast_hash": "349f0999198da427effac75b2ca37119",
     "semantic_hash": ""
   },
   "src/investment_agent/data/fundamentals/data/gaap_mappings.json": {
@@ -8148,44 +8148,44 @@
     "semantic_hash": ""
   },
   "docs/diagrams/html/earnings-pipeline.html": {
-    "mtime": 1789902187.3093617,
-    "seen": 1789902968.310458,
+    "mtime": 1789903264.8447516,
+    "seen": 1789903558.8605163,
     "ast_hash": "aac7e0d1771a23adfc34b471c16e4c14",
     "semantic_hash": ""
   },
   "docs/diagrams/html/execution-lifecycle.html": {
-    "mtime": 1789902186.5735457,
-    "seen": 1789902968.310458,
+    "mtime": 1789903264.093253,
+    "seen": 1789903558.8605163,
     "ast_hash": "250501bb8c2d8badca97de4691d72cba",
     "semantic_hash": ""
   },
   "docs/diagrams/html/execution-runbook.html": {
-    "mtime": 1789902186.9891522,
-    "seen": 1789902968.310458,
+    "mtime": 1789903264.5082846,
+    "seen": 1789903558.8605163,
     "ast_hash": "2137be62048c30c8f4aa4130606daf8f",
     "semantic_hash": ""
   },
   "docs/diagrams/html/pipeline.html": {
-    "mtime": 1789902185.7323885,
-    "seen": 1789902968.310458,
+    "mtime": 1789903262.885825,
+    "seen": 1789903558.8605163,
     "ast_hash": "76c68e26e1f9d63d819c8ba28776fa02",
     "semantic_hash": ""
   },
   "docs/diagrams/html/system-architecture.html": {
-    "mtime": 1789902187.6212008,
-    "seen": 1789902968.310458,
+    "mtime": 1789903265.5550368,
+    "seen": 1789903558.8605163,
     "ast_hash": "c94c12682f0942aee162fbea0b5e3837",
     "semantic_hash": ""
   },
   "docs/diagrams/html/trading-analysis.html": {
-    "mtime": 1789902186.0122845,
-    "seen": 1789902968.310458,
+    "mtime": 1789903263.1966722,
+    "seen": 1789903558.8605163,
     "ast_hash": "49dc02a456acc3869b7b2233127ed210",
     "semantic_hash": ""
   },
   "docs/diagrams/html/trading-target.html": {
-    "mtime": 1789902186.2886403,
-    "seen": 1789902968.310458,
+    "mtime": 1789903263.484923,
+    "seen": 1789903558.8605163,
     "ast_hash": "3922c7899f341f227c9c9052c1d4f42f",
     "semantic_hash": ""
   },
@@ -8229,6 +8229,42 @@
     "mtime": 1789901041.227127,
     "seen": 1789902968.310458,
     "ast_hash": "129e7a0de0bd3b1c1005bafe5e89021f",
+    "semantic_hash": ""
+  },
+  "docs/diagrams/src/overview.architecture.json": {
+    "mtime": 1789903230.552787,
+    "seen": 1789903558.857516,
+    "ast_hash": "9b655ccc8005cac8140aaa31adffc7f3",
+    "semantic_hash": ""
+  },
+  "docs/diagrams/src/promotion-ladder.lifecycle.json": {
+    "mtime": 1789903262.5910797,
+    "seen": 1789903558.857516,
+    "ast_hash": "e4c1df49572e7c70668122fd65e72d80",
+    "semantic_hash": ""
+  },
+  "docs/diagrams/html/overview.html": {
+    "mtime": 1789903265.2065012,
+    "seen": 1789903558.8605163,
+    "ast_hash": "bc4ee4f15f67fbb02a965db5c7b1f163",
+    "semantic_hash": ""
+  },
+  "docs/diagrams/html/promotion-ladder.html": {
+    "mtime": 1789903263.7881162,
+    "seen": 1789903558.8605163,
+    "ast_hash": "6489d4cdbcb85c8621b9237d5945ebb5",
+    "semantic_hash": ""
+  },
+  "docs/diagrams/svg/overview.svg": {
+    "mtime": 1789903243.5624013,
+    "seen": 1789903558.8605163,
+    "ast_hash": "719cacc608cd9bdb129e059e98eac091",
+    "semantic_hash": ""
+  },
+  "docs/diagrams/svg/promotion-ladder.svg": {
+    "mtime": 1789903267.805933,
+    "seen": 1789903558.8605163,
+    "ast_hash": "488b4cbfe1254222224cae1a30ad47a0",
     "semantic_hash": ""
   }
 }

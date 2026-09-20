@@ -31,71 +31,6 @@ svg{
         --external-fill:    rgba(148, 163, 184, 0.18);
         --external-stroke:  #64748b;}
 svg{
-      --bg: #f8fafc;
-      --grid: #e2e8f0;
-      --text: #0f172a;
-      --text-muted: #64748b;
-      --text-dim: #94a3b8;
-      --text-faint: #64748b;
-
-      --panel: #ffffff;
-      --panel-border: #e2e8f0;
-      --lane-fill: rgba(248, 250, 252, 0.65);
-      --lane-stroke: #cbd5e1;
-
-      --arrow: #94a3b8;
-      --arrow-emphasis: #059669;
-
-      --mask: #ffffff;
-
-      --frontend-fill:    rgba(34, 211, 238, 0.15);
-      --frontend-stroke:  #0891b2;
-      --backend-fill:     rgba(52, 211, 153, 0.18);
-      --backend-stroke:   #059669;
-      --database-fill:    rgba(167, 139, 250, 0.2);
-      --database-stroke:  #7c3aed;
-      --cloud-fill:       rgba(251, 191, 36, 0.18);
-      --cloud-stroke:     #d97706;
-      --security-fill:    rgba(251, 113, 133, 0.15);
-      --security-stroke:  #e11d48;
-      --messagebus-fill:  rgba(251, 146, 60, 0.15);
-      --messagebus-stroke:#ea580c;
-      --external-fill:    rgba(148, 163, 184, 0.18);
-      --external-stroke:  #64748b;
-
-      --toolbar-bg:       rgba(255, 255, 255, 0.92);
-      --toolbar-border:   #cbd5e1;
-      --toolbar-text:     #334155;
-      --toolbar-hover:    #ffffff;
-      --toolbar-menu-bg:  #ffffff;
-      --bg: #f4f9fc;
-      --grid: #d4e5ee;
-      --panel: rgba(255, 255, 255, 0.82);
-      --panel-border: #bfd5e2;
-      --lane-fill: rgba(232, 243, 248, 0.62);
-      --lane-stroke: #a9c5d5;
-      --text: #102638;
-      --text-muted: #587287;
-      --text-dim: #8aa2b4;
-      --text-faint: #668397;
-      --mask: #ffffff;
-      --frontend-fill: rgba(6, 182, 212, 0.09);
-      --frontend-stroke: #0789a1;
-      --backend-fill: rgba(5, 150, 105, 0.09);
-      --backend-stroke: #087f69;
-      --database-fill: rgba(124, 58, 237, 0.09);
-      --database-stroke: #7254c7;
-      --cloud-fill: rgba(217, 119, 6, 0.08);
-      --cloud-stroke: #b9670b;
-      --security-fill: rgba(225, 29, 72, 0.08);
-      --security-stroke: #c53a59;
-      --messagebus-fill: rgba(234, 88, 12, 0.08);
-      --messagebus-stroke: #c65f27;
-      --external-fill: rgba(100, 116, 139, 0.1);
-      --external-stroke: #607a8c;
-      --arrow: #7b97aa;
-      --arrow-emphasis: #0d9488;}
-@media (prefers-color-scheme: dark){svg{
       --bg: #020617;
       --grid: #1e293b;
       --text: #ffffff;
@@ -164,7 +99,72 @@ svg{
       --arrow-emphasis: #2dd4bf;
       --toolbar-bg: rgba(7, 16, 30, 0.86);
       --toolbar-border: #29415f;
-      --toolbar-menu-bg: #07101e;}}
+      --toolbar-menu-bg: #07101e;}
+@media (prefers-color-scheme: light){svg{
+      --bg: #f8fafc;
+      --grid: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --text-dim: #94a3b8;
+      --text-faint: #64748b;
+
+      --panel: #ffffff;
+      --panel-border: #e2e8f0;
+      --lane-fill: rgba(248, 250, 252, 0.65);
+      --lane-stroke: #cbd5e1;
+
+      --arrow: #94a3b8;
+      --arrow-emphasis: #059669;
+
+      --mask: #ffffff;
+
+      --frontend-fill:    rgba(34, 211, 238, 0.15);
+      --frontend-stroke:  #0891b2;
+      --backend-fill:     rgba(52, 211, 153, 0.18);
+      --backend-stroke:   #059669;
+      --database-fill:    rgba(167, 139, 250, 0.2);
+      --database-stroke:  #7c3aed;
+      --cloud-fill:       rgba(251, 191, 36, 0.18);
+      --cloud-stroke:     #d97706;
+      --security-fill:    rgba(251, 113, 133, 0.15);
+      --security-stroke:  #e11d48;
+      --messagebus-fill:  rgba(251, 146, 60, 0.15);
+      --messagebus-stroke:#ea580c;
+      --external-fill:    rgba(148, 163, 184, 0.18);
+      --external-stroke:  #64748b;
+
+      --toolbar-bg:       rgba(255, 255, 255, 0.92);
+      --toolbar-border:   #cbd5e1;
+      --toolbar-text:     #334155;
+      --toolbar-hover:    #ffffff;
+      --toolbar-menu-bg:  #ffffff;
+      --bg: #f4f9fc;
+      --grid: #d4e5ee;
+      --panel: rgba(255, 255, 255, 0.82);
+      --panel-border: #bfd5e2;
+      --lane-fill: rgba(232, 243, 248, 0.62);
+      --lane-stroke: #a9c5d5;
+      --text: #102638;
+      --text-muted: #587287;
+      --text-dim: #8aa2b4;
+      --text-faint: #668397;
+      --mask: #ffffff;
+      --frontend-fill: rgba(6, 182, 212, 0.09);
+      --frontend-stroke: #0789a1;
+      --backend-fill: rgba(5, 150, 105, 0.09);
+      --backend-stroke: #087f69;
+      --database-fill: rgba(124, 58, 237, 0.09);
+      --database-stroke: #7254c7;
+      --cloud-fill: rgba(217, 119, 6, 0.08);
+      --cloud-stroke: #b9670b;
+      --security-fill: rgba(225, 29, 72, 0.08);
+      --security-stroke: #c53a59;
+      --messagebus-fill: rgba(234, 88, 12, 0.08);
+      --messagebus-stroke: #c65f27;
+      --external-fill: rgba(100, 116, 139, 0.1);
+      --external-stroke: #607a8c;
+      --arrow: #7b97aa;
+      --arrow-emphasis: #0d9488;}}
 @keyframes pulse{
       0%, 100% { opacity: 1; }
       50% { opacity: 0.5; }

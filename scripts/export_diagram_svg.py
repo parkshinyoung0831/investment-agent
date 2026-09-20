@@ -150,8 +150,8 @@ def collect_css(html: str, svg: str, preset: str) -> str:
 
     납품 HTML은 `<html data-theme="dark">`이고 팔레트가 `:root`와 `[data-theme=...]`에
     나뉘어 있다. `:root`만 가져오면 어느 테마가 이기는지가 **선언 순서에 달린 우연**이 된다.
-    그래서 두 팔레트를 따로 모아, 기본은 light로 고정하고 dark는
-    `prefers-color-scheme`에 실어 GitHub의 테마를 따라가게 한다.
+    그래서 두 팔레트를 따로 모아 **기본을 dark로 고정한다** — Archify가 설계한 기본 모습이다.
+    light는 `prefers-color-scheme: light`에 실어, 밝은 화면으로 보는 사람도 읽을 수 있게 한다.
 
     프리셋 전용 블록(`[data-preset="blueprint"]` 등)은 이 문서의 preset이 아니면 버린다.
     """
@@ -210,11 +210,11 @@ def collect_css(html: str, svg: str, preset: str) -> str:
     out: list[str] = []
     if base:
         out.append("svg{" + ";".join(base) + ";}")
-    if light:
-        out.append("svg{" + ";".join(light) + ";}")          # 기본은 light
     if dark:
-        out.append("@media (prefers-color-scheme: dark){svg{"
-                   + ";".join(dark) + ";}}")                  # GitHub 다크 모드를 따라간다
+        out.append("svg{" + ";".join(dark) + ";}")            # 기본은 dark
+    if light:
+        out.append("@media (prefers-color-scheme: light){svg{"
+                   + ";".join(light) + ";}}")                 # 밝은 화면에서도 읽히게
     out.extend(kept)
     return "\n".join(out)
 

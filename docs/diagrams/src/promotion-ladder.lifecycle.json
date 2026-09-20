@@ -6,7 +6,7 @@
     "output": "promotion-ladder.html",
     "viewBox": [
       880,
-      700
+      660
     ],
     "animation": "trace",
     "quality_profile": "showcase",
@@ -28,9 +28,11 @@
         "label": "자율 승격 증거 게이트",
         "focus": [
           "live_manual",
-          "autonomy_gate",
+          "gate",
           "live_autonomous",
-          "rejected"
+          "weak_evidence",
+          "any_incident",
+          "missing_limits"
         ],
         "note": "마지막 단계만 결정적 증거 게이트를 통과해야 합니다. boolean 하나로는 열리지 않습니다."
       }
@@ -39,7 +41,7 @@
   "lanes": [
     {
       "id": "main",
-      "label": "운영 승격 단계"
+      "label": "운영 승격 단계 — 한 번에 한 칸씩"
     },
     {
       "id": "gatelane",
@@ -47,7 +49,7 @@
     },
     {
       "id": "terminal",
-      "label": "거절"
+      "label": "거절 사유 (violations)"
     }
   ],
   "states": [
@@ -102,24 +104,44 @@
       "tag": "자율"
     },
     {
-      "id": "autonomy_gate",
+      "id": "gate",
       "type": "decision",
       "label": "승격 게이트",
       "sublabel": "증거 11항목 · 한도 5종",
       "lane": "gatelane",
-      "col": 2,
+      "col": 1,
       "step": "G",
-      "tag": "게이트"
+      "tag": "마지막 칸에만"
     },
     {
-      "id": "rejected",
+      "id": "weak_evidence",
       "type": "failure",
-      "label": "승격 거절",
-      "sublabel": "violations 하나라도 있으면",
+      "label": "증거 부족",
+      "sublabel": "기간 · Sharpe · 낙폭",
+      "lane": "terminal",
+      "col": 0,
+      "step": "X1",
+      "tag": "거절"
+    },
+    {
+      "id": "any_incident",
+      "type": "failure",
+      "label": "사고 이력",
+      "sublabel": "실행·대사·위험·품질",
+      "lane": "terminal",
+      "col": 1,
+      "step": "X2",
+      "tag": "거절"
+    },
+    {
+      "id": "missing_limits",
+      "type": "failure",
+      "label": "한도 미설정",
+      "sublabel": "주문 한도 5종 중 누락",
       "lane": "terminal",
       "col": 2,
-      "step": "X",
-      "tag": "차단"
+      "step": "X3",
+      "tag": "거절"
     }
   ],
   "transitions": [
@@ -144,19 +166,31 @@
     {
       "id": "lm-gate",
       "from": "live_manual",
-      "to": "autonomy_gate",
+      "to": "gate",
       "variant": "security"
     },
     {
       "id": "gate-la",
-      "from": "autonomy_gate",
+      "from": "gate",
       "to": "live_autonomous",
       "variant": "security"
     },
     {
-      "id": "gate-no",
-      "from": "autonomy_gate",
-      "to": "rejected",
+      "id": "g-x1",
+      "from": "gate",
+      "to": "weak_evidence",
+      "variant": "dashed"
+    },
+    {
+      "id": "g-x2",
+      "from": "gate",
+      "to": "any_incident",
+      "variant": "dashed"
+    },
+    {
+      "id": "g-x3",
+      "from": "gate",
+      "to": "missing_limits",
       "variant": "dashed"
     }
   ],

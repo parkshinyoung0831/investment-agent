@@ -2,244 +2,939 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "Investment Agent — 한눈에",
+    "title": "데이터 수집에서 체결·성과까지",
     "output": "overview.html",
     "quality_profile": "showcase",
     "animation": "trace",
     "viewBox": [
-      860,
-      620
+      880,
+      1010
     ],
     "views": [
       {
-        "id": "path",
-        "label": "데이터에서 주문까지",
+        "id": "collect",
+        "label": "① 수집과 저장",
         "focus": [
-          "sources",
-          "stores",
-          "research",
-          "decide",
-          "risk",
-          "approval",
-          "broker"
+          "pub",
+          "ingest",
+          "supabase",
+          "txt",
+          "harness",
+          "duckdb"
         ],
-        "note": "공개 데이터가 근거와 신호를 거쳐 주문이 되기까지, 중간에 두 개의 게이트를 지납니다."
+        "note": "공개 데이터는 Actions cron이, 뉴스·소셜은 로컬 하네스가 모읍니다. 원문은 로컬 DuckDB에 90일만 둡니다."
       },
       {
-        "id": "gates",
-        "label": "넘지 못하는 두 자리",
+        "id": "signal",
+        "label": "② 근거에서 기대수익까지",
         "focus": [
-          "decide",
-          "risk",
-          "approval",
-          "broker"
+          "pit",
+          "feature",
+          "factor",
+          "ml",
+          "agents",
+          "alpha"
         ],
-        "note": "결정론적 위험 한도와 사람 승인. 둘 다 통과하지 못한 것은 주문이 되지 않습니다."
+        "note": "cutoff 이전 데이터만 읽어 feature를 만들고, 팩터·ML·LLM 논지를 하나의 기대초과수익으로 결합합니다."
+      },
+      {
+        "id": "portfolio",
+        "label": "③ 비중과 두 포트폴리오",
+        "focus": [
+          "regime",
+          "budget",
+          "optimizer",
+          "band",
+          "gate",
+          "target",
+          "sysengine",
+          "mypf"
+        ],
+        "note": "System 목표는 실계좌와 승인 결과를 모릅니다 — 그래야 '프로그램을 100% 따랐다면'을 말할 수 있습니다."
+      },
+      {
+        "id": "execute",
+        "label": "④ 승인 · 체결 · 피드백",
+        "focus": [
+          "intent",
+          "approval",
+          "reserve",
+          "toss",
+          "recon",
+          "perf",
+          "evaluate",
+          "promote"
+        ],
+        "note": "사람이 승인한 의도만 실행되고, 체결 사실이 성과·평가·승격 판정으로 돌아옵니다."
       }
     ]
   },
   "components": [
     {
-      "id": "sources",
+      "id": "pub",
       "type": "external",
       "label": "공개 금융 데이터",
       "sublabel": "SEC · yfinance · FRED",
       "pos": [
-        20,
-        50
+        12,
+        44
       ],
       "size": [
-        180,
-        74
+        148,
+        84
       ],
       "tag": "외부"
     },
     {
-      "id": "stores",
+      "id": "ingest",
+      "type": "cloud",
+      "label": "Actions cron 36",
+      "sublabel": "증분 수집 · 7일 겹침",
+      "pos": [
+        188,
+        44
+      ],
+      "size": [
+        148,
+        84
+      ],
+      "tag": "스케줄"
+    },
+    {
+      "id": "supabase",
       "type": "database",
-      "label": "저장소 4곳",
-      "sublabel": "Supabase · SQLite · DuckDB ×2",
+      "label": "Supabase",
+      "sublabel": "PIT 도메인 원천",
       "pos": [
-        230,
-        50
+        364,
+        44
       ],
       "size": [
-        180,
-        74
+        148,
+        84
       ],
-      "tag": "적재"
+      "tag": "SSOT"
     },
     {
-      "id": "research",
+      "id": "pit",
       "type": "backend",
-      "label": "근거 · Feature",
-      "sublabel": "같은 시점 기준으로만",
+      "label": "PitReader",
+      "sublabel": "cutoff 이전만 읽는다",
       "pos": [
-        440,
-        50
+        540,
+        44
       ],
       "size": [
-        180,
-        74
+        148,
+        84
       ],
-      "tag": "연구"
+      "tag": "시점"
     },
     {
-      "id": "decide",
+      "id": "feature",
       "type": "backend",
-      "label": "신호 · 목표 비중",
-      "sublabel": "LLM 논지 + ML + 팩터",
+      "label": "FeatureLayer",
+      "sublabel": "버전 · 해시 보존",
       "pos": [
-        650,
-        50
+        716,
+        44
       ],
       "size": [
-        180,
-        74
+        148,
+        84
       ],
-      "tag": "판단"
+      "tag": "특징"
     },
     {
-      "id": "surface",
-      "type": "frontend",
-      "label": "화면 · 알림",
-      "sublabel": "읽기 전용 경로로만",
+      "id": "txt",
+      "type": "external",
+      "label": "뉴스 · 소셜",
+      "sublabel": "웹 수집",
       "pos": [
-        230,
-        240
+        12,
+        182
       ],
       "size": [
-        180,
-        74
+        148,
+        84
       ],
-      "tag": "소비"
+      "tag": "외부"
     },
     {
-      "id": "risk",
+      "id": "harness",
+      "type": "cloud",
+      "label": "로컬 하네스",
+      "sublabel": "상시 실행 · 순서 관리",
+      "pos": [
+        188,
+        182
+      ],
+      "size": [
+        148,
+        84
+      ],
+      "tag": "로컬"
+    },
+    {
+      "id": "duckdb",
+      "type": "database",
+      "label": "DuckDB ×2",
+      "sublabel": "원문 90일 · 연구 파생",
+      "pos": [
+        364,
+        182
+      ],
+      "size": [
+        148,
+        84
+      ],
+      "tag": "로컬"
+    },
+    {
+      "id": "factor",
+      "type": "backend",
+      "label": "팩터 5종",
+      "sublabel": "가치·품질·모멘텀·성장·변동",
+      "pos": [
+        540,
+        182
+      ],
+      "size": [
+        148,
+        84
+      ],
+      "tag": "사전값"
+    },
+    {
+      "id": "ml",
+      "type": "backend",
+      "label": "ML Champion",
+      "sublabel": "잔여 초과수익 ±1σ",
+      "pos": [
+        716,
+        182
+      ],
+      "size": [
+        148,
+        84
+      ],
+      "tag": "예측"
+    },
+    {
+      "id": "tracked",
+      "type": "backend",
+      "label": "tracked 게이트",
+      "sublabel": "판단 대상 제한",
+      "pos": [
+        12,
+        320
+      ],
+      "size": [
+        148,
+        84
+      ],
+      "tag": "범위"
+    },
+    {
+      "id": "cand",
+      "type": "backend",
+      "label": "후보 선정",
+      "sublabel": "새 정보 · 보유 우선",
+      "pos": [
+        188,
+        320
+      ],
+      "size": [
+        148,
+        84
+      ],
+      "tag": "선정"
+    },
+    {
+      "id": "ranker",
+      "type": "backend",
+      "label": "분석 순서",
+      "sublabel": "매수 점수가 아니다",
+      "pos": [
+        364,
+        320
+      ],
+      "size": [
+        148,
+        84
+      ],
+      "tag": "순환"
+    },
+    {
+      "id": "agents",
+      "type": "cloud",
+      "label": "TradingAgents",
+      "sublabel": "분석가 5 → 토론 → PM",
+      "pos": [
+        540,
+        320
+      ],
+      "size": [
+        148,
+        84
+      ],
+      "tag": "LLM"
+    },
+    {
+      "id": "alpha",
+      "type": "backend",
+      "label": "ALPHA 결합",
+      "sublabel": "정밀도 가중 · 논지 검증",
+      "pos": [
+        716,
+        320
+      ],
+      "size": [
+        148,
+        84
+      ],
+      "tag": "기대수익"
+    },
+    {
+      "id": "gate",
       "type": "security",
-      "label": "위험 한도",
-      "sublabel": "결정론 · 종목 10%",
+      "label": "RiskGate",
+      "sublabel": "종목 10% · 절대 한도",
       "pos": [
-        650,
-        240
+        12,
+        458
       ],
       "size": [
-        180,
-        74
+        148,
+        84
       ],
-      "tag": "게이트 1"
+      "tag": "게이트"
+    },
+    {
+      "id": "band",
+      "type": "backend",
+      "label": "no-trade band",
+      "sublabel": "1%p 미만 미거래",
+      "pos": [
+        188,
+        458
+      ],
+      "size": [
+        148,
+        84
+      ],
+      "tag": "허들"
+    },
+    {
+      "id": "optimizer",
+      "type": "backend",
+      "label": "CVXPY optimizer",
+      "sublabel": "평균-분산 + 회전율",
+      "pos": [
+        364,
+        458
+      ],
+      "size": [
+        148,
+        84
+      ],
+      "tag": "최적화"
+    },
+    {
+      "id": "budget",
+      "type": "backend",
+      "label": "위험 예산",
+      "sublabel": "오늘의 한도로 환산",
+      "pos": [
+        540,
+        458
+      ],
+      "size": [
+        148,
+        84
+      ],
+      "tag": "예산"
+    },
+    {
+      "id": "regime",
+      "type": "backend",
+      "label": "시장 regime",
+      "sublabel": "낙폭·변동성 임계",
+      "pos": [
+        716,
+        458
+      ],
+      "size": [
+        148,
+        84
+      ],
+      "tag": "환경"
+    },
+    {
+      "id": "target",
+      "type": "backend",
+      "label": "System 목표 비중",
+      "sublabel": "실계좌·승인을 모른다",
+      "pos": [
+        12,
+        596
+      ],
+      "size": [
+        148,
+        84
+      ],
+      "tag": "목표"
+    },
+    {
+      "id": "sysengine",
+      "type": "backend",
+      "label": "System Portfolio",
+      "sublabel": "평가 → 재조정 → 기록",
+      "pos": [
+        188,
+        596
+      ],
+      "size": [
+        148,
+        84
+      ],
+      "tag": "추적"
+    },
+    {
+      "id": "sysacct",
+      "type": "backend",
+      "label": "비중 기반 회계",
+      "sublabel": "가상 현금·수량 없음",
+      "pos": [
+        364,
+        596
+      ],
+      "size": [
+        148,
+        84
+      ],
+      "tag": "NAV"
+    },
+    {
+      "id": "tosssnap",
+      "type": "database",
+      "label": "Toss 계좌 스냅샷",
+      "sublabel": "실제 보유 · 현금",
+      "pos": [
+        540,
+        596
+      ],
+      "size": [
+        148,
+        84
+      ],
+      "tag": "실계좌"
+    },
+    {
+      "id": "mypf",
+      "type": "backend",
+      "label": "My Portfolio",
+      "sublabel": "목표 − 계좌 = 추종안",
+      "pos": [
+        716,
+        596
+      ],
+      "size": [
+        148,
+        84
+      ],
+      "tag": "추종"
+    },
+    {
+      "id": "recon",
+      "type": "security",
+      "label": "체결 대사",
+      "sublabel": "원장 ↔ 계좌 대조",
+      "pos": [
+        12,
+        734
+      ],
+      "size": [
+        148,
+        84
+      ],
+      "tag": "대사"
+    },
+    {
+      "id": "toss",
+      "type": "external",
+      "label": "토스 주문",
+      "sublabel": "결과 불명 시 락다운",
+      "pos": [
+        188,
+        734
+      ],
+      "size": [
+        148,
+        84
+      ],
+      "tag": "체결"
+    },
+    {
+      "id": "reserve",
+      "type": "security",
+      "label": "전송 전 예약",
+      "sublabel": "보낸 뒤 기록하지 않는다",
+      "pos": [
+        364,
+        734
+      ],
+      "size": [
+        148,
+        84
+      ],
+      "tag": "원장"
     },
     {
       "id": "approval",
       "type": "security",
-      "label": "사람 승인",
-      "sublabel": "Discord · TTL 15분",
+      "label": "Discord 승인",
+      "sublabel": "사람 · TTL 15분",
       "pos": [
-        650,
-        390
+        540,
+        734
       ],
       "size": [
-        180,
-        74
+        148,
+        84
       ],
-      "tag": "게이트 2"
+      "tag": "사람"
     },
     {
-      "id": "broker",
-      "type": "external",
-      "label": "토스 주문",
-      "sublabel": "보내기 전에 기록",
+      "id": "intent",
+      "type": "security",
+      "label": "ExecutionIntent",
+      "sublabel": "넘길 수 있는 유일한 계약",
       "pos": [
-        650,
-        520
+        716,
+        734
       ],
       "size": [
-        180,
-        74
+        148,
+        84
       ],
-      "tag": "실행"
+      "tag": "계약"
+    },
+    {
+      "id": "perf",
+      "type": "backend",
+      "label": "성과 귀속",
+      "sublabel": "원가·현금흐름 증거",
+      "pos": [
+        12,
+        872
+      ],
+      "size": [
+        148,
+        84
+      ],
+      "tag": "성과"
+    },
+    {
+      "id": "evaluate",
+      "type": "backend",
+      "label": "판단 평가",
+      "sublabel": "20일 뒤 채점",
+      "pos": [
+        188,
+        872
+      ],
+      "size": [
+        148,
+        84
+      ],
+      "tag": "평가"
+    },
+    {
+      "id": "promote",
+      "type": "security",
+      "label": "모델 승격 게이트",
+      "sublabel": "증거 없이 승격 없음",
+      "pos": [
+        364,
+        872
+      ],
+      "size": [
+        148,
+        84
+      ],
+      "tag": "승격"
+    },
+    {
+      "id": "reporting",
+      "type": "backend",
+      "label": "Reporting",
+      "sublabel": "저장소를 여는 유일한 곳",
+      "pos": [
+        540,
+        872
+      ],
+      "size": [
+        148,
+        84
+      ],
+      "tag": "읽기"
+    },
+    {
+      "id": "surface",
+      "type": "frontend",
+      "label": "대시보드 · 알림",
+      "sublabel": "읽기 모델만 소비",
+      "pos": [
+        716,
+        872
+      ],
+      "size": [
+        148,
+        84
+      ],
+      "tag": "소비"
     }
   ],
   "boundaries": [
     {
-      "kind": "security-group",
-      "label": "사람 승인 없이 넘지 못한다",
+      "kind": "region",
+      "label": "① 수집 · 저장",
       "wraps": [
-        "risk",
-        "approval",
-        "broker"
+        "pub",
+        "ingest",
+        "supabase",
+        "pit",
+        "feature"
       ],
-      "pad": 16
+      "pad": 12
+    },
+    {
+      "kind": "region",
+      "label": "② 텍스트 · 연구",
+      "wraps": [
+        "txt",
+        "harness",
+        "duckdb",
+        "factor",
+        "ml"
+      ],
+      "pad": 12
+    },
+    {
+      "kind": "region",
+      "label": "③ 후보 · 판단",
+      "wraps": [
+        "tracked",
+        "cand",
+        "ranker",
+        "agents",
+        "alpha"
+      ],
+      "pad": 12
+    },
+    {
+      "kind": "region",
+      "label": "④ 위험 · 최적화",
+      "wraps": [
+        "gate",
+        "band",
+        "optimizer",
+        "budget",
+        "regime"
+      ],
+      "pad": 12
+    },
+    {
+      "kind": "region",
+      "label": "⑤ System 목표 · 실계좌 추종",
+      "wraps": [
+        "target",
+        "sysengine",
+        "sysacct",
+        "tosssnap",
+        "mypf"
+      ],
+      "pad": 12
+    },
+    {
+      "kind": "security-group",
+      "label": "⑥ 사람 승인 없이 넘지 못한다",
+      "wraps": [
+        "recon",
+        "toss",
+        "reserve",
+        "approval",
+        "intent"
+      ],
+      "pad": 12
+    },
+    {
+      "kind": "region",
+      "label": "⑦ 성과 · 피드백",
+      "wraps": [
+        "perf",
+        "evaluate",
+        "promote",
+        "reporting",
+        "surface"
+      ],
+      "pad": 12
     }
   ],
   "connections": [
     {
-      "id": "a",
-      "from": "sources",
-      "to": "stores",
+      "id": "pub-ingest",
+      "from": "pub",
+      "to": "ingest",
       "variant": "emphasis",
       "route": "straight"
     },
     {
-      "id": "b",
-      "from": "stores",
-      "to": "research",
+      "id": "ingest-supabase",
+      "from": "ingest",
+      "to": "supabase",
       "variant": "emphasis",
       "route": "straight"
     },
     {
-      "id": "c",
-      "from": "research",
-      "to": "decide",
+      "id": "supabase-pit",
+      "from": "supabase",
+      "to": "pit",
       "variant": "emphasis",
       "route": "straight"
     },
     {
-      "id": "d",
-      "from": "decide",
-      "to": "risk",
-      "label": "목표 비중",
+      "id": "pit-feature",
+      "from": "pit",
+      "to": "feature",
       "variant": "emphasis",
-      "route": "straight",
-      "labelAt": [
-        792,
-        182
-      ]
+      "route": "straight"
     },
     {
-      "id": "e",
-      "from": "risk",
+      "id": "txt-harness",
+      "from": "txt",
+      "to": "harness",
+      "variant": "default",
+      "route": "straight"
+    },
+    {
+      "id": "harness-duckdb",
+      "from": "harness",
+      "to": "duckdb",
+      "variant": "default",
+      "route": "straight"
+    },
+    {
+      "id": "duckdb-factor",
+      "from": "duckdb",
+      "to": "factor",
+      "variant": "default",
+      "route": "straight"
+    },
+    {
+      "id": "factor-ml",
+      "from": "factor",
+      "to": "ml",
+      "variant": "default",
+      "route": "straight"
+    },
+    {
+      "id": "tracked-cand",
+      "from": "tracked",
+      "to": "cand",
+      "variant": "default",
+      "route": "straight"
+    },
+    {
+      "id": "cand-ranker",
+      "from": "cand",
+      "to": "ranker",
+      "variant": "default",
+      "route": "straight"
+    },
+    {
+      "id": "ranker-agents",
+      "from": "ranker",
+      "to": "agents",
+      "variant": "default",
+      "route": "straight"
+    },
+    {
+      "id": "agents-alpha",
+      "from": "agents",
+      "to": "alpha",
+      "variant": "default",
+      "route": "straight"
+    },
+    {
+      "id": "regime-budget",
+      "from": "regime",
+      "to": "budget",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "budget-optimizer",
+      "from": "budget",
+      "to": "optimizer",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "optimizer-band",
+      "from": "optimizer",
+      "to": "band",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "band-gate",
+      "from": "band",
+      "to": "gate",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "target-sysengine",
+      "from": "target",
+      "to": "sysengine",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "sysengine-sysacct",
+      "from": "sysengine",
+      "to": "sysacct",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "tosssnap-mypf",
+      "from": "tosssnap",
+      "to": "mypf",
+      "variant": "default",
+      "route": "straight"
+    },
+    {
+      "id": "intent-approval",
+      "from": "intent",
       "to": "approval",
-      "label": "통과한 것만",
       "variant": "security",
-      "route": "straight",
-      "labelAt": [
-        792,
-        352
-      ]
+      "route": "straight"
     },
     {
-      "id": "f",
+      "id": "approval-reserve",
       "from": "approval",
-      "to": "broker",
-      "label": "승인된 것만",
+      "to": "reserve",
       "variant": "security",
+      "route": "straight"
+    },
+    {
+      "id": "reserve-toss",
+      "from": "reserve",
+      "to": "toss",
+      "variant": "security",
+      "route": "straight"
+    },
+    {
+      "id": "toss-recon",
+      "from": "toss",
+      "to": "recon",
+      "variant": "security",
+      "route": "straight"
+    },
+    {
+      "id": "perf-evaluate",
+      "from": "perf",
+      "to": "evaluate",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "evaluate-promote",
+      "from": "evaluate",
+      "to": "promote",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "reporting-surface",
+      "from": "reporting",
+      "to": "surface",
+      "variant": "default",
+      "route": "straight"
+    },
+    {
+      "id": "s1",
+      "from": "feature",
+      "to": "ml",
+      "variant": "emphasis",
       "route": "straight",
+      "label": "학습 · 추론 공용",
       "labelAt": [
-        792,
-        492
+        800,
+        160
       ]
     },
     {
-      "id": "g",
-      "from": "stores",
-      "to": "surface",
-      "label": "읽기 모델",
+      "id": "s2",
+      "from": "ml",
+      "to": "alpha",
+      "variant": "emphasis",
+      "route": "straight",
+      "label": "ML 예측치",
+      "labelAt": [
+        800,
+        298
+      ]
+    },
+    {
+      "id": "s3",
+      "from": "alpha",
+      "to": "regime",
+      "variant": "emphasis",
+      "route": "straight",
+      "label": "기대초과수익",
+      "labelAt": [
+        800,
+        436
+      ]
+    },
+    {
+      "id": "s4",
+      "from": "gate",
+      "to": "target",
+      "variant": "emphasis",
+      "route": "straight",
+      "label": "승인된 비중만",
+      "labelAt": [
+        96,
+        556
+      ]
+    },
+    {
+      "id": "s5",
+      "from": "mypf",
+      "to": "intent",
+      "variant": "security",
+      "route": "straight",
+      "label": "추종 제안",
+      "labelAt": [
+        800,
+        712
+      ]
+    },
+    {
+      "id": "s6",
+      "from": "recon",
+      "to": "perf",
       "variant": "default",
       "route": "straight",
+      "label": "체결 사실",
       "labelAt": [
-        372,
-        182
+        96,
+        832
       ]
     }
   ],
@@ -248,16 +943,32 @@
       "dot": "rose",
       "title": "LLM이 정하지 않는 것",
       "items": [
-        "최종 비중은 optimizer가, 절대 한도는 결정론적 위험 게이트가 정합니다",
-        "LLM은 논지와 거부권만 행사하고 broker credential에 접근하지 않습니다"
+        "TradingAgents는 논지·토론·거부권만 행사합니다. 최종 비중은 optimizer가, 절대 한도는 RiskGate가 정합니다",
+        "AI 계층은 broker credential·승인 secret·durable control에 접근하지 않습니다"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "System과 실계좌를 섞지 않는 이유",
+      "items": [
+        "System 목표·NAV는 실계좌 잔고·승인 결과를 읽지 않습니다 — 승인을 거절해도 System 성과는 같습니다(테스트 강제)",
+        "My Portfolio는 목표와 계좌의 차이를 승인 가능한 기록으로 남길 뿐, System은 그 결과를 모릅니다"
       ]
     },
     {
       "dot": "emerald",
+      "title": "시점을 지키는 방법",
+      "items": [
+        "cutoff t 에서는 available_at <= t 인 데이터만 읽고, 없는 값은 0으로 채우지 않고 결측으로 남깁니다",
+        "화면과 알림은 저장소를 직접 열지 않고 Reporting 읽기 모델만 소비합니다"
+      ]
+    },
+    {
+      "dot": "amber",
       "title": "되돌릴 수 없는 것 앞에서",
       "items": [
-        "주문은 보내기 전에 원장에 예약되고, 결과가 불명확하면 자동 재주문하지 않습니다",
-        "실주문 스위치는 사람이 켭니다 — 설치·테스트·모델 실행이 열지 않습니다"
+        "주문 시도는 전송 전에 원장에 예약됩니다 — 보낸 뒤 기록하면 이미 나간 주문을 되돌릴 수 없습니다",
+        "타임아웃·5xx는 실패가 아니라 결과 불명이고, 되물어 확인하기 전에는 자동 재주문하지 않습니다"
       ]
     }
   ]
