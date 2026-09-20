@@ -40,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     from investment_agent.config import load_config
-    from investment_agent.notifications.engine import default_context
+    from investment_agent.notifications.context import default_context
     from investment_agent.notifications.topics import TOPICS, topic
 
     ledger = default_context(load_config()).ledger

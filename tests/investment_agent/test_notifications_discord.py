@@ -6,9 +6,8 @@ import unittest
 from unittest.mock import Mock
 
 from investment_agent.config import Config
-from investment_agent.notifications.channels.discord import (
-    DeliveryRejected, DeliveryUnknown, DiscordChannel, validate_message,
-)
+from investment_agent.notifications.channels.contracts import DeliveryRejected, DeliveryUnknown
+from investment_agent.notifications.channels.discord import DiscordChannel, validate_message
 from investment_agent.notifications.renderers.reports import render_report
 from investment_agent.reporting.models import DataResult
 

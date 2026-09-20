@@ -6,14 +6,14 @@ from collections.abc import Sequence
 
 from investment_agent.config import load_config
 from investment_agent.notifications.channels import routing
-from investment_agent.notifications.channels.discord import ForumThread
+from investment_agent.notifications.channels.contracts import ForumThread
+from investment_agent.notifications.context import default_context
 from investment_agent.notifications.earnings_flash.candidates import load_flash_candidates
 from investment_agent.notifications.earnings_flash.embeds import build_flash_embed
 from investment_agent.notifications.engine import (
     Notice,
     PublishContext,
     Rendered,
-    default_context,
     fact_time,
     publish,
 )

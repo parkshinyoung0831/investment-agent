@@ -15,11 +15,11 @@ from datetime import datetime, timezone
 from typing import Any
 
 from investment_agent.config import load_config
+from investment_agent.notifications.context import default_context
 from investment_agent.notifications.engine import (
     Notice,
     PublishContext,
     Rendered,
-    default_context,
     publish,
 )
 from investment_agent.notifications.macro import embeds

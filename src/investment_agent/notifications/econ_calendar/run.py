@@ -5,13 +5,13 @@ import argparse
 from collections.abc import Sequence
 
 from investment_agent.config import load_config
+from investment_agent.notifications.context import default_context
 from investment_agent.notifications.econ_calendar import db as store
 from investment_agent.notifications.econ_calendar import embeds
 from investment_agent.notifications.engine import (
     Notice,
     PublishContext,
     Rendered,
-    default_context,
     publish,
 )
 from investment_agent.notifications.subscriptions import discord_target

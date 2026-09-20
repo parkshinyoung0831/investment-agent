@@ -8,6 +8,7 @@ import ast
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = ROOT / "src" / "investment_agent"
@@ -417,6 +418,19 @@ class LayerDirectionTest(unittest.TestCase):
         """검사 대상이 하나도 없으면 위 검사는 아무것도 지키지 않는다."""
         present = [layer for layer in self.FORBIDDEN if (PACKAGE / layer).exists()]
         self.assertTrue(present, "검사 대상 계층이 아직 없다")
+
+    def test_notification_engine_does_not_import_discord_implementation(self) -> None:
+        engine = PACKAGE / "notifications" / "engine.py"
+        offenders = [name for name in _imported_names(engine)
+                     if name.startswith("investment_agent.notifications.channels.discord")]
+        self.assertEqual([], offenders)
+
+    def test_notification_engine_guard_rejects_a_concrete_import(self) -> None:
+        with patch(__name__ + "._imported_names", return_value=[
+            "investment_agent.notifications.channels.discord",
+        ]):
+            with self.assertRaises(AssertionError):
+                self.test_notification_engine_does_not_import_discord_implementation()
 
 
 class LiveFlagTest(unittest.TestCase):

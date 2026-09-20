@@ -4,11 +4,11 @@ from __future__ import annotations
 import os
 
 from investment_agent.config import load_config
+from investment_agent.notifications.context import default_context
 from investment_agent.notifications.engine import (
     Notice,
     PublishContext,
     Rendered,
-    default_context,
     fact_time,
     publish,
 )

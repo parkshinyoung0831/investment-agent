@@ -8,11 +8,13 @@ nonce를 주면 Discord가 몇 분 안의 같은 nonce를 새 메시지로 만�
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass
 import math
 from typing import Any, Callable
 
 from investment_agent.config import Config
+from investment_agent.notifications.channels.contracts import (
+    NONCE_MAX_LENGTH, Delivery, DeliveryRejected, DeliveryUnknown, ForumThread,
+)
 from investment_agent.platform.serialization import canonical_json
 
 from investment_agent.platform.logging import get_logger
@@ -20,41 +22,6 @@ from investment_agent.platform.logging import get_logger
 log = get_logger(__name__)
 
 _API_BASE = "https://discord.com/api/v10"
-# Discord nonce 상한.
-NONCE_MAX_LENGTH = 25
-
-
-class DeliveryRejected(RuntimeError):
-    """전송되지 않았음이 명확한 응답. 재시도 가능한 거절만 다시 예약한다."""
-
-    def __init__(self, reason: str, *, is_retryable: bool = False, retry_after: float = 60) -> None:
-        super().__init__(reason)
-        self.is_retryable = is_retryable
-        self.retry_after = retry_after
-
-
-class DeliveryUnknown(RuntimeError):
-    """전달 여부 불명. 자동 재전송하면 같은 알림이 두 번 나갈 수 있다."""
-
-
-@dataclass(frozen=True)
-class ForumThread:
-    """포럼에서 알림이 쌓일 스레드. key가 정체성이고 name은 새로 만들 때만 쓴다."""
-
-    key: str
-    name: str
-    tags: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class Delivery:
-    """보낸 메시지가 사는 곳. 수정하려면 location_id와 message_id가 둘 다 필요하다."""
-
-    location_id: str
-    message_id: str
-    thread_id: str | None = None
-
-
 def validate_message(message: dict[str, Any]) -> dict[str, Any]:
     """이 어댑터의 text/embed 계약과 Discord 길이 한도를 전송 전에 검사한다."""
     if not isinstance(message, dict) or set(message) - {"content", "embeds", "allowed_mentions"}:
@@ -408,6 +375,5 @@ class DiscordChannel:
 
 
 __all__ = [
-    "NONCE_MAX_LENGTH", "Delivery", "DeliveryRejected", "DeliveryUnknown", "DiscordChannel",
-    "ForumThread", "fetch_forum_threads", "fetch_guild_channels", "validate_message",
+    "DiscordChannel", "fetch_forum_threads", "fetch_guild_channels", "validate_message",
 ]

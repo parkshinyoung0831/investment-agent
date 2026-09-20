@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from investment_agent.config import load_config
-from investment_agent.notifications.engine import Notice, Rendered, default_context, fact_time, publish
+from investment_agent.notifications.context import default_context
+from investment_agent.notifications.engine import Notice, Rendered, fact_time, publish
 from investment_agent.notifications.subscriptions import discord_target
 from investment_agent.notifications.topics import topic
 from investment_agent.reporting.notifications.investment.performance import performance_reports

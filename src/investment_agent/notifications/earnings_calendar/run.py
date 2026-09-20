@@ -8,13 +8,14 @@ from datetime import date
 
 from investment_agent.config import load_config
 from investment_agent.notifications.channels import routing
-from investment_agent.notifications.channels.discord import ForumThread
+from investment_agent.notifications.channels.contracts import ForumThread
+from investment_agent.notifications.context import default_context
 from investment_agent.notifications.earnings_calendar import card
 from investment_agent.notifications.earnings_calendar.candidates import (
     SCHEDULE_TOPIC, WEEK_TOPIC, collect, schedule_notices, week_notice,
 )
 from investment_agent.notifications.earnings_calendar.render import render, shoot_png
-from investment_agent.notifications.engine import PublishContext, Rendered, default_context, publish
+from investment_agent.notifications.engine import PublishContext, Rendered, publish
 from investment_agent.notifications.playwright import persist_png
 from investment_agent.notifications.subscriptions import discord_target
 from investment_agent.platform.logging import configure_logging, get_logger

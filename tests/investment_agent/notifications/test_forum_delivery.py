@@ -10,7 +10,8 @@ from __future__ import annotations
 import unittest
 
 from investment_agent.config import Config
-from investment_agent.notifications.channels.discord import DiscordChannel, ForumThread
+from investment_agent.notifications.channels.contracts import ForumThread
+from investment_agent.notifications.channels.discord import DiscordChannel
 
 
 class _Response:
@@ -78,7 +79,7 @@ class ForumDeliveryTest(unittest.TestCase):
         self.assertNotIn("applied_tags", self.calls[0]["json"])
 
     def test_an_empty_thread_name_is_refused_before_the_request(self) -> None:
-        from investment_agent.notifications.channels.discord import DeliveryRejected
+        from investment_agent.notifications.channels.contracts import DeliveryRejected
 
         channel = DiscordChannel(_config(), post=self._post, get=self._get)
         with self.assertRaises(DeliveryRejected):

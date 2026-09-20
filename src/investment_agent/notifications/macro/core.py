@@ -17,12 +17,12 @@ from datetime import date, datetime, time, timezone
 from typing import Any
 
 from investment_agent.config import load_config
+from investment_agent.notifications.context import default_context
 from investment_agent.reporting.notifications.macro import MacroNotificationStore
 from investment_agent.notifications.engine import (
     Notice,
     PublishContext,
     Rendered,
-    default_context,
     publish,
 )
 from investment_agent.notifications.problems import report_problems, take_problems

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from investment_agent.notifications.channels.discord import Delivery
+from investment_agent.notifications.channels.contracts import Delivery
 from investment_agent.notifications.engine import PublishContext
 from investment_agent.notifications.ledger import MemoryLedger
 from investment_agent.notifications.topics import TOPICS

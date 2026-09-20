@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 from investment_agent.config import load_config
-from investment_agent.notifications.channels.discord import ForumThread
+from investment_agent.notifications.channels.contracts import ForumThread
+from investment_agent.notifications.context import default_context
 from investment_agent.notifications.channels.routing import guru_tag_ids, guru_thread_title
-from investment_agent.notifications.engine import PublishContext, Rendered, default_context, publish
+from investment_agent.notifications.engine import PublishContext, Rendered, publish
 from investment_agent.notifications.subscriptions import discord_target
 from investment_agent.platform.logging import get_logger
 

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from investment_agent.config import load_config
 from investment_agent.notifications.earnings_calendar.candidates import pending_state
-from investment_agent.notifications.engine import default_context
+from investment_agent.notifications.context import default_context
 from investment_agent.platform.logging import configure_logging, get_logger
 
 log = get_logger(__name__)

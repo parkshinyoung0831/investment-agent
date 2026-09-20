@@ -7,7 +7,7 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from investment_agent.notifications.channels.discord import (
+from investment_agent.notifications.channels.contracts import (
     Delivery,
     DeliveryRejected,
     DeliveryUnknown,

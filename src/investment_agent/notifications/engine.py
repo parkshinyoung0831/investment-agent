@@ -18,12 +18,13 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from investment_agent.notifications.channels.discord import (
+from investment_agent.notifications.channels.contracts import (
     NONCE_MAX_LENGTH,
     Delivery,
     DeliveryRejected,
     DeliveryUnknown,
     ForumThread,
+    NotificationChannel,
 )
 from investment_agent.notifications.ledger import NotificationLedger, Reservation
 from investment_agent.notifications.problems import note_problem
@@ -98,7 +99,7 @@ class PublishReport:
 @dataclass(frozen=True)
 class PublishContext:
     ledger: NotificationLedger
-    channel: Any
+    channel: NotificationChannel
     owner: str
 
 
@@ -118,17 +119,6 @@ def new_owner() -> str:
     """이 실행의 식별자. 예약과 결과 기록이 같은 실행에서 왔는지 가른다."""
     runner = os.environ.get("GITHUB_RUN_ID") or "local"
     return f"{runner}:{os.getpid()}:{os.urandom(6).hex()}"
-
-
-def default_context(config: Any) -> PublishContext:
-    """운영 경로의 원장(Supabase)과 Discord 채널을 조립한다."""
-    from investment_agent.notifications.channels.discord import DiscordChannel
-    from investment_agent.notifications.db import PostgresNotificationLedger
-    from investment_agent.reporting.notifications.connections import configured_database
-
-    return PublishContext(
-        PostgresNotificationLedger(configured_database(config)), DiscordChannel(config), new_owner(),
-    )
 
 
 def replay_requested() -> bool:
@@ -309,7 +299,7 @@ def _deliver(topic: Topic, group: list[Reservation], by_key: Mapping[tuple[str, 
         note_problem(topic.name, label, code, status=outcome)
 
 
-def _create(channel: Any, target: str, rendered: Rendered, known_thread: str | None, nonce: str) -> Delivery:
+def _create(channel: NotificationChannel, target: str, rendered: Rendered, known_thread: str | None, nonce: str) -> Delivery:
     """새 메시지를 보낸다. 메시지 POST라면 응답을 잃었을 때 같은 nonce로 한 번 더 묻는다."""
     kwargs = dict(
         target=target, message=rendered.message, attachment_path=rendered.attachment_path,
@@ -326,5 +316,5 @@ def _create(channel: Any, target: str, rendered: Rendered, known_thread: str | N
 
 __all__ = [
     "LEASE_SECONDS", "MAX_ATTEMPTS", "Notice", "PublishContext", "PublishReport", "REPLAY_ENV",
-    "Rendered", "Renderer", "default_context", "fact_time", "new_owner", "publish", "replay_requested", "unsettled",
+    "Rendered", "Renderer", "fact_time", "new_owner", "publish", "replay_requested", "unsettled",
 ]

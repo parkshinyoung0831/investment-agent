@@ -18,8 +18,9 @@ from investment_agent.notifications.earnings_report import candidates, render
 from investment_agent.reporting.notifications import earnings_report as db
 from investment_agent.notifications.earnings_report import card, embeds
 from investment_agent.reporting.services.earnings import valuation_history as history
-from investment_agent.notifications.channels.discord import ForumThread
-from investment_agent.notifications.engine import PublishContext, Rendered, default_context, publish
+from investment_agent.notifications.channels.contracts import ForumThread
+from investment_agent.notifications.context import default_context
+from investment_agent.notifications.engine import PublishContext, Rendered, publish
 from investment_agent.notifications.subscriptions import discord_target
 from investment_agent.notifications.channels import routing
 from investment_agent.notifications.channels.directory import guild_directory

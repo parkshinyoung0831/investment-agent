@@ -5,12 +5,12 @@ from collections import defaultdict
 
 from investment_agent.config import load_config
 from investment_agent.notifications.channels import routing
-from investment_agent.notifications.channels.discord import ForumThread
+from investment_agent.notifications.channels.contracts import ForumThread
+from investment_agent.notifications.context import default_context
 from investment_agent.notifications.engine import (
     Notice,
     PublishContext,
     Rendered,
-    default_context,
     fact_time,
     publish,
 )

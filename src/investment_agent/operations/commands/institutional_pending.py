@@ -5,7 +5,7 @@ import argparse
 import pathlib
 
 from investment_agent.config import load_config
-from investment_agent.notifications.engine import default_context
+from investment_agent.notifications.context import default_context
 from investment_agent.notifications.institutional.state import pending_state
 
 

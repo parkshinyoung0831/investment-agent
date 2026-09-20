@@ -7,8 +7,8 @@
 - 기준 원격 `main`: `4181f6b53d84105f2b78d78c69e9119c1f55a6cf` (2026-09-20 세션 시작 시 로컬 HEAD와 일치 확인).
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
-- 현재 단계: Phase 2~3의 Research artifact/Data read owner 이관과 실제 caller 기준 역방향 import 제거를 독립 단위로 진행 중이다.
-- 현재 작업 방식: 같은 책임 경계의 독립 변경 2~3개를 한 배치로 묶는다. 이번 배치는 Execution decision row read와 계좌 snapshot persistence 이관이며, 별도 완료 plan 대신 아래 배치 원장에 기록한다.
+- 현재 단계: Research→Trading 잔여 의존성 19쌍을 남겨두고, 실제 runtime caller를 확인하며 조회·발송 및 실행 경계를 배치별로 정리한다.
+- 현재 작업 방식: 같은 책임 경계의 독립 변경 2~3개를 한 배치로 묶고, 관련·architecture/import 테스트를 배치 안에서 실행한다. 전체 suite는 배치 종료, 실행·승인·risk 안전 변경, 최종 통합 때 실행한다. 완료 task마다 별도 plan 문서를 만들지 않는다.
 - 완료 단계: Phase 1 조사, Phase 2의 feature snapshot·training label·valuation·event·training sample·decision experience owner 이관, Phase 3 공통 serialization·forecast·평가 계약 및 일부 Data read 역방향 import 정리, production Trading 알고리즘 검증의 명시적 경계 설정, Phase 4 RiskGate→ExecutionIntent 생성 책임 이관. Execution persistence 배치 이관 후 `PENDING_DEPENDENCIES`는 19쌍이다.
 - maintenance 상태: `harness_switch --status`로 STOPPED·hold ON(reason=원본 사본 architecture refactor Phase 1-10 이식)·kill switch ON·Toss live FALSE를 확인했다. 이미 걸린 hold는 변경하지 않으며 임의로 해제/재기동하지 않는다.
 
@@ -26,15 +26,15 @@
 1. `git status --short --branch`, `git branch --show-current`, `git log -1 --oneline`, `git ls-remote origin refs/heads/main`으로 `main` 여부·미커밋 변경·원격 변화를 확인한다. 원격 `main`이 달라졌으면 무조건 자동 rebase하지 말고 차이를 검토한다.
 2. 위 문서와 현재 계획을 읽고 마지막 완료 task/phase의 실제 커밋·테스트 출력을 확인한다. 이 파일의 기록만 믿고 이미 완료된 작업을 반복하지 않는다.
 3. 각 phase를 시작하기 전에 호출자·대상·삭제 조건을 다시 확인한다. 하네스/실행 코드에는 maintenance 선행.
-4. 단계별로 실패 테스트 → 최소 구현 → 대상 테스트 → import/architecture 테스트 → 가능한 전체 테스트를 수행하고 결과를 이 파일에 갱신한다.
-5. 각 완료 기록에 `수정 전 호출 관계 / 이유 / 수정 파일 / 이동·삭제 파일 / import 방향 / 테스트 결과 / 남은 부채 / 다음 단계`를 빠짐없이 적는다. 계획의 별도 실행 ledger가 생기면 해당 경로와 task 번호를 함께 적는다.
+4. 각 배치에서 caller 확인 → 필요할 때만 RED 계약 테스트 → 최소 변경 → 관련·architecture/import 테스트 → 배치 종료 전체 suite를 실행한다. 예상 밖 실패가 나오면 다음 변경을 멈추고 원인을 확인한다.
+5. 핵심 근거·변경 파일·테스트 결과·남은 부채를 이 파일에 간결히 기록한다. 별도 완료 plan은 만들지 않는다.
 6. `PENDING_DEPENDENCIES`의 정확한 남은 항목을 확인한다. 새 항목을 기준선에 추가하지 않는다.
 
 ## 단일 실행 워크플로
 
-각 구현 묶음은 `현재 caller 재검증 → 실패 테스트 → 최소 이관 → 대상 테스트 → architecture/import 검증 → 가능한 전체 테스트 → 진행 원장 갱신 → 커밋` 순서로 진행한다. 한 단계가 끝나기 전에 다음 영역을 동시에 수정하지 않는다. 중단되면 마지막 커밋과 이 문서의 완료 task가 재개 지점이다.
+각 배치는 `현재 caller 재검증 → 필요한 계약 RED → 최소 변경 → 관련·architecture/import 검증 → 배치 종료 전체 suite → 원장 갱신 → 커밋`으로 진행한다. 한 배치 안에서는 같은 책임 경계의 독립 변경 2~3개를 처리하며, 예상 밖 실패·runtime 관계가 드러나면 조사 전 다른 변경을 시작하지 않는다.
 
-진행 상태는 이 문서와 현재 plan의 checkbox만 사용한다. 별도의 날짜별 상태 보고서를 늘리지 않는다. 새로운 계획은 이전 계획의 완료 범위와 남은 debt를 입력으로 삼고, 완료된 façade나 테스트를 다시 만들지 않는다.
+진행 상태는 이 문서와 현재 plan의 남은 작업만 사용한다. 별도 완료 plan·날짜별 상태 보고서를 늘리지 않는다.
 
 ## 단계 기록
 
@@ -479,6 +479,13 @@
 - 변경 파일·방향: `operations/commands/create_execution_intent.py`가 주입·기본 ExecutionRepository 하나로 risk/proposal read와 intent write를 수행한다. `trading/my_portfolio.py`는 명시적 `save_snapshot` callback을 받으며 `operations/adapters/trading.py`가 Data security ID 조회와 Execution snapshot 저장을 조립한다. `trading/supabase_repository.py`의 해당 forwarding/read/write 3메서드와 Execution imports를 삭제했다. Trading 계획의 skip 판정, 저장 시점·순서, 계좌 hash·position payload, PIT/read 저장소는 유지했다. 변경 테스트는 Operations intent·snapshot, Trading follow, architecture이다.
 - 검증: fake owner 분리에서 RED, snapshot writer 부재·architecture 위반 정확히 2건으로 RED 확인. 관련·architecture·workflow·docs 107개 통과. 전체 offline suite 3,039개는 이전과 같은 선택적 `lightgbm`/`xgboost` 미설치 오류 4개·skip 1개 외 새 실패가 없다. skip 시 snapshot write 0건, account hash/security ID/비중, runtime callback wiring 검증. maintenance hold ON·kill switch ON·Toss live FALSE 유지.
 - 남은 부채: `PENDING_DEPENDENCIES` 21→19, 모두 일반 Research→Trading imports다. Execution DB/snapshot의 Trading façade caller/import는 0건. Broker runtime, dashboard read, notification channel, ResearchStore·Operations 경계와 최종 architecture guard는 아직 완료되지 않았다. 다음 배치는 실제 caller를 확인해 같은 책임 경계의 독립 후보 2~3개를 묶는다.
+
+#### Notification channel 배치 — 공유 전송 계약 + 운영 조립 분리
+
+- 근거: `notifications.engine`이 Discord 모듈의 전송 결과·오류·스레드·nonce 상한과 `DiscordChannel` 생성에 결합돼 있었다. 13개 알림 producer와 4개 Operations caller가 `engine.default_context`를 사용했고, 실제 production 채널은 Discord 하나다.
+- 변경 파일·방향: `notifications/channels/contracts.py`에 기존 결과·오류·스레드·25자 nonce 계약과 최소 `NotificationChannel` protocol을 두고 engine·Discord adapter·producer·직접 테스트가 이를 소비한다. `notifications/context.py`가 기존 Postgres ledger + Discord channel을 조립하고 모든 기존 caller를 직접 이관했다. `engine`의 Discord import와 legacy `default_context`를 삭제했다. `tests/investment_agent/test_architecture.py`, 알림 계약 테스트, `tests/test_repo_conventions.py`의 공유 조립 경계만 갱신했다. DB schema·알림 내용·발송/재시도·결과 불명 규칙은 불변이다.
+- 검증: concrete import architecture guard는 RED 후 GREEN이며 합성 위반도 검출한다. 알림 251개, architecture·workflow·Discord 91개, repository owner 재검증 30개 통과. 첫 전체 suite에서 repository 패키지 규칙이 새 공유 조립 모듈을 producer로 오분류한 실패 1건을 조사·수정했고, 재실행 3,043개는 기준선과 같은 선택적 `lightgbm`/`xgboost` 미설치 오류 4개·skip 1개 외 새 실패가 없다. source/test의 이전 `engine.default_context`·Discord 계약 import caller 0건.
+- 남은 부채: `PENDING_DEPENDENCIES` 19쌍 불변. 아직 broker runtime, dashboard reporting read, ResearchStore·Operations ownership과 최종 architecture guard가 남는다. 다음 배치는 현재 caller를 다시 확인해 broker 또는 dashboard read 중 동일 책임 경계 2~3개를 묶는다.
 
 ## 향후 milestone
 

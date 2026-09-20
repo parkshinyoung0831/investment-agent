@@ -17,7 +17,8 @@ from investment_agent.config import load_config
 from investment_agent.notifications.earnings_flash import run as flash
 from investment_agent.notifications.earnings_flash.candidates import load_flash_candidates
 from investment_agent.notifications.earnings_report import candidates
-from investment_agent.notifications.engine import default_context, unsettled
+from investment_agent.notifications.context import default_context
+from investment_agent.notifications.engine import unsettled
 from investment_agent.reporting.notifications.earnings_flash import EarningsFlashStore
 
 

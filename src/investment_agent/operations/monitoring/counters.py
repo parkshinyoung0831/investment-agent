@@ -23,7 +23,7 @@ log = get_logger(__name__)
 
 def _ledger() -> Any:
     from investment_agent.config import load_config
-    from investment_agent.notifications.engine import default_context
+    from investment_agent.notifications.context import default_context
 
     return default_context(load_config()).ledger
 

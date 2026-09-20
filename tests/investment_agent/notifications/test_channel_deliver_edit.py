@@ -6,11 +6,8 @@ import unittest
 from pathlib import Path
 
 from investment_agent.config import Config
-from investment_agent.notifications.channels.discord import (
-    DeliveryRejected,
-    DiscordChannel,
-    ForumThread,
-)
+from investment_agent.notifications.channels.contracts import DeliveryRejected, ForumThread
+from investment_agent.notifications.channels.discord import DiscordChannel
 
 
 class _Response:
