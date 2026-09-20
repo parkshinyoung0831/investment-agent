@@ -39,7 +39,7 @@ python -m investment_agent.data.market.commands.market_backfill --scope all-curr
 python -m investment_agent.data.market.commands.sync_local_mirror
 ```
 
-로컬 계산은 `local_mirror/`의 Parquet 사본을 먼저 읽는다. `sync_local_mirror`는
+로컬 계산은 [local_mirror/](local_mirror/README.md)의 Parquet 사본을 먼저 읽는다. `sync_local_mirror`는
 Supabase의 securities·S&P 500 멤버십·일봉·배당·분할을 읽기 전용으로 복사하며,
 사본이 없거나 오래되면 원본 조회로 돌아간다.
 

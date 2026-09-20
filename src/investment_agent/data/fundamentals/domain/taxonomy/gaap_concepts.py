@@ -54,6 +54,14 @@ COLUMN_POLICIES: dict[str, ColumnPolicy] = {
         "WeightedAverageNumberOfDilutedSharesOutstanding": 10,
         "WeightedAverageNumberOfShareOutstandingBasicAndDiluted": 20,
     }, units=frozenset({"shares"})),
+    # 보통주 귀속 순이익. 사전 매핑이 비지배지분 증감(MinorityInterestPeriodIncreaseDecrease)·
+    # 상환가치 변동(MinorityInterestChangeInRedemptionValue)·참가증권 배분(Participating
+    # SecuritiesDistributedAndUndistributedEarnings)까지 이 컬럼으로 보내서, UNH는 63M(실제
+    # 약 5,470M), ELV는 8M(약 1,460M)이 저장됐다. 정책이 없던 컬럼이라 화이트리스트가 없었다.
+    # 이 태그가 없는 회사는 빈 값이고, 소비 쪽은 `net_income`을 쓴다 — 틀린 값보다 빈 값이 낫다.
+    "net_income_to_common_shareholders": ColumnPolicy({
+        "NetIncomeLossAvailableToCommonStockholdersBasic": 10,
+    }),
     "eps_basic_gaap": ColumnPolicy({
         "EarningsPerShareBasic": 10,
         "IncomeLossFromContinuingOperationsPerBasicShare": 20,

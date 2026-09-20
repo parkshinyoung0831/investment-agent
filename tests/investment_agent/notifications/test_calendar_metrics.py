@@ -4,7 +4,7 @@ from __future__ import annotations
 import unittest
 from datetime import date, datetime, timezone
 
-from investment_agent.notifications.earnings_calendar import card
+from investment_agent.notifications.earnings_calendar import card, palette
 from investment_agent.reporting.services.earnings import schedule as metrics
 
 # 2026-08-24는 월요일. 그 주는 8/24 ~ 8/30이다.
@@ -13,7 +13,7 @@ _MONDAY = date(2026, 8, 24)
 
 def _snap(
     ticker: str, expected: str, *, snapshot: str, target: str = "2026-07-31",
-    last_seen: str | None = None,
+    last_seen: str | None = None, is_estimated: bool | None = None,
 ) -> dict:
     row = {
         "ticker": ticker,
@@ -26,6 +26,8 @@ def _snap(
     }
     if last_seen is not None:
         row["last_seen_at"] = last_seen
+    if is_estimated is not None:
+        row["is_estimated"] = is_estimated
     return row
 
 
@@ -124,11 +126,44 @@ class ConfidenceTest(unittest.TestCase):
         self.assertEqual(rows[0]["previous_expected"], date(2026, 8, 25))
         self.assertEqual(rows[0]["expected"], date(2026, 8, 26))
 
-    def test_no_row_is_ever_labelled_confirmed(self):
-        # 출처가 확정 여부를 알려주지 않으므로 '확정' 등급 자체가 없어야 한다.
-        self.assertNotIn("confirmed", metrics.build_rows(
+    def test_a_date_the_source_marks_as_company_announced_gets_its_own_grade(self):
+        """COST·NKE는 출처가 isEarningsDateEstimate=False로 준다. 그 사실을 버리고 전부
+        "추정"으로 그리면 회사가 이미 공지한 일정도 불확실한 것처럼 읽힌다."""
+        rows = metrics.build_rows(
+            [_snap("COST", "2026-08-26", snapshot="2026-08-23", is_estimated=False)], [], {}, _MONDAY
+        )
+
+        self.assertEqual(rows[0]["confidence"], "announced")
+
+    def test_an_unknown_flag_stays_estimated_rather_than_announced(self):
+        rows = metrics.build_rows(
             [_snap("NVDA", "2026-08-26", snapshot="2026-08-23")], [], {}, _MONDAY
-        )[0]["confidence"])
+        )
+        estimated = metrics.build_rows(
+            [_snap("NVDA", "2026-08-26", snapshot="2026-08-23", is_estimated=True)], [], {}, _MONDAY
+        )
+
+        self.assertEqual(rows[0]["confidence"], "estimated")
+        self.assertEqual(estimated[0]["confidence"], "estimated")
+
+    def test_a_shifted_or_stale_date_is_never_shown_as_announced(self):
+        shifted = metrics.build_rows(
+            [
+                _snap("NVDA", "2026-08-25", snapshot="2026-08-10", is_estimated=False),
+                _snap("NVDA", "2026-08-26", snapshot="2026-08-23", is_estimated=False),
+            ], [], {}, _MONDAY,
+        )
+        stale = metrics.build_rows(
+            [_snap("NVDA", "2026-08-26", snapshot="2026-08-01", is_estimated=False)], [], {}, _MONDAY
+        )
+
+        self.assertEqual(shifted[0]["confidence"], "shifted")
+        self.assertEqual(stale[0]["confidence"], "stale")
+
+    def test_no_grade_claims_the_date_is_confirmed(self):
+        self.assertNotIn("confirmed", palette.CONFIDENCE_LABELS)
+        self.assertEqual(set(palette.CONFIDENCE_LABELS), {"estimated", "announced", "shifted", "stale"})
+        self.assertNotIn("확정", "".join(palette.CONFIDENCE_LABELS.values()))
 
 
 class PriorFilingTest(unittest.TestCase):

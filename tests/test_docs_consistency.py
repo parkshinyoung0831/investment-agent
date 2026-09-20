@@ -131,10 +131,6 @@ class DeclaredRelationTest(unittest.TestCase):
         offenders: list[str] = []
         for path in _markdown_files():
             relative = path.relative_to(ROOT).as_posix()
-            # 설계 기록은 그때의 이름을 적는 것이 정확하다 — 현재 선언으로 맞추면
-            # 무엇을 왜 바꿨는지가 사라진다.
-            if relative.startswith("docs/superpowers/specs/"):
-                continue
             for number, line in _strip_code_fences(path.read_text(encoding="utf-8")):
                 for match in _REFERENCE.finditer(line):
                     name = match.group(0).lower()
@@ -188,6 +184,135 @@ class DocumentShapeTest(unittest.TestCase):
             if "—" not in title:
                 offenders.append(f"{path.relative_to(ROOT).as_posix()}: {title}")
         self.assertEqual([], offenders)
+
+
+
+
+class NotificationKindTest(unittest.TestCase):
+    """문서가 부르는 `--kind`가 실재하고, 실재하는 KIND가 문서에 있는가.
+
+    KIND는 코드의 enum이고 문서는 그것을 손으로 옮겨 적는다. 그래서 두 방향으로 어긋난다 —
+    없어진 KIND를 문서가 계속 부르거나(실행하면 argparse가 거부한다), **새 KIND가 추가됐는데
+    아무 문서에도 안 실리거나**. 뒤쪽이 조용하다: 알림이 멀쩡히 나가는데 그것이 무엇이고
+    어느 채널로 가는지 아무도 모른다. 실제로 `investment_performance`가 그랬다.
+    """
+
+    #: 이 KIND를 설명할 의무가 있는 문서. 여기 없으면 새 KIND는 보이지 않는다.
+    CATALOG = ROOT / "src" / "investment_agent" / "notifications" / "README.md"
+
+    @staticmethod
+    def _declared_kinds() -> set[str]:
+        from investment_agent.operations.commands.notify import KINDS
+
+        return set(KINDS)
+
+    @staticmethod
+    def _kinds_named_in_docs() -> set[tuple[str, str]]:
+        """문서가 `--kind X`로 실제 실행을 지시한 자리. 코드 블록 안에 사는 게 정상이다."""
+        pattern = re.compile(r"--kind\s+([a-z_][a-z0-9_]*)")
+        found: set[tuple[str, str]] = set()
+        for path in _markdown_files():
+            text = path.read_text(encoding="utf-8", errors="replace")
+            for kind in pattern.findall(text):
+                found.add((path.relative_to(ROOT).as_posix(), kind))
+        return found
+
+    def test_the_scan_finds_kinds(self) -> None:
+        """수집이 0건이면 아래 두 검사는 아무것도 지키지 않고 통과한다."""
+        self.assertGreaterEqual(len(self._declared_kinds()), 5)
+        self.assertGreater(len(self._kinds_named_in_docs()), 0)
+
+    def test_every_kind_named_in_docs_exists(self) -> None:
+        declared = self._declared_kinds()
+        unknown = sorted(
+            f"{where}: --kind {kind}"
+            for where, kind in self._kinds_named_in_docs()
+            if kind not in declared
+        )
+        self.assertEqual([], unknown, "문서가 실재하지 않는 알림 종류를 부른다")
+
+    def _catalogued_kinds(self) -> set[str]:
+        """카탈로그 **표의 첫 칸**에 선 KIND만 센다.
+
+        파일 어딘가에 이름이 보이는 것으로는 부족하다 — Mermaid 노드나 예시 명령에도
+        이름이 나오므로, 단순 substring 검사는 표 행이 없어도 통과한다(실제로 통과했다).
+        설명은 표 행이지 언급이 아니다.
+        """
+        row = re.compile(r"^\|([^|]*)\|")
+        kinds: set[str] = set()
+        for line in self.CATALOG.read_text(encoding="utf-8", errors="replace").splitlines():
+            match = row.match(line.strip())
+            if match:
+                kinds.update(re.findall(r"`([a-z_][a-z0-9_]*)`", match.group(1)))
+        return kinds
+
+    def test_the_catalog_scan_finds_rows(self) -> None:
+        """표 형식이 바뀌어 수집이 0건이 되면 아래 검사가 조용히 통과한다."""
+        self.assertGreaterEqual(len(self._catalogued_kinds()), 5)
+
+    def test_every_declared_kind_is_documented(self) -> None:
+        missing = sorted(self._declared_kinds() - self._catalogued_kinds())
+        self.assertEqual(
+            [], missing,
+            f"{self.CATALOG.relative_to(ROOT).as_posix()}의 표에 행이 없는 KIND — "
+            f"추가됐는데 설명이 없으면 조용히 나가는 알림이 된다",
+        )
+
+
+class DiagramArtifactTest(unittest.TestCase):
+    """다이어그램 생성물이 소스와 갈라졌는가.
+
+    그림은 틀려도 **그럴듯하게 남아 있다.** 코드가 바뀌어도 SVG는 옛 모양 그대로 렌더되고,
+    읽는 사람은 그것이 현재라고 믿는다. 링크가 깨지면 404라도 보이지만 낡은 그림은
+    아무 신호가 없다.
+
+    흐름은 한 방향이다: `*.json` → `build_diagrams.py` → `*.html` → `export_diagram_svg.py` → `*.svg`.
+    여기서는 **네트워크도 node도 쓰지 않는** 마지막 단계만 검사한다 — HTML에서 SVG를 다시
+    파생해 커밋된 것과 같은지 본다. 다르면 누가 SVG를 손으로 고쳤거나 HTML만 새로 빌드했다.
+    """
+
+    DIAGRAMS = ROOT / "docs" / "diagrams"
+
+    def _sources(self) -> list[Path]:
+        return sorted(p for p in self.DIAGRAMS.glob("*.html") if ".visual-check" not in p.name)
+
+    def test_there_are_diagrams_to_check(self) -> None:
+        """다이어그램을 옮기거나 이름을 바꾸면 아래 검사가 0건으로 조용히 통과한다."""
+        self.assertGreater(len(self._sources()), 0)
+
+    def test_every_diagram_svg_matches_its_html(self) -> None:
+        import sys
+
+        sys.path.insert(0, str(ROOT / "scripts"))
+        try:
+            from export_diagram_svg import build_svg
+        finally:
+            sys.path.pop(0)
+
+        stale: list[str] = []
+        for html in self._sources():
+            expected = build_svg(html.read_text(encoding="utf-8", errors="replace"))
+            if expected is None:
+                continue
+            svg = html.with_suffix(".svg")
+            if not svg.exists():
+                stale.append(f"{svg.name} 없음")
+            elif svg.read_text(encoding="utf-8", errors="replace") != expected:
+                stale.append(f"{svg.name} 낡음")
+        self.assertEqual(
+            [], stale,
+            "python scripts/export_diagram_svg.py 를 돌려라. "
+            "SVG는 생성물이라 손으로 고치지 않는다",
+        )
+
+    def test_every_diagram_source_has_a_delivered_html(self) -> None:
+        """JSON만 커밋하고 빌드를 안 돌리면 문서가 없는 그림을 가리킨다."""
+        orphan = [
+            spec.name for spec in sorted(self.DIAGRAMS.glob("*.json"))
+            if ".visual-check" not in spec.name
+            and not (self.DIAGRAMS / f"{spec.name.split('.')[0]}.html").exists()
+        ]
+        self.assertEqual([], orphan, "python scripts/build_diagrams.py 를 돌려라")
 
 
 if __name__ == "__main__":

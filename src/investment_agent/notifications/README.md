@@ -93,6 +93,7 @@ producer는 `discord_target(kind)`로 채널 하나를 받아 발송 목적지�
 | `investment_portfolio` | `src/investment_agent/notifications/investment/run_portfolio.py` | **Discord Embed** | `#투자-리포트` (`DISCORD_CHANNEL_AI_REPORTS`) | 하루 1장 종합 — RiskGate 승인/거절과 위반 사유, 목표 비중, 분석 성공 비율 |
 | `investment_candidates` | `src/investment_agent/notifications/investment/run_candidates.py` | **Discord Embed** | `#투자-리포트` (`DISCORD_CHANNEL_AI_REPORTS`) | 신뢰도 상위 N종목 심층 — 신호·기대 초과수익·근거, **확보하지 못한 근거**까지 |
 | `investment_trades` | `src/investment_agent/notifications/investment/run_trades.py` | **Discord Embed** | `#매매-기록` (`DISCORD_CHANNEL_AI_TRADES`) | 실제 주문·체결 수량/평균가, 승인 ID로 판단까지 역추적 |
+| `investment_performance` | `src/investment_agent/notifications/investment/run_performance.py` | **Discord Embed** | `#투자-리포트` (`DISCORD_CHANNEL_AI_REPORTS`) | 실계좌·모의계좌 성과와 별도 가상 판단 결과. 수수료 배분·원가 미확인 같은 **품질 단서를 함께 적어** 숫자를 그대로 믿지 않게 한다. topic `ai.performance`는 `on_revision="edit"` — 값이 바뀌면 원 메시지를 고친다 |
 
 ---
 

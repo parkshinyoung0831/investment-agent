@@ -12,6 +12,7 @@ from typing import Any
 
 from investment_agent.notifications.earnings_report import format as fmt
 from investment_agent.notifications.earnings_report import palette
+from investment_agent.reporting.services.earnings import metrics
 
 def _num(v: Any) -> float | None:
     if v is None:
@@ -43,15 +44,6 @@ def _div(num: float | None, den: float | None) -> float | None:
 
 def _clamp_pct(v: float) -> float:
     return max(0.0, min(100.0, v))
-
-
-def _eps_diluted(row: dict) -> float | None:
-    """분기 희석 EPS = 보통주 귀속 순이익 / 희석 평균주식수.
-    원천 EPS 컬럼을 보관하지 않으므로 순이익·희석주식수로 직접 계산한다."""
-    ni = _num(row.get("net_income_to_common_shareholders"))
-    if ni is None:
-        ni = _num(row.get("net_income"))
-    return _div(ni, _num(row.get("shares_fully_diluted_average")))
 
 
 def _nice_axis(values: list[float], *, intervals: int = 4) -> tuple[float, float, list[float]]:
@@ -512,12 +504,12 @@ def eps_trend(
     같은 축에 **그리는** 건 단위가 같아 문제가 없다 — 하면 안 되는 건 둘을 **빼서**
     서프라이즈를 만드는 것이고, 서프라이즈는 점끼리(예상↔조정 실제)만 계산한다.
     """
-    qs = [r for r in history if _eps_diluted(r) is not None][-13:]
+    qs = [r for r in history if metrics.eps_diluted(r) is not None][-13:]
     if len(qs) < 2:
         return None
     top, bot, side = 16, 24, 46
     plot_h, n = h - top - bot, len(qs)
-    eps = [_eps_diluted(r) for r in qs]
+    eps = [metrics.eps_diluted(r) for r in qs]
 
     points = (consensus or {}).get("history") or []
     forward = (consensus or {}).get("next_quarter")

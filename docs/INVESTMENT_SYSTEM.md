@@ -6,6 +6,12 @@
 
 ## 전체 흐름
 
+![분석: 후보 선정에서 신호 배치까지](diagrams/trading-analysis.svg)
+
+어떤 근거가 어떤 순서로 신호가 되는지.
+
+*소스: `docs/diagrams/trading-analysis.dataflow.json` — 그림을 고치려면 이 파일을 고치고 `python scripts/build_diagrams.py`.*
+
 ```text
 DATA (재무·가격·밸류에이션·추정치·거시·공시·사건)
 → FEATURES (PIT feature store, factor 횡단면)
@@ -38,7 +44,7 @@ AI/ML/RL은 risk policy, broker credential과 durable safety control을 수정�
 | PORTFOLIO ENGINE | 몇 % 보유해야 하는가? | `trading/system/target.py` |
 | SYSTEM PORTFOLIO | 이 전략을 100% 따르면 성과가 어떤가? | `trading/system/engine.py` |
 | REAL | 현재 System 목표를 실계좌에 어떻게 복제할까? | `trading/my_portfolio.py`, `execution/` |
-| RESEARCH | 지금 방법보다 더 좋은 방법이 있는가? | ML challenger·RL·factor IC·Ablation(`research/ablation.py`) |
+| RESEARCH | 지금 방법보다 더 좋은 방법이 있는가? | ML challenger·RL·factor IC·Ablation(`research/system_validation/ablation.py`) |
 
 ## 저장소: 원본 창고와 계산 작업장
 
@@ -358,7 +364,7 @@ Spearman 순위 상관(IC)을 재고, factor·category·종합 점수별 평균 
 | LightGBM | 비선형 tree boosting 비교 | 선택 설치 |
 | XGBoost | 독립 boosting 구현 비교 | 선택 설치 |
 
-목표는 **`SIGNAL_HORIZON_DAYS`(20거래일) 초과수익** 하나다(`trading/decision/constants.py`):
+목표는 **`SIGNAL_HORIZON_DAYS`(20거래일) 초과수익** 하나다(`src/investment_agent/forecasting.py` — Research와 Trading이 대칭으로 쓰는 최상위 공유 계약):
 `excess_return_20d = 종목 20일 총수익 − SPY 20일 총수익`. TradingAgents 의견·ML label·공분산·optimizer가 모두
 이 기간을 쓰고, 모델에 적히는 기간은 dataset의 label 정의(`excess_return_20d`)가 정한다. 원수익률
 (`forward_return_*`)로 학습한 모델은 학습·채택·서빙 모두 거부한다 — 예측을 기대초과수익으로 쓰기 때문이다.
@@ -478,7 +484,7 @@ RL 정책은 System Portfolio를 움직이지 않는 연구 후보다. 비교는
 ## Ablation — 모듈이 실제로 성과를 개선하는가
 
 `python -m investment_agent.operations.commands.system_ablation --start <날짜> --end <날짜>`가 같은 기간·PIT 데이터·
-비용·유니버스에서 운영 System 엔진을 변형별로 돌린다(`research/ablation.py`).
+비용·유니버스에서 운영 System 엔진을 변형별로 돌린다(`research/system_validation/ablation.py`).
 
 | 변형 | 바꾸는 것 |
 |---|---|
@@ -535,6 +541,12 @@ ML/RL/TradingAgents output은 다음 계약으로 정규화한다.
 사고팔기(신규·확대·유지·축소·청산)는 결과 비중과 직전 비중의 차이일 뿐 입력이 아니다. 입력으로 받으면 판단자가 둘이 된다.
 
 ## Portfolio Optimizer
+
+![목표 비중: 신호에서 실행 의도까지](diagrams/trading-target.svg)
+
+신호가 위험예산·optimizer·RiskGate를 지나 목표 비중이 되는 경로.
+
+*소스: `docs/diagrams/trading-target.dataflow.json` — 그림을 고치려면 이 파일을 고치고 `python scripts/build_diagrams.py`.*
 
 `RiskAwareOptimizer`는 CVXPY로 다음 목적을 결정론적으로 최적화한다.
 

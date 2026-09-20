@@ -143,7 +143,7 @@ Toss Blue를 기본 시각 언어로 쓰고, 금융 값의 상승·하락에만 
 발표 예정 보기의 조회 창은 `지난 7일 + 향후 21일`(기본) / `이번 주 (Discord 규칙)` /
 `향후 90일` 중에서 고른다. Discord 카드는 '이번 주(월–일)'만 주장하므로 그 규칙을
 선택지로 남기고, 나머지 창은 (종목, 추정 기간)별 최신 스냅샷을 남겨 다음 분기까지 본다.
-등급(shifted/stale/estimated)·전년 제출일 규칙은 세 창 모두 `reporting.earnings.schedule`의
+등급(shifted/stale/announced/estimated)·전년 제출일 규칙은 세 창 모두 `reporting.earnings.schedule`의
 같은 순수 함수를 쓴다.
 
 ### 퀀트 용어

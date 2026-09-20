@@ -171,15 +171,16 @@ class EarningsAndGuruTests(unittest.TestCase):
             75.0,
         )
         self.assertIsNone(free_cash_flow({"net_cash_from_operating_activities": 100}))
-        self.assertEqual(
-            sec_gaap_diluted_eps({"net_income_to_common_shareholders": 100, "shares_fully_diluted_average": 50}),
-            2.0,
-        )
-        self.assertIsNone(sec_gaap_diluted_eps({"net_income_to_common_shareholders": 100}))
+        self.assertEqual(sec_gaap_diluted_eps({"eps_diluted_gaap": 2.0}), 2.0)
+        # 재계산하지 않는다: 순이익·주식수가 있어도 보고 EPS가 없으면 빈칸이다.
         self.assertIsNone(sec_gaap_diluted_eps({
-            "net_income_to_common_shareholders": 100,
-            "shares_fully_diluted_average": 0,
+            "net_income_to_common_shareholders": 100, "shares_fully_diluted_average": 50,
         }))
+        # 주식수 스케일이 어긋난 행이 있어도 카드에 닿는 값은 보고 값이다.
+        self.assertEqual(sec_gaap_diluted_eps({
+            "eps_diluted_gaap": 3.32, "net_income_to_common_shareholders": 2.39e9,
+            "shares_fully_diluted_average": 719.0,
+        }), 3.32)
 
     def test_historical_surprise_series_computes_streaks_and_surprises(self) -> None:
         """과거 분기별 실적과 사전 컨센서스를 매칭하여 서프라이즈 % 및 연속 비트 streak을 계산해야 한다."""

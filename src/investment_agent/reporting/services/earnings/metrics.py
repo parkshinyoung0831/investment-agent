@@ -74,16 +74,14 @@ def _fcf(row: dict) -> float | None:
     return ocf - (as_float(row.get("capital_expenses")) or 0.0)
 
 
-def _eps_diluted(row: dict) -> float | None:
-    """분기 희석 EPS = 보통주 귀속 순이익 / 희석 평균주식수.
-    원천 EPS 컬럼을 보관하지 않으므로 순이익·희석주식수로 직접 계산한다."""
-    ni = as_float(row.get("net_income_to_common_shareholders"))
-    if ni is None:
-        ni = as_float(row.get("net_income"))
-    sh = as_float(row.get("shares_fully_diluted_average"))
-    if ni is None or not sh:
-        return None
-    return ni / sh
+def eps_diluted(row: dict) -> float | None:
+    """분기 희석 EPS. 회사가 보고한 값(`eps_diluted_gaap`)만 쓴다.
+
+    순이익 ÷ 희석주식수로 다시 계산하지 않는다. 그 두 입력은 주식수 스케일이 어긋나거나
+    귀속 순이익이 다른 개념에 매핑된 행이 있어서, 재계산하면 MCD가 3,321,614.40, UNH가
+    0.07처럼 예외 없이 틀린 값이 카드에 나간다. 보고 EPS가 없으면 빈칸이 틀린 숫자보다 낫다.
+    """
+    return as_float(row.get("eps_diluted_gaap"))
 
 
 def derive(row: dict, prev: dict | None) -> dict:
@@ -92,12 +90,12 @@ def derive(row: dict, prev: dict | None) -> dict:
     op = as_float(row.get("operating_income_loss"))
     ni = as_float(row.get("net_income"))
     gross = as_float(row.get("gross_profit"))
-    eps = _eps_diluted(row)
+    eps = eps_diluted(row)
 
     p_rev = as_float(prev.get("revenue")) if prev else None
     p_op = as_float(prev.get("operating_income_loss")) if prev else None
     p_ni = as_float(prev.get("net_income")) if prev else None
-    p_eps = _eps_diluted(prev) if prev else None
+    p_eps = eps_diluted(prev) if prev else None
     p_gross_margin = _margin(as_float(prev.get("gross_profit")), p_rev) if prev else None
     p_op_margin = _margin(as_float(prev.get("operating_income_loss")), p_rev) if prev else None
     p_net_margin = _margin(p_ni, p_rev) if prev else None

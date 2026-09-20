@@ -2372,7 +2372,7 @@ elif view == "재무 추이":
                     "operating_income_loss": "영업이익 · SEC GAAP",
                     "net_income": "순이익 · SEC GAAP",
                     "fcf_screen": "FCF · 화면 계산",
-                    "sec_gaap_diluted_eps_screen": "희석 EPS · SEC GAAP 계산",
+                    "sec_gaap_diluted_eps_screen": "희석 EPS · SEC GAAP 보고",
                 }
             )
             dataframe(display_history, key=f"earnings_trend_table:{ticker}:{category}")
@@ -2444,7 +2444,7 @@ elif view == "공시 근거":
                     f"자산 · {display_money(core.get('assets'))} · 영업현금흐름 · {display_money(core.get('net_cash_from_operating_activities'))} · "
                     f"자본적지출 · {display_money(core.get('capital_expenses'))}"
                 )
-                st.write(f"희석 EPS · SEC GAAP 계산 · {display_number(gaap_eps)}")
+                st.write(f"희석 EPS · SEC GAAP 보고 · {display_number(gaap_eps)}")
                 st.caption(
                     f"SEC GAAP EPS(기본/희석) · {display_number(core.get('eps_basic_gaap'))} / "
                     f"{display_number(core.get('eps_diluted_gaap'))}"

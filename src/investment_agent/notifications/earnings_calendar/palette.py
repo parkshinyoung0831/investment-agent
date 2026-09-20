@@ -21,9 +21,11 @@ ON_DARK = "#ffffff"
 ON_DARK_SOFT = "#a8acb3"
 AMBER = "#f4b000"
 
-# 불확실성 등급 → 배지 문구. 어떤 등급도 '확정'이라고 말하지 않는다.
+# 불확실성 등급 → 배지 문구. 어떤 등급도 '확정'이라고 말하지 않는다 —
+# announced는 출처(yfinance)가 회사 공지로 표시했다는 사실만 옮긴다.
 CONFIDENCE_LABELS = {
     "estimated": "예정",
+    "announced": "회사 공지",
     "shifted": "변경됨",
     "stale": "기준 오래됨",
 }

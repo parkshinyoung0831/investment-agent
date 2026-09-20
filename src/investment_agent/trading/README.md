@@ -50,7 +50,7 @@ ExecutionIntent                 이 지점부터 `investment_agent.execution`이
 | `SignalBatch` | `portfolio/signal_book.py` | 요청·성공·실패 종목과 artifact가 고정된 분석 batch |
 | `PortfolioProposal` | `portfolio/contracts.py` | System의 단일 optimizer가 만든 CASH 포함 목표 비중 |
 | `RiskDecision` | 같은 파일 | policy/input hash와 승인 또는 위반 결과 |
-| `ExecutionIntent` | `src/investment_agent/execution/intents.py` | paper/live 실행 계층으로 넘길 수 있는 유일한 의도 |
+| `ExecutionIntent` | `src/investment_agent/execution/orders/intents.py` | paper/live 실행 계층으로 넘길 수 있는 유일한 의도 |
 
 모든 저장 ID는 가능한 범위에서 canonical JSON의 SHA-256으로 안정적으로 만듭니다. 같은 입력을
 재시도할 때 다른 주문 의도나 평가 대상으로 보이지 않게 하기 위해서입니다.
@@ -200,7 +200,7 @@ long-only, 종목 최대 10%, 섹터 최대 30%, turnover 최대 25%, 현금 최
 
 - `src/investment_agent/research/backtest/`: 완전한 `BacktestRequest`만 받는 Native engine과 append-only ledger
 - `src/investment_agent/research/backtest/validation.py`: LumiBot PandasData adapter와 metric comparator
-- `ml/baselines.py`: Naive, Ridge, LightGBM, XGBoost 공통 train/evaluate contract
+- `research/models/baselines.py`: Naive, Ridge, LightGBM, XGBoost 공통 train/evaluate contract
 - `rl/baseline.py`: 해석 가능한 deterministic ridge policy
 - `rl/trainer.py`: `FinRLTrainer`가 SB3 algorithm class를 감싼다
 - `rl/experiment.py`: PPO OOS 평가가 ML baseline을 이겼는지 판정

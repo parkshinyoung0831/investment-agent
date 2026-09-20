@@ -151,21 +151,26 @@ Live Manual은 Discord HMAC 승인 뒤에도 계좌·시세·시장시간·한�
 
 ```text
 src/investment_agent/
-  data/                    universe · market · fundamentals · macro · institutional · news
-  research/                features · datasets · models · backtest · RL
-  trading/                 evidence · decision · portfolio · risk · performance
-  execution/               승인 · broker · 주문 · fill · reconciliation
-  reporting/               v1 read model과 reporting view consumer
+  data/                    universe · market · fundamentals · macro · institutional
+  intelligence/            뉴스·소셜 원문과 종목 언급 (로컬 DuckDB)
+  research/                features · factors · datasets · models · evaluation ·
+                           evidence(PIT 읽기) · backtest · rl · strategies · adapters
+  trading/                 decision · evidence · portfolio · risk · system · performance
+  execution/               승인 · broker · 주문 · fill · reconciliation · safety
+  reporting/               화면과 알림이 공유하는 읽기 모델 (SELECT 전용)
   notifications/           engine(원장) · Discord 카드 · 채널 · discord_admin
   operations/              운영 관측 · Actions · heartbeat · 운영 CLI · 로컬 하네스
-  platform/                DB · clock · logging · retry · serialization · cache · usage ledger 공통 계층
+  platform/                DB · clock · logging · retry · serialization · cache · usage ledger
   dashboard/               읽기 전용 Streamlit 화면
-db/postgres/v1/                     현재 Supabase schema 선언
+db/                        postgres · sqlite(runtime) · duckdb(research · intelligence) 선언
 .github/workflows/         GitHub Actions ETL·알림·CI
-docs/                      현재 아키텍처와 운영 설명
+docs/                      현재 아키텍처와 운영 설명, diagrams/ 다이어그램 소스와 생성물
 data/local/                Git에 넣지 않는 재생성 가능 DuckDB cache
 artifacts/                 Git에 넣지 않는 모델·실행 산출물
 ```
+
+계층 사이에 허용되는 화살표와 그 단일 예외들은
+[시스템 아키텍처](docs/SYSTEM_ARCHITECTURE.md)가 갖는다.
 
 ## 빠른 시작
 
@@ -233,7 +238,7 @@ python -m investment_agent.trading.decision.analysis --limit 5
 python -m investment_agent.operations.commands.evaluate_decisions --limit 200
 
 # 뉴스·소셜 cache 90일 retention
-python -m investment_agent.trading.evidence.cleanup
+python -m investment_agent.intelligence.commands.prune_evidence_cache
 
 # JSON manifest 기반 Native backtest
 python -m investment_agent.research.backtest.cli --input <INPUT.json> --output <OUTPUT.json>
@@ -247,18 +252,15 @@ model promotion, execution intent, approval 명령은 ID와 실제 데이터 상
 
 ## 문서
 
-처음이면 [시스템·폴더 지도](docs/README.md) 하나만 읽으면 됩니다.
+**[docs/README.md](docs/README.md) 하나만 열면 됩니다.** 목적별로 읽을 문서 하나씩을
+가리키는 지도이고, 주제 문서·package README 전체 목록이 거기에 있습니다.
 
-| 문서 | 답하는 질문 |
-|---|---|
-| [docs/README.md](docs/README.md) | 폴더가 무엇이고 전체 흐름이 어떻게 이어지는가 |
-| [docs/STORAGE_MAP.md](docs/STORAGE_MAP.md) | 어떤 사실이 네 저장소 중 어디에 사는가 |
-| [docs/DATA.md](docs/DATA.md) | 수집·PIT·품질은 어떻게 동작하는가 |
-| [docs/INVESTMENT_SYSTEM.md](docs/INVESTMENT_SYSTEM.md) | 판단·ML/RL·backtest·RiskGate는 무엇을 하는가 |
-| [docs/AUTONOMOUS_SYSTEM.md](docs/AUTONOMOUS_SYSTEM.md) | 자율 판단 계층의 패키지 경계는 어떤 모양인가 |
-| [docs/EXECUTION_AND_SAFETY.md](docs/EXECUTION_AND_SAFETY.md) | 승인·broker·안전장치는 무엇인가 |
-| [docs/OPERATIONS.md](docs/OPERATIONS.md) | 설치·Actions·하네스·장애 대응은 어떻게 하는가 |
-| [docs/ENV.md](docs/ENV.md) | 어떤 환경변수가 어디에 필요한가 |
+바로 가고 싶다면:
+
+- 전체 구조와 허용되는 의존 방향 — [시스템 아키텍처](docs/SYSTEM_ARCHITECTURE.md)
+- 어떤 사실이 네 저장소 중 어디에 사는가 — [저장 지도](docs/STORAGE_MAP.md)
+- 승인·broker·단계별 안전장치 — [실행과 안전](docs/EXECUTION_AND_SAFETY.md)
+- 설치·Actions·하네스·장애 대응 — [운영](docs/OPERATIONS.md)
 
 개발 규칙은 [CLAUDE.md](CLAUDE.md), UI 규칙은 [DESIGN-system.md](DESIGN-system.md)입니다.
 API key와 broker credential은 커밋하지 않습니다.

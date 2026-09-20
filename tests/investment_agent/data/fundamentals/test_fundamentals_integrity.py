@@ -260,6 +260,94 @@ class ValidationTest(unittest.TestCase):
         )
 
 
+    def _check(self, **values):
+        from investment_agent.data.fundamentals.domain.services import (
+            validate_financial_statements as validate,
+        )
+
+        return validate.check_core_wide([{
+            "cik": "0000000001", "fiscal_year": 2026, "fiscal_period": "Q2",
+            "filed_at": "2026-08-01", "revenue": 1.0, **values,
+        }])
+
+    def test_shares_reported_in_millions_are_quarantined(self):
+        """MCD는 희석주식수를 719(백만 단위)로 냈다. 양수라 통과하던 값이다."""
+        clean, anomalies = self._check(
+            shares_fully_diluted_average=719.0, eps_diluted_gaap=3.32,
+            net_income_to_common_shareholders=2.39e9, net_income=2.39e9,
+        )
+
+        self.assertIsNone(clean[0]["shares_fully_diluted_average"])
+        self.assertEqual([row["reason"] for row in anomalies], ["average_shares_scale_mismatch"])
+
+    def test_shares_a_thousand_times_too_large_are_quarantined(self):
+        clean, anomalies = self._check(
+            shares_fully_diluted_average=82_139_000_000.0, eps_diluted_gaap=1.0,
+            net_income=82_139_000.0,
+        )
+
+        self.assertIsNone(clean[0]["shares_fully_diluted_average"])
+        self.assertEqual(len(anomalies), 1)
+
+    def test_consistent_shares_are_kept_even_when_eps_is_rounded(self):
+        clean, anomalies = self._check(
+            shares_fully_diluted_average=719_000_000.0, eps_diluted_gaap=3.32,
+            net_income_to_common_shareholders=2.39e9, net_income=2.39e9,
+        )
+
+        self.assertEqual(clean[0]["shares_fully_diluted_average"], 719_000_000.0)
+        self.assertEqual(anomalies, [])
+
+    def test_a_unit_error_clears_only_the_shares_and_keeps_the_reported_eps(self):
+        """MCD의 보고 EPS 3.32는 맞다. 틀린 것은 주식수 단위뿐이라 EPS까지 지우지 않는다."""
+        clean, _ = self._check(
+            shares_fully_diluted_average=719.0, eps_diluted_gaap=3.32,
+            net_income_to_common_shareholders=2.39e9, net_income=2.39e9,
+        )
+
+        self.assertEqual(clean[0]["eps_diluted_gaap"], 3.32)
+
+    def test_a_mismatch_that_is_not_a_unit_error_clears_both_because_either_may_be_wrong(self):
+        """액면분할 전후 값을 섞어 파생한 Q4(NFLX 2025-Q4 EPS -17.14)는 배수가 1,000의 거듭제곱이
+        아니다. 어느 쪽이 틀렸는지 알 수 없으니 주식수와 EPS를 함께 비운다."""
+        clean, anomalies = self._check(
+            shares_fully_diluted_average=3.0e9, eps_diluted_gaap=1.0, net_income=1.0e7,
+        )
+
+        self.assertIsNone(clean[0]["shares_fully_diluted_average"])
+        self.assertIsNone(clean[0]["eps_diluted_gaap"])
+        self.assertEqual([row["reason"] for row in anomalies], ["per_share_basis_mismatch"])
+        self.assertEqual(anomalies[0]["detail"]["cleared"],
+                         ["shares_fully_diluted_average", "eps_diluted_gaap"])
+
+    def test_shares_are_judged_by_either_income_so_one_bad_income_does_not_condemn_them(self):
+        """귀속 순이익이 오염(UNH는 63M, 여기서는 1,000배 더 작은 값)돼도 net_income으로는 주식수(906M)가
+        EPS와 맞는다. 오염된 쪽만 보고 주식수를 지우면 멀쩡한 값을 잃는다."""
+        clean, anomalies = self._check(
+            shares_fully_diluted_average=906e6, eps_diluted_gaap=6.04,
+            net_income_to_common_shareholders=6.3e4, net_income=5.47e9,
+        )
+
+        self.assertEqual(clean[0]["shares_fully_diluted_average"], 906e6)
+        self.assertEqual(anomalies, [])
+
+    def test_shares_consistent_with_the_attributable_income_are_kept_when_total_income_is_off(self):
+        """반대 방향: 총순이익이 어긋나도 귀속 순이익으로 EPS와 맞으면 주식수를 지우지 않는다."""
+        clean, anomalies = self._check(
+            shares_fully_diluted_average=500e6, eps_diluted_gaap=2.0,
+            net_income_to_common_shareholders=1.0e9, net_income=3.0e12,
+        )
+
+        self.assertEqual(clean[0]["shares_fully_diluted_average"], 500e6)
+        self.assertEqual(anomalies, [])
+
+    def test_shares_without_eps_or_income_are_left_alone(self):
+        clean, anomalies = self._check(shares_fully_diluted_average=719.0, net_income=1e9)
+
+        self.assertEqual(clean[0]["shares_fully_diluted_average"], 719.0)
+        self.assertEqual(anomalies, [])
+
+
 class ViewContractTest(unittest.TestCase):
     def test_ttm_and_multi_class_guards_are_present(self):
         sql = Path("db/postgres/v1/30_fundamentals.sql").read_text(encoding="utf-8")

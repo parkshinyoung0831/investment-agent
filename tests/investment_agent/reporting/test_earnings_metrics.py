@@ -14,8 +14,7 @@ CURRENT = {
     "gross_profit": 400.0,
     "operating_income_loss": 200.0,
     "net_income": 150.0,
-    "net_income_to_common_shareholders": 150.0,
-    "shares_fully_diluted_average": 100.0,
+    "eps_diluted_gaap": 1.5,
     "net_cash_from_operating_activities": 300.0,
     "capital_expenses": 50.0,
     "cash_and_cash_equivalents": 500.0,
@@ -26,8 +25,7 @@ PRIOR = {
     "gross_profit": 300.0,
     "operating_income_loss": 140.0,
     "net_income": 100.0,
-    "net_income_to_common_shareholders": 100.0,
-    "shares_fully_diluted_average": 100.0,
+    "eps_diluted_gaap": 1.0,
 }
 
 
@@ -50,6 +48,18 @@ class EarningsMetricsTest(unittest.TestCase):
         self.assertAlmostEqual(250.0, d["fcf"])
         self.assertAlmostEqual(300.0, d["net_debt"])
         self.assertFalse(d["is_first"])
+
+    def test_eps_is_the_reported_value_never_recomputed_from_income_and_shares(self) -> None:
+        """순이익÷주식수로 다시 계산하면 주식수 스케일이 어긋난 행(MCD)이 3,321,614.40 같은
+        값으로 카드에 나간다. 입력이 오염돼 있어도 보고 EPS만 카드에 닿아야 한다."""
+        row = {"eps_diluted_gaap": 3.32, "net_income_to_common_shareholders": 2_390_000_000.0,
+               "shares_fully_diluted_average": 0.000_000_719}
+        self.assertEqual(3.32, metrics.eps_diluted(row))
+
+    def test_missing_reported_eps_is_blank_not_derived(self) -> None:
+        row = {"net_income_to_common_shareholders": 150.0, "shares_fully_diluted_average": 100.0}
+        self.assertIsNone(metrics.eps_diluted(row))
+        self.assertIsNone(metrics.derive(row, None)["eps_diluted"])
 
     def test_first_observation_has_no_comparison(self) -> None:
         d = metrics.derive(CURRENT, None)

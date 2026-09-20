@@ -1,12 +1,58 @@
 """기업 전체 wide 재무 행의 불변조건을 검증하고 이상값을 격리한다."""
 from __future__ import annotations
 
+import math
+
 from investment_agent.platform.logging import get_logger
-from investment_agent.data.fundamentals.domain.policies import BALANCE_TOLERANCE
+from investment_agent.data.fundamentals.domain.policies import (
+    AVERAGE_SHARES_SCALE_FACTOR,
+    BALANCE_TOLERANCE,
+    UNIT_SCALE_LOG_TOLERANCE,
+)
 from investment_agent.data.fundamentals.domain.services.balance_identity import non_liability_claims
 from investment_agent.data.fundamentals.domain.taxonomy.financial_columns import CORE_COLUMNS
 
 log = get_logger(__name__)
+
+# (평균 주식수 컬럼, 그 주식수로 나눈 보고 EPS 컬럼)
+_SHARES_EPS_PAIRS = (
+    ("shares_average", "eps_basic_gaap"),
+    ("shares_fully_diluted_average", "eps_diluted_gaap"),
+)
+_INCOME_COLUMNS = ("net_income_to_common_shareholders", "net_income")
+
+
+def _is_unit_scale(ratio: float) -> bool:
+    """배수가 1,000의 거듭제곱(천·백만 단위 오류)에 가까운가."""
+    thirds = math.log10(ratio) / 3.0
+    return abs(thirds - round(thirds)) <= UNIT_SCALE_LOG_TOLERANCE
+
+
+def _scale_mismatch(row: dict, shares_column: str, eps_column: str) -> dict | None:
+    """평균 주식수가 보고 EPS·순이익과 자릿수 단위로 어긋나면 그 근거를 돌려준다.
+
+    귀속 순이익이 다른 개념에 매핑돼 있을 수 있어 순이익 후보를 둘 다 본다. 어느 후보와도
+    맞지 않을 때만 주식수를 의심한다 — 한쪽만 틀린 행(UNH)을 주식수 오류로 오판하지 않는다.
+    ``is_unit_scale``은 어긋난 배수(순이익 후보 중 하나라도)가 1,000의 거듭제곱인지다: 그렇다면 원천의 단위 오류라
+    주식수가 틀린 것이고(MCD·COP·KO), 아니라면 분할 전후 값을 섞은 파생 산술(AMZN·NFLX의
+    Q4)이라 어느 쪽이 틀렸는지 알 수 없다.
+    """
+    shares, eps = row.get(shares_column), row.get(eps_column)
+    if shares is None or shares <= 0 or not eps:
+        return None
+    ratios = {}
+    for column in _INCOME_COLUMNS:
+        income = row.get(column)
+        if income:
+            ratios[column] = shares / abs(income / eps)
+    if not ratios:
+        return None
+    factor = AVERAGE_SHARES_SCALE_FACTOR
+    if any(1.0 / factor <= ratio <= factor for ratio in ratios.values()):
+        return None
+    return {"column": shares_column, "value": shares, eps_column: eps,
+            "ratio_to_implied_shares": ratios,
+            "is_unit_scale": any(_is_unit_scale(ratio) for ratio in ratios.values())}
 
 
 def check_core_wide(rows: list[dict]) -> tuple[list[dict], list[dict]]:
@@ -41,6 +87,27 @@ def check_core_wide(rows: list[dict]) -> tuple[list[dict], list[dict]]:
                 "filed_at": row.get("filed_at"),
             })
             row[column] = None
+
+        for shares_column, eps_column in _SHARES_EPS_PAIRS:
+            mismatch = _scale_mismatch(row, shares_column, eps_column)
+            if mismatch is None:
+                continue
+            # 단위 오류면 주식수만, 아니면 어느 쪽이 틀렸는지 알 수 없으니 둘 다 비운다.
+            # 틀린 숫자가 카드에 나가는 것보다 빈칸이 낫다.
+            cleared = [shares_column] if mismatch["is_unit_scale"] else [shares_column, eps_column]
+            anomalies.append({
+                "cik": cik,
+                "fiscal_year": row["fiscal_year"],
+                "fiscal_period": row["fiscal_period"],
+                "reason": (
+                    "average_shares_scale_mismatch" if mismatch["is_unit_scale"]
+                    else "per_share_basis_mismatch"
+                ),
+                "detail": {**mismatch, "cleared": cleared},
+                "filed_at": row.get("filed_at"),
+            })
+            for column in cleared:
+                row[column] = None
 
         # 회계항등식 A = L + 자본. liabilities_and_equity 컬럼은 두지 않는다 —
         # assets와 실측 23,849/23,851행이 동일한 순수 중복이었다.

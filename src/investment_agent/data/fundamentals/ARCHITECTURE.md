@@ -22,6 +22,7 @@ infrastructure.supabase (canonical readers/writers)
         └── dashboard / trading evidence readers
 ```
 
+`domain` 안의 계산 규칙 자체는 [domain/README.md](domain/README.md)가 갖는다.
 `domain`은 Supabase·HTTP·환경변수를 import하지 않는다. `application`은 port에만
 의존하고 provider 구현을 알지 않는다. `infrastructure`만 외부 API와 Supabase를
 구체적으로 다룬다. command는 use case를 조립하는 얇은 실행 경계다.

@@ -426,7 +426,7 @@ class EpsBlendTest(unittest.TestCase):
         return [
             {"ticker": "N", "fiscal_year": 2026, "fiscal_period": f"Q{i}",
              "period_end": f"2026-0{i * 3}-30", "net_income": 1_000_000_000.0 * i,
-             "shares_fully_diluted_average": 1_000_000_000.0, "revenue": 5e9}
+             "eps_diluted_gaap": float(i), "revenue": 5e9}
             for i in range(1, 4)
         ]
 

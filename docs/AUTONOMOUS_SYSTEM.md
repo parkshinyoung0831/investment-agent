@@ -6,6 +6,12 @@ Toss execution ledger/reconciliation은 canonical package와 `db/postgres/v1/` �
 
 ## 현재 구조
 
+![닫힌 루프 투자 데이터 흐름](diagrams/vnext-closed-loop.svg)
+
+판단 → 실행 → 성과가 어떻게 다음 판단으로 되먹임되는지.
+
+*소스: `docs/diagrams/vnext-closed-loop.dataflow.json` — 그림을 고치려면 이 파일을 고치고 `python scripts/build_diagrams.py`.*
+
 데이터 수집은 `src/investment_agent/data/universe`, `src/investment_agent/data/market`,
 `src/investment_agent/data/fundamentals`, `src/investment_agent/data/macro`,
 `src/investment_agent/data/macro/releases`, `src/investment_agent/data/institutional`이 각각의
@@ -160,7 +166,7 @@ runtime SQLite는 local filesystem 경계와 `runtime_connection()`의 읽기 �
 | 7 | System 성과 축적, 충분한 walk-forward/OOS 증거, 사람의 promotion 승인, Live 전환 | 운영 작업 |
 
 Phase 6은 서로 다른 두 게이트를 통과해야 한다 — 모델 artifact의 단계 승격
-(`src/investment_agent/trading/portfolio/promotion.py`의 `ManualPromotionGate`)과 실제 live 주문
+(`src/investment_agent/trading/promotion.py`의 `ManualPromotionGate`)과 실제 live 주문
 실행 허가(`src/investment_agent/execution/safety/control_state.py`의 `DurableControlState`)는 별개다. 전자를
 통과해 `live` 단계에 승격된 모델이라도 후자가 막혀 있으면 주문은 나가지 않는다.
 

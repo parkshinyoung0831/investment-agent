@@ -7,6 +7,23 @@
 이 문서는 특정 시점(2026-09-20)의 점검 결과다. 고치고 나면 낡는다 — 고친 항목은 지우고, 남길
 가치가 있는 규칙만 해당 영역 문서·테스트로 옮긴다.
 
+## 조치 상태
+
+| 항목 | 상태 | 고친 곳 |
+|---|---|---|
+| N-1 캘린더 주 선택 | 수정됨 | `platform/clock.py`의 `kst_today()`를 캘린더 세 곳이 사용, 일요일 23:10 UTC → W39 테스트 |
+| N-2 카드·대시보드 EPS | 수정됨 | 보고 `eps_diluted_gaap`만 사용, 재계산 제거. `metrics.eps_diluted`로 사본 통합 |
+| C-1 주식수 스케일 | 검증기 추가, **기존 행 재처리 대기** | `validate_financial_statements`가 보고 EPS·순이익에서 역산한 주식수와 100배 넘게 어긋나면 비우고 anomaly 기록 |
+| C-2 귀속 순이익 오매핑 | 매핑 수정, **기존 행 재처리 대기** | `net_income_to_common_shareholders`에 허용 태그 화이트리스트(`gaap_concepts`) |
+| N-3 `is_estimated` 미사용 | 수정됨 | 카드 등급 `announced`("회사 공지") 추가 |
+| 나머지 | 미착수 | X-4 킬스위치, X-1 대상 0건, X-2 verify_data 자동화, C-3~C-8, S-1, N-4~N-8, X-5 |
+
+C-1을 운영 데이터 18,915행에 대 본 결과 122행이 잡혔다. 단위 오류(천·백만 배, 108행)는 주식수만 비우고,
+액면분할 전후 값을 섞은 Q4 파생(AMZN 2022-Q4, NFLX 2025-Q4 등 14행)은 어느 쪽이 틀렸는지 알 수 없어
+주식수와 EPS를 함께 비운다. 같은 종목 이력의 중앙값으로 가려 보면 122행 중 19행은 주식수가 멀쩡하고
+EPS 쪽이 틀린 행(HAL 등, 관심종목 밖)이라 정상 주식수를 잃는다 — anomaly의 `detail`에 원래 값이 남는다.
+관심종목에서 잡힌 행은 MCD·COP·KO(단위 오류)와 AMZN·NFLX(기준 혼합)뿐이다.
+
 ## 1. 읽는 법
 
 ### 확인 수준
@@ -296,7 +313,7 @@ fast path(`tickers=0 candidate_ciks=0`), 발표 세션 감시(`selected=0`)가 �
   (`"...silent skip (stale)"` — 카드 없이 성공 종료)
 
 `operations/monitoring`은 "예정된 것이 돌았는가"만 본다. "일을 했는가"는 보지 않는다.
-관심종목 0개는 `verify_data`의 `universe.watchlist_has_members`가 잡았을 검사인데 실행이 수동이었다(X-2).
+관심종목 0개는 `verify_data`의 `watchlist_has_members` 검사가 잡았을 검사인데 실행이 수동이었다(X-2).
 
 ### X-2. 값 검증기의 사각지대 — 중간, 데이터
 

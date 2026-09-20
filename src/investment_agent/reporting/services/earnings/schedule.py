@@ -225,9 +225,13 @@ def build_rows_in_window(
             "target_fiscal_year": target_fy,
             "target_fiscal_period": target_fp,
             "form_expected": form_expected,
-            # 표시 등급: 값이 밀린 적 있으면 shifted, 스냅샷이 묵었으면 stale, 아니면 estimated.
-            # 어느 쪽이든 '확정'은 없다 — 출처가 확정 여부를 알려주지 않는다.
-            "confidence": "shifted" if previous else "stale" if stale else "estimated",
+            # 표시 등급: 값이 밀린 적 있으면 shifted, 스냅샷이 묵었으면 stale, 출처가 회사 공지로
+            # 표시했으면 announced, 아니면 estimated. announced도 '확정'이 아니다 — 출처의 표시를
+            # 옮길 뿐이다. 플래그가 없으면(None) 공지 여부를 모르는 것이라 estimated로 둔다.
+            "confidence": (
+                "shifted" if previous else "stale" if stale
+                else "announced" if latest.get("is_estimated") is False else "estimated"
+            ),
             "previous_expected": previous,
             "snapshot_date": snapshot_date,
             "last_seen_date": last_seen_date,

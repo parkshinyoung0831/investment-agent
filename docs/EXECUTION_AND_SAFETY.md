@@ -5,6 +5,12 @@ ExecutionIntent까지만 만들며 broker API key를 보거나 주문을 직접 
 
 ## 전체 실행 흐름
 
+![ExecutionIntent 주문 실행 수명주기](diagrams/execution-lifecycle.svg)
+
+주문 하나가 지나는 상태와, 어느 전이가 되돌릴 수 없는지.
+
+*소스: `docs/diagrams/execution-lifecycle.lifecycle.json` — 그림을 고치려면 이 파일을 고치고 `python scripts/build_diagrams.py`.*
+
 ```text
 approved RiskDecision
 → expiring ExecutionIntent
@@ -229,6 +235,12 @@ Shadow와 연구용 Paper 단계의 기록·승격 계약은 유지합니다. �
 Paper 증거가 필요한 승격 조건은 자동으로 완화하지 않습니다.
 
 ## 실제 자금 활성화 전 순서
+
+![토스 실주문 실행 안전 런북 워크플로](diagrams/execution-runbook.svg)
+
+사람이 실주문까지 갈 때 지나는 관문과, 각 관문이 닫히는 조건.
+
+*소스: `docs/diagrams/execution-runbook.workflow.json` — 그림을 고치려면 이 파일을 고치고 `python scripts/build_diagrams.py`.*
 
 1. PIT dataset과 Native backtest hash/result 재현
 2. ML baseline과 RL challenger를 동일 OOS에서 비교

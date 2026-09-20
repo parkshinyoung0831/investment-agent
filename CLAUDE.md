@@ -72,8 +72,9 @@ db/duckdb/{research,intelligence}/v1/  로컬 연구·텍스트 저장소 선언
 | `notifications`를 `service.py`+`discord/`로 합치기 | 카드 패키지가 `render.py`/`templates/`를 공유하면 조용히 서로를 끌고 간다 — 규칙 15와 DESIGN-system.md가 그래서 분리를 강제한다. 공통 원시값은 이미 `notifications/quickchart.py`·`renderers/`·`channels/`에 있다 | 규칙 15, 알림별 패키지 |
 | research DuckDB를 4표로 줄이기 | 여덟 표는 세 묶음이다 — Parquet 뿌리 catalog 2, 연구 lineage 4, 전략 배분 2. 넷만 남기면 feature store 신선도와 월간 전략 계약이 사라진다 | `db/duckdb/research/v1/10_datasets.sql` 머리주석 |
 | Research 명령이 구체 Trading 저장소를 조립하게 두기 | Trading 판단 원장을 읽고 쓰는 진입점(`evaluate_decisions`·`promote_model`·`system_ablation`·`build_decision_experiences`)은 `operations/commands`에 있고, Research는 PIT 읽기를 `research/evidence/reader.py`의 `PitReader`로 직접 한다. Research가 `trading.*`를 import하는 예외는 `research/system_validation/ablation.py` 한 파일뿐이며 `test_architecture.py`가 강제한다 | 명령 경로, 계층 방향 가드 |
-| Research·Trading 공유 계약을 `research`나 `trading`에 두기 | Trading은 Research를 import할 수 없고 Research는 Trading을 import할 수 없다. 그래서 `forecasting.py`·`portfolio_weights.py`처럼 platform만 아는 최상위 공유 모듈에 둔다. 목록은 `SharedTopLevelModulesTest`가 고정한다 | 최상위 모듈은 선언된 4개 |
+| Research·Trading 공유 계약을 `research`나 `trading`에 두기 | 일반 Research는 Trading 구현을 import하지 않는다(`research/system_validation/ablation.py`의 운영 알고리즘 검증만 예외). Trading은 Research 산출물을 `research/adapters/trading.py`로 소비한다. 어느 쪽에도 속하지 않는 공유 계약은 `forecasting.py`·`portfolio_weights.py`처럼 platform만 아는 최상위 모듈에 둔다. 목록은 `SharedTopLevelModulesTest`가 고정한다 | 최상위 모듈은 선언된 4개, Trading→Research 공개 어댑터 |
 | `execution`의 비중 검증을 `portfolio_weights.py`와 합치기 | execution 사본은 다른 오류 타입(`IntentError`)과 더 좁은 티커 규칙을 갖는 안전 계약이다. 합치면 주문 경계가 Trading 검증 변경에 딸려 간다 | execution의 독립 계약 |
+| 실주문 worker에 범용 broker 계약·registry를 먼저 넣기 | 현재 live 경로는 Toss 하나이고 `TossLiveExecutionWorker`가 Toss 주문 명령·수수료·매수 가능액·수동 handoff를 검증한다. 사용하지 않는 `BrokerAdapter`를 두는 대신, 다른 broker의 실제 요구가 생길 때 이 안전 의미를 보존하는 최소 계약을 추출한다 | Toss 전용 worker와 reserve-before-submit·결과 불명 무재전송 |
 
 `fundamentals`는 기업 전체 재무·차원 재무·시장 예상치·실적 이벤트가 한 스키마와
 회계기간 모델을 공유하므로 예외적으로 `domain/` → `application/` → `infrastructure/`와
@@ -135,10 +136,12 @@ flowchart LR
 
 ### 알림 ([src/investment_agent/notifications/](src/investment_agent/notifications/README.md))
 - 진입점은 **`python -m investment_agent.operations.commands.notify --kind <KIND>`** 하나.
-  KIND 매핑은 `src/investment_agent/operations/commands/notify.py`의 `KINDS`에 있습니다
-  (`macro_core`, `macro_watch`, `econ_calendar_release`, `strategy`, `fundamentals_earnings`,
-  `fundamentals_flash`, `fundamentals_calendar`, `gurus_13f`,
-  `investment_portfolio`, `investment_candidates`, `investment_trades`).
+  KIND는 `src/investment_agent/operations/commands/notify.py`의 `KINDS`가 SSOT이고,
+  각 KIND가 무엇을 어느 채널로 보내는지는
+  [notifications/README.md](src/investment_agent/notifications/README.md)의 표가 갖습니다.
+  **여기에 목록을 복사하지 마세요** — 한 번 복사되면 KIND가 늘어도 갱신되지 않습니다
+  (실제로 그렇게 드리프트했습니다). 문서가 부르는 KIND가 실재하는지는
+  `tests/test_docs_consistency.py`가 강제합니다.
 - **자동매매 보고서 3종**: `investment_portfolio`(하루 1장 종합 판단),
   `investment_candidates`(신뢰도 상위 N종목 심층), `investment_trades`(실제 주문·체결).
   파이프라인이 아니라 `trading`·`execution` 원장이 원천이고, 로컬 하네스가
@@ -402,6 +405,7 @@ hex를 인라인 하드코딩하지 말고 패키지별 `palette.py`/`thresholds
 
 `graphify-out/`에 이 저장소의 지식 그래프(god node·커뮤니티 구조·파일 간 관계)가 있습니다.
 CLI는 `graphify`, 스킬 정의는 `.claude/skills/graphify/SKILL.md`(Codex는 `.codex/skills/`)입니다.
+에이전트에 MCP 서버로 붙이는 설정은 [docs/GRAPHIFY_MCP.md](docs/GRAPHIFY_MCP.md)에 있습니다.
 
 - **코드 구조를 묻는 작업은 raw grep보다 그래프를 먼저 봅니다.** `graphify-out/graph.json`이
   있으면 `graphify query "<질문>"`, 관계는 `graphify path "<A>" "<B>"`, 개념 하나는

@@ -28,11 +28,12 @@ log = get_logger(__name__)
 def _schedule_embed(row: dict) -> dict:
     """종목 스레드에 남길 '다음 발표 예정' 한 장.
 
-    확정이 아니다 — 출처가 확정 여부를 알려주지 않는다. 등급(estimated/shifted/
-    stale)을 숨기지 않고 그대로 적는다.
+    확정이 아니다 — 출처의 회사 공지 표시(announced)를 옮길 뿐이다. 등급(estimated/
+    announced/shifted/stale)을 숨기지 않고 그대로 적는다.
     """
     grade = {
         "estimated": "추정",
+        "announced": "회사 공지",
         "shifted": "변경됨",
         "stale": "스냅샷 오래됨",
     }.get(str(row.get("confidence")), str(row.get("confidence") or ""))

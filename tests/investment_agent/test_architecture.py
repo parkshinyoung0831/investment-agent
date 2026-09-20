@@ -390,11 +390,14 @@ class LayerDirectionTest(unittest.TestCase):
         if (path == PACKAGE / "research" / "system_validation" / "ablation.py"
                 and name in cls.SYSTEM_VALIDATION_DEPENDENCIES):
             return True
-        if name == "investment_agent.execution.contracts":
+        if path.is_relative_to(PACKAGE / "trading") and name == "investment_agent.execution.contracts":
             return True
-        if name == "investment_agent.research.adapters.trading":
+        if path.is_relative_to(PACKAGE / "trading") and name == "investment_agent.research.adapters.trading":
             return True
-        return any(name == allowed or name.startswith(allowed + ".") for allowed in cls.ALLOWED_DEPENDENCIES)
+        return path.is_relative_to(PACKAGE / "data") and any(
+            name == allowed or name.startswith(allowed + ".")
+            for allowed in cls.ALLOWED_DEPENDENCIES
+        )
 
     def test_execution_contract_allowance_is_an_exact_module_match(self) -> None:
         path = PACKAGE / "trading" / "my_portfolio.py"
@@ -405,6 +408,39 @@ class LayerDirectionTest(unittest.TestCase):
         path = PACKAGE / "trading" / "supabase_repository.py"
         self.assertTrue(self._is_allowed(path, "investment_agent.research.adapters.trading"))
         self.assertFalse(self._is_allowed(path, "investment_agent.research.adapters.trading.private"))
+
+    def test_research_cannot_import_execution_contract_through_trading_allowance(self) -> None:
+        with tempfile.TemporaryDirectory(dir=PACKAGE / "research" / "commands") as temporary:
+            probe = Path(temporary) / "probe.py"
+            probe.write_text(
+                "from investment_agent.execution.contracts import ExecutionLimits\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(AssertionError) as caught:
+                self.test_layers_do_not_import_downstream()
+            self.assertIn("probe.py", str(caught.exception))
+
+    def test_execution_cannot_import_research_trading_adapter(self) -> None:
+        with tempfile.TemporaryDirectory(dir=PACKAGE / "execution" / "orders") as temporary:
+            probe = Path(temporary) / "probe.py"
+            probe.write_text(
+                "from investment_agent.research.adapters.trading import PitReader\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(AssertionError) as caught:
+                self.test_layers_do_not_import_downstream()
+            self.assertIn("probe.py", str(caught.exception))
+
+    def test_execution_cannot_import_operations_monitoring_through_data_allowance(self) -> None:
+        with tempfile.TemporaryDirectory(dir=PACKAGE / "execution" / "orders") as temporary:
+            probe = Path(temporary) / "probe.py"
+            probe.write_text(
+                "from investment_agent.operations.monitoring.incidents import emit_incident\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(AssertionError) as caught:
+                self.test_layers_do_not_import_downstream()
+            self.assertIn("probe.py", str(caught.exception))
 
     def test_system_validation_allowance_is_exact_file_and_import(self) -> None:
         path = PACKAGE / "research" / "system_validation" / "ablation.py"

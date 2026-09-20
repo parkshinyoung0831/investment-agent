@@ -56,6 +56,20 @@ class PolicyConceptChoice(unittest.TestCase):
                 concepts.policy_accepts(rejected, "income_taxes", "USD"), rejected
             )
 
+    def test_net_income_to_common_rejects_minority_interest_and_participating_tags(self):
+        """UNH 63M(실제 약 5,470M)은 비지배지분 증감 태그가 이 컬럼으로 들어온 결과였다."""
+        self.assertTrue(concepts.policy_accepts(
+            "NetIncomeLossAvailableToCommonStockholdersBasic", "net_income_to_common_shareholders", "USD",
+        ))
+        for rejected in (
+            "MinorityInterestPeriodIncreaseDecrease",
+            "MinorityInterestChangeInRedemptionValue",
+            "ParticipatingSecuritiesDistributedAndUndistributedEarnings",
+        ):
+            self.assertFalse(concepts.policy_accepts(
+                rejected, "net_income_to_common_shareholders", "USD",
+            ), rejected)
+
     def test_interest_expense_rejects_unrelated_concepts(self):
         self.assertTrue(
             concepts.policy_accepts("InterestExpense", "interest_expense", "USD")

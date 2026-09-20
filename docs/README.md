@@ -82,10 +82,9 @@ src/investment_agent/reporting/notifications/<read-model>.py
 | `src/investment_agent/dashboard/app_pages` | 매크로·실적·13F·퀀트·AI 승인·포트폴리오·시스템 화면 |
 | `src/investment_agent/reporting/readers/select_only.py` | Supabase 읽기 전용 SELECT gateway |
 | `src/investment_agent/dashboard/calculations/` | 화면용 계산 |
+| `src/investment_agent/dashboard/components/` | 공통 화면 조각과 색상 |
 | `src/investment_agent/reporting/models.py` | 화면·읽기 결과 데이터 구조 |
-| `src/investment_agent/dashboard/ui.py`, `theme.py` | 공통 UI와 색상 |
-| `src/investment_agent/data/news/provider.py` | 뉴스 provider 호출과 원문 없는 메타데이터 정규화 |
-| `src/investment_agent/data/news/contracts.py` | data 계층 뉴스 결과 계약 |
+| `src/investment_agent/reporting/readers/news.py` | 뉴스 read model (원문은 intelligence DuckDB) |
 | `src/investment_agent/platform/cache.py` | 선택적 Streamlit 캐시 경계 |
 | `src/investment_agent/platform/external_usage.py` | 외부 provider 호출량 원장 |
 | `src/investment_agent/dashboard/ops.py` | 하네스 상태의 읽기 전용 표시 투영 |
@@ -99,21 +98,26 @@ AI 기반 판단의 중심은 `src/investment_agent/trading`다.
 
 ```text
 SYSTEM PORTFOLIO (실계좌·승인을 모른다)
-universe.py + candidate_ranker.py       분석할 종목 선택(System 보유·새 정보 우선)
-→ context.py                            Supabase PIT 근거 묶음 생성
-→ decision/analysis.py                  TradingAgents 논지 → 신호 배치
-→ decision/alpha.py                     factor 기대수익 + 논지 검증 → 기대수익·제약
-→ system/target.py                      위험예산 → optimizer → RiskGate → 목표비중
-→ system/engine.py                      비중 기반 NAV·성과
+decision/universe.py                           tracked universe로 판단 대상 제한
+→ decision/candidates.py + candidate_ranker.py  분석할 종목 선택(System 보유·새 정보 우선)
+→ research/evidence/context.py                 PIT 근거 묶음 생성 (Research가 소유)
+→ decision/analysis.py                         TradingAgents 논지 → 신호 배치
+→ decision/alpha.py                            factor 기대수익 + 논지 검증 → 기대수익·제약
+→ system/target.py                             위험예산 → optimizer → RiskGate → 목표비중
+→ system/engine.py                             비중 기반 NAV·성과
 MY PORTFOLIO
-→ my_portfolio.py                       System 목표 − Toss 계좌 = 추종 제안
-→ execution/                            Discord 승인 → Toss 주문 → 대사
+→ my_portfolio.py                              System 목표 − Toss 계좌 = 추종 제안
+→ execution/                                   Discord 승인 → Toss 주문 → 대사
 ```
+
+근거 조립과 feature는 `trading`이 아니라 `research`가 소유하고, Trading은
+`src/investment_agent/research/adapters/trading.py` 하나로만 가져온다. 계층 사이에
+허용되는 화살표 전체는 [시스템 아키텍처](SYSTEM_ARCHITECTURE.md)에 있다.
 
 System Portfolio는 프로그램 판단을 100% 따랐다면의 전략을 추적하고 주문을 내지 않는다. 실계좌 주문은
 My Portfolio 추종 제안이 Discord에서 승인된 뒤에만 나간다.
-`feature_layer.py`, `ml`, `rl`, `backtest`, `qlib_adapter.py`는
-연구·검증 계층이며 파일이 있다는 이유만으로 실전 채택된 것은 아니다.
+`research/features/`, `research/models/`, `research/rl/`, `research/backtest/`,
+`research/qlib_adapter.py`는 연구·검증 계층이며 파일이 있다는 이유만으로 실전 채택된 것은 아니다.
 
 상세한 AI, ML/RL, optimizer, RiskGate와 backtest는 [투자 시스템 문서](INVESTMENT_SYSTEM.md)에 있다.
 
@@ -164,19 +168,38 @@ switch가 이 폴더에 있다. AI Investor는 broker key에 접근하지 않는
 | Execution | credential, 승인, 주문과 reconciliation | 투자 thesis와 LLM prompt |
 | Ops/Harness | schedule, lock, heartbeat와 재시작 | 투자 판단 알고리즘 |
 
-## 공개 독자가 읽을 상시 문서
+## 목적별로 읽을 문서 하나
 
-| 문서 | 답하는 질문 |
+찾는 것이 아래 질문 중 하나라면 그 문서 **하나만** 열면 된다. 같은 사실을 여러 문서에
+복사하지 않으므로, 어느 문서가 그 사실의 주인인지가 곧 어디를 읽을지다.
+
+| 알고 싶은 것 | 문서 |
 |---|---|
-| `README.md` | 폴더가 무엇이고 전체 흐름이 어떻게 연결되는가? |
-| `DATA.md` | 데이터, Supabase, PIT, 품질과 뉴스 cache는 어떻게 동작하는가? |
-| `ENV.md` | 어떤 환경변수가 어디에 필요한가? |
-| `INVESTMENT_SYSTEM.md` | AI/ML/RL, backtest, optimizer와 RiskGate는 무엇을 하는가? |
-| `AUTONOMOUS_SYSTEM.md` | 자율 판단 계층의 패키지 경계와 계약 흐름은 어떤 모양인가? |
-| `EXECUTION_AND_SAFETY.md` | 승인, broker, Paper/Live와 안전장치는 무엇인가? |
-| `OPERATIONS.md` | 설치, Actions, 하네스, 상태 확인과 장애 해결은 어떻게 하는가? |
-| `STORAGE_MAP.md` | 어떤 사실이 네 저장소 중 어디에 사는가? |
-| `SYSTEM_ARCHITECTURE.md` | 시스템 전체 계층 구조, 8대 컴포넌트와 대화형 아키텍처 다이어그램은 어떠한가? |
+| 전체가 어떻게 생겼고 어떤 의존이 허용되는가 | [시스템 아키텍처](SYSTEM_ARCHITECTURE.md) |
+| 어떤 사실이 네 저장소 중 어디에 사는가 | [저장 지도](STORAGE_MAP.md) |
+| 수집·PIT·품질·provenance는 어떻게 동작하는가 | [데이터](DATA.md) |
+| 판단·ML/RL·optimizer·RiskGate는 무엇을 하는가 | [투자 시스템](INVESTMENT_SYSTEM.md) |
+| 자율 판단 계층의 패키지 경계와 계약 흐름 | [자율 판단 계층](AUTONOMOUS_SYSTEM.md) |
+| 승인·broker·Paper/Live·안전장치 | [실행과 안전](EXECUTION_AND_SAFETY.md) |
+| 설치·Actions·하네스·상태 확인·장애 대응 | [운영](OPERATIONS.md) |
+| 어떤 환경변수가 어디에 필요한가 | [환경변수](ENV.md) |
+| 알림 카드와 대시보드 UI 규칙 | [디자인 시스템](../DESIGN-system.md) |
+| 코드를 고칠 때 지켜야 할 규칙 | [CLAUDE.md](../CLAUDE.md) |
+| 지식 그래프를 MCP 서버로 붙이는 법 | [Graphify MCP](GRAPHIFY_MCP.md) |
+| 판단 계층이 넘지 않는 선 | [Trading Constitution](../src/investment_agent/trading/CONSTITUTION.md) |
+
+package를 직접 고칠 때는 그 폴더의 README가 가장 가깝다 — 책임·경계·진입점·불변식을
+그 자리에서 말한다.
+
+| 패키지 | README |
+|---|---|
+| 수집 | [universe](../src/investment_agent/data/universe/README.md) · [market](../src/investment_agent/data/market/README.md) · [fundamentals](../src/investment_agent/data/fundamentals/README.md) · [macro](../src/investment_agent/data/macro/README.md) · [institutional](../src/investment_agent/data/institutional/README.md) |
+| 텍스트 | [intelligence](../src/investment_agent/intelligence/README.md) |
+| 연구 | [research](../src/investment_agent/research/README.md) · [features](../src/investment_agent/research/features/README.md) · [strategies](../src/investment_agent/research/strategies/README.md) |
+| 판단·실행 | [trading](../src/investment_agent/trading/README.md) · [execution](../src/investment_agent/execution/README.md) |
+| 읽기·표시 | [reporting](../src/investment_agent/reporting/README.md) · [dashboard](../src/investment_agent/dashboard/README.md) |
+| 알림 | [notifications](../src/investment_agent/notifications/README.md) · [discord_admin](../src/investment_agent/notifications/discord_admin/README.md) |
+| 운영·공통 | [operations](../src/investment_agent/operations/README.md) · [harness](../src/investment_agent/operations/harness/README.md) · [platform](../src/investment_agent/platform/README.md) |
 
 각 문서는 **지금 무엇인가**만 적는다. 무엇을 왜 바꿨는지는 git이 갖는다.
 

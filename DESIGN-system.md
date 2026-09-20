@@ -895,7 +895,7 @@ darkGrey2
 
 | 확인 대상 | 반영 시 확인할 계약 |
 |---|---|
-| `src/investment_agent/dashboard/theme.py` | 작은 글자용 보정색·상태색·중성 차트 토큰을 대조한다. 기존 `up=#00875A`, 라이트 `muted=#6B7684`, 다크 `status_danger=#F04452`, 파란 범주색은 이 계약과 차이가 있다. |
+| `src/investment_agent/dashboard/components/theme.py` | 작은 글자용 보정색·상태색·중성 차트 토큰을 대조한다. 기존 `up=#00875A`, 라이트 `muted=#6B7684`, 다크 `status_danger=#F04452`, 파란 범주색은 이 계약과 차이가 있다. |
 | `src/investment_agent/notifications/investment/palette.py` | 승인/거절 색을 `SEMANTIC_UP`/`SEMANTIC_DOWN`에서 만드는 매핑을 시스템 상태로 분리하고 native rail은 §2.4를 따른다. |
 | `src/investment_agent/notifications/earnings_report/palette.py` | `direction(..., higher_better=...)`의 부호 반전과 투자 해석 색을 분리한다. 보합 임계값은 UI 팔레트가 아닌 도메인 계약인지 확인한다. |
 | 각 PNG·embed·웹 adapter | 매체별 크기·서체·테마·상태 지원 범위를 명시하고 §18의 적용 항목을 검수한다. |

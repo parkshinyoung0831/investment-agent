@@ -21,14 +21,14 @@ def free_cash_flow(row: Mapping[str, Any]) -> float | None:
 
 
 def sec_gaap_diluted_eps(row: Mapping[str, Any]) -> float | None:
-    """SEC GAAP 보통주 귀속 순이익과 희석평균주식수가 모두 있을 때 EPS를 계산한다."""
+    """회사가 보고한 희석 EPS(`eps_diluted_gaap`). 순이익÷주식수로 다시 계산하지 않는다.
+
+    재계산은 주식수 스케일이 어긋난 행(MCD)이나 귀속 순이익이 다른 개념에 매핑된 행(UNH)에서
+    예외 없이 틀린 값을 낸다. 보고 값이 없으면 빈칸이다.
+    """
     if not isinstance(row, Mapping):
         return None
-    numerator = finite_number(row.get("net_income_to_common_shareholders"))
-    denominator = finite_number(row.get("shares_fully_diluted_average"))
-    if numerator is None or denominator is None or denominator <= 0.0:
-        return None
-    return numerator / denominator
+    return finite_number(row.get("eps_diluted_gaap"))
 
 
 _CONSENSUS_QUARTERS = frozenset({"Q1", "Q2", "Q3", "Q4"})

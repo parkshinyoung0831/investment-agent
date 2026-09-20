@@ -122,4 +122,4 @@ flowchart TD
 |---|---|---|
 | Supabase 클라이언트 초기화 변경 | `src/investment_agent/platform/db/postgres.py` (`service_client`, `anon_client`) | Service vs Anon 키 분리 유지 |
 | JSON 로깅 포맷 필드 추가 | `src/investment_agent/platform/logging.py` (`JsonFormatter`) | stdout 한 줄 JSON 유지 |
-| SEC 요청 속도(Rate limit) 조정 | `src/investment_agent/data/universe/sec.py` | 초당 10회 제한(SEC 공식 정책) 엄수 |
+| SEC 요청 속도(Rate limit) 조정 | `src/investment_agent/data/universe/infrastructure/sources/sec.py` | 초당 10회 제한(SEC 공식 정책) 엄수 |

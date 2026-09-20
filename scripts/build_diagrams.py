@@ -94,12 +94,26 @@ def run() -> int:
             except Exception:
                 print(f"[OK] {dtype:9} | {json_name} -> {html_name}")
 
-    if failures == 0:
-        print(f"\nAll {len(DIAGRAMS)} diagrams successfully validated & delivered with showcase profile.")
-        return 0
-    else:
+    if failures:
         print(f"\n{failures} diagram(s) failed.", file=sys.stderr)
         return 1
+
+    print(f"\nAll {len(DIAGRAMS)} diagrams successfully validated & delivered with showcase profile.")
+
+    # HTML만 만들고 끝내면 GitHub에서는 아무것도 보이지 않는다 — Markdown이 렌더하는 것은
+    # SVG다. 빌드를 여기서 끊으면 둘이 갈라지므로 같은 명령 안에서 이어 만든다.
+    print("\n=== Deriving standalone SVG for Markdown preview ===")
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        from export_diagram_svg import main as export_svg
+    finally:
+        sys.path.pop(0)
+
+    argv, sys.argv = sys.argv, ["export_diagram_svg.py"]
+    try:
+        return export_svg()
+    finally:
+        sys.argv = argv
 
 
 if __name__ == "__main__":

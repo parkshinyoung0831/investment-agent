@@ -494,6 +494,12 @@ python -m investment_agent.operations.commands.harness_switch --maintenance off
 
 ## 알림 Severity
 
+![SEC 실적 공시 감지 및 2단계 알림 시퀀스](diagrams/earnings-pipeline.svg)
+
+8-K 속보와 10-Q/K 정밀 카드가 각각 언제 어떤 경로로 나가는지.
+
+*소스: `docs/diagrams/earnings-pipeline.sequence.json` — 그림을 고치려면 이 파일을 고치고 `python scripts/build_diagrams.py`.*
+
 | Severity | 예시 |
 |---|---|
 | INFO | 정상 완료, expected skip, Shadow/Paper summary |

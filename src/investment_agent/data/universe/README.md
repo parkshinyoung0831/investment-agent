@@ -44,7 +44,7 @@ python -m investment_agent.data.universe.commands.universe_names --retry-after-d
 
 월간·membership entrypoint는 `collection.py`를 통해서만 저장소를 호출한다.
 `persistence.py`는 운영 실행에 필요한 조합을 제공하지만 실제 표·페이지네이션·
-identity 규칙은 `repository.py`와 `platform/db.py`가 소유한다.
+identity 규칙은 `repository.py`와 `platform/db/postgres.py`가 소유한다.
 
 ## 안전 규칙
 

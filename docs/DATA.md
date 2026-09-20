@@ -5,6 +5,12 @@
 
 ## 전체 데이터 흐름
 
+![투자 에이전트 데이터 흐름](diagrams/pipeline.svg)
+
+수집 원천에서 네 저장소까지, 무엇이 어디로 들어가는지.
+
+*소스: `docs/diagrams/pipeline.dataflow.json` — 그림을 고치려면 이 파일을 고치고 `python scripts/build_diagrams.py`.*
+
 ```mermaid
 flowchart LR
     A["외부 provider"] --> B["src/&lt;데이터영역&gt;<br/>source/client"]
@@ -164,8 +170,8 @@ gate를 갖춘 뒤 availability 상태를 올린다.
 ## 뉴스·소셜은 Supabase에 저장하지 않는다
 
 뉴스·소셜 원문의 기본 위치는 Git에 포함되지 않는 `data/local/news_social.duckdb`다.
-현재 provider 호출과 화면용 메타데이터 정규화는 `src/investment_agent/data/news/provider.py`가
-소유하고, Dashboard는 `src/investment_agent/reporting/news.py`의 결과 계약만 소비한다.
+현재 provider 호출과 화면용 메타데이터 정규화는 `src/investment_agent/intelligence/infrastructure/sources/`가
+소유하고, Dashboard는 `src/investment_agent/reporting/readers/news.py`의 결과 계약만 소비한다.
 
 ```text
 live provider

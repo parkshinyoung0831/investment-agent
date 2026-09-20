@@ -43,7 +43,7 @@ domain 함수는 이미 가져온 dict·bytes·날짜를 받아 같은 입력에
 
 금지되는 의존성은 `investment_agent.data.fundamentals.application`, `infrastructure`, `jobs`,
 `investment_agent.platform.db`, `supabase`, `yfinance`와 네트워크 클라이언트다. 환경변수도 읽지
-않는다. 이 규칙은 `tests/test_fundamentals_architecture.py`가 검사한다.
+않는다. 이 규칙은 `tests/investment_agent/data/fundamentals/test_architecture.py`가 검사한다.
 
 `models/`, `taxonomy/`, `services/`는 책임별 묶음이지 내부 독립 계층은 아니다. 현재
 `taxonomy/segment_concepts.py`가 QName local-name 정규화를 위해
@@ -78,7 +78,7 @@ domain/
 └── policies.py                      여러 서비스가 공유하는 허용 오차
 ```
 
-`models/filing.py`에는 현재 복잡한 불변 value object가 없다. 지원 form·statement 상수와
+`filing.py`에는 현재 복잡한 불변 value object가 없다. 지원 form·statement 상수와
 정정공시 form을 기본 form으로 바꾸는 `normalize_form()`이 있다. 존재하지 않는 객체
 모델을 문서상 계약으로 만들지 않는다.
 
