@@ -8,9 +8,9 @@
 - 통합 작업 브랜치: `main`. 모든 phase는 이 브랜치의 연속 커밋과 이 진행 원장 하나로 추적한다. 임시 검증 브랜치를 만들더라도 완료 내용을 `main`에 통합한 뒤 이 원장을 갱신한다.
 - 통합 기반 HEAD: `d30e2e5e7ce320641349ceb2d3d5a5c6ddbff6dc`에서 문서 브랜치를 `main`에 fast-forward했고 임시 브랜치를 삭제했다. 이후 커밋은 이 지점부터 이어진다.
 - 현재 단계: Phase 2~3의 Research artifact/Data read owner 이관과 실제 caller 기준 역방향 import 제거를 독립 단위로 진행 중이다.
-- 현재 계획: `docs/superpowers/plans/2026-09-20-system-ablation-validation-boundary.md` (Task 1~3 완료). 다음 독립 단위는 남은 Research caller와 Phase 4~8 후보를 재검증해 선택한다.
-- 완료 단계: Phase 1 조사, Phase 2의 feature snapshot·training label·valuation·event·training sample·decision experience owner 이관, Phase 3 공통 serialization·forecast·평가 계약 및 일부 Data read 역방향 import 정리, production Trading 알고리즘 검증의 명시적 경계 설정. 현재 `PENDING_DEPENDENCIES`는 22쌍이다.
-- maintenance 상태: 확인·설정하지 않았다. 하네스 또는 execution 코드를 수정하기 전에 `harness_switch --maintenance on`을 수행하고 상태를 확인한다. live flag는 변경하지 않는다.
+- 현재 계획: `docs/superpowers/plans/2026-09-20-risk-intent-execution-ownership.md` (Task 1~3 완료). 다음 독립 단위는 Trading God façade의 남은 Execution 원장 import와 broker runtime 등을 다시 확인해 선택한다.
+- 완료 단계: Phase 1 조사, Phase 2의 feature snapshot·training label·valuation·event·training sample·decision experience owner 이관, Phase 3 공통 serialization·forecast·평가 계약 및 일부 Data read 역방향 import 정리, production Trading 알고리즘 검증의 명시적 경계 설정, Phase 4 RiskGate→ExecutionIntent 생성 책임 이관. 현재 `PENDING_DEPENDENCIES`는 21쌍이다.
+- maintenance 상태: `harness_switch --status`로 STOPPED·hold ON(reason=원본 사본 architecture refactor Phase 1-10 이식)·kill switch ON·Toss live FALSE를 확인했다. 이미 걸린 hold는 변경하지 않으며 임의로 해제/재기동하지 않는다.
 
 ## 검증 기준선
 
@@ -460,6 +460,18 @@
 - 제거된 debt: 일반 Research namespace에 있던 production Trading algorithm import 7쌍. `PENDING_DEPENDENCIES` 29→22, 새 pending 없음. 이 7개는 사라진 의존성이 아니라 명시적으로 제한된 system validation 의존성이다.
 - 남은 debt: 일반 Research→Trading 19쌍, Trading→Execution 3쌍. 검증 경계 자체도 architecture 예외로 문서화해야 하고, broker/dashboard/notification/operations 등 pending 집합 밖 단계는 여전히 남았다.
 - 다음 독립 작업: 19쌍의 Research import를 저장 원장·PIT/replay reader·Trading 계약별로 다시 분류한다. 별개로 Phase 4~8의 실제 runtime caller를 조사해 안전한 다음 구현 단위를 선택한다.
+
+#### Risk/Execution Task 1~3 — intent 생성 책임 이관
+
+- 변경 전 실제 호출 관계: `operations.commands.create_execution_intent`가 승인된 risk row와 proposal을 읽고 snapshot·scope·manual promotion을 재검증했다. 그런 다음 `DeterministicRiskGate.create_execution_intent`가 `ExecutionIntent`를 구성했고 Operations가 `ExecutionRepository.save_intent`로 저장했다. RiskGate factory의 production caller는 이 한 곳이었다.
+- 변경 이유: Trading RiskGate의 본래 책임은 결정론적 `RiskDecision`이다. TTL·execution mode·intent ID·ExecutionIntent 구성은 Execution owner가 담당해야 Trading이 Execution 구현을 import하지 않는다.
+- 수정 파일: `src/investment_agent/execution/orders/intents.py`, `trading/risk/gate.py`, `operations/commands/create_execution_intent.py`, Execution intent·Trading risk·architecture tests, 새 risk/intent 계획과 이 원장.
+- 이동·삭제 파일: `RiskGate.create_execution_intent` 메서드와 그 위치의 직접 safety test를 삭제하고, 같은 거절·TTL·ID 계약을 Execution factory tests로 옮겼다. 파일 이동, DB schema·risk 수치·live flag 변경 없음.
+- import·runtime 방향: RiskGate는 `RiskDecision`까지만 만들며 Execution implementation import가 없다. Operations가 기존처럼 승격·snapshot·승인과 `RiskDecision` 유효성을 검사한 뒤 `ExecutionIntent.from_approved_decision(decision.to_dict())`를 호출하고, 그 결과를 기존 순서로 저장한다. 새 factory는 승인 여부를 다시 거절하고 기존 payload로 stable ID를 만든다.
+- 테스트 결과: 새 factory 부재와 정확한 pending 위반 1건으로 RED였다. 고정 입력의 이전 `intent_dead29f28555f242e886db0f`, TTL 15분, 승인 거절을 Execution owner test에서 검증했다. 구현 후 Execution 210개, Operations command 19개, architecture/workflow/docs 83개 각각 통과. 전체 offline suite 3,036개는 이전과 같은 선택적 `lightgbm`/`xgboost` 미설치 오류 4개·skip 1개 외 새 실패가 없다. 이전 RiskGate factory caller 검색 0건.
+- 제거된 debt: `trading/risk/gate.py → execution/orders/intents.py` 한 쌍. `PENDING_DEPENDENCIES` 22→21, 새 pending 없음.
+- 남은 debt: 일반 Research→Trading 19쌍, `trading/supabase_repository.py → execution/db.py`와 `→ execution/orders/snapshots.py` 2쌍. Execution과 live broker, dashboard, notifications, operations 등 pending 집합 밖 단계도 남는다.
+- 다음 독립 작업: Trading Supabase façade가 실제 Execution snapshot/DB를 어느 메서드에서 쓰는지 caller를 좁히고 owner별 분리 가능성을 평가한다. Execution 변경 전 다시 maintenance 상태를 확인한다.
 
 ## 향후 milestone
 

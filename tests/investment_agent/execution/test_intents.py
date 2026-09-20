@@ -120,5 +120,40 @@ class ShapeTest(unittest.TestCase):
         self.assertEqual({"AAPL": 0.10, "CASH": 0.90}, row["target_weights"])
 
 
+class ApprovedDecisionFactoryTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.decision = {
+            "risk_decision_id": "risk-1",
+            "proposal_id": "proposal-1",
+            "input_hash": "b" * 64,
+            "is_approved": True,
+            "approved_weights": {"AAPL": 0.1, "CASH": 0.9},
+        }
+        self.not_before = datetime(2026, 8, 22, 1, tzinfo=timezone.utc)
+
+    def test_approved_decision_preserves_stable_identity_and_ttl(self) -> None:
+        intent = ExecutionIntent.from_approved_decision(
+            self.decision, execution_mode="paper", not_before=self.not_before, ttl_minutes=15,
+        )
+        self.assertEqual(intent.intent_id, "intent_dead29f28555f242e886db0f")
+        self.assertEqual(intent.expires_at.isoformat(), "2026-08-22T01:15:00+00:00")
+        self.assertEqual(intent.target_weights, {"AAPL": 0.1, "CASH": 0.9})
+
+    def test_unapproved_decision_never_creates_an_intent(self) -> None:
+        with self.assertRaisesRegex(IntentError, "only an approved risk decision"):
+            ExecutionIntent.from_approved_decision(
+                {**self.decision, "is_approved": False},
+                execution_mode="paper", not_before=self.not_before,
+            )
+
+    def test_ttl_outside_existing_bounds_is_rejected(self) -> None:
+        for minutes in (0, 241):
+            with self.subTest(minutes=minutes), self.assertRaisesRegex(IntentError, "ttl_minutes"):
+                ExecutionIntent.from_approved_decision(
+                    self.decision, execution_mode="paper", not_before=self.not_before,
+                    ttl_minutes=minutes,
+                )
+
+
 if __name__ == "__main__":
     unittest.main()

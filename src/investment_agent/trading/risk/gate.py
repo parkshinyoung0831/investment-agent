@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import math
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Callable, Mapping
 
 from investment_agent.trading.contracts import ContractError, parse_datetime
@@ -17,7 +17,6 @@ from investment_agent.trading.portfolio.contracts import (
 from investment_agent.trading.portfolio.optimizer import mandatory_base_weights
 from investment_agent.trading.portfolio.market_risk import MarketRiskMetrics
 from investment_agent.trading.risk.stress import scenario_losses
-from investment_agent.execution.orders.intents import ExecutionIntent
 from investment_agent.platform.serialization import canonical_json, stable_id
 
 
@@ -418,36 +417,4 @@ class DeterministicRiskGate:
                 "policy_limits": self.policy.to_config(),
             },
             decided_at=now.isoformat(),
-        )
-
-    def create_execution_intent(
-        self,
-        decision: RiskDecision,
-        *,
-        execution_mode: str,
-        not_before: datetime,
-        ttl_minutes: int = 30,
-    ) -> ExecutionIntent:
-        if not decision.is_approved or decision.approved_weights is None:
-            raise ContractError("only an approved risk decision can create an execution intent")
-        if ttl_minutes < 1 or ttl_minutes > 240:
-            raise ContractError("ttl_minutes must be between 1 and 240")
-        start = not_before.astimezone(timezone.utc)
-        payload = {
-            "risk_decision_id": decision.risk_decision_id,
-            "proposal_id": decision.proposal_id,
-            "execution_mode": execution_mode,
-            "target_weights": decision.approved_weights,
-            "input_hash": decision.input_hash,
-            "not_before": start.isoformat(),
-        }
-        return ExecutionIntent(
-            intent_id=stable_id("intent", payload),
-            risk_decision_id=decision.risk_decision_id,
-            proposal_id=decision.proposal_id,
-            execution_mode=execution_mode,
-            target_weights=decision.approved_weights,
-            input_hash=decision.input_hash,
-            not_before=start,
-            expires_at=start + timedelta(minutes=ttl_minutes),
         )

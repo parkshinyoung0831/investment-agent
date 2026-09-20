@@ -31,11 +31,11 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 
 from investment_agent.platform.clock import ensure_aware, utc_now
-from investment_agent.platform.serialization import parse_datetime
+from investment_agent.platform.serialization import parse_datetime, stable_id
 
 CASH_SYMBOL = "CASH"
 
@@ -120,6 +120,41 @@ class ExecutionIntent:
         object.__setattr__(self, "not_before", start)
         object.__setattr__(self, "expires_at", end)
         object.__setattr__(self, "target_weights", validated_weights(self.target_weights))
+
+    @classmethod
+    def from_approved_decision(
+        cls,
+        decision: Mapping[str, Any],
+        *,
+        execution_mode: str,
+        not_before: datetime,
+        ttl_minutes: int = 30,
+    ) -> "ExecutionIntent":
+        """승인된 risk 결과를 유효기간이 있는 결정론적 실행 의도로 만든다."""
+        if decision.get("is_approved") is not True or decision.get("approved_weights") is None:
+            raise IntentError("only an approved risk decision can create an execution intent")
+        if ttl_minutes < 1 or ttl_minutes > 240:
+            raise IntentError("ttl_minutes must be between 1 and 240")
+        start = not_before.astimezone(timezone.utc)
+        weights = decision["approved_weights"]
+        payload = {
+            "risk_decision_id": decision["risk_decision_id"],
+            "proposal_id": decision["proposal_id"],
+            "execution_mode": execution_mode,
+            "target_weights": weights,
+            "input_hash": decision["input_hash"],
+            "not_before": start.isoformat(),
+        }
+        return cls(
+            intent_id=stable_id("intent", payload),
+            risk_decision_id=decision["risk_decision_id"],
+            proposal_id=decision["proposal_id"],
+            execution_mode=execution_mode,
+            target_weights=weights,
+            input_hash=decision["input_hash"],
+            not_before=start,
+            expires_at=start + timedelta(minutes=ttl_minutes),
+        )
 
     def assert_executable(
         self, *, now: datetime | None = None, required_mode: str = "paper"

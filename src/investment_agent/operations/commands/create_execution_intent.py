@@ -8,7 +8,6 @@ from investment_agent.platform.serialization import parse_datetime
 from investment_agent.trading.supabase_repository import SupabaseRepository
 from investment_agent.execution.orders.intents import ExecutionIntent
 from investment_agent.trading.portfolio.contracts import RiskDecision
-from investment_agent.trading.risk.gate import DeterministicRiskGate
 from investment_agent.platform.logging import get_logger
 from investment_agent.execution.db import ExecutionRepository
 
@@ -141,8 +140,8 @@ def create_execution_intent(
         adjustments=tuple(row.get("adjustments") or ()),
         decided_at=str(row["decided_at"]),
     )
-    intent = DeterministicRiskGate().create_execution_intent(
-        decision,
+    intent = ExecutionIntent.from_approved_decision(
+        decision.to_dict(),
         execution_mode=execution_mode,
         not_before=point,
         ttl_minutes=ttl_minutes,

@@ -3,7 +3,6 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timezone
 
-from investment_agent.trading.contracts import ContractError
 from investment_agent.trading.portfolio.contracts import PortfolioProposal
 from investment_agent.trading.risk.gate import (
     DeterministicRiskGate,
@@ -100,20 +99,6 @@ class RiskGateTest(unittest.TestCase):
         self.assertAlmostEqual(
             portfolio_turnover({"CASH": 1.0}, result.approved_weights), 0.10
         )
-
-    def test_only_approved_decision_creates_intent(self):
-        gate = DeterministicRiskGate(PortfolioRiskPolicy(max_turnover=1.0))
-        rejected = gate.evaluate(
-            proposal({"FAKE": 0.05, "CASH": 0.95}),
-            current_weights={"CASH": 1.0}, tradable_symbols=set(),
-            decided_at=datetime(2026, 8, 21, 12, tzinfo=timezone.utc),
-        )
-        with self.assertRaises(ContractError):
-            gate.create_execution_intent(
-                rejected, execution_mode="paper",
-                not_before=datetime(2026, 8, 21, 12, tzinfo=timezone.utc),
-            )
-
 
 def _exits_proposal(weights: dict[str, float], forced_exits: list[str]):
     return PortfolioProposal.create(
