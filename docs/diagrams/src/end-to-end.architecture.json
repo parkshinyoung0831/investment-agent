@@ -1,0 +1,1173 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "수집에서 자동매매까지 — 단계별 전체 지도",
+    "output": "end-to-end.html",
+    "quality_profile": "showcase",
+    "animation": "trace",
+    "viewBox": [
+      880,
+      1556
+    ]
+  },
+  "components": [
+    {
+      "id": "sec",
+      "type": "external",
+      "label": "SEC EDGAR",
+      "sublabel": "10-Q/K · 8-K · 13F",
+      "pos": [
+        30,
+        46
+      ],
+      "size": [
+        140,
+        64
+      ],
+      "tag": "공시"
+    },
+    {
+      "id": "yf",
+      "type": "external",
+      "label": "yfinance",
+      "sublabel": "OHLCV · 배당 · 분할",
+      "pos": [
+        200,
+        38
+      ],
+      "size": [
+        140,
+        64
+      ],
+      "tag": "시세"
+    },
+    {
+      "id": "macsrc",
+      "type": "external",
+      "label": "FRED · ECOS",
+      "sublabel": "거시 시계열 · 일정",
+      "pos": [
+        370,
+        52
+      ],
+      "size": [
+        140,
+        64
+      ],
+      "tag": "거시"
+    },
+    {
+      "id": "newsrc",
+      "type": "external",
+      "label": "뉴스 피드",
+      "sublabel": "관심종목 기사",
+      "pos": [
+        540,
+        40
+      ],
+      "size": [
+        140,
+        64
+      ],
+      "tag": "텍스트"
+    },
+    {
+      "id": "reddit",
+      "type": "external",
+      "label": "Reddit",
+      "sublabel": "서브레딧 언급",
+      "pos": [
+        710,
+        46
+      ],
+      "size": [
+        140,
+        64
+      ],
+      "tag": "소셜"
+    },
+    {
+      "id": "actions",
+      "type": "cloud",
+      "label": "GitHub Actions",
+      "sublabel": "cron 36개 · 7일 겹침 증분",
+      "pos": [
+        30,
+        190
+      ],
+      "size": [
+        259,
+        72
+      ],
+      "tag": "스케줄"
+    },
+    {
+      "id": "budgetq",
+      "type": "backend",
+      "label": "외부 호출 예산",
+      "sublabel": "쓰기 전에 슬롯을 예약한다",
+      "pos": [
+        319,
+        202
+      ],
+      "size": [
+        253,
+        72
+      ],
+      "tag": "한도"
+    },
+    {
+      "id": "harness",
+      "type": "cloud",
+      "label": "로컬 하네스",
+      "sublabel": "고정 IP · 상시 실행",
+      "pos": [
+        603,
+        190
+      ],
+      "size": [
+        247,
+        72
+      ],
+      "tag": "로컬"
+    },
+    {
+      "id": "supabase",
+      "type": "database",
+      "label": "Supabase Postgres",
+      "sublabel": "도메인 원천 · 알림 원장",
+      "pos": [
+        30,
+        342
+      ],
+      "size": [
+        179,
+        84
+      ],
+      "tag": "SSOT"
+    },
+    {
+      "id": "ddb_res",
+      "type": "database",
+      "label": "DuckDB research",
+      "sublabel": "dataset · 모델 · backtest",
+      "pos": [
+        239,
+        332
+      ],
+      "size": [
+        190,
+        84
+      ],
+      "tag": "로컬"
+    },
+    {
+      "id": "ddb_txt",
+      "type": "database",
+      "label": "DuckDB intelligence",
+      "sublabel": "뉴스 · 소셜 원문 90일",
+      "pos": [
+        459,
+        350
+      ],
+      "size": [
+        187,
+        84
+      ],
+      "tag": "로컬"
+    },
+    {
+      "id": "sqlite",
+      "type": "database",
+      "label": "SQLite runtime",
+      "sublabel": "계좌 · 판단 · 실행 원장",
+      "pos": [
+        675,
+        342
+      ],
+      "size": [
+        175,
+        84
+      ],
+      "tag": "로컬"
+    },
+    {
+      "id": "pit",
+      "type": "backend",
+      "label": "PitReader",
+      "sublabel": "available_at <= cutoff",
+      "pos": [
+        30,
+        506
+      ],
+      "size": [
+        144,
+        72
+      ],
+      "tag": "PIT"
+    },
+    {
+      "id": "factor",
+      "type": "backend",
+      "label": "팩터 5종",
+      "sublabel": "가치·품질·모멘텀·성장·변동",
+      "pos": [
+        204,
+        514
+      ],
+      "size": [
+        147,
+        72
+      ],
+      "tag": "횡단면"
+    },
+    {
+      "id": "feature",
+      "type": "backend",
+      "label": "FeatureLayer",
+      "sublabel": "버전 · 해시 보존",
+      "pos": [
+        381,
+        496
+      ],
+      "size": [
+        136,
+        72
+      ],
+      "tag": "피처"
+    },
+    {
+      "id": "ml",
+      "type": "backend",
+      "label": "ML Champion",
+      "sublabel": "잔여 초과수익 예측",
+      "pos": [
+        547,
+        500
+      ],
+      "size": [
+        136,
+        72
+      ],
+      "tag": "모델"
+    },
+    {
+      "id": "oos",
+      "type": "backend",
+      "label": "OOS 평가",
+      "sublabel": "DSR · 거래비용 차감",
+      "pos": [
+        714,
+        506
+      ],
+      "size": [
+        136,
+        72
+      ],
+      "tag": "검증"
+    },
+    {
+      "id": "tracked",
+      "type": "backend",
+      "label": "tracked 게이트",
+      "sublabel": "판단 대상 제한",
+      "pos": [
+        30,
+        658
+      ],
+      "size": [
+        112,
+        76
+      ],
+      "tag": "범위"
+    },
+    {
+      "id": "cand",
+      "type": "backend",
+      "label": "후보 선정",
+      "sublabel": "새 정보 · 보유 우선",
+      "pos": [
+        172,
+        648
+      ],
+      "size": [
+        112,
+        76
+      ],
+      "tag": "tier"
+    },
+    {
+      "id": "ranker",
+      "type": "backend",
+      "label": "분석 순서",
+      "sublabel": "매수 점수가 아니다",
+      "pos": [
+        313,
+        666
+      ],
+      "size": [
+        112,
+        76
+      ],
+      "tag": "순서"
+    },
+    {
+      "id": "ctx",
+      "type": "backend",
+      "label": "ContextBuilder",
+      "sublabel": "EvidenceBundle 조립",
+      "pos": [
+        455,
+        652
+      ],
+      "size": [
+        112,
+        76
+      ],
+      "tag": "근거"
+    },
+    {
+      "id": "agents",
+      "type": "cloud",
+      "label": "TradingAgents",
+      "sublabel": "분석가 5 → 토론 → PM",
+      "pos": [
+        596,
+        664
+      ],
+      "size": [
+        112,
+        76
+      ],
+      "tag": "LLM"
+    },
+    {
+      "id": "alpha",
+      "type": "backend",
+      "label": "ALPHA 결합",
+      "sublabel": "정밀도 가중 · 논지 검증",
+      "pos": [
+        738,
+        658
+      ],
+      "size": [
+        112,
+        76
+      ],
+      "tag": "기대수익"
+    },
+    {
+      "id": "gate",
+      "type": "security",
+      "label": "RiskGate",
+      "sublabel": "종목 10% 등 절대 한도",
+      "pos": [
+        30,
+        814
+      ],
+      "size": [
+        140,
+        76
+      ],
+      "tag": "거부권"
+    },
+    {
+      "id": "band",
+      "type": "backend",
+      "label": "no-trade band",
+      "sublabel": "1%p 미만은 거래 없음",
+      "pos": [
+        200,
+        822
+      ],
+      "size": [
+        140,
+        76
+      ],
+      "tag": "마찰"
+    },
+    {
+      "id": "optimizer",
+      "type": "backend",
+      "label": "CVXPY optimizer",
+      "sublabel": "평균-분산 + 회전율",
+      "pos": [
+        370,
+        804
+      ],
+      "size": [
+        140,
+        76
+      ],
+      "tag": "최적화"
+    },
+    {
+      "id": "budget",
+      "type": "backend",
+      "label": "위험 예산",
+      "sublabel": "오늘의 한도로 환산",
+      "pos": [
+        540,
+        822
+      ],
+      "size": [
+        140,
+        76
+      ],
+      "tag": "예산"
+    },
+    {
+      "id": "regime",
+      "type": "backend",
+      "label": "시장 regime",
+      "sublabel": "낙폭 · 변동성 임계",
+      "pos": [
+        710,
+        814
+      ],
+      "size": [
+        140,
+        76
+      ],
+      "tag": "국면"
+    },
+    {
+      "id": "sysengine",
+      "type": "backend",
+      "label": "System Portfolio",
+      "sublabel": "평가 → 재조정 → 기록",
+      "pos": [
+        30,
+        960
+      ],
+      "size": [
+        184,
+        76
+      ],
+      "tag": "가상"
+    },
+    {
+      "id": "target",
+      "type": "backend",
+      "label": "System 목표 비중",
+      "sublabel": "실계좌·승인을 모른다",
+      "pos": [
+        244,
+        970
+      ],
+      "size": [
+        182,
+        76
+      ],
+      "tag": "목표"
+    },
+    {
+      "id": "mypf",
+      "type": "backend",
+      "label": "My Portfolio",
+      "sublabel": "목표 − 계좌 = 추종안",
+      "pos": [
+        456,
+        978
+      ],
+      "size": [
+        182,
+        76
+      ],
+      "tag": "제안"
+    },
+    {
+      "id": "tosssnap",
+      "type": "database",
+      "label": "Toss 계좌 스냅샷",
+      "sublabel": "실제 보유 · 현금",
+      "pos": [
+        668,
+        970
+      ],
+      "size": [
+        182,
+        76
+      ],
+      "tag": "실계좌"
+    },
+    {
+      "id": "intent",
+      "type": "security",
+      "label": "ExecutionIntent",
+      "sublabel": "넘길 수 있는 계약",
+      "pos": [
+        30,
+        1126
+      ],
+      "size": [
+        112,
+        76
+      ],
+      "tag": "계약"
+    },
+    {
+      "id": "approval",
+      "type": "security",
+      "label": "Discord 승인",
+      "sublabel": "사람 · TTL 만료",
+      "pos": [
+        172,
+        1120
+      ],
+      "size": [
+        112,
+        76
+      ],
+      "tag": "사람"
+    },
+    {
+      "id": "reserve",
+      "type": "security",
+      "label": "전송 전 예약",
+      "sublabel": "보낸 뒤 기록하지 않는다",
+      "pos": [
+        313,
+        1134
+      ],
+      "size": [
+        112,
+        76
+      ],
+      "tag": "원장"
+    },
+    {
+      "id": "toss",
+      "type": "external",
+      "label": "토스 주문 전송",
+      "sublabel": "결과 불명 → 재전송 없음",
+      "pos": [
+        455,
+        1116
+      ],
+      "size": [
+        112,
+        76
+      ],
+      "tag": "broker"
+    },
+    {
+      "id": "recon",
+      "type": "security",
+      "label": "체결 대사",
+      "sublabel": "원장 ↔ 계좌 대조",
+      "pos": [
+        597,
+        1134
+      ],
+      "size": [
+        112,
+        76
+      ],
+      "tag": "정합"
+    },
+    {
+      "id": "lockdown",
+      "type": "security",
+      "label": "kill switch",
+      "sublabel": "사람만 연다",
+      "pos": [
+        738,
+        1126
+      ],
+      "size": [
+        112,
+        76
+      ],
+      "tag": "차단"
+    },
+    {
+      "id": "promote",
+      "type": "security",
+      "label": "모델 승격 게이트",
+      "sublabel": "증거 없이 승격 없음",
+      "pos": [
+        30,
+        1282
+      ],
+      "size": [
+        253,
+        72
+      ],
+      "tag": "게이트"
+    },
+    {
+      "id": "evaluate",
+      "type": "backend",
+      "label": "판단 평가",
+      "sublabel": "20일 뒤 채점",
+      "pos": [
+        313,
+        1292
+      ],
+      "size": [
+        253,
+        72
+      ],
+      "tag": "라벨"
+    },
+    {
+      "id": "perf",
+      "type": "backend",
+      "label": "성과 귀속",
+      "sublabel": "원가 · 현금흐름 증거",
+      "pos": [
+        597,
+        1282
+      ],
+      "size": [
+        253,
+        72
+      ],
+      "tag": "귀속"
+    },
+    {
+      "id": "discord",
+      "type": "external",
+      "label": "Discord",
+      "sublabel": "카드 · embed 12종",
+      "pos": [
+        30,
+        1434
+      ],
+      "size": [
+        181,
+        76
+      ],
+      "tag": "발송"
+    },
+    {
+      "id": "notiledger",
+      "type": "backend",
+      "label": "알림 원장",
+      "sublabel": "보내기 전에 선점",
+      "pos": [
+        241,
+        1442
+      ],
+      "size": [
+        181,
+        76
+      ],
+      "tag": "중복방지"
+    },
+    {
+      "id": "reporting",
+      "type": "backend",
+      "label": "Reporting",
+      "sublabel": "SELECT 전용 gateway",
+      "pos": [
+        452,
+        1426
+      ],
+      "size": [
+        181,
+        76
+      ],
+      "tag": "읽기"
+    },
+    {
+      "id": "dashboard",
+      "type": "frontend",
+      "label": "Streamlit 대시보드",
+      "sublabel": "읽기 전용 화면",
+      "pos": [
+        663,
+        1434
+      ],
+      "size": [
+        187,
+        76
+      ],
+      "tag": "화면"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "① 외부 원천 — 전부 공개 데이터다",
+      "wraps": [
+        "sec",
+        "yf",
+        "macsrc",
+        "newsrc",
+        "reddit"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "② 수집 실행 — 누가 언제 가져오는가",
+      "wraps": [
+        "actions",
+        "budgetq",
+        "harness"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "③ 저장 — 저장소는 넷이고 성격이 다르다",
+      "wraps": [
+        "supabase",
+        "ddb_res",
+        "ddb_txt",
+        "sqlite"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "④ 연구 — 판단 시각 이전만 쓴다",
+      "wraps": [
+        "pit",
+        "factor",
+        "feature",
+        "ml",
+        "oos"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "⑤ 후보 · 판단 — 누구를 어떤 근거로 보는가",
+      "wraps": [
+        "tracked",
+        "cand",
+        "ranker",
+        "ctx",
+        "agents",
+        "alpha"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "⑥ 위험 · 최적화 — 비중은 결정론이 정한다",
+      "wraps": [
+        "gate",
+        "band",
+        "optimizer",
+        "budget",
+        "regime"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "⑦ System 목표 · 실계좌 추종 — 둘을 섞지 않는다",
+      "wraps": [
+        "sysengine",
+        "target",
+        "mypf",
+        "tosssnap"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "security-group",
+      "label": "⑧ 승인 · 체결 — 사람 승인 없이 넘지 못한다",
+      "wraps": [
+        "intent",
+        "approval",
+        "reserve",
+        "toss",
+        "recon",
+        "lockdown"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "⑨ 성과 · 피드백 — 판단이 채점되어 돌아온다",
+      "wraps": [
+        "promote",
+        "evaluate",
+        "perf"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "⑩ 읽기 · 표시 — 화면과 알림은 저장소를 열지 않는다",
+      "wraps": [
+        "discord",
+        "notiledger",
+        "reporting",
+        "dashboard"
+      ],
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "from": "sec",
+      "to": "actions",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "label": "공시 · 재무"
+    },
+    {
+      "from": "yf",
+      "to": "actions",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "macsrc",
+      "to": "actions",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "newsrc",
+      "to": "harness",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "reddit",
+      "to": "harness",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "label": "원문 수집"
+    },
+    {
+      "from": "budgetq",
+      "to": "actions",
+      "variant": "dashed"
+    },
+    {
+      "from": "budgetq",
+      "to": "harness",
+      "variant": "dashed"
+    },
+    {
+      "from": "actions",
+      "to": "supabase",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "label": "증분 적재"
+    },
+    {
+      "from": "harness",
+      "to": "ddb_txt",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "label": "원문 90일",
+      "via": [
+        [
+          726.5,
+          284
+        ],
+        [
+          552.5,
+          284
+        ]
+      ]
+    },
+    {
+      "from": "harness",
+      "to": "sqlite",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "label": "실행 원장",
+      "via": [
+        [
+          726.5,
+          314
+        ],
+        [
+          762.5,
+          314
+        ]
+      ]
+    },
+    {
+      "from": "supabase",
+      "to": "pit",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "pit",
+      "to": "feature",
+      "variant": "emphasis",
+      "via": [
+        [
+          102.0,
+          456
+        ],
+        [
+          449.0,
+          456
+        ]
+      ],
+      "fromSide": "top",
+      "toSide": "top"
+    },
+    {
+      "from": "feature",
+      "to": "factor",
+      "variant": "default"
+    },
+    {
+      "from": "feature",
+      "to": "ml",
+      "variant": "default"
+    },
+    {
+      "from": "feature",
+      "to": "ddb_res",
+      "variant": "default",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "label": "feature store"
+    },
+    {
+      "from": "ml",
+      "to": "oos",
+      "variant": "default"
+    },
+    {
+      "from": "tracked",
+      "to": "cand",
+      "variant": "default"
+    },
+    {
+      "from": "cand",
+      "to": "ranker",
+      "variant": "default"
+    },
+    {
+      "from": "ranker",
+      "to": "ctx",
+      "variant": "default"
+    },
+    {
+      "from": "pit",
+      "to": "ctx",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "label": "PIT 근거",
+      "via": [
+        [
+          102.0,
+          632
+        ],
+        [
+          511.0,
+          632
+        ]
+      ]
+    },
+    {
+      "from": "ctx",
+      "to": "agents",
+      "variant": "emphasis"
+    },
+    {
+      "from": "agents",
+      "to": "alpha",
+      "variant": "emphasis"
+    },
+    {
+      "from": "factor",
+      "to": "alpha",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "label": "factor 기대수익",
+      "via": [
+        [
+          277.5,
+          608
+        ],
+        [
+          794.0,
+          608
+        ]
+      ]
+    },
+    {
+      "from": "ml",
+      "to": "alpha",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "label": "ML 예측치",
+      "via": [
+        [
+          615.0,
+          634
+        ],
+        [
+          794.0,
+          634
+        ]
+      ]
+    },
+    {
+      "from": "alpha",
+      "to": "optimizer",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "label": "기대초과수익"
+    },
+    {
+      "from": "regime",
+      "to": "budget",
+      "variant": "default"
+    },
+    {
+      "from": "budget",
+      "to": "optimizer",
+      "variant": "default"
+    },
+    {
+      "from": "optimizer",
+      "to": "band",
+      "variant": "emphasis"
+    },
+    {
+      "from": "band",
+      "to": "gate",
+      "variant": "emphasis"
+    },
+    {
+      "from": "gate",
+      "to": "target",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "label": "승인된 비중만"
+    },
+    {
+      "from": "target",
+      "to": "sysengine",
+      "variant": "emphasis"
+    },
+    {
+      "from": "target",
+      "to": "mypf",
+      "variant": "default"
+    },
+    {
+      "from": "tosssnap",
+      "to": "mypf",
+      "variant": "default"
+    },
+    {
+      "from": "mypf",
+      "to": "intent",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "label": "추종 제안",
+      "via": [
+        [
+          547.0,
+          1076
+        ],
+        [
+          86.0,
+          1076
+        ]
+      ]
+    },
+    {
+      "from": "intent",
+      "to": "approval",
+      "variant": "security"
+    },
+    {
+      "from": "approval",
+      "to": "reserve",
+      "variant": "security"
+    },
+    {
+      "from": "reserve",
+      "to": "toss",
+      "variant": "security"
+    },
+    {
+      "from": "toss",
+      "to": "recon",
+      "variant": "security"
+    },
+    {
+      "from": "lockdown",
+      "to": "toss",
+      "variant": "security",
+      "via": [
+        [
+          794.0,
+          1098
+        ],
+        [
+          511.0,
+          1098
+        ]
+      ],
+      "fromSide": "top",
+      "toSide": "top"
+    },
+    {
+      "from": "recon",
+      "to": "perf",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "label": "체결 사실"
+    },
+    {
+      "from": "perf",
+      "to": "evaluate",
+      "variant": "default"
+    },
+    {
+      "from": "evaluate",
+      "to": "promote",
+      "variant": "default"
+    },
+    {
+      "from": "promote",
+      "to": "discord",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "reporting",
+      "to": "dashboard",
+      "variant": "default"
+    },
+    {
+      "from": "reporting",
+      "to": "notiledger",
+      "variant": "default"
+    },
+    {
+      "from": "notiledger",
+      "to": "discord",
+      "variant": "default"
+    }
+  ]
+}

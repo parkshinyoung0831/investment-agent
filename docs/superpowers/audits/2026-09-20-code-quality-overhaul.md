@@ -134,4 +134,22 @@ attempt·`client_order_id` 멱등, reserve-before-submit, 결과 불명 무재�
 `execution/brokers/repository.py`, `orders/toss_manual.py` 뒷부분. 토스 API 명세가 저장소에 없어 `commissionRate` 단위·`cashBuyingPower` 의미·주문 상태 enum은 확인 불가(퍼센트 단위라면 매수가 영구히 preflight에서 막히지만 fail-closed).
 `runtime_risk_state`와 `plan_follow`가 운영 로컬 원장에서 실제로 내는 값은 원장 접근을 하지 않아 보지 못했다.
 
-(이하 다른 도메인 항목은 분석이 끝나는 대로 추가한다.)
+## 3. 투자 시스템 고도화 작업 계획
+
+목표는 실행 경로를 기준선으로 삼아 측정·승인·주문 결과 해석의 재현 가능한 결함을 수정하는 것이다.
+안전 경계와 기존 엔진의 공개 계약을 유지하며, 성과 우월성이 증명되지 않은 새 전략은 연구 후보로 둔다.
+사용자가 분석·설계·수정·검증을 자율 진행하도록 요청했다. 본 감사 문서에 연구·검증·인계를 통합한다.
+
+- [ ] runtime 호출 → 입력/provenance → 저장 → 소비자를 Data부터 평가까지 추적한다.
+- [ ] covariance/beta/tail risk의 결측 날짜 정렬과 최초 손실의 drawdown 계산을 실패 테스트로 검증한다.
+- [ ] benchmark regime의 stale/미확정/오염 가격을 재현하고 기존 시장 시간 계약으로 차단한다.
+- [ ] 승인 서비스 → 실제 SQLite 저장소, 카드 → JSON 직렬화 이음매를 회귀 테스트로 연결한다.
+- [ ] 주문 POST의 성공 HTTP/파싱 실패를 결과 불명으로 보존하고 재전송하지 않는지 검증한다.
+- [ ] 계획 단계의 매수·매도 한도를 실행 한도와 일치시키고 기존 계약·문서를 정리한다.
+- [ ] 최신 TradingAgents/Qlib/FinRL/공분산·최적화 연구를 1차 출처로 비교한다.
+- [ ] 단위·통합·대표 오프라인 재현, 전체 unittest, compileall, 문서·아키텍처 검사를 실행한다.
+- [ ] 채택 근거·미검증 성능·실패 시나리오·연구 backlog·다음 작업·마지막 검증을 기록한다.
+
+실행은 현재 세션에서 직접 진행한다. production/live 주문·외부 알림·데이터 삭제·자동 승격은 수행하지 않는다.
+검토 중인 주요 입력은 중간 결측 봉, 최초 급락, 월말까지 낡은 SPY, 2xx 비JSON 주문 응답,
+서명된 approve/reject 이벤트와 반복 소비다. 테스트는 임시 SQLite와 가짜 broker 응답만 사용한다.

@@ -726,20 +726,6 @@
       "route": "straight"
     },
     {
-      "id": "duckdb-factor",
-      "from": "duckdb",
-      "to": "factor",
-      "variant": "default",
-      "route": "straight"
-    },
-    {
-      "id": "factor-ml",
-      "from": "factor",
-      "to": "ml",
-      "variant": "default",
-      "route": "straight"
-    },
-    {
       "id": "tracked-cand",
       "from": "tracked",
       "to": "cand",
@@ -871,7 +857,6 @@
       "to": "ml",
       "variant": "emphasis",
       "route": "straight",
-      "label": "학습 · 추론 공용",
       "labelAt": [
         800,
         160
@@ -883,7 +868,6 @@
       "to": "alpha",
       "variant": "emphasis",
       "route": "straight",
-      "label": "ML 예측치",
       "labelAt": [
         800,
         298
@@ -936,6 +920,20 @@
         96,
         832
       ]
+    },
+    {
+      "from": "feature",
+      "to": "factor",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "factor",
+      "to": "alpha",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top"
     }
   ],
   "cards": [

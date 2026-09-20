@@ -44,6 +44,7 @@ Archify CLI에는 SVG export 명령이 없다. `export_diagram_svg.py`가 납품
 |---|---|---|---|
 | `overview` | architecture | 수집에서 체결·성과까지 전체가 어떻게 이어지는가 | [루트 README](../../README.md) |
 | `promotion-ladder` | lifecycle | 어느 단계까지 올라갈 수 있고 무엇이 막는가 | [루트 README](../../README.md) |
+| `end-to-end` | architecture | 수집 · 저장 · 판단 · 승인 · 체결 · 피드백의 **모든 단계** | [시스템 아키텍처](../SYSTEM_ARCHITECTURE.md) |
 | `system-architecture` | architecture | 패키지 단위로 무엇이 무엇을 알아도 되는가 | [시스템 아키텍처](../SYSTEM_ARCHITECTURE.md) |
 | `pipeline` | dataflow | 수집이 어디서 와서 어디로 가는가 | [데이터](../DATA.md) |
 | `trading-analysis` | dataflow | 근거에서 신호까지 무엇이 계산되는가 | [투자 시스템](../INVESTMENT_SYSTEM.md) |
