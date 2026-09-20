@@ -541,6 +541,7 @@
 - import 방향 변화: 없음(선언만 바뀜). `PENDING_DEPENDENCIES` 11→1.
 - 테스트 결과: 예외 없이 8쌍을 pending에서 지운 상태에서 architecture 4건 실패(RED), `_is_allowed` 추가 후 33개 통과. 위반 주입: 예외 모듈 `evaluate.py`에 `trading.evidence.tools` import를 추가하면 실패함을 확인하고 원복했다.
 - 남은 dependency debt: (1) `research/commands/build_features.py → trading/evidence/context.py`(`ContextBuilder`). Trading 판단(`trading/decision/analysis.py`)과 Research feature build가 함께 쓰는 PIT 증거 조립이며 `EvidenceBundle` 계약과 함께 소유권을 정해야 한다. 기계적으로 옮기지 않았다. (2) `COMPOSITION_ROOTS` 8개는 승인된 예외다. (3) 시스템 검증 예외 6개 import(`research/system_validation/ablation.py`). (4) broker runtime(Phase 5), `dashboard/db.py` 잔여 화면(Phase 6), ResearchStore 분리 판단(Phase 7), 최종 guard 강화(Phase 10).
+- Phase 6 사전 조사(코드 수정 없음): `dashboard/db.py`는 1,772줄이며 화면 caller는 `app_pages/ai_approval.py`·`intelligence.py`의 `load_ai_data`와 `app_pages/earnings.py`의 earnings 로더 묶음(`load_earnings_data`·`load_earnings_discord_support`·`load_earnings_extended`, 합쳐 약 500줄)뿐이다. `calculations/strategy.py`는 `load_price_history` 계약을 주석으로만 언급한다. 파일에는 SELECT 전용 안전 경계(`SelectOnlyGateway`, RPC 전부 거부)와 canonical 재무·처리·segment·주식수·가격 행 정규화 helper가 함께 있다. 옮길 때는 (1) gateway 경계와 helper의 동등한 보존 위치를 먼저 정하고, (2) earnings 로더를 화면 단위로 나눠 reporting reader/service 계약 테스트를 먼저 고정하며, (3) `load_ai_data`는 로컬 decision과 canonical security identity 결합이라 단순 이관 대상이 아니다.
 - 다음 재개 지점: Phase 5·6 조사. Phase 5는 하네스·execution 코드를 만지므로 시작 전에 `harness_switch --status`를 확인하고 정비 보류가 걸려 있는지 본다(이미 걸린 hold는 임의 해제하지 않는다). `ContextBuilder` 소유권은 별도 설계 결정으로 다룬다.
 
 ## 향후 milestone

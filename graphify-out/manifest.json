@@ -708,9 +708,9 @@
     "semantic_hash": ""
   },
   "tests/investment_agent/test_architecture.py": {
-    "mtime": 1789884840.7798445,
-    "seen": 1789885136.4700375,
-    "ast_hash": "db75e98f8f56d3720b054f5fc23c90b3",
+    "mtime": 1789885395.3685436,
+    "seen": 1789885518.5825262,
+    "ast_hash": "e4e0e5d204e4347745855494671dbd00",
     "semantic_hash": ""
   },
   "tests/investment_agent/test_config.py": {
@@ -3324,8 +3324,8 @@
     "semantic_hash": ""
   },
   "src/investment_agent/research/commands/evaluate.py": {
-    "mtime": 1789343435.8410532,
-    "seen": 1789344269.1962311,
+    "mtime": 1789885428.8087153,
+    "seen": 1789885518.5825262,
     "ast_hash": "8ad86b0a2b6778880e0241cd56ba9655",
     "semantic_hash": ""
   },
@@ -7734,9 +7734,9 @@
     "semantic_hash": ""
   },
   "docs/superpowers/architecture-refactor-progress.md": {
-    "mtime": 1789885082.454665,
-    "seen": 1789885136.4725757,
-    "ast_hash": "b9734acc3785387c891062b0f1123e36",
+    "mtime": 1789885468.282747,
+    "seen": 1789885518.5825262,
+    "ast_hash": "ae46d32b33311c2314f12c456e920d1f",
     "semantic_hash": ""
   },
   "docs/superpowers/architecture-target.md": {
