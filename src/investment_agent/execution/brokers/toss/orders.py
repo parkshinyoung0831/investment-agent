@@ -34,14 +34,19 @@ from investment_agent.execution.safety.control import (
     assert_live_cancel_allowed,
     assert_live_order_allowed,
 )
-from investment_agent.execution.brokers.toss.client import access_token, to_toss_symbol
+from investment_agent.execution.brokers.toss.client import (
+    _BUYING_POWER_URL,
+    _ORDERS_URL,
+    access_token,
+    to_toss_symbol,
+)
 from investment_agent.platform.endpoints import TOSS_OPENAPI_BASE
 
 _BASE = TOSS_OPENAPI_BASE
-_ORDERS_URL = f"{_BASE}/api/v1/orders"
-_BUYING_POWER_URL = f"{_BASE}/api/v1/buying-power"
 _SELLABLE_URL = f"{_BASE}/api/v1/sellable-quantity"
 _COMMISSIONS_URL = f"{_BASE}/api/v1/commissions"
+# 수수료율은 소수(0.001 = 0.1%)다. 이보다 크면 퍼센트·bp 단위를 잘못 읽은 값으로 본다.
+MAX_COMMISSION_RATE = Decimal("0.05")
 _CLIENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,36}$")
 _US_SYMBOL_RE = re.compile(r"^[A-Z][A-Z0-9.-]{0,14}$")
 
@@ -657,6 +662,12 @@ class TossOrderApi:
                 raise TossOrderApiError("Toss commission rate is invalid") from exc
             if not rate.is_finite() or rate < 0:
                 raise TossOrderApiError("Toss commission rate is invalid")
+            if rate > MAX_COMMISSION_RATE:
+                # 소수(0.001)로 읽는 코드에 퍼센트(0.1)나 bp(10)가 들어오면 필요 현금이 10~1000배가 된다.
+                # 조용히 막히는 것보다 단위 오해로 드러내는 편이 낫다.
+                raise TossOrderApiError(
+                    f"Toss commission rate {rate} exceeds {MAX_COMMISSION_RATE}: unit is not a fraction"
+                )
             validated.append({**row, "commissionRate": rate})
         return tuple(validated)
 

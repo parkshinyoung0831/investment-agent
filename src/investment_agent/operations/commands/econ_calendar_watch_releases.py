@@ -27,8 +27,9 @@ def main(argv: list[str] | None = None) -> int:
     from investment_agent.config import load_config
     from investment_agent.data.macro.releases import db
     from investment_agent.platform.db.postgres import Database
+    # 참조 master(series·measure)는 daily ETL 진입점이 등록한다. 60초마다 도는 이 watcher가 매번
+    # 다시 upsert하면 바뀌지 않는 데이터에 하루 약 360회 쓰기가 나간다(감사 OP2-20).
     db.configure(Database.from_config(load_config()))
-    db.seed_catalog()
 
     confirmed: set[str] = set()
     failures: list[dict] = []

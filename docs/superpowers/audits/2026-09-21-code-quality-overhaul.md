@@ -118,7 +118,7 @@ research·reporting 20 (`RR2-*`) · 워크플로·시각·그 밖 4 (`AU-*`).
 
 | ID | 한 줄 | 판정 | 심각 | 상태 |
 |---|---|---|---|---|
-| EX2-01 | 승인 시점 planner와 실행 시점 planner가 다른 한도를 써서 재검증이 영구히 "재승인 필요" | 확정(재검증) | 높음 | 예정(코드만) |
+| EX2-01 | 승인 시점 planner와 실행 시점 planner가 다른 한도를 써서 재검증이 영구히 "재승인 필요" | 확정(재검증) | 높음 | 수정됨 |
 | EX2-02 | 30초 risk state 창이 준비 단계에 소진돼 승인 소비 후 배치가 중간에 잘린다 | 확정 | 높음 | 보고만(사용자 결정) |
 | EX2-03 | 브로커 `REPLACED`가 전이표에 없어 대사 패스 전체가 예외로 끊긴다 | 확정(재검증) | 높음 | 수정됨 |
 | EX2-07 | 제출 시점 인증 실패가 worker의 except 3개를 모두 통과해 고아 `planned` 주문을 만든다 | 확정(재검증) | 높음 | 수정됨 |
@@ -127,14 +127,14 @@ research·reporting 20 (`RR2-*`) · 워크플로·시각·그 밖 4 (`AU-*`).
 | EX2-05 | 기준점 보관 2일 vs 조회 5일 — 연휴 뒤 기준점이 비어 실주문이 막힌다 | 확정(재검증) | 중간 | 수정됨 |
 | EX2-06 | 주문 직전 위험 계산이 `cash: 0` 가짜 계좌 스냅샷을 성과 읽기 경로에 남긴다 | 확정 | 중간 | 보고만 |
 | EX2-08 | 어댑터 문서는 "재시도 없음"인데 `_request`가 401에서 POST를 다시 보낸다 | 의심 | 중간 | 보고만(사용자 결정) |
-| EX2-09 | 매수 현금 여유가 세 숫자로 흩어져 서로 모순되는지 아무도 검사하지 않는다 | 확정 | 중간 | 예정(검증기 추가) |
-| EX2-10 | `commissionRate` 단위에 상·하한 검증이 없다 — 퍼센트 단위면 필요 현금 100배 | 의심 | 중간 | 예정(검증기 추가) |
+| EX2-09 | 매수 현금 여유가 세 숫자로 흩어져 서로 모순되는지 아무도 검사하지 않는다 | 확정 | 중간 | 수정됨 |
+| EX2-10 | `commissionRate` 단위에 상·하한 검증이 없다 — 퍼센트 단위면 필요 현금 100배 | 의심 | 중간 | 수정됨 |
 | EX2-12 | `reconciliation_runs`에 쓰는 코드가 없어 "대사 실행" 패널이 항상 비어 있다 | 확정 | 중간 | 보고만 |
 | EX2-13 | `expire_due_approvals`를 아무도 부르지 않아 만료 승인이 `pending`으로 남는다 | 확정 | 중간 | 수정됨 |
 | EX2-14 | src 참조 0건인 실행 경계 정의 4개(TE-14 목록 밖) | 확정 | 낮음 | 보고만 |
-| EX2-15 | `LifecyclePromotionGate`의 최대낙폭 비교 부호가 거꾸로 — 어떤 낙폭도 위반이 아니다 | 확정 | 낮음 | 예정(코드만) |
+| EX2-15 | `LifecyclePromotionGate`의 최대낙폭 비교 부호가 거꾸로 — 어떤 낙폭도 위반이 아니다 | 확정 | 낮음 | 수정됨 |
 | EX2-16 | 거절·결과불명 주문이 당일 주문 수·금액 한도를 소진한다 | 확정 | 낮음 | 보고만(사용자 결정) |
-| EX2-17 | 낮음 묶음 8건 (이벤트 정렬·만료 문자열 비교·`source_kind` 어휘·endpoint 중복 등) | 확정 | 낮음 | 예정(일부) |
+| EX2-17 | 낮음 묶음 8건 (이벤트 정렬·만료 문자열 비교·`source_kind` 어휘·endpoint 중복 등) | 확정 | 낮음 | (h) 수정됨 · 나머지 보고만 |
 
 ### 2.4 operations (`OP2-*`, 원본 [raw](raw/2026-09-21-operations.txt))
 
@@ -147,19 +147,19 @@ research·reporting 20 (`RR2-*`) · 워크플로·시각·그 밖 4 (`AU-*`).
 | OP2-19 | 대사가 "찾은 것이 있다"를 "명령이 실패했다"로 돌려줘 수동 주문 하나로 job이 영구 실패한다 | 확정(재검증) | 높음 | 수정됨 |
 | OP2-02 | background 단계가 6개 worker를 13개 stage와 공유하고 대기에 시간 상한이 없다 | 확정 | 중간 | 보고만 |
 | OP2-03 | 가장 긴 stage 셋이 background에서 빠져 tick 루프를 최대 3시간 막는다 | 확정 | 중간 | 보고만 |
-| OP2-05 | 정비 보류를 걸어도 돌고 있는 하네스는 안 멈추는데 메시지는 멈춘다고 읽힌다 | 확정 | 중간 | 예정(문구) |
+| OP2-05 | 정비 보류를 걸어도 돌고 있는 하네스는 안 멈추는데 메시지는 멈춘다고 읽힌다 | 확정 | 중간 | 수정됨 |
 | OP2-07 | 상태창의 `mode`가 실제 프로세스 모드가 아니라 `.env`에서 다시 계산된다 | 확정 | 중간 | 보고만 |
-| OP2-08 | `emergency_stop --lockdown-env`만 쓰면 잠금이 성공해도 종료 코드 1 | 확정 | 중간 | 예정(코드만) |
-| OP2-09 | `.env` 킬스위치 잠금이 파일이 없으면 조용히 아무 일도 안 하고 경로를 깊이로 추측한다 | 확정 | 중간 | 예정(코드만) |
+| OP2-08 | `emergency_stop --lockdown-env`만 쓰면 잠금이 성공해도 종료 코드 1 | 확정 | 중간 | 수정됨 |
+| OP2-09 | `.env` 킬스위치 잠금이 파일이 없으면 조용히 아무 일도 안 하고 경로를 깊이로 추측한다 | 확정 | 중간 | 수정됨 |
 | OP2-10 | 긴급 정지가 state.json의 PID 하나만 노려 승인 리스너·여분 하네스가 살아남는다 | 확정 | 중간 | 보고만 |
 | OP2-11 | 보안 사전점검이 잘못된 한도 값을 검사하지 않고 넘겨 "healthy"를 준다 | 확정 | 중간 | 수정됨 |
 | OP2-16 | 일일 점검 카드가 "전부 조회 실패"와 "전부 0"을 구분하지 않는다 | 확정 | 중간 | 수정됨 |
 | OP2-17 | embed 본문이 1,900자로 잘려 채널 도착 표가 먼저 사라진다 | 확정 | 중간 | 수정됨 |
 | OP2-18 | 채널 ID가 숫자가 아니면 채널 도착 점검 전체가 사라진다 | 확정 | 중간 | 수정됨 |
-| OP2-20 | 발표 감시가 1분마다 macro 참조 master 전체를 다시 upsert한다 | 확정 | 중간 | 예정(코드만) |
+| OP2-20 | 발표 감시가 1분마다 macro 참조 master 전체를 다시 upsert한다 | 확정 | 중간 | 수정됨 |
 | OP2-12 | 보안 사전점검이 `TOSS_MAX_DAILY_ORDERS`를 아예 보지 않는다 | 확정 | 낮음 | 수정됨 |
-| OP2-13 | `.gitignore` 비밀 보호 점검이 부분 문자열이라 공허하게 통과할 수 있다 | 확정 | 낮음 | 예정(코드만) |
-| OP2-14 | 봇 토큰 분리 점검이 `DISCORD_BOT_TOKEN`이 없으면 결과를 하나도 내지 않는다 | 확정 | 낮음 | 예정(코드만) |
+| OP2-13 | `.gitignore` 비밀 보호 점검이 부분 문자열이라 공허하게 통과할 수 있다 | 확정 | 낮음 | 수정됨 |
+| OP2-14 | 봇 토큰 분리 점검이 `DISCORD_BOT_TOKEN`이 없으면 결과를 하나도 내지 않는다 | 확정 | 낮음 | 수정됨 |
 
 ### 2.5 워크플로 · 시각 · 그 밖 (`AU-*`, 원본 [raw](raw/2026-09-21-timing-workflows.txt))
 
@@ -177,8 +177,8 @@ research·reporting 20 (`RR2-*`) · 워크플로·시각·그 밖 4 (`AU-*`).
 | ID | 무엇이 어디에 박혀 있나 | 이전 목적지 | 상태 |
 |---|---|---|---|
 | TR2-01 | 집중도 HHI 한도 0.15가 종목 상한 0.10과 수학적으로 모순(최대 HHI = 0.10) | `PortfolioRiskPolicy` 안에서 두 값의 정합성을 검증 | 수정됨 |
-| EX2-09 | 매수 현금 여유 3개(band 25bp · 수수료 10bp · 계획 버퍼 50bp)가 서로 모르는 상수 | 세 값이 모순되지 않는지 검사하는 계약 테스트 | 예정(코드만) |
-| EX2-10 | `commissionRate` 단위 가정이 코드에만 있고 검증이 없다 | 어댑터 경계에서 범위 검증(소수 단위) | 예정(코드만) |
+| EX2-09 | 매수 현금 여유 3개(band 25bp · 수수료 10bp · 계획 버퍼 50bp)가 서로 모르는 상수 | 세 값이 모순되지 않는지 검사하는 계약 테스트 | 수정됨 |
+| EX2-10 | `commissionRate` 단위 가정이 코드에만 있고 검증이 없다 | 어댑터 경계에서 범위 검증(소수 단위) | 수정됨 |
 | AU-03 | 매니저 성향·요약 14쌍이 대시보드에 인라인 | `MANAGER_PRESENTATION`의 `strategy_group` + institutional catalog의 라벨 표 | 수정됨 |
 | TR2-14 | 스트레스 한도 하나를 충격 크기가 다른 8개 시나리오에 적용 | 시나리오별 한도(값 결정 필요) | 보고만 |
 | EX2-17 | Toss endpoint 경로 상수 일부가 아직 두 곳에 | `platform/endpoints.py` | 예정(코드만) |
@@ -189,7 +189,7 @@ research·reporting 20 (`RR2-*`) · 워크플로·시각·그 밖 4 (`AU-*`).
 | ID | 병목 | 측정 | 상태 |
 |---|---|---|---|
 | TR2-09 | `estimate_betas`가 종목마다 benchmark 전체 가격을 다시 파싱 | 보유 30종목 × benchmark 500봉 = 15,000행 재파싱/호출 → 1회 파싱 | 수정됨 |
-| OP2-20 | 발표 감시가 1분마다 macro 참조 master 전체를 upsert | 창 안 180분 × (series 62 + measures 46) 왕복 → 프로세스 1회 | 예정(코드만) |
+| OP2-20 | 발표 감시가 1분마다 macro 참조 master 전체를 upsert | 창 안 180분 × (series 62 + measures 46) 왕복 → 프로세스 1회 | 수정됨 |
 | — | 기각: PostgREST 페이지네이션 누락 0건, `reporting` 뷰 계약 불일치 0건 | | |
 
 ## 5. 시각 재설계 — 실측 근거와 판단
@@ -340,6 +340,24 @@ python -m investment_agent.data.fundamentals.commands.backfill_history \
   **`segments` 행이 0개**다. 2026-09-13에 universe에 편입됐고 공시일은 08-03~08-05로 7일 lookback 밖이다.
 - **섹터 충전율**(TR2-07): tracked 503 종목 / 500 CIK 중 `sic_division_name` 결측 **0건**.
 - **알림 원장**: 선언 topic 15개 전부 baseline 보유(fail-closed 누락 0). `reporting` 뷰 14개 컬럼 계약 불일치 0.
+
+### 9.2 이어서 고친 것 (같은 날, 두 번째 묶음)
+
+| ID | 고친 것 | 파일 | 검증 |
+|---|---|---|---|
+| EX2-01 | 승인 요청·실행 재검증·미리보기가 **하나의 조립**(`whole_share_planner(planning_notionals(...))`)으로 planner를 만든다. 배치 합계 한도는 일 한도(`TOSS_MAX_DAILY_NOTIONAL_USD`)와 같은 값 하나로 줄이고 `TOSS_MAX_TOTAL_NOTIONAL_USD`는 없앴다 | `execution/safety/control.py`, `orders/planning.py`, `orders/live_worker.py`, `request_toss_approval.py`, `toss_preview.py` | 새 테스트 `test_planner_parity`. 기본값과 모두 다른 env로 두 planner의 한도가 같음을 단정. worker를 옛 하드코딩으로 되돌리면 실패 확인 |
+| EX2-09 | `LiveExecutionPolicy`가 `(1+band)(1+수수료 여유) ≤ 1+계획 현금 버퍼`를 강제한다. 어기면 승인은 통과하고 실행은 항상 막힌다 | `execution/orders/live_worker.py` | 테스트 2개. 검사를 끄면 실패 확인 |
+| EX2-10 | 수수료율이 5%를 넘으면 단위 오해(퍼센트·bp)로 보고 거절한다 | `execution/brokers/toss/orders.py` | 테스트 1개(0.1·7·10). 상한을 끄면 3건 실패 확인. **단위 결론은 여전히 명세 확인이 필요** — 상한은 조용히 100배 커지는 것을 막을 뿐이다 |
+| EX2-17(h) | Toss endpoint 경로 상수 중복을 client 한 곳으로 | `brokers/toss/orders.py` | 기존 테스트 |
+| OP2-05 | 정비 보류 메시지가 "새로 기동하지 않는다"로 바뀌고, 이미 도는 하네스가 있으면 멈추지 않았다는 경고와 `--off` 안내를 함께 낸다 | `operations/commands/harness_switch.py` | 테스트 2개. 경고를 끄면 실패 확인 |
+| OP2-20 | 60초 주기 발표 watcher가 참조 master를 다시 upsert하지 않는다(등록은 daily ETL) | `operations/commands/econ_calendar_watch_releases.py` | watcher 테스트가 `seed_catalog`를 부르지 않음을 단정. 다시 부르면 실패 확인 |
+| EX2-15·OP2-08·OP2-09·OP2-13·OP2-14 | 다른 세션이 먼저 고친 것을 확인했다(코드·테스트 존재) | `lifecycle.py`, `emergency.py`, `security_audit.py` | 전체 테스트 |
+| TE-14 | 중복 `reconcile_orders`(`reconciliation/service.py`)와 그 전용 테스트를 지웠다. 실제 대사는 `worker.py`가 한다 | — | 참조 0건 확인 |
+
+**하지 않은 것**: EX2-17의 (a)~(g)는 실주문 원장 쓰기 의미를 바꾸는 항목이라 고치지 않고 남긴다. 은행·리츠 매출 합산은 하지 않는다 —
+총계 태그가 없는 은행의 매출은 "이자수익+비이자수익"이라는 합성 규칙이 필요하고, 그러려면 fundamentals 전체(약 19,000개 공시)를
+`SEMANTIC_POLICY_VERSION` v3로 다시 처리해야 한다. 그 대가로 얻는 것은 P/S가 의미 없는 은행 몇 종목의 매출뿐이고, 재처리 중에는
+Actions(v2 코드)와 운영 DB(v3)가 어긋난다.
 
 ## 10. 인계 — 다음 세션이 이어서 할 일
 

@@ -148,6 +148,24 @@ class MaintenanceCliTest(unittest.TestCase):
     def test_clearing_an_absent_hold_is_not_an_error(self) -> None:
         self.assertEqual(self._cli("--maintenance", "off"), 0)
 
+    def _hold_message(self, *, running: bool) -> str:
+        from unittest.mock import MagicMock, patch
+
+        status = MagicMock(is_running=running)
+        with (
+            patch("investment_agent.operations.commands.harness_switch.get_harness_status", return_value=status),
+            patch("investment_agent.operations.commands.harness_switch._safe_print") as printed,
+        ):
+            self.assertEqual(self._cli("--maintenance", "on"), 0)
+        return printed.call_args.args[0]
+
+    def test_hold_on_a_running_harness_says_it_was_not_stopped(self) -> None:
+        """보류는 기동 금지일 뿐 정지가 아니다 — 돌고 있으면 그 사실을 성공 메시지에 함께 적는다."""
+        self.assertIn("멈추지 않았습니다", self._hold_message(running=True))
+
+    def test_hold_on_a_stopped_harness_has_no_running_warning(self) -> None:
+        self.assertNotIn("멈추지 않았습니다", self._hold_message(running=False))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -104,6 +104,20 @@ def client_order_id(
     return f"aix_{digest}"
 
 
+def whole_share_planner(notionals, *, quantity_decimals: int = 0) -> "TargetWeightOrderPlanner":
+    """승인 요청·실행 재검증·미리보기가 **하나의 조립**으로 planner를 만든다.
+
+    `notionals`는 `execution.safety.control.PlanningNotionals`다(controls는 `.planning_notionals`로 낸다).
+    이 함수를 거치지 않고 한도를 각자 조립하면 두 경로가 다른 주문표를 만들어 재검증이 영구히 막힌다.
+    """
+    return TargetWeightOrderPlanner(ExecutionLimits(
+        min_order_notional=notionals.min_order_notional_usd,
+        max_order_notional=notionals.max_order_notional_usd,
+        max_total_notional=notionals.max_total_notional_usd,
+        quantity_decimals=quantity_decimals,
+    ))
+
+
 class TargetWeightOrderPlanner:
     def __init__(self, limits: ExecutionLimits | None = None) -> None:
         self.limits = limits or ExecutionLimits()
@@ -259,6 +273,7 @@ def plan_with_funding(
 
 __all__ = [
     "BUY_CASH_BUFFER_BPS",
+    "whole_share_planner",
     "EPSILON",
     "ExecutionLimits",
     "FUNDING_PHASES",

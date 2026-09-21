@@ -228,10 +228,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.maintenance:
         if args.maintenance == "on":
             path = set_maintenance_hold(state_dir=state_dir, reason=args.maintenance_reason)
+            # 보류는 "기동 금지"이지 "정지"가 아니다. 이미 도는 프로세스는 그대로라서, 성공 메시지만
+            # 보고 안전해졌다고 믿지 않도록 실행 여부를 함께 알린다(감사 OP2-05).
+            running = get_harness_status(state_dir=state_dir, root_dir=root_dir).is_running
+            message = f"정비 보류를 걸었습니다. 하네스는 새로 기동하지 않습니다 ({path.name})."
+            if running:
+                message += (
+                    " 지금 돌고 있는 하네스 프로세스는 멈추지 않았습니다 —"
+                    " 코드를 고치기 전에 `--off`로 따로 정지하세요."
+                )
             res = {
                 "success": True,
                 "maintenance_hold": True,
-                "message": f"정비 보류를 걸었습니다. 하네스는 기동하지 않습니다 ({path.name}).",
+                "is_running": running,
+                "message": message,
             }
         else:
             cleared = clear_maintenance_hold(state_dir=state_dir)

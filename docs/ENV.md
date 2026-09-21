@@ -85,7 +85,7 @@ Actions secrets/variables(CI)에 주입하며, 이 파일에는 이름·용도·
 | `LIVE_ENABLED` | broker-independent live opt-in. DB durable control/permit와 AND 결합, 기본 `false` |
 | `TOSS_CLIENT_ID`, `TOSS_CLIENT_SECRET`, `TOSS_ACCOUNT_SEQ` | 허용 IP가 등록된 execution 전용 장비. 분석·학습 환경에는 주입 금지 |
 | `TOSS_LIVE_ENABLED` | Toss 주문 생성 전역 opt-in. 기본 `false`; 모델 승격이나 서비스 설치가 자동으로 바꾸지 않음 |
-| `TOSS_MAX_ORDER_NOTIONAL_USD`, `TOSS_MAX_DAILY_NOTIONAL_USD`, `TOSS_MAX_DAILY_ORDERS` | 주문별·일별 제출 한도 |
+| `TOSS_MIN_ORDER_NOTIONAL_USD`, `TOSS_MAX_ORDER_NOTIONAL_USD`, `TOSS_MAX_DAILY_NOTIONAL_USD`, `TOSS_MAX_DAILY_ORDERS` | 주문별 최소·최대와 일별 제출 한도. 승인 요청·실행 재검증·미리보기가 같은 값(`planning_notionals`)으로 주문표를 계획한다 — 배치 합계 한도는 일 한도와 같다 |
 | `TOSS_MAX_DAILY_LOSS_USD`, `TOSS_MAX_DRAWDOWN_FRACTION`, `TOSS_ALLOW_MARKET_ORDERS` | 실시간 손실·drawdown·시장가 차단. 시장가는 기본 `false` |
 | `TRADING_KILL_SWITCH` | 로컬 하네스의 신규 live 흐름 전역 차단. 미설정·오타도 `on`으로 해석 |
 | `DISCORD_APPROVAL_BOT_TOKEN`, `DISCORD_APPROVAL_HMAC_SECRET[_FILE]` | `#투자-승인` 카드·서명 button 전용. 봇 token은 카드봇/관리봇과 분리하고, inline HMAC을 비우면 전용 파일을 현재 사용자 권한으로 자동 생성 |

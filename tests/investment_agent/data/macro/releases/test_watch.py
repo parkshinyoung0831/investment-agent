@@ -92,7 +92,7 @@ class ReleaseWatchTest(unittest.TestCase):
         with (
             patch("investment_agent.platform.db.postgres.Database.from_config"),
             patch.object(db, "configure"),
-            patch.object(db, "seed_catalog"),
+            patch.object(db, "seed_catalog") as seed,
             patch.object(watch_releases.etl, "watch_once", side_effect=responses) as watch,
             patch.object(watch_releases.time, "sleep") as sleep,
         ):
@@ -100,6 +100,8 @@ class ReleaseWatchTest(unittest.TestCase):
                 "--poll-attempts", "2", "--poll-interval-seconds", "1",
             ])
         self.assertEqual(exit_code, 0)
+        # 60초마다 도는 watcher는 참조 master를 다시 쓰지 않는다 — 등록은 daily ETL의 일이다.
+        seed.assert_not_called()
         self.assertEqual(watch.call_count, 2)
         sleep.assert_called_once_with(1)
 

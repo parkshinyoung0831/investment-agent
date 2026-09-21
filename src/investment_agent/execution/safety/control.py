@@ -25,7 +25,7 @@ import math
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Protocol, Sequence
+from typing import NamedTuple, Protocol, Sequence
 
 from investment_agent.config import Config
 from investment_agent.execution.contracts import ExecutionSafetyError
@@ -72,6 +72,28 @@ def _positive_int(config: Config, name: str, default: int) -> int:
     return value
 
 
+class PlanningNotionals(NamedTuple):
+    """주문 계획이 쓰는 금액 한도. 승인 요청과 실행 재검증이 **같은 값**으로 계획해야 한다.
+
+    두 진입점이 각자 env를 읽으면 한쪽만 바뀐 순간 승인한 주문표와 재계획한 주문표가
+    어긋나 실행이 영구히 "재승인 필요"로 막힌다. 그래서 읽는 곳을 여기 하나로 둔다.
+    배치 합계 한도는 일 한도(`TOSS_MAX_DAILY_NOTIONAL_USD`)와 같은 값이다 — 한 배치가
+    하루 한도를 넘는 계획은 어차피 제출 게이트에서 막힌다.
+    """
+
+    min_order_notional_usd: float
+    max_order_notional_usd: float
+    max_total_notional_usd: float
+
+
+def planning_notionals(config: Config) -> PlanningNotionals:
+    return PlanningNotionals(
+        min_order_notional_usd=_positive_float(config, "TOSS_MIN_ORDER_NOTIONAL_USD", 10.0),
+        max_order_notional_usd=_positive_float(config, "TOSS_MAX_ORDER_NOTIONAL_USD", 5_000.0),
+        max_total_notional_usd=_positive_float(config, "TOSS_MAX_DAILY_NOTIONAL_USD", 20_000.0),
+    )
+
+
 @dataclass(frozen=True)
 class LiveTradingControls:
     """실주문 한도. 테스트는 값을 직접 넣고, 운영은 `from_config`로 읽는다."""
@@ -79,6 +101,7 @@ class LiveTradingControls:
     live_enabled: bool
     kill_switch_on: bool
     account_seq: int
+    min_order_notional_usd: float = 10.0
     max_order_notional_usd: float = 5_000.0
     max_daily_notional_usd: float = 20_000.0
     max_daily_orders: int = 20
@@ -89,7 +112,7 @@ class LiveTradingControls:
     def __post_init__(self) -> None:
         if not isinstance(self.account_seq, int) or self.account_seq <= 0:
             raise ExecutionSafetyError("live account_seq must be a positive integer")
-        for name in ("max_order_notional_usd", "max_daily_notional_usd",
+        for name in ("min_order_notional_usd", "max_order_notional_usd", "max_daily_notional_usd",
                      "max_daily_loss_usd", "max_drawdown_fraction"):
             value = float(getattr(self, name))
             if not math.isfinite(value) or value <= 0:
@@ -98,6 +121,12 @@ class LiveTradingControls:
             raise ExecutionSafetyError("max_drawdown_fraction cannot exceed 1")
         if not isinstance(self.max_daily_orders, int) or self.max_daily_orders <= 0:
             raise ExecutionSafetyError("max_daily_orders must be positive")
+
+    @property
+    def planning_notionals(self) -> PlanningNotionals:
+        return PlanningNotionals(
+            self.min_order_notional_usd, self.max_order_notional_usd, self.max_daily_notional_usd,
+        )
 
     @classmethod
     def from_config(cls, config: Config) -> "LiveTradingControls":
@@ -108,13 +137,15 @@ class LiveTradingControls:
             account_seq = int(raw_account)
         except ValueError as exc:
             raise ExecutionSafetyError(f"{ACCOUNT_SETTING} must be an integer") from exc
+        planning = planning_notionals(config)
         return cls(
             # 두 값 모두 명시돼야 열린다. 기본 상태는 이중 fail-closed다.
             live_enabled=live_enabled(config.get(LIVE_FLAG)),
             kill_switch_on=kill_switch_on(config.get(KILL_SWITCH_FLAG)),
             account_seq=account_seq,
-            max_order_notional_usd=_positive_float(config, "TOSS_MAX_ORDER_NOTIONAL_USD", 5_000.0),
-            max_daily_notional_usd=_positive_float(config, "TOSS_MAX_DAILY_NOTIONAL_USD", 20_000.0),
+            min_order_notional_usd=planning.min_order_notional_usd,
+            max_order_notional_usd=planning.max_order_notional_usd,
+            max_daily_notional_usd=planning.max_total_notional_usd,
             max_daily_orders=_positive_int(config, "TOSS_MAX_DAILY_ORDERS", 20),
             max_daily_loss_usd=_positive_float(config, "TOSS_MAX_DAILY_LOSS_USD", 500.0),
             max_drawdown_fraction=_positive_float(config, "TOSS_MAX_DRAWDOWN_FRACTION", 0.05),

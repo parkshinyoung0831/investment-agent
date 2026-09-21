@@ -17,6 +17,7 @@ from investment_agent.execution.safety.control import (
 )
 from investment_agent.execution.brokers.toss.orders import (
     TossOrderApi,
+    TossOrderApiError,
     TossOrderCommand,
     TossOrderModification,
     TossOrderOutcomeUnknown,
@@ -324,6 +325,15 @@ class TossOrderApiTest(unittest.TestCase):
         self.assertEqual(str(self.api.buying_power(account_seq=7)), "100.25")
         self.assertEqual(str(self.api.sellable_quantity(account_seq=7, symbol="AAPL")), "0")
         self.assertEqual(str(self.api.commissions(account_seq=7)[0]["commissionRate"]), "0.001")
+
+    def test_commission_rate_in_percent_or_bp_units_is_refused(self):
+        """소수로 읽는 코드에 퍼센트(0.1)·bp(7)가 들어오면 필요 현금이 10~700배가 된다."""
+        for raw_rate in ("0.1", "7", "10"):
+            with self.subTest(rate=raw_rate):
+                self.session.get.side_effect = [FakeResponse(200, {"result": [
+                    {"marketCountry": "US", "commissionRate": raw_rate, "startDate": None, "endDate": None}]})]
+                with self.assertRaisesRegex(TossOrderApiError, "not a fraction"):
+                    self.api.commissions(account_seq=7)
 
     def test_cancel_requires_exact_consumed_permit_even_when_kill_switch_on(self):
         cancel_permit = LiveCancellationPermit(

@@ -9,23 +9,11 @@ from investment_agent.platform.storage_paths import repository_artifact_root
 from investment_agent.platform.logging import get_logger
 from investment_agent.execution.brokers.toss import client as toss
 from investment_agent.execution.db import ExecutionRepository
-from investment_agent.execution.orders.planning import ExecutionLimits, TargetWeightOrderPlanner
+from investment_agent.execution.orders.planning import whole_share_planner
+from investment_agent.execution.safety.control import planning_notionals
 from investment_agent.execution.orders.toss_manual import export_handoff, prepare_handoff
 
 log = get_logger(__name__)
-
-
-def _positive_env(name: str, default: float) -> float:
-    raw = os.environ.get(name, "").strip()
-    if not raw:
-        return default
-    try:
-        value = float(raw)
-    except ValueError as exc:
-        raise RuntimeError(f"{name} must be numeric") from exc
-    if value <= 0:
-        raise RuntimeError(f"{name} must be positive")
-    return value
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -54,12 +42,7 @@ def main(argv: list[str] | None = None) -> int:
     if intent is None:
         raise RuntimeError("execution intent not found")
     account_seq = toss.resolve_account_seq(args.account_seq)
-    planner = TargetWeightOrderPlanner(ExecutionLimits(
-        min_order_notional=_positive_env("TOSS_MIN_ORDER_NOTIONAL_USD", 10.0),
-        max_order_notional=_positive_env("TOSS_MAX_ORDER_NOTIONAL_USD", 5_000.0),
-        max_total_notional=_positive_env("TOSS_MAX_TOTAL_NOTIONAL_USD", 20_000.0),
-        quantity_decimals=6,
-    ))
+    planner = whole_share_planner(planning_notionals(os.environ), quantity_decimals=6)
     handoff = prepare_handoff(
         intent,
         account_seq=account_seq,

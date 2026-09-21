@@ -39,7 +39,7 @@ _DDL = re.compile(
 
 # 확장자가 붙었으면 표가 아니라 파일이다(`market.py`, `research.duckdb` …).
 # 목록으로 세지 않고 규칙으로 거른다 — 새 확장자가 늘 때마다 예외가 자라지 않게.
-_FILE_SUFFIXES = frozenset({"py", "sql", "md", "toml", "json", "duckdb", "sqlite3", "yml", "yaml"})
+_FILE_SUFFIXES = frozenset({"py", "sql", "md", "toml", "json", "duckdb", "sqlite3", "yml", "yaml", "txt"})
 
 # 표가 아닌 것. 하나하나가 "왜 표처럼 보이는데 표가 아닌지"를 말한다.
 NOT_A_TABLE = frozenset({

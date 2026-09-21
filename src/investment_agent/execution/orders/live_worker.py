@@ -35,8 +35,9 @@ from investment_agent.execution.safety.control import (
 )
 from investment_agent.execution.orders.ledger import OrderAttempt, OrderAttemptReservation
 from investment_agent.execution.orders.planning import (
-    ExecutionLimits,
+    BUY_CASH_BUFFER_BPS,
     TargetWeightOrderPlanner,
+    whole_share_planner,
     plan_with_funding,
 )
 from investment_agent.execution.orders.toss_snapshot import MAX_CLOCK_SKEW_SECONDS
@@ -118,6 +119,16 @@ class LiveExecutionPolicy:
             raise ValueError("limit_band_bps must be between 0 and 100")
         if not isinstance(self.commission_buffer_bps, int) or not 0 <= self.commission_buffer_bps <= 100:
             raise ValueError("commission_buffer_bps must be between 0 and 100")
+        # 계획은 매수 현금에 BUY_CASH_BUFFER_BPS를 얹어 "전액 가능"으로 승인하고, 실행 직전 preflight는
+        # 지정가 band와 수수료 여유를 곱해 다시 계산한다. 후자가 더 크면 승인은 통과하고 실행은 항상
+        # 막힌다 — 두 계층의 관계를 여기서 강제한다.
+        if (1 + self.limit_band_bps / 10_000) * (1 + self.commission_buffer_bps / 10_000) > (
+            1 + BUY_CASH_BUFFER_BPS / 10_000
+        ):
+            raise ValueError(
+                "limit_band_bps and commission_buffer_bps together exceed the planning cash buffer "
+                f"({BUY_CASH_BUFFER_BPS} bps): approvals would pass but execution would always be blocked"
+            )
         if not 1 <= self.permit_ttl_seconds <= 300:
             raise ValueError("permit_ttl_seconds must be between 1 and 300")
         if not 0 <= self.market_open_delay_minutes <= 60:
@@ -334,12 +345,7 @@ class TossLiveExecutionWorker:
         self.api = api
         self.controls = controls
         self.policy = policy or LiveExecutionPolicy()
-        self.planner = planner or TargetWeightOrderPlanner(ExecutionLimits(
-            min_order_notional=10.0,
-            max_order_notional=controls.max_order_notional_usd,
-            max_total_notional=controls.max_daily_notional_usd,
-            quantity_decimals=0,
-        ))
+        self.planner = planner or whole_share_planner(controls.planning_notionals)
         self.snapshot_provider = snapshot_provider
         self.session_provider = session_provider
         self.clock = clock

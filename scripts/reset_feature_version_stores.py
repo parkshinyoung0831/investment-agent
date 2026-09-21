@@ -22,8 +22,10 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import sqlite3
+import stat
 import sys
 from contextlib import closing
 from pathlib import Path
@@ -49,6 +51,12 @@ DERIVED_DATASETS = (
 )
 OLD_FEATURE_DIR = "technical_v1"
 NEW_FEATURE_DIR = "technical"
+
+
+def _force_remove(function, path, _error) -> None:
+    """Windows는 읽기 전용 속성이 붙은 빈 폴더를 rmdir하지 못한다 — 속성을 풀고 한 번 더 지운다."""
+    os.chmod(path, stat.S_IWRITE)
+    function(path)
 
 
 def _size_mb(path: Path) -> float:
@@ -91,7 +99,7 @@ def plan_research(apply: bool) -> None:
     for target in targets:
         print(f"[research] 삭제 대상 dataset {target.name} ({_size_mb(target):.1f} MB)")
         if apply:
-            shutil.rmtree(target)
+            shutil.rmtree(target, onexc=_force_remove)
 
     database = research_database_path()
     if not database.is_file():
@@ -101,9 +109,14 @@ def plan_research(apply: bool) -> None:
 
     with duckdb.connect(str(database), read_only=not apply) as connection:
         tables = {row[0] for row in connection.execute("SELECT table_name FROM information_schema.tables").fetchall()}
-        for table in ("feature_sets", "datasets"):
+        # `datasets`는 연구 lineage 표(experiments → models → backtests)가 참조해서 혼자 못 버린다. 넷이 모두
+        # 비어 있을 때만 참조하는 쪽부터 함께 버린다 — 행이 있으면 lineage를 잃지 않도록 멈춘다.
+        lineage = ("backtests", "models", "experiments", "datasets")
+        for table in ("feature_sets", *lineage):
             if table in tables:
                 count = connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+                if table in lineage and count:
+                    raise SystemExit(f"{table}에 행 {count}개가 있다 — lineage를 지우지 않는다. 확인 뒤 다시 실행")
                 print(f"[research] catalog 표 {table} 삭제 대상 (행 {count}개, 다음 적재가 새 선언으로 다시 만든다)")
                 if apply:
                     connection.execute(f"DROP TABLE {table}")
@@ -125,7 +138,7 @@ def plan_models(apply: bool) -> None:
     files = sum(1 for item in models.rglob("*") if item.is_file())
     print(f"[models] {models} 삭제 대상 (파일 {files}개, {_size_mb(models):.1f} MB) — 새 feature 정의로 다시 학습")
     if apply:
-        shutil.rmtree(models)
+        shutil.rmtree(models, onexc=_force_remove)
 
 
 def main(argv: list[str] | None = None) -> int:

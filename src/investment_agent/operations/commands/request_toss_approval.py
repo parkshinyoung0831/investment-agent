@@ -25,7 +25,8 @@ from investment_agent.execution.brokers.toss import client as toss
 from investment_agent.execution.contracts import ExecutionSafetyError
 from investment_agent.execution.db import ExecutionRepository
 from investment_agent.execution.approval.discord import DiscordApprovalClient
-from investment_agent.execution.orders.planning import ExecutionLimits, TargetWeightOrderPlanner
+from investment_agent.execution.orders.planning import TargetWeightOrderPlanner, whole_share_planner
+from investment_agent.execution.safety.control import planning_notionals
 from investment_agent.execution.orders.toss_manual import TossManualHandoff, prepare_handoff
 
 log = get_logger(__name__)
@@ -478,19 +479,8 @@ def request_toss_approval_by_id(
 
 
 def _whole_share_planner(env: Mapping[str, str] | None = None) -> TargetWeightOrderPlanner:
-    values = os.environ if env is None else env
-    return TargetWeightOrderPlanner(ExecutionLimits(
-        min_order_notional=_positive_float_env(
-            values, "TOSS_MIN_ORDER_NOTIONAL_USD", 10.0
-        ),
-        max_order_notional=_positive_float_env(
-            values, "TOSS_MAX_ORDER_NOTIONAL_USD", 5_000.0
-        ),
-        max_total_notional=_positive_float_env(
-            values, "TOSS_MAX_TOTAL_NOTIONAL_USD", 20_000.0
-        ),
-        quantity_decimals=0,
-    ))
+    """실행 재검증 worker와 같은 조립이다(`whole_share_planner`) — 한도를 따로 읽지 않는다."""
+    return whole_share_planner(planning_notionals(os.environ if env is None else env))
 
 
 def main(argv: list[str] | None = None) -> int:
