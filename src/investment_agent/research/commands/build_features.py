@@ -17,7 +17,7 @@ from investment_agent.platform.logging import get_logger
 from investment_agent.research.evidence.context import ContextBuilder
 from investment_agent.platform.serialization import parse_datetime
 from investment_agent.research.evidence.reader import PitReader
-from investment_agent.research.features.layer import FEATURE_VERSION, FeatureLayer
+from investment_agent.research.features.layer import FeatureLayer
 from investment_agent.research.datasets.universe import research_universe
 from investment_agent.research.storage.repository import ResearchStore
 
@@ -175,7 +175,6 @@ def build_features(
         duration_sec=round(time.monotonic() - started, 3),
         started_at=started_at,
         detail={
-            "feature_version": FEATURE_VERSION,
             "definition_hash": layer.definition_hash,
             "as_of_at": as_of_at.isoformat(),
             "source_kind": source_kind,

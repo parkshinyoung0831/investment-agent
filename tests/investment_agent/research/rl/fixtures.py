@@ -17,7 +17,7 @@ from investment_agent.research.rl.features import (
 
 
 def historical_training_set(periods: int = 12) -> tuple[FeatureSpec, HistoricalTrainingSet]:
-    spec = FeatureSpec(version="rl-v1", names=("momentum", "quality"))
+    spec = FeatureSpec(names=("momentum", "quality"))
     start = datetime(2026, 1, 1, 21, tzinfo=timezone.utc)
     features: list[FeatureSnapshot] = []
     labels: list[ForwardReturnLabel] = []
@@ -27,7 +27,6 @@ def historical_training_set(periods: int = 12) -> tuple[FeatureSpec, HistoricalT
         for ticker, direction in (("AAPL", 1.0), ("MSFT", -1.0)):
             momentum = direction * (index + 1) / periods
             features.append(FeatureSnapshot(
-                feature_version=spec.version,
                 as_of_at=as_of.isoformat(),
                 ticker=ticker,
                 available_at=(as_of - timedelta(hours=1)).isoformat(),
@@ -37,7 +36,6 @@ def historical_training_set(periods: int = 12) -> tuple[FeatureSpec, HistoricalT
                 provenance={"fixture": "historical_training_set", "point_in_time": True},
             ))
             labels.append(ForwardReturnLabel(
-                feature_version=spec.version,
                 as_of_at=as_of.isoformat(),
                 ticker=ticker,
                 forward_end_at=forward_end.isoformat(),

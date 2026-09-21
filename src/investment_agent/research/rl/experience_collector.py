@@ -117,7 +117,6 @@ class ExperienceCollector:
         self,
         records: Sequence[ExperienceRecord],
         feature_names: Sequence[str],
-        feature_version: str = "v1-experience",
     ) -> FeatureDataset:
         """누적된 ExperienceRecord들을 PPO 트레이너가 즉시 학습 가능한 FeatureDataset으로 변환한다."""
         if not records:
@@ -151,7 +150,6 @@ class ExperienceCollector:
             forward_returns=forward_returns,
             benchmark_forward_returns=benchmark_returns,
             availability=availability,
-            feature_version=feature_version,
         )
 
 

@@ -6,7 +6,13 @@ from datetime import datetime, timedelta, timezone
 from investment_agent.execution.db import RECORD_SYSTEM_TARGET_EXECUTION, T_PORTFOLIO_PROPOSALS, _approval, _intent, _order_attempt, _same_planned_value, funding_followup_allowed
 from investment_agent.execution.contracts import ExecutionSafetyError
 from investment_agent.execution.orders.intents import ExecutionIntent
-from investment_agent.execution.orders.ledger import OrderAttempt, OrderAttemptEvent, OrderAttemptReservation
+from investment_agent.execution.orders.ledger import (
+    ORDER_STATUS_TRANSITIONS,
+    ORDER_TERMINAL_STATUSES,
+    OrderAttempt,
+    OrderAttemptEvent,
+    OrderAttemptReservation,
+)
 from investment_agent.execution.orders.toss_manual import TossManualHandoff
 from investment_agent.platform.db.sqlite import runtime_connection
 from investment_agent.platform.serialization import parse_datetime
@@ -224,14 +230,8 @@ class OrderRepository:
     def update_order_execution(self, client_order_id: str, *, status: str, broker_order_id: str | None, raw_broker_status: str | None = None, raw_broker_response: dict | None = None, submitted_at: datetime | None = None) -> None:
         if submitted_at is not None and submitted_at.tzinfo is None:
             raise ExecutionSafetyError("submitted_at must include a timezone")
-        transitions = {
-            "planned": {"submitted", "outcome_unknown", "rejected", "failed", "cancelled"},
-            "submitted": {"partially_filled", "filled", "cancelled", "rejected", "outcome_unknown", "reconciling"},
-            "partially_filled": {"filled", "cancelled", "outcome_unknown", "reconciling"},
-            "outcome_unknown": {"submitted", "partially_filled", "filled", "cancelled", "rejected", "failed", "reconciling"},
-            "reconciling": {"submitted", "partially_filled", "filled", "cancelled", "rejected", "failed", "outcome_unknown"},
-        }
-        terminal = {"filled", "cancelled", "rejected", "failed"}
+        transitions = ORDER_STATUS_TRANSITIONS
+        terminal = ORDER_TERMINAL_STATUSES
         with runtime_connection() as connection:
             row = connection.execute("SELECT status,broker_order_id,payload_json FROM orders WHERE client_order_id=?", (client_order_id,)).fetchone()
             if row is None:

@@ -296,7 +296,7 @@ target_weight는 넘기지 않는다. 판단 원장의 `final_decision.previous_
 학습과 serving이 공유할 연구 입력 경계다.
 
 feature와 1D·5D·20D label은 시각적으로 분리한다 — feature는 `as_of_at` 시점에 바로 만들어지지만,
-label은 그 뒤 실제 종가가 확정돼야만 만들어진다. dataset identity에는 feature version, cutoff,
+label은 그 뒤 실제 종가가 확정돼야만 만들어진다. dataset identity에는 정의 hash, cutoff,
 universe snapshot과 dataset hash가 포함된다.
 
 ```mermaid
@@ -305,7 +305,7 @@ flowchart TD
         EB["EvidenceBundle<br/>(도메인별 EvidenceItem)"] --> EXT["도메인별 추출<br/>_close_returns · _technical · _fundamental · _macro · _gurus"]
         EXT --> CHK{"모든 evidence.available_at ≤ as_of_at ?"}
         CHK -- "아니오" --> ERR["RLSafetyError<br/>(미래정보 유출 차단)"]
-        CHK -- "예" --> FS["FeatureSnapshot<br/>feature_version · source_ids<br/>provenance.definition_hash"]
+        CHK -- "예" --> FS["FeatureSnapshot<br/>source_ids<br/>provenance.definition_hash"]
         FS --> FB["FeatureBundle<br/>definition_version + definition_hash<br/>horizons = 1 · 5 · 20"]
     end
 
@@ -315,11 +315,11 @@ flowchart TD
     end
 
     FS -. "같은 snapshot 참조" .-> LBL
-    FB --> DS["dataset_hash =<br/>feature_version + cutoff + universe snapshot"]
+    FB --> DS["dataset_hash =<br/>definition_hash + cutoff + universe snapshot"]
     FL --> DS
 ```
 
-같은 `snapshot`(feature_version·as_of_at·ticker)을 참조해야만 feature와 label이 나중에 하나의
+같은 `snapshot`(as_of_at·ticker)을 참조해야만 feature와 label이 나중에 하나의
 학습 row로 합쳐진다 — label을 feature와 같은 시점에 만들지 않는 이유가 이 시차다.
 
 ### 과거 재현(`historical_replay`)의 규칙
@@ -459,7 +459,7 @@ train
 모든 artifact에는 다음 identity를 남긴다.
 
 - algorithm과 parameter
-- feature version과 dataset hash
+- feature 컬럼 정의 hash와 dataset hash
 - train/validation/OOS 기간
 - random seed와 code commit
 - model file SHA-256

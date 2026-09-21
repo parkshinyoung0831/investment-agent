@@ -308,7 +308,6 @@ def summarize_event_features(
     *,
     ticker: str,
     as_of_at: str,
-    feature_version: str = "event-intelligence-v1",
     window_days: int = 7,
 ) -> EventFeatureSnapshot:
     """원문을 저장하지 않고 사건 수·속도·심리만 학습용 snapshot으로 보존한다."""
@@ -350,7 +349,6 @@ def summarize_event_features(
             "raw_content_persisted": False,
             "social_is_supplementary": True,
         },
-        feature_version=feature_version,
     )
 
 

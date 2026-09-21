@@ -14,7 +14,7 @@ def _payload(**alpha) -> dict:
     values.update(alpha)
     return {
         "artifact": {
-            "artifact_id": "model_x", "model_kind": "ridge", "feature_version": "v", "horizon_days": 20,
+            "artifact_id": "model_x", "model_kind": "ridge", "horizon_days": 20,
             "out_of_sample": {"rank_correlation": 0.1, "direction_accuracy": 0.55},
         },
         "model_state": {"coefficients": [0.1], "intercept": 0.0},

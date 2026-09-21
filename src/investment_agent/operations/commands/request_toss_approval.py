@@ -38,6 +38,7 @@ class ExecutionApprovalRepository(Protocol):
     """승인 생성 진입점이 사용하는 private execution 저장소 경계."""
 
     def load_intent(self, intent_id: str) -> ExecutionIntent | None: ...
+    def expire_due_approvals(self, *, now: datetime | None = None) -> int: ...
     def approval_for_intent(self, intent_id: str) -> ApprovalRequest | None: ...
     def current_tracked_tickers(self) -> set[str]: ...
     def save_handoff(self, handoff: TossManualHandoff) -> None: ...
@@ -349,8 +350,13 @@ def request_toss_approval(
     if intent.execution_mode != "live":
         raise ExecutionSafetyError("only a live ExecutionIntent can request approval")
 
+    # 만료 시각이 지난 승인을 먼저 `expired`로 옮긴다. 판정 경로(`decide_approval`·
+    # `consume_approval`)는 이미 `expires_at <= now`를 거절하므로 의미가 느슨해지지 않는다.
+    # 전에는 이 정리를 아무도 부르지 않아 만료된 승인 한 건이 그 intent의 재요청을
+    # **영구히** 막았고, 설계된 "같은 목표는 한 번만 묻는다"와 구별되지 않았다(감사 EX2-13).
+    execution_repository.expire_due_approvals(now=current)
     existing = execution_repository.approval_for_intent(intent.intent_id)
-    if existing is not None:
+    if existing is not None and existing.status != "expired":
         return _published_existing(
             existing,
             intent=intent,

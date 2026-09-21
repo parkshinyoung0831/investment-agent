@@ -22,7 +22,6 @@ def dataset() -> FeatureDataset:
         forward_returns=np.array([[0.01, 0.02], [-0.01, 0.01], [0.0, 0.0]]),
         benchmark_forward_returns=np.array([0.005, 0.0, 0.0]),
         availability=np.array([[True, False], [True, True], [True, True]]),
-        feature_version="v1",
     )
 
 

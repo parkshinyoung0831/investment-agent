@@ -27,8 +27,6 @@ class PPOPolicy:
     @property
     def feature_names(self): return tuple(self.metadata["feature_names"])
     @property
-    def feature_version(self): return self.metadata["feature_version"]
-    @property
     def artifact_id(self): return self.metadata["artifact_id"]
     @property
     def dsr_probability(self): return float(self.metadata["score"]["dsr_probability"])
@@ -37,7 +35,7 @@ class PPOPolicy:
         return self.model.predict(np.asarray(observation, dtype=np.float32), deterministic=deterministic)
 
     def predict_weights(self, frame, *, current_weights=None):
-        if (frame.symbols, frame.feature_names, frame.feature_version) != (self.symbols, self.feature_names, self.feature_version):
+        if (frame.symbols, frame.feature_names) != (self.symbols, self.feature_names):
             raise ValueError("policy observation axes mismatch")
         weights = {CASH_SYMBOL: 1.0} if current_weights is None else current_weights
         axis = (*self.symbols, CASH_SYMBOL)
@@ -58,7 +56,7 @@ def save_policy_bundle(model, directory: Path, *, dataset, score: Mapping, train
         data=binary.read_bytes()
     digest=hashlib.sha256(data).hexdigest()
     payload={"schema": SCHEMA, "algorithm":"ppo", "symbols":list(dataset.symbols),
-             "feature_names":list(dataset.feature_names), "feature_version":dataset.feature_version,
+             "feature_names":list(dataset.feature_names),
              "normalization":{"kind":"identity", "observation_dtype":"float32"},
              "action_axis":[*dataset.symbols,CASH_SYMBOL], "model_sha256":digest,
              "model_binary":digest+".zip", "score":dict(score), "training":dict(training)}

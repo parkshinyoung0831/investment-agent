@@ -26,7 +26,6 @@ def _dataset(symbols: tuple[str, ...], *, periods: int = 2) -> FeatureDataset:
         forward_returns=np.full((periods, count), 0.10),
         benchmark_forward_returns=np.zeros(periods),
         availability=np.ones((periods, count), dtype=bool),
-        feature_version="rl-v1",
     )
 
 

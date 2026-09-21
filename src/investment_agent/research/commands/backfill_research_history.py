@@ -180,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
     end = date.fromisoformat(args.end) if args.end else (now - timedelta(days=_LABEL_SETTLE_DAYS)).date()
     repository = PitReader()
 
-    from investment_agent.research.features.layer import FEATURE_VERSION, FeatureLayer
+    from investment_agent.research.features.layer import FeatureLayer
 
     definition_hash = FeatureLayer().definition_hash
     states: dict[str, BackfillDateState] = {}
@@ -190,17 +190,13 @@ def main(argv: list[str] | None = None) -> int:
         snapshots = ResearchStore(read_only=True).records(
             "rl_feature_snapshots", start_as_of=point, end_as_of=point,
         )
-        stored = {
-            str(row["ticker"]).upper() for row in snapshots
-            if str(row.get("feature_version")) == FEATURE_VERSION
-        }
+        stored = {str(row["ticker"]).upper() for row in snapshots}
         manifests = ResearchStore(read_only=True).records(
             BACKFILL_RUNS_DATASET, start_as_of=point, end_as_of=point,
         )
         expected_hash = _universe_hash(tickers)
         matching = next((row for row in reversed(manifests)
-                         if row.get("feature_version") == FEATURE_VERSION
-                         and row.get("definition_hash") == definition_hash
+                         if row.get("definition_hash") == definition_hash
                          and row.get("universe_hash") == expected_hash), None)
         unavailable = {
             str(ticker).upper() for ticker in (matching or {}).get("unavailable_tickers", [])
@@ -227,10 +223,9 @@ def main(argv: list[str] | None = None) -> int:
         failed = sorted({str(ticker).upper() for ticker in detail.get("failed", [])})
         status = "completed" if not failed and result.get("feature_status") == "success" else "partial"
         ResearchStore().upsert_records(BACKFILL_RUNS_DATASET, [{
-            "record_key": f"{FEATURE_VERSION}:{point}",
+            "record_key": point,
             "as_of_at": point,
             "available_at": datetime.now(timezone.utc).isoformat(),
-            "feature_version": FEATURE_VERSION,
             "definition_hash": definition_hash,
             "universe_hash": _universe_hash(tickers),
             "expected_tickers": sorted({str(ticker).upper() for ticker in tickers}),

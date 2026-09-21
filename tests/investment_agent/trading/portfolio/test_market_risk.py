@@ -174,3 +174,57 @@ class MarketRiskTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BetaParsingReuseTest(unittest.TestCase):
+    """베타 추정이 benchmark 가격을 종목마다 다시 파싱하지 않는다(감사 TR2-09).
+
+    결과는 바뀌지 않아야 한다 — 순수 계산 재사용이다.
+    """
+
+    def _rows(self, seed: int, count: int = 80):
+        import random
+
+        rng = random.Random(seed)
+        value = 100.0
+        rows = []
+        for index in range(count):
+            value *= 1.0 + rng.gauss(0.0005, 0.01)
+            rows.append({
+                "trade_date": (date(2026, 1, 1) + timedelta(days=index)).isoformat(),
+                "close": value,
+            })
+        return rows
+
+    def test_parsing_happens_once_per_symbol_and_results_are_unchanged(self):
+        from unittest import mock
+
+        from investment_agent.trading.portfolio import market_risk
+
+        symbols = [f"S{index}" for index in range(6)]
+        rows = {symbol: self._rows(index) for index, symbol in enumerate(symbols)}
+        rows["SPY"] = self._rows(99)
+
+        original = market_risk._close_by_date
+        calls: list[str] = []
+
+        def counting(rows_arg, symbol):
+            calls.append(symbol)
+            return original(rows_arg, symbol)
+
+        with mock.patch.object(market_risk, "_close_by_date", side_effect=counting):
+            betas = market_risk.estimate_betas(rows, symbols=symbols, minimum_observations=60)
+
+        # 종목 6 + benchmark 1 = 7번. 전에는 benchmark를 6번 다시 파싱했다(총 12번).
+        self.assertEqual(len(calls), len(symbols) + 1)
+        self.assertEqual(calls.count("SPY"), 1)
+
+        # 캐시가 없어도 같은 값이 나온다 — 결과 동일성.
+        expected = {
+            symbol: market_risk.estimate_betas(
+                rows, symbols=[symbol], minimum_observations=60
+            )[symbol]
+            for symbol in symbols
+        }
+        for symbol in symbols:
+            self.assertAlmostEqual(betas[symbol], expected[symbol], places=12)

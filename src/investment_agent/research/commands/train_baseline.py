@@ -87,9 +87,8 @@ def main(argv: list[str] | None = None) -> int:
         dataset, embargo_periods=args.embargo_periods,
     )
     log.info(
-        "Dataset validated rows=%d feature_version=%s hash=%s splits=%s/%s/%s",
+        "Dataset validated rows=%d hash=%s splits=%s/%s/%s",
         len(dataset.rows),
-        dataset.manifest.feature_version,
         dataset.dataset_hash,
         train_split,
         validation_split,

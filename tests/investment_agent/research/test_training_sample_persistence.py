@@ -14,7 +14,7 @@ class TrainingSamplePersistenceTest(unittest.TestCase):
     def test_identical_sample_keeps_the_existing_parquet_file(self):
         sample = TrainingSample(
             sample_id="", ticker="AAPL", as_of_at="2025-01-03T23:30:00+00:00",
-            label_available_at="2025-02-03T21:00:00+00:00", feature_version="v5",
+            label_available_at="2025-02-03T21:00:00+00:00",
             label_definition="net_excess_return", features={"price_return_20d": 0.02},
             labels={"net_excess_return": 0.01}, provenance={"source": "shadow_simulation"},
         )

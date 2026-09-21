@@ -104,17 +104,30 @@ def _aligned_returns(
     symbols: Sequence[str],
     *,
     minimum_observations: int,
+    closes_cache: dict[str, dict[date, float]] | None = None,
 ) -> tuple[tuple[str, ...], list[date], np.ndarray]:
-    """지정 종목을 같은 거래일 수익률 행렬로 정렬한다."""
+    """지정 종목을 같은 거래일 수익률 행렬로 정렬한다.
+
+    `closes_cache`는 **같은 입력에 대한 파싱 결과**를 호출자끼리 나누는 자리다.
+    베타 추정처럼 (종목, benchmark) 쌍을 루프로 도는 경로에서 benchmark를 매번 다시
+    파싱하던 것을 없앤다(감사 TR2-09). 값·검증은 그대로다 — 캐시가 없어도 결과가 같다.
+    """
     normalized = tuple(str(symbol).upper().strip() for symbol in symbols)
     if not normalized or len(normalized) != len(set(normalized)) or CASH_SYMBOL in normalized:
         raise ContractError("covariance symbols must be unique risky assets")
     closes_by_symbol: dict[str, dict[date, float]] = {}
     for symbol in normalized:
+        cached = None if closes_cache is None else closes_cache.get(symbol)
+        if cached is not None:
+            closes_by_symbol[symbol] = cached
+            continue
         raw = price_rows_by_symbol.get(symbol)
         if not raw:
             raise ContractError(f"missing market price history: {symbol}")
-        closes_by_symbol[symbol] = _close_by_date(raw, symbol)
+        parsed = _close_by_date(raw, symbol)
+        closes_by_symbol[symbol] = parsed
+        if closes_cache is not None:
+            closes_cache[symbol] = parsed
     # 시작일이 다른 이력은 겹치는 구간만 쓴다. 내부 결측은 채우거나 압축하지 않는다.
     # 종료일만 맞추면 이틀 수익률과 하루 수익률이 섞이고, 빈 구간을 버리면 CVaR의
     # '연속 5거래일' 의미까지 달라진다. 복구된 가격으로 재시도하기 전까지 차단한다.
@@ -303,13 +316,16 @@ def estimate_betas(
     """종목별 시장 베타. 같은 거래일 수익률로만 추정한다(결측일을 채우지 않는다)."""
     benchmark = str(benchmark_symbol).upper()
     result: dict[str, float] = {}
+    # benchmark는 모든 쌍에 들어가므로 파싱을 한 번만 한다. 종목별 파싱도 재사용된다.
+    closes_cache: dict[str, dict[date, float]] = {}
     for raw_symbol in symbols:
         symbol = str(raw_symbol).upper().strip()
         if symbol == benchmark:
             result[symbol] = 1.0
             continue
         _, _, matrix = _aligned_returns(
-            price_rows_by_symbol, (symbol, benchmark), minimum_observations=minimum_observations,
+            price_rows_by_symbol, (symbol, benchmark),
+            minimum_observations=minimum_observations, closes_cache=closes_cache,
         )
         variance = float(np.var(matrix[:, 1], ddof=1))
         if variance <= 1e-12:

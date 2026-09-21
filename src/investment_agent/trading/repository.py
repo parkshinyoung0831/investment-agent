@@ -87,7 +87,7 @@ class TradingRepository:
     def record_model_version(self, row: dict[str, Any]) -> int:
         """모델 파일 자체가 아니라 주소·해시·학습 메타데이터만 기록한다."""
         allowed = {
-            "artifact_id", "algorithm", "feature_version", "train_start", "train_end",
+            "artifact_id", "algorithm", "train_start", "train_end",
             "seed", "artifact_uri", "sha256", "params", "code_commit",
         }
         payload = {key: value for key, value in dict(row).items() if key in allowed}

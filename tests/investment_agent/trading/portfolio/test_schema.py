@@ -81,7 +81,7 @@ class FullPortfolioSchemaTest(unittest.TestCase):
             with patch.dict("os.environ", {"AI_INVESTOR_RUNTIME_DB_PATH": str(path)}):
                 repo = TradingRepository()
                 repo.record_model_version({
-                    "artifact_id": "artifact-1", "algorithm": "ridge", "feature_version": "v1",
+                    "artifact_id": "artifact-1", "algorithm": "ridge",
                     "artifact_uri": "s3://bucket/artifact-1", "sha256": "a" * 64,
                 })
                 self.assertEqual("shadow", repo.current_model_stage("artifact-1"))

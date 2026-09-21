@@ -250,7 +250,6 @@ def main(argv: list[str] | None = None) -> int:
         "policy_version": AGENT_POLICY_VERSION,
         "model_provider": "model_pool",
         "model_name": "rotating",
-        "feature_version": "supabase-evidence-bundle-v1",
         "code_commit": os.environ.get("GITHUB_SHA"),
     }
     artifact_sha = hashlib.sha256(
@@ -260,7 +259,6 @@ def main(argv: list[str] | None = None) -> int:
     repository.save_model_artifact({
         "artifact_id": model_artifact_id,
         "algorithm": "llm",
-        "feature_version": "supabase-evidence-bundle-v1",
         "train_start": None,
         "train_end": None,
         "seed": None,

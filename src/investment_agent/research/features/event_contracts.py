@@ -132,7 +132,6 @@ class EventFeatureSnapshot:
     event_importance: float = 0.0
     source_ids: tuple[str, ...] = ()
     provenance: Mapping[str, Any] = field(default_factory=dict)
-    feature_version: str = "event-intelligence-v1"
     input_hash: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -165,7 +164,6 @@ class EventFeatureSnapshot:
             "ticker": ticker,
             "as_of_at": as_of,
             "available_at": available,
-            "feature_version": str(self.feature_version).strip(),
             "values": {
                 name: getattr(self, name) for name in (
                     "news_sentiment", "social_sentiment", "news_velocity",
@@ -177,13 +175,9 @@ class EventFeatureSnapshot:
             "source_ids": source_ids,
             "provenance": dict(self.provenance),
         }
-        feature_version = str(self.feature_version).strip()
-        if not feature_version:
-            raise ContractError("feature_version is required")
         object.__setattr__(self, "ticker", ticker)
         object.__setattr__(self, "as_of_at", as_of)
         object.__setattr__(self, "available_at", available)
-        object.__setattr__(self, "feature_version", feature_version)
         object.__setattr__(self, "source_ids", source_ids)
         object.__setattr__(self, "provenance", dict(self.provenance))
         object.__setattr__(

@@ -44,58 +44,24 @@ _DETAIL_VIEWS = ("포트폴리오", "포지션 변화")
 
 
 def _manager_investment_style(manager: dict[str, Any]) -> str | None:
-    """대표 매니저의 실제 운용 성격을 카드 제목 옆에 짧게 표시한다."""
+    """대표 매니저의 실제 운용 성격을 카드 제목 옆에 짧게 표시한다.
 
-    identity = " ".join(
-        str(manager.get(field) or "")
-        for field in ("name_ko", "name", "fund_name_ko", "fund_name")
-    ).lower()
-    styles = (
-        ("버핏", "가치투자"),
-        ("berkshire", "가치투자"),
-        ("애크먼", "행동주의 가치투자"),
-        ("ackman", "행동주의 가치투자"),
-        ("혼", "집중 장기투자"),
-        ("hohn", "집중 장기투자"),
-        ("콜먼", "성장주 중심 투자"),
-        ("coleman", "성장주 중심 투자"),
-        ("드러켄밀러", "거시 전술투자"),
-        ("druckenmiller", "거시 전술투자"),
-        ("테퍼", "가치·거시 투자"),
-        ("tepper", "가치·거시 투자"),
-        ("클라만", "가치투자"),
-        ("klarman", "가치투자"),
-    )
-    return next((label for needle, label in styles if needle in identity), None)
+    값의 owner는 institutional catalog의 `strategy_group`이다(reporting 경계가 이미
+    `strategy_label`로 붙여 준다). 전에는 여기서 매니저 **이름 부분문자열** 14쌍으로
+    같은 것을 다시 골랐다 — 거장을 한 명 추가하면 조용히 비고, 한글 needle은 카탈로그
+    표기와 달라 죽어 있었고, 같은 성씨가 둘이면 오매칭이었다(감사 AU-03).
+    """
+    label = manager.get("strategy_label")
+    return str(label) if isinstance(label, str) and label.strip() else None
 
 
 def _manager_investment_summary(manager: dict[str, Any]) -> str | None:
     """카드의 짧은 성향보다 한 단계 풀어 쓴 매니저별 투자 관점이다."""
-
-    identity = " ".join(
-        str(manager.get(field) or "")
-        for field in ("name_ko", "name", "fund_name_ko", "fund_name")
-    ).lower()
-    approaches = (
-        ("버핏", "하락장 대응력·현금 여력·경제적 해자를 중시하는 장기 가치투자"),
-        ("berkshire", "하락장 대응력·현금 여력·경제적 해자를 중시하는 장기 가치투자"),
-        ("애크먼", "주주가치 개선을 직접 이끄는 행동주의 가치투자"),
-        ("ackman", "주주가치 개선을 직접 이끄는 행동주의 가치투자"),
-        ("혼", "소수의 고확신 기업에 장기 집중 투자"),
-        ("hohn", "소수의 고확신 기업에 장기 집중 투자"),
-        ("콜먼", "성장 가능성이 큰 기업을 장기 보유"),
-        ("coleman", "성장 가능성이 큰 기업을 장기 보유"),
-        ("드러켄밀러", "거시 흐름과 시장 변화에 빠르게 대응하는 전술 투자"),
-        ("druckenmiller", "거시 흐름과 시장 변화에 빠르게 대응하는 전술 투자"),
-        ("테퍼", "가치 판단과 거시 환경을 함께 보는 투자"),
-        ("tepper", "가치 판단과 거시 환경을 함께 보는 투자"),
-        ("클라만", "가격 대비 가치가 높은 기업을 장기 보유"),
-        ("klarman", "가격 대비 가치가 높은 기업을 장기 보유"),
-    )
-    return next(
-        (summary for needle, summary in approaches if needle in identity),
-        str(manager.get("thesis_ko") or "") or None,
-    )
+    summary = manager.get("strategy_summary")
+    if isinstance(summary, str) and summary.strip():
+        return summary
+    thesis = manager.get("thesis_ko")
+    return str(thesis) if isinstance(thesis, str) and thesis.strip() else None
 
 
 def _money_short(value: Any) -> str:

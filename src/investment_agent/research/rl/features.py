@@ -28,7 +28,6 @@ class FeatureRepository(Protocol):
         *,
         start_as_of: str,
         end_as_of: str,
-        feature_version: str,
     ) -> list[dict[str, Any]]: ...
 
 
@@ -39,7 +38,6 @@ class LabelRepository(Protocol):
         *,
         start_as_of: str,
         end_as_of: str,
-        feature_version: str,
         label_cutoff_at: str,
     ) -> list[dict[str, Any]]: ...
 
@@ -55,15 +53,13 @@ class MembershipRepository(Protocol):
 
 @dataclass(frozen=True)
 class FeatureSpec:
-    version: str
     names: tuple[str, ...]
     benchmark: str = "SPY"
 
     def __post_init__(self) -> None:
-        version = str(self.version).strip()
         names = tuple(str(name).strip() for name in self.names)
-        if not version or not names or any(not name for name in names):
-            raise ValueError("feature version and names are required")
+        if not names or any(not name for name in names):
+            raise ValueError("feature names are required")
         if len(names) != len(set(names)):
             raise ValueError("feature names must be unique")
         forbidden = [
@@ -73,7 +69,6 @@ class FeatureSpec:
         ]
         if forbidden:
             raise RLSafetyError("feature spec contains future-label fields: " + ", ".join(forbidden))
-        object.__setattr__(self, "version", version)
         object.__setattr__(self, "names", names)
 
     @property
@@ -106,7 +101,6 @@ class LiveInferenceFrame:
 
     symbols: tuple[str, ...]
     feature_names: tuple[str, ...]
-    feature_version: str
     as_of_at: str
     features: np.ndarray
     availability: np.ndarray
@@ -130,8 +124,6 @@ class LiveInferenceFrame:
 
 
 def _validate_feature_shape(snapshot: FeatureSnapshot, spec: FeatureSpec) -> None:
-    if snapshot.feature_version != spec.version:
-        raise RLSafetyError("feature snapshot version does not match FeatureSpec")
     fields = set(snapshot.features)
     expected = set(spec.names)
     if fields != expected:
@@ -172,8 +164,6 @@ def assemble_historical_training_set(
     for label in labels:
         if not isinstance(label, ForwardReturnLabel):
             raise TypeError("labels must contain ForwardReturnLabel values")
-        if label.feature_version != spec.version:
-            raise RLSafetyError("label feature_version does not match FeatureSpec")
         if label.ticker not in symbol_set:
             raise RLSafetyError(f"label ticker is outside the action universe: {label.ticker}")
         if parse_datetime(label.label_available_at) > cutoff:
@@ -236,7 +226,6 @@ def assemble_historical_training_set(
         forward_returns=returns,
         benchmark_forward_returns=benchmark,
         availability=availability,
-        feature_version=spec.version,
     )
     identity = {
         "feature_spec_hash": spec.hash,
@@ -281,7 +270,7 @@ def load_training_set(
     cutoff = parse_datetime(label_cutoff_at).isoformat()
 
     feature_rows = store.rl_feature_snapshot_rows(
-        normalized, start_as_of=start, end_as_of=end, feature_version=spec.version,
+        normalized, start_as_of=start, end_as_of=end,
     )
     if not feature_rows:
         raise RLDataNotReadyError(
@@ -291,7 +280,6 @@ def load_training_set(
         normalized,
         start_as_of=start,
         end_as_of=end,
-        feature_version=spec.version,
         label_cutoff_at=cutoff,
     )
     if not label_rows:
@@ -318,7 +306,6 @@ def load_training_set(
     )
     snapshots = [
         FeatureSnapshot(
-            feature_version=str(row.get("feature_version") or spec.version),
             as_of_at=str(row["as_of_at"]),
             ticker=str(row["ticker"]),
             available_at=str(row["available_at"]),
@@ -331,7 +318,6 @@ def load_training_set(
     ]
     labels = [
         ForwardReturnLabel(
-            feature_version=str(row.get("feature_version") or spec.version),
             as_of_at=str(row["as_of_at"]),
             ticker=str(row["ticker"]),
             forward_end_at=str(row["forward_end_at"]),
@@ -410,7 +396,6 @@ def build_live_inference_frame(
     return LiveInferenceFrame(
         symbols=normalized_symbols,
         feature_names=spec.names,
-        feature_version=spec.version,
         as_of_at=point.isoformat(),
         features=features,
         availability=availability,
@@ -436,7 +421,6 @@ def build_feature_dataset(
     labels: list[ForwardReturnLabel] = []
     for row in rows:
         snapshot = FeatureSnapshot(
-            feature_version=str(row.get("feature_version") or spec.version),
             as_of_at=str(row["as_of_at"]),
             ticker=str(row["ticker"]),
             available_at=str(row["available_at"]),
@@ -448,7 +432,6 @@ def build_feature_dataset(
         snapshots.append(snapshot)
         if row.get("forward_return") is not None:
             labels.append(ForwardReturnLabel(
-                feature_version=snapshot.feature_version,
                 as_of_at=snapshot.as_of_at,
                 ticker=snapshot.ticker,
                 forward_end_at=str(row["forward_end_at"]),

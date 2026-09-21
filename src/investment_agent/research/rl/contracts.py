@@ -62,7 +62,6 @@ def _hash(prefix: str, payload: Mapping[str, Any]) -> str:
 class FeatureSnapshot:
     """as_of 시점에 실제로 이용 가능했던 값만 담고 미래 label은 금지한다."""
 
-    feature_version: str
     as_of_at: str
     ticker: str
     available_at: str
@@ -74,9 +73,6 @@ class FeatureSnapshot:
     snapshot_id: str = field(init=False)
 
     def __post_init__(self) -> None:
-        version = str(self.feature_version).strip()
-        if not version:
-            raise ValueError("feature_version is required")
         as_of_at = parse_datetime(self.as_of_at).isoformat()
         available_at = parse_datetime(self.available_at).isoformat()
         if parse_datetime(available_at) > parse_datetime(as_of_at):
@@ -116,7 +112,6 @@ class FeatureSnapshot:
             raise ValueError("provenance must be a non-empty object with string keys")
         ticker = _ticker(self.ticker)
         identity = {
-            "feature_version": version,
             "as_of_at": as_of_at,
             "ticker": ticker,
             "available_at": available_at,
@@ -126,7 +121,6 @@ class FeatureSnapshot:
             "provenance": provenance,
         }
         input_hash = hashlib.sha256(canonical_json(identity).encode("utf-8")).hexdigest()
-        object.__setattr__(self, "feature_version", version)
         object.__setattr__(self, "as_of_at", as_of_at)
         object.__setattr__(self, "ticker", ticker)
         object.__setattr__(self, "available_at", available_at)
@@ -139,7 +133,6 @@ class FeatureSnapshot:
     def to_storage_row(self) -> dict[str, Any]:
         """label 컬럼이 물리적으로 들어갈 수 없는 feature 전용 payload."""
         return {
-            "feature_version": self.feature_version,
             "as_of_at": self.as_of_at,
             "ticker": self.ticker,
             "available_at": self.available_at,
@@ -155,7 +148,6 @@ class FeatureSnapshot:
 class ForwardReturnLabel:
     """feature snapshot과 분리되어 미래 구간 종료 뒤에만 생성되는 label."""
 
-    feature_version: str
     as_of_at: str
     ticker: str
     forward_end_at: str
@@ -165,9 +157,6 @@ class ForwardReturnLabel:
     label_id: str = field(init=False)
 
     def __post_init__(self) -> None:
-        version = str(self.feature_version).strip()
-        if not version:
-            raise ValueError("feature_version is required")
         as_of_at = parse_datetime(self.as_of_at).isoformat()
         forward_end_at = parse_datetime(self.forward_end_at).isoformat()
         label_available_at = parse_datetime(self.label_available_at).isoformat()
@@ -181,7 +170,6 @@ class ForwardReturnLabel:
             raise ValueError("returns cannot be below -100%")
         ticker = _ticker(self.ticker)
         identity = {
-            "feature_version": version,
             "as_of_at": as_of_at,
             "ticker": ticker,
             "forward_end_at": forward_end_at,
@@ -189,7 +177,6 @@ class ForwardReturnLabel:
             "forward_return": forward_return,
             "benchmark_forward_return": benchmark_return,
         }
-        object.__setattr__(self, "feature_version", version)
         object.__setattr__(self, "as_of_at", as_of_at)
         object.__setattr__(self, "ticker", ticker)
         object.__setattr__(self, "forward_end_at", forward_end_at)
@@ -201,7 +188,6 @@ class ForwardReturnLabel:
     def to_storage_row(self) -> dict[str, Any]:
         """feature 값이 물리적으로 들어갈 수 없는 label 전용 payload."""
         return {
-            "feature_version": self.feature_version,
             "as_of_at": self.as_of_at,
             "ticker": self.ticker,
             "forward_end_at": self.forward_end_at,

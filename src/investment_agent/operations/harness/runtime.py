@@ -281,7 +281,8 @@ class HarnessScheduler:
                 # 외부 adapter 예외 문구에는 token·URL이 섞일 수 있어 타입만 영구 기록한다.
                 runtime.last_error = type(exc).__name__
                 runtime.metadata = {}
-                if runtime.attempts >= stage_def.max_attempts:
+                runtime.failures += 1
+                if runtime.failures >= stage_def.max_attempts:
                     runtime.status = "failed"
                     runtime.completed_at = timestamp
                     job.status = "failed"

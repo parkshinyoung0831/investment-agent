@@ -156,7 +156,6 @@ class NativeCoreTests(unittest.TestCase):
                 ticker="AAPL",
                 as_of_at=as_of.isoformat(),
                 available_at=as_of.isoformat(),
-                feature_version="test-features-v1",
                 features={"momentum": float(index), "quality": 1.0},
             ))
             labels.append(LabelRecord(
@@ -164,14 +163,12 @@ class NativeCoreTests(unittest.TestCase):
                 as_of_at=as_of.isoformat(),
                 forward_end_at=end.isoformat(),
                 label_available_at=end.isoformat(),
-                feature_version="test-features-v1",
                 label_definition="excess_return_5d",
                 label=float(index) / 10.0,
             ))
         dataset = build_research_dataset(
             features,
             labels,
-            feature_version="test-features-v1",
             label_definition="excess_return_5d",
             label_cutoff_at="2026-08-20T00:00:00+00:00",
         )

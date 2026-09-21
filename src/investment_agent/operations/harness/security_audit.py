@@ -194,6 +194,16 @@ def _check_discord_security(environ: Mapping[str, str], mode: HarnessMode) -> li
             status=CheckStatus.FAIL,
             message="approval_workflow 모드 구동을 위한 DISCORD_APPROVAL_BOT_TOKEN이 설정되지 않았습니다.",
         ))
+    else:
+        # 두 조건이 모두 거짓인 경로(일반 토큰 없음)에서 전에는 항목이 **사라졌다** —
+        # 점검표를 읽는 사람이 "분리를 통과했다"와 "확인하지 않았다"를 구별할 수
+        # 없었다(감사 OP2-14). 확인 불가를 그대로 적는다.
+        results.append(CheckResult(
+            category=category,
+            code="DISCORD_BOT_TOKENS_UNVERIFIED",
+            status=CheckStatus.WARN,
+            message="일반 알림 봇 토큰이 없어 승인 봇과의 분리 여부를 확인하지 못했습니다.",
+        ))
 
     # 2. HMAC Secret 키 강도 점검
     if hmac_secret:
@@ -319,9 +329,21 @@ def _check_secrets_exposure(repository_root: Path) -> list[CheckResult]:
         return results
 
     content = gitignore_path.read_text(encoding="utf-8")
-    has_env = ".env" in content
-    has_artifacts = "artifacts/" in content or all(
-        p in content for p in ("artifacts/execution/", "artifacts/toss_auth/", "artifacts/ops/")
+    # 부분 문자열로 보면 `!.env.example`(부정 패턴)·주석·다른 경로의 일부까지 참이 된다 —
+    # `.env`를 무시하는 줄이 사라져도 점검은 계속 PASS다(감사 OP2-13). 줄 단위로 본다.
+    ignore_rules = {
+        line.strip()
+        for line in content.splitlines()
+        if line.strip() and not line.lstrip().startswith(("#", "!"))
+    }
+
+    def _ignored(pattern: str) -> bool:
+        """그 경로를 무시하는 규칙이 있는가. 선행 `/`는 같은 뜻이라 함께 본다."""
+        return any(rule.lstrip("/") == pattern for rule in ignore_rules)
+
+    has_env = _ignored(".env")
+    has_artifacts = _ignored("artifacts/") or all(
+        _ignored(p) for p in ("artifacts/execution/", "artifacts/toss_auth/", "artifacts/ops/")
     )
 
     if not has_env or not has_artifacts:
@@ -368,17 +390,30 @@ def _check_trading_limits(environ: Mapping[str, str]) -> list[CheckResult]:
     results: list[CheckResult] = []
     category = "TRADING_LIMITS"
 
-    def _parse_float(key: str, default: float) -> float | None:
+    # 파싱 실패를 `None`으로 바꾼 뒤 소비자가 그것을 "검사 대상 아님"으로 읽으면,
+    # 잘못된 한도가 점검을 **통째로 건너뛰고** healthy로 나온다. 정작 주문 직전
+    # `LiveTradingControls.from_config`는 `ExecutionSafetyError`로 그 회차를 막는다 —
+    # 사전점검이 잡아야 했던 바로 그 상황이다(감사 OP2-11). 실패는 곧바로 FAIL로 기록한다.
+    def _parse_number(key: str, default: float, *, cast=float) -> float | int | None:
         raw = environ.get(key, str(default)).strip()
         try:
-            return float(raw)
+            return cast(raw)
         except ValueError:
+            results.append(CheckResult(
+                category=category,
+                code=f"{key}_NOT_NUMERIC",
+                status=CheckStatus.FAIL,
+                message=f"{key}가 숫자가 아닙니다({raw!r}) — 주문 직전 게이트가 실행을 거절합니다.",
+            ))
             return None
 
-    daily_max = _parse_float("TOSS_MAX_DAILY_NOTIONAL_USD", 20000.0)
-    order_max = _parse_float("TOSS_MAX_ORDER_NOTIONAL_USD", 5000.0)
-    daily_loss = _parse_float("TOSS_MAX_DAILY_LOSS_USD", 500.0)
-    drawdown = _parse_float("TOSS_MAX_DRAWDOWN_FRACTION", 0.05)
+    daily_max = _parse_number("TOSS_MAX_DAILY_NOTIONAL_USD", 20000.0)
+    order_max = _parse_number("TOSS_MAX_ORDER_NOTIONAL_USD", 5000.0)
+    daily_loss = _parse_number("TOSS_MAX_DAILY_LOSS_USD", 500.0)
+    drawdown = _parse_number("TOSS_MAX_DRAWDOWN_FRACTION", 0.05)
+    # 실주문 게이트가 읽는 다섯 번째 한도. 손으로 나열하면 한도가 늘 때 다시 벌어진다 —
+    # 아래 계약 테스트가 `LiveTradingControls.from_config`의 키 집합과 대조한다(감사 OP2-12).
+    daily_orders = _parse_number("TOSS_MAX_DAILY_ORDERS", 20, cast=int)
 
     if daily_max is None or daily_max <= 0:
         results.append(CheckResult(
@@ -432,6 +467,22 @@ def _check_trading_limits(environ: Mapping[str, str]) -> list[CheckResult]:
                 code="DAILY_LOSS_LIMIT_OK",
                 status=CheckStatus.PASS,
                 message=f"일일 최대 손실 한도: ${daily_loss:,.0f}",
+            ))
+
+    if daily_orders is not None:
+        if daily_orders <= 0 or daily_orders > 200:
+            results.append(CheckResult(
+                category=category,
+                code="DAILY_ORDER_COUNT_OUT_OF_BOUNDS",
+                status=CheckStatus.WARN,
+                message=f"일일 최대 주문 건수({daily_orders})가 일반적 허용 범위(1~200)를 벗어납니다.",
+            ))
+        else:
+            results.append(CheckResult(
+                category=category,
+                code="DAILY_ORDER_COUNT_OK",
+                status=CheckStatus.PASS,
+                message=f"일일 최대 주문 건수: {daily_orders}",
             ))
 
     if drawdown is not None:

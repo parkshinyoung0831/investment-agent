@@ -36,7 +36,6 @@ class BaselinePolicyTest(unittest.TestCase):
             forward_returns=returns,
             benchmark_forward_returns=training.dataset.benchmark_forward_returns,
             availability=training.dataset.availability,
-            feature_version=training.dataset.feature_version,
         )
         changed = HistoricalTrainingSet(
             dataset=changed_dataset,
@@ -55,7 +54,6 @@ class BaselinePolicyTest(unittest.TestCase):
         frame = LiveInferenceFrame(
             symbols=model.symbols,
             feature_names=model.feature_names,
-            feature_version=model.feature_version,
             as_of_at="2026-02-01T21:00:00+00:00",
             features=np.asarray([[0.9, 0.5], [-0.9, 0.5]]),
             availability=np.asarray([True, False]),

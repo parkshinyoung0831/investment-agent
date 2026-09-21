@@ -49,7 +49,7 @@ class _Store:
         self.as_of, self.saved = as_of, []
 
     def rl_feature_snapshot_rows(self, symbols, **kwargs):
-        return [{"feature_version": kwargs["feature_version"], "as_of_at": self.as_of, "ticker": "AAA"}]
+        return [{"as_of_at": self.as_of, "ticker": "AAA"}]
 
     def rl_training_label_rows(self, symbols, **kwargs):
         return []

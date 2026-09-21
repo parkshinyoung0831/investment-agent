@@ -2,8 +2,8 @@
 
 feature와 label을 물리적으로 분리한 계약을 지키는 유일한 생산 경로다. 미래 가격을
 일부러 읽으므로 PIT 조회가 아니며, 구간이 아직 안 끝난 snapshot은 건드리지 않는다.
-Research local dataset `rl_training_labels`의 identity가 (feature_version, as_of_at,
-ticker)라서 한 snapshot당 horizon 하나만 저장된다 — 기본값은 비중을 정하는 기대수익
+Research local dataset `rl_training_labels`의 identity가 (as_of_at, ticker)라서
+한 snapshot당 horizon 하나만 저장된다 — 기본값은 비중을 정하는 기대수익
 기간(`SIGNAL_HORIZON_DAYS`)이다.
 """
 from __future__ import annotations
@@ -24,7 +24,7 @@ from investment_agent.platform.clock import (
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.serialization import parse_datetime
 from investment_agent.research.evidence.reader import PitReader
-from investment_agent.research.features.layer import FEATURE_VERSION, FeatureLayer
+from investment_agent.research.features.layer import FeatureLayer
 from investment_agent.research.rl.contracts import RLSafetyError
 from investment_agent.research.datasets.universe import members_over_window
 from investment_agent.research.storage.repository import ResearchStore
@@ -100,7 +100,6 @@ def build_labels(
         symbols,
         start_as_of=window_start,
         end_as_of=window_end,
-        feature_version=FEATURE_VERSION,
     )
     labeled = {
         (str(row["as_of_at"]), str(row["ticker"]))
@@ -108,7 +107,6 @@ def build_labels(
             symbols,
             start_as_of=window_start,
             end_as_of=window_end,
-            feature_version=FEATURE_VERSION,
             label_cutoff_at=window_end,
         )
     }
@@ -186,7 +184,6 @@ def build_labels(
                 parse_datetime(str(ingested)) if ingested else forward_end_at,
             )
             label = FeatureLayer.forward_label(
-                feature_version=str(snapshot_row["feature_version"]),
                 as_of_at=str(snapshot_row["as_of_at"]),
                 ticker=ticker,
                 horizon_days=horizon_days,
@@ -220,7 +217,6 @@ def build_labels(
         duration_sec=round(time.monotonic() - started, 3),
         started_at=started_at,
         detail={
-            "feature_version": FEATURE_VERSION,
             "horizon_days": horizon_days,
             "benchmark": benchmark,
             "window": [window_start, window_end],

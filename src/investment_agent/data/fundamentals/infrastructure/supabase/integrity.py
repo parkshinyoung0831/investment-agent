@@ -228,10 +228,29 @@ def collect_integrity_facts() -> dict:
         and row.get("status") in {"parsed", "empty", "unsupported"}
         and str(row.get("accession_no") or "") in filing_cik_by_accession
     }
+    known_segment_ciks = metric_ciks | terminal_segment_ciks
+    # `segments` 처리 행이 **아예 없는** CIK와, 행은 있으나 terminal이 아닌 CIK는
+    # 처방이 다르다. 앞은 신규 추적 종목의 과거 공시가 증분 창(7일) 밖이라 영구 누락된
+    # 것이고 `backfill_history --content segments --scope missing`이 답이다. 뒤는 처리
+    # 실패라 재처리·원인 조사가 답이다. 한 줄로 합치면 매일 같은 오류가 나면서 무엇을
+    # 해야 하는지는 알 수 없다(감사 AU-01). 둘 다 ERROR로 남긴다 — 완화가 아니다.
+    attempted_segment_ciks = {
+        filing_cik_by_accession[str(row["accession_no"])]
+        for row in processing_rows
+        if row.get("content_type") == "segments"
+        and str(row.get("accession_no") or "") in filing_cik_by_accession
+    }
     missing_segment_state_tickers = sorted(
         str(row["ticker"]) for row in securities
-        if str(row.get("cik") or "").zfill(10)
-        not in metric_ciks | terminal_segment_ciks
+        if str(row.get("cik") or "").zfill(10) not in known_segment_ciks
+    )
+    never_attempted_tickers = sorted(
+        str(row["ticker"]) for row in securities
+        if str(row.get("cik") or "").zfill(10) not in known_segment_ciks
+        and str(row.get("cik") or "").zfill(10) not in attempted_segment_ciks
+    )
+    stuck_segment_tickers = sorted(
+        set(missing_segment_state_tickers) - set(never_attempted_tickers)
     )
     segment_integrity = {
         "metric_rows": len(segment_rows),
@@ -243,6 +262,9 @@ def collect_integrity_facts() -> dict:
         ),
         "tracked_without_filing_rows": len(missing_segment_state_tickers),
         "tracked_without_segment_state_tickers": missing_segment_state_tickers,
+        # 처방이 다른 두 묶음. 합은 위 목록과 같다.
+        "segments_never_attempted_tickers": never_attempted_tickers,
+        "segments_stuck_tickers": stuck_segment_tickers,
         "orphan_metric_rows": sum(
             1 for accession in segment_accessions if accession not in segment_processing
         ),

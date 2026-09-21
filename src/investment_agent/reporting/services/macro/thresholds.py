@@ -203,8 +203,11 @@ def eval_row(r: dict[str, Any]):
         diff = float(curr) - float(prev_value)
         for name in ("alert", "caution", "watch"):
             if _check_band(diff, dcb.get(name)):
-                pct = (diff / abs(float(prev_value)) * 100) if prev_value else diff
-                _consider(_EMOJI[name], f"daily_change={pct:+.2f}%")
+                # 문구는 **판정한 값 그대로** 적는다. 전에는 상대 변화율(%)을 적어서
+                # ±0.10 문턱에 걸린 것이 "+3.00%"·"+60.00%"로 보였다 — 같은 변화폭이
+                # 기준값에 따라 20배 다르게 읽혔다(감사 RR2-14). 단위는 지표마다
+                # 다르므로(% · 지수 포인트 · USD) bp로 바꾸지 않는다.
+                _consider(_EMOJI[name], f"daily_change={diff:+g}")
                 break
 
     # 4) 고점 대비 하락폭 / 저점 대비 반등폭

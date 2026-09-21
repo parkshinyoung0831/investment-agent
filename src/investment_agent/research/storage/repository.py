@@ -38,7 +38,7 @@ T_STRATEGIES = "strategy_runs"
 T_ALLOCATION_ROWS = "strategy_allocations"
 T_FEATURE_SETS = "feature_sets"
 T_DATASET_RUNS = "dataset_runs"
-FEATURE_VERSION = "technical_v1"
+FEATURE_SET = "technical"
 _DATASET_NAME = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
 _PAYLOAD_FIELD_NAME = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
 
@@ -136,7 +136,7 @@ class ResearchStore:
             ).fetchone()
             if latest and latest[0] is not None:
                 connection.execute(f"INSERT OR REPLACE INTO {T_FEATURE_SETS} VALUES (?,?,?,?)", [
-                    FEATURE_VERSION, str(self._feature_root), latest[0], latest[1]
+                    FEATURE_SET, str(self._feature_root), latest[0], latest[1]
                 ])
             connection.execute("DROP TABLE feature_signals_daily")
 
@@ -205,7 +205,7 @@ class ResearchStore:
 
     @property
     def _feature_root(self) -> Path:
-        return self._parquet_root / "features" / FEATURE_VERSION
+        return self._parquet_root / "features" / FEATURE_SET
 
     @staticmethod
     def _parquet_pattern(root: Path) -> str:
@@ -363,11 +363,11 @@ class ResearchStore:
             latest = max(str(row["trade_date"]) for row in normalized)
             connection.execute(f"""
                 INSERT INTO {T_FEATURE_SETS} VALUES (?,?,?,?)
-                ON CONFLICT(feature_version) DO UPDATE SET
+                ON CONFLICT(feature_set) DO UPDATE SET
                     root_path=excluded.root_path,
                     latest_trade_date=greatest({T_FEATURE_SETS}.latest_trade_date, excluded.latest_trade_date),
                     updated_at=excluded.updated_at
-            """, [FEATURE_VERSION, str(self._feature_root), latest, ingested_at])
+            """, [FEATURE_SET, str(self._feature_root), latest, ingested_at])
             return changed_count
 
     def delete_features_before(self, cutoff: str) -> int:
@@ -802,7 +802,6 @@ class ResearchStore:
         *,
         start_as_of: str,
         end_as_of: str,
-        feature_version: str,
         label_cutoff_at: str,
     ) -> dict[str, list[dict[str, Any]]]:
         """완료 기간 판정에 필요한 scalar만 읽어 feature/label JSON 복원을 피한다."""
@@ -813,23 +812,21 @@ class ResearchStore:
         if end < start or cutoff < end:
             raise ValueError("invalid training sample metadata window")
         snapshots = self.records_with_payload_fields(
-            "rl_feature_snapshots", ("feature_version", "input_hash"),
+            "rl_feature_snapshots", ("input_hash",),
             start_as_of=start.isoformat(), end_as_of=end.isoformat(),
         )
         labels = self.records_with_payload_fields(
-            "rl_training_labels", ("feature_version", "label_available_at", "label_id"),
+            "rl_training_labels", ("label_available_at", "label_id"),
             start_as_of=start.isoformat(), end_as_of=end.isoformat(),
         )
         return {
             "snapshots": [
                 row for row in snapshots
-                if row.get("feature_version") == feature_version
-                and normalize_ticker(row.get("ticker")) in normalized
+                if normalize_ticker(row.get("ticker")) in normalized
             ],
             "labels": [
                 row for row in labels
-                if row.get("feature_version") == feature_version
-                and normalize_ticker(row.get("ticker")) in normalized
+                if normalize_ticker(row.get("ticker")) in normalized
                 and parse_datetime(str(row["label_available_at"])) <= cutoff
             ],
         }
@@ -840,7 +837,6 @@ class ResearchStore:
         *,
         start_as_of: str,
         end_as_of: str,
-        feature_version: str,
         as_of_values: Sequence[str] | None = None,
     ) -> list[dict[str, Any]]:
         """미래 label 없이 point-in-time feature payload만 검증해 반환한다."""
@@ -849,8 +845,6 @@ class ResearchStore:
         end = parse_datetime(end_as_of)
         if end < start:
             raise ValueError("RL feature end_as_of must not precede start_as_of")
-        if not str(feature_version).strip():
-            raise ValueError("feature_version is required")
         rows = self.records(
             "rl_feature_snapshots",
             start_as_of=start.isoformat(),
@@ -859,8 +853,7 @@ class ResearchStore:
         )
         rows = [
             row for row in rows
-            if row.get("feature_version") == feature_version
-            and normalize_ticker(str(row.get("ticker"))) in normalized
+            if normalize_ticker(str(row.get("ticker"))) in normalized
             and parse_datetime(str(row["available_at"])) <= end
         ]
         return [self._feature_snapshot(dict(row)).to_storage_row() for row in rows]
@@ -871,7 +864,6 @@ class ResearchStore:
         *,
         start_as_of: str,
         end_as_of: str,
-        feature_version: str,
         label_cutoff_at: str,
         as_of_values: Sequence[str] | None = None,
     ) -> list[dict[str, Any]]:
@@ -884,8 +876,6 @@ class ResearchStore:
             raise ValueError("RL label end_as_of must not precede start_as_of")
         if cutoff < end:
             raise ValueError("label_cutoff_at must not precede the feature window end")
-        if not str(feature_version).strip():
-            raise ValueError("feature_version is required")
         rows = self.records(
             "rl_training_labels",
             start_as_of=start.isoformat(),
@@ -894,8 +884,7 @@ class ResearchStore:
         )
         rows = [
             row for row in rows
-            if row.get("feature_version") == feature_version
-            and normalize_ticker(str(row.get("ticker"))) in normalized
+            if normalize_ticker(str(row.get("ticker"))) in normalized
             and parse_datetime(str(row["label_available_at"])) <= cutoff
         ]
         return [self._training_label(dict(row)).to_storage_row() for row in rows]
@@ -909,24 +898,24 @@ class ResearchStore:
         if not rows:
             return
         snapshots = [self._feature_snapshot(dict(row)) for row in rows]
-        identities = [(item.feature_version, item.as_of_at, item.ticker) for item in snapshots]
+        identities = [(item.as_of_at, item.ticker) for item in snapshots]
         if len(identities) != len(set(identities)):
             raise ValueError("RL feature batch contains duplicate snapshot identities")
         stored = [item.to_storage_row() for item in snapshots]
         for row in stored:
-            row["record_key"] = f"{row['feature_version']}:{row['as_of_at']}:{row['ticker']}"
+            row["record_key"] = f"{row['as_of_at']}:{row['ticker']}"
         self.upsert_records("rl_feature_snapshots", stored, key="record_key")
 
     def save_rl_training_labels(self, rows: Sequence[dict[str, Any]]) -> None:
         if not rows:
             return
         labels = [self._training_label(dict(row)) for row in rows]
-        identities = [(item.feature_version, item.as_of_at, item.ticker) for item in labels]
+        identities = [(item.as_of_at, item.ticker) for item in labels]
         if len(identities) != len(set(identities)):
             raise ValueError("RL label batch contains duplicate label identities")
         stored = [item.to_storage_row() for item in labels]
         for row in stored:
-            row["record_key"] = f"{row['feature_version']}:{row['as_of_at']}:{row['ticker']}"
+            row["record_key"] = f"{row['as_of_at']}:{row['ticker']}"
         self.upsert_records("rl_training_labels", stored, key="record_key")
 
     def save_valuation_observations(self, rows: Sequence[dict[str, Any]]) -> None:
@@ -975,7 +964,6 @@ class ResearchStore:
     @staticmethod
     def _feature_snapshot(row: dict[str, Any]) -> FeatureSnapshot:
         snapshot = FeatureSnapshot(
-            feature_version=str(row["feature_version"]),
             as_of_at=str(row["as_of_at"]),
             ticker=str(row["ticker"]),
             available_at=str(row["available_at"]),
@@ -991,7 +979,6 @@ class ResearchStore:
     @staticmethod
     def _training_label(row: dict[str, Any]) -> ForwardReturnLabel:
         label = ForwardReturnLabel(
-            feature_version=str(row["feature_version"]),
             as_of_at=str(row["as_of_at"]),
             ticker=str(row["ticker"]),
             forward_end_at=str(row["forward_end_at"]),
@@ -1060,7 +1047,7 @@ def _iso(value: Any) -> str:
 __all__ = [
     "DATABASE_NAME",
     "RESEARCH_DDL_DIR",
-    "FEATURE_VERSION",
+    "FEATURE_SET",
     "RESEARCH_ROOT_ENV",
     "ResearchStore",
     "T_STRATEGIES",

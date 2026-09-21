@@ -52,6 +52,37 @@ class ScoreTest(unittest.TestCase):
         features = {"A": _row(quality_roe_ttm=0.2), "B": _row(quality_roe_ttm=0.1)}
         self.assertNotIn("quality", score_cross_section(features)["A"].category_scores)
 
+    def test_loss_making_firm_keeps_value_category_and_scores_lower(self):
+        """적자·음의 FCF를 결측으로 접으면 value category가 탈락하고, composite이 남은
+        category로 재정규화되어 **나쁜 종목의 점수가 올라간다**(감사 RR2-01).
+        수익률이 부호를 보존하므로 적자는 최하위 랭크를 받아야 한다."""
+        shared = {"momentum_12_1": 0.1, "momentum_6_1": 0.1}
+        features = {
+            "PROFIT": _row(valuation_earnings_yield=0.08, valuation_fcf_yield=0.06, **shared),
+            "MID": _row(valuation_earnings_yield=0.03, valuation_fcf_yield=0.02, **shared),
+            "LOSS": _row(valuation_earnings_yield=-0.09, valuation_fcf_yield=-0.05, **shared),
+        }
+        scores = score_cross_section(features)
+        self.assertIn("value", scores["LOSS"].category_scores)
+        self.assertEqual(scores["LOSS"].category_scores["value"], 0.0)
+        self.assertEqual(scores["PROFIT"].category_scores["value"], 1.0)
+        self.assertLess(scores["LOSS"].composite, scores["MID"].composite)
+        self.assertLess(scores["MID"].composite, scores["PROFIT"].composite)
+
+    def test_dropping_value_category_would_raise_the_composite(self):
+        """재정규화 편향이 실재함을 고정한다 — value가 빠지면 composite이 올라간다.
+        이 관계가 유지되는 한, 나쁜 관측을 결측으로 접는 것은 그 자체로 결함이다."""
+        shared = {"momentum_12_1": 0.1, "momentum_6_1": 0.1}
+        with_value = score_cross_section({
+            "X": _row(valuation_earnings_yield=-0.09, valuation_fcf_yield=-0.05, **shared),
+            "Y": _row(valuation_earnings_yield=0.08, valuation_fcf_yield=0.06, **shared),
+        })
+        without_value = score_cross_section({
+            "X": _row(**shared),
+            "Y": _row(**shared),
+        })
+        self.assertLess(with_value["X"].composite, without_value["X"].composite)
+
     def test_value_is_ranked_within_sector_when_groups_are_large_enough(self):
         features = {}
         groups = {}

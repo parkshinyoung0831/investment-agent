@@ -137,7 +137,6 @@ def candidate_rows(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
                     f"{DOMAIN_LABELS.get(name, name)} {float(score):.0%}"
                     for name, score in strongest
                 ) or "근거 없음",
-                "Feature 버전": str(row.get("feature_version") or "—"),
                 "기준 시각": row.get("as_of_at"),
             }
         )
@@ -156,7 +155,6 @@ def model_rows(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
             {
                 "모델": str(row.get("algorithm") or "—").upper(),
                 "단계": STAGE_LABELS.get(str(row.get("stage") or ""), str(row.get("stage") or "—")),
-                "Feature": str(row.get("feature_version") or "—"),
                 "OOS 방향 적중률": _number(oos.get("direction_accuracy")),
                 "OOS 순위 상관": _number(oos.get("rank_correlation")),
                 "OOS RMSE": _number(oos.get("rmse")),

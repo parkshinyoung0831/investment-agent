@@ -18,7 +18,7 @@ from investment_agent.platform.cli.runtime import run_log_payload
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.serialization import ContractError, canonical_json, parse_datetime
 from investment_agent.research.evaluation.costs import TransactionCostModel
-from investment_agent.research.features.layer import FEATURE_VERSION, impute_cross_section
+from investment_agent.research.features.layer import impute_cross_section
 from investment_agent.research.rl.contracts import FeatureSnapshot
 from investment_agent.research.evaluation.shadow_fill import round_trip_cost_rate, simulate_shadow_trade
 from investment_agent.research.datasets.contracts import TrainingSample
@@ -39,7 +39,6 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="investment_agent.research.commands.build_training_samples")
     parser.add_argument("--lookback-days", type=int, default=365, help="표본을 만들 as_of 창")
     parser.add_argument("--as-of", help="타임존을 포함한 ISO-8601 기준 시각. 기본은 현재 UTC")
-    parser.add_argument("--feature-version", default=FEATURE_VERSION)
     parser.add_argument(
         "--commission-rate", type=float, default=0.0005,
         help="체결 금액 대비 수수료율. 기본 0.05%%",
@@ -54,7 +53,6 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def _snapshot(row: Mapping[str, Any]) -> FeatureSnapshot:
     return FeatureSnapshot(
-        feature_version=str(row["feature_version"]),
         as_of_at=str(row["as_of_at"]),
         ticker=str(row["ticker"]),
         available_at=str(row["available_at"]),
@@ -67,7 +65,6 @@ def _snapshot(row: Mapping[str, Any]) -> FeatureSnapshot:
 
 def _period_signature(
     *,
-    feature_version: str,
     cost_model: TransactionCostModel,
     rows: list[Mapping[str, Any]],
     labels_by_key: Mapping[tuple[str, str], Mapping[str, Any]],
@@ -90,7 +87,6 @@ def _period_signature(
             "label_id": str(label.get("label_id") or ""),
         })
     payload = {
-        "feature_version": feature_version,
         "label_definition": LABEL_DEFINITION,
         "cost_model": cost_model.to_dict(),
         "inputs": inputs,
@@ -102,7 +98,6 @@ def build_training_samples(
     *,
     as_of_at: datetime,
     lookback_days: int = 365,
-    feature_version: str = FEATURE_VERSION,
     cost_model: TransactionCostModel | None = None,
     dry_run: bool = False,
     repository: UniverseRepository | None = None,
@@ -133,18 +128,17 @@ def build_training_samples(
     if hasattr(selected_store, "training_sample_period_inputs"):
         lightweight_inputs = selected_store.training_sample_period_inputs(
             symbols, start_as_of=window_start, end_as_of=window_end,
-            feature_version=feature_version, label_cutoff_at=window_end,
+            label_cutoff_at=window_end,
         )
         snapshot_rows = lightweight_inputs["snapshots"]
         label_rows = lightweight_inputs["labels"]
     else:
         snapshot_rows = selected_store.rl_feature_snapshot_rows(
             symbols, start_as_of=window_start, end_as_of=window_end,
-            feature_version=feature_version,
         )
         label_rows = selected_store.rl_training_label_rows(
             symbols, start_as_of=window_start, end_as_of=window_end,
-            feature_version=feature_version, label_cutoff_at=window_end,
+            label_cutoff_at=window_end,
         )
     run_rows = selected_store.training_sample_run_rows(
         start_as_of=window_start, end_as_of=window_end,
@@ -165,7 +159,6 @@ def build_training_samples(
             duration_sec=round(time.monotonic() - started, 3),
             started_at=started_at,
             detail={
-                "feature_version": feature_version,
                 "label_definition": LABEL_DEFINITION,
                 "window": [window_start, window_end],
                 "samples": 0,
@@ -181,8 +174,7 @@ def build_training_samples(
     }
     existing_runs = {
         str(row["as_of_at"]): row for row in run_rows
-        if row.get("feature_version") == feature_version
-        and row.get("label_definition") == LABEL_DEFINITION
+        if row.get("label_definition") == LABEL_DEFINITION
     }
     candidates_by_as_of: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
     for row in snapshot_rows:
@@ -197,7 +189,6 @@ def build_training_samples(
     already_sampled = 0
     for as_of_key, rows in candidates_by_as_of.items():
         signature = _period_signature(
-            feature_version=feature_version,
             cost_model=model,
             rows=rows,
             labels_by_key=signature_labels_by_key,
@@ -210,9 +201,8 @@ def build_training_samples(
         else:
             by_as_of[as_of_key].extend(_snapshot(row) for row in rows)
         pending_run_rows.append({
-            "record_key": f"{feature_version}:{LABEL_DEFINITION}:{as_of_key}",
+            "record_key": f"{LABEL_DEFINITION}:{as_of_key}",
             "as_of_at": as_of_key,
-            "feature_version": feature_version,
             "label_definition": LABEL_DEFINITION,
             "signature": signature,
             "sample_count": len(rows),
@@ -222,11 +212,11 @@ def build_training_samples(
         pending_dates = tuple(pending_source_rows)
         full_snapshot_rows = selected_store.rl_feature_snapshot_rows(
             symbols, start_as_of=window_start, end_as_of=window_end,
-            feature_version=feature_version, as_of_values=pending_dates,
+            as_of_values=pending_dates,
         )
         full_label_rows = selected_store.rl_training_label_rows(
             symbols, start_as_of=window_start, end_as_of=window_end,
-            feature_version=feature_version, label_cutoff_at=window_end,
+            label_cutoff_at=window_end,
             as_of_values=pending_dates,
         )
         labels_by_key = {
@@ -275,7 +265,6 @@ def build_training_samples(
                 ticker=snapshot.ticker,
                 as_of_at=snapshot.as_of_at,
                 label_available_at=str(label["label_available_at"]),
-                feature_version=feature_version,
                 label_definition=LABEL_DEFINITION,
                 features=features,
                 labels=result.to_labels(),
@@ -309,7 +298,6 @@ def build_training_samples(
         duration_sec=round(time.monotonic() - started, 3),
         started_at=started_at,
         detail={
-            "feature_version": feature_version,
             "label_definition": LABEL_DEFINITION,
             "window": [window_start, window_end],
             "samples": len(samples),
@@ -336,7 +324,6 @@ def main(argv: list[str] | None = None) -> int:
     build_training_samples(
         as_of_at=as_of_at,
         lookback_days=args.lookback_days,
-        feature_version=args.feature_version,
         cost_model=TransactionCostModel(
             commission_rate=args.commission_rate,
             slippage_bps=args.slippage_bps,

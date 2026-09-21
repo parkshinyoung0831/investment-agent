@@ -20,19 +20,19 @@ from investment_agent.research.rl.features import (
 
 class FeatureAssemblyTest(unittest.TestCase):
     def test_historical_training_requires_historical_membership(self):
-        spec = FeatureSpec("v1", ("momentum",))
+        spec = FeatureSpec(("momentum",))
         base = datetime(2026, 1, 1, 21, tzinfo=timezone.utc)
         features = []
         labels = []
         for index in range(2):
             as_of = base + timedelta(days=index)
             features.append(FeatureSnapshot(
-                "v1", as_of.isoformat(), "AAPL", as_of.isoformat(), True,
+                as_of.isoformat(), "AAPL", as_of.isoformat(), True,
                 {"momentum": float(index)}, (f"source-{index}",),
                 {"fixture": "historical_membership", "point_in_time": True},
             ))
             labels.append(ForwardReturnLabel(
-                "v1", as_of.isoformat(), "AAPL",
+                as_of.isoformat(), "AAPL",
                 (as_of + timedelta(hours=12)).isoformat(),
                 (as_of + timedelta(hours=13)).isoformat(),
                 0.01, 0.0,
@@ -51,7 +51,7 @@ class FeatureAssemblyTest(unittest.TestCase):
             )
 
     def test_membership_change_masks_non_member_even_if_feature_exists(self):
-        spec = FeatureSpec("v1", ("momentum",))
+        spec = FeatureSpec(("momentum",))
         first = "2026-01-01T21:00:00+00:00"
         second = "2026-01-02T21:00:00+00:00"
         snapshots = []
@@ -59,12 +59,12 @@ class FeatureAssemblyTest(unittest.TestCase):
         for as_of in (first, second):
             for ticker in ("AAPL", "MSFT"):
                 snapshots.append(FeatureSnapshot(
-                    "v1", as_of, ticker, as_of, True, {"momentum": 1.0},
+                    as_of, ticker, as_of, True, {"momentum": 1.0},
                     (f"source-{as_of}-{ticker}",),
                     {"fixture": "membership_change", "point_in_time": True},
                 ))
                 labels.append(ForwardReturnLabel(
-                    "v1", as_of, ticker,
+                    as_of, ticker,
                     (parse := datetime.fromisoformat(as_of) + timedelta(hours=12)).isoformat(),
                     (parse + timedelta(hours=1)).isoformat(), 0.01, 0.0,
                 ))
@@ -84,14 +84,14 @@ class FeatureAssemblyTest(unittest.TestCase):
         self.assertFalse(result.dataset.availability[1, 1])
 
     def test_live_inference_uses_only_fresh_tracked_members(self):
-        spec = FeatureSpec("v1", ("momentum",))
+        spec = FeatureSpec(("momentum",))
         point = "2026-01-02T21:00:00+00:00"
         membership = MembershipTimeline("live_tracked", (MembershipSnapshot(
             point, ("AAPL",), "is_tracked=true-query", "live_tracked",
         ),))
         snapshots = [
             FeatureSnapshot(
-                "v1", point, ticker, point, True, {"momentum": 1.0}, (ticker,),
+                point, ticker, point, True, {"momentum": 1.0}, (ticker,),
                 {"fixture": "live_inference", "point_in_time": True},
             )
             for ticker in ("AAPL", "MSFT")
@@ -121,7 +121,7 @@ class FeatureAssemblyTest(unittest.TestCase):
             build_feature_dataset(
                 [{"as_of_at": "2026-01-01T00:00:00+00:00", "ticker": "AAPL"}],
                 symbols=("AAPL",),
-                spec=FeatureSpec("v1", ("momentum",)),
+                spec=FeatureSpec(("momentum",)),
             )
 
 

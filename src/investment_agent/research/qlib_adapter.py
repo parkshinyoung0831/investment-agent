@@ -29,9 +29,8 @@ class QlibPITAdapter:
         labels: Mapping[str, float] | None = None,
     ) -> pd.DataFrame:
         rows: list[dict[str, Any]] = []
-        versions = {snapshot.feature_version for snapshot in snapshots}
-        if not snapshots or len(versions) != 1:
-            raise ValueError("Qlib export requires non-empty snapshots with one feature version")
+        if not snapshots:
+            raise ValueError("Qlib export requires non-empty snapshots")
         for snapshot in snapshots:
             if not snapshot.is_available:
                 continue

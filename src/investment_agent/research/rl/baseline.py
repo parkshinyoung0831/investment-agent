@@ -53,7 +53,6 @@ class BaselinePolicyConfig:
 class BaselinePolicyModel:
     """JSON만으로 저장 가능한 표준화 계수와 action 정책."""
 
-    feature_version: str
     feature_names: tuple[str, ...]
     symbols: tuple[str, ...]
     feature_means: tuple[float, ...]
@@ -86,8 +85,6 @@ class BaselinePolicyModel:
             raise ValueError("baseline model numbers must be finite")
         if any(float(value) <= 0.0 for value in self.feature_scales):
             raise ValueError("feature scales must be positive")
-        if not self.feature_version:
-            raise ValueError("feature_version and unique symbols are required")
         if not re.fullmatch(r"[0-9a-f]{64}", self.training_data_hash):
             raise ValueError("training_data_hash must be a sha256 digest")
         train_start = parse_datetime(self.train_start).isoformat()
@@ -106,7 +103,6 @@ class BaselinePolicyModel:
     def _core_payload(self) -> dict[str, Any]:
         return {
             "format_version": MODEL_FORMAT_VERSION,
-            "feature_version": self.feature_version,
             "feature_names": list(self.feature_names),
             "symbols": list(self.symbols),
             "feature_means": list(self.feature_means),
@@ -130,7 +126,7 @@ class BaselinePolicyModel:
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> "BaselinePolicyModel":
         expected = {
-            "format_version", "feature_version", "feature_names", "symbols",
+            "format_version", "feature_names", "symbols",
             "feature_means", "feature_scales", "coefficients", "intercept", "seed",
             "train_start", "train_end", "training_data_hash", "config", "model_hash",
             "artifact_id",
@@ -146,7 +142,6 @@ class BaselinePolicyModel:
         if not isinstance(config, Mapping):
             raise ValueError("baseline config must be an object")
         model = cls(
-            feature_version=str(payload["feature_version"]),
             feature_names=tuple(str(value) for value in payload["feature_names"]),
             symbols=tuple(str(value) for value in payload["symbols"]),
             feature_means=tuple(float(value) for value in payload["feature_means"]),
@@ -165,8 +160,6 @@ class BaselinePolicyModel:
 
     def predict_weights(self, frame: LiveInferenceFrame) -> dict[str, float]:
         """현재 tracked mask가 false인 종목에는 반드시 0 비중을 준다."""
-        if frame.feature_version != self.feature_version:
-            raise ValueError("inference feature version does not match model")
         if frame.feature_names != self.feature_names or frame.symbols != self.symbols:
             raise ValueError("inference feature axes do not match model")
         logits = self.action_logits(frame.features, frame.availability)
@@ -208,7 +201,6 @@ class DurablePolicyArtifact:
     artifact_id: str
     artifact_uri: str
     sha256: str
-    feature_version: str
     train_start: str
     train_end: str
     seed: int
@@ -220,7 +212,6 @@ class DurablePolicyArtifact:
         return {
             "artifact_id": self.artifact_id,
             "algorithm": "rule",
-            "feature_version": self.feature_version,
             "train_start": self.train_start,
             "train_end": self.train_end,
             "seed": self.seed,
@@ -273,7 +264,6 @@ def train_baseline_policy(
     except np.linalg.LinAlgError:
         solved = np.linalg.pinv(system) @ rhs
     fit_identity = {
-        "feature_version": dataset.feature_version,
         "symbols": dataset.symbols,
         "feature_names": dataset.feature_names,
         "as_of_values": dataset.as_of_values[start:end],
@@ -290,7 +280,6 @@ def train_baseline_policy(
         canonical_json(fit_identity).encode("utf-8")
     ).hexdigest()
     return BaselinePolicyModel(
-        feature_version=dataset.feature_version,
         feature_names=dataset.feature_names,
         symbols=dataset.symbols,
         feature_means=tuple(float(value) for value in means),
@@ -318,7 +307,6 @@ def save_baseline_policy(model: BaselinePolicyModel, path: Path) -> DurablePolic
         artifact_id=model.artifact_id,
         artifact_uri=str(destination),
         sha256=digest,
-        feature_version=model.feature_version,
         train_start=model.train_start,
         train_end=model.train_end,
         seed=model.seed,

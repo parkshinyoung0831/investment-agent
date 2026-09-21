@@ -197,11 +197,20 @@ def _direction(value: float | None) -> int:
 
 
 def source_agreement(expected: float, *, directions: Sequence[int]) -> float:
-    """방향을 말한 근거 중 최종 기대수익과 같은 방향인 비율. 방향을 말한 근거가 없으면 1이다."""
+    """방향을 말한 근거 중 최종 기대수익과 같은 방향인 비율.
+
+    두 경우를 구별한다(감사 TR2-13) —
+    - **방향을 말한 근거가 없다**: 축소할 근거도 없으므로 1.0이다.
+    - **근거는 방향을 말했는데 최종 기대수익이 0이다**: 게이트가 기대수익을 0으로 깎았거나
+      근거가 서로 상쇄된 것이다. 가장 불확실한 경우를 "만장일치"와 같은 1.0으로 적으면
+      원장이 거짓을 말한다. 일치한 근거가 하나도 없으므로 0.0이다.
+    """
     stated = [direction for direction in directions if direction != 0]
-    final = _direction(expected)
-    if not stated or final == 0:
+    if not stated:
         return 1.0
+    final = _direction(expected)
+    if final == 0:
+        return 0.0
     return sum(1 for direction in stated if direction == final) / len(stated)
 
 

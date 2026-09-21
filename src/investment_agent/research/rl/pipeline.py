@@ -72,7 +72,6 @@ def _slice_dataset(dataset: FeatureDataset, bounds: tuple[int, int]) -> FeatureD
         forward_returns=dataset.forward_returns[start:end],
         benchmark_forward_returns=dataset.benchmark_forward_returns[start:end],
         availability=dataset.availability[start:end],
-        feature_version=dataset.feature_version,
     )
 
 
@@ -93,7 +92,7 @@ def nonoverlapping_dataset(dataset: FeatureDataset, forward_ends: tuple[str, ...
         as_of_values=tuple(dataset.as_of_values[i] for i in indices),
         features=dataset.features[indices], forward_returns=dataset.forward_returns[indices],
         benchmark_forward_returns=dataset.benchmark_forward_returns[indices],
-        availability=dataset.availability[indices], feature_version=dataset.feature_version)
+        availability=dataset.availability[indices])
 
 
 def split_dataset(
@@ -126,7 +125,6 @@ def evaluate_baseline_policy(
     if (
         model.symbols != dataset.symbols
         or model.feature_names != dataset.feature_names
-        or model.feature_version != dataset.feature_version
     ):
         raise ValueError("evaluation dataset axes do not match policy model")
     window = _slice_dataset(dataset, bounds)

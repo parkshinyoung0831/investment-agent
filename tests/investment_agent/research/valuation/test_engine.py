@@ -26,7 +26,6 @@ def _inputs(**overrides: PITScalar | str) -> PITValuationInputs:
         "ticker": "AAPL",
         "as_of_at": AS_OF,
         "source_kind": "historical_replay",
-        "source_version": "pit-valuation-v1",
         "price": _scalar("200", evidence_id="EV-PRICE-1"),
         "shares_outstanding": _scalar("100", evidence_id="EV-SHARES-1"),
         "earnings_ttm": _scalar("1000", evidence_id="EV-EARNINGS-1"),

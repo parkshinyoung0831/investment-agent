@@ -142,13 +142,36 @@ class TradingAdapters:
             "constructed_at": self.now().isoformat(),
         })
     def run_system_portfolio(self, context: StageContext) -> StageOutcome:
-        """승인 여부와 무관하게 System Portfolio를 평가하고 필요하면 목표비중을 다시 만든다."""
+        """승인 여부와 무관하게 System Portfolio를 평가하고 필요하면 목표비중을 다시 만든다.
+
+        목표가 만들어지지 않는 것은 정상 결과일 수 있다(재료가 없으면 만들지 않는다). 그러나
+        명령이 종료코드 0으로 끝나므로, 목표가 며칠 멈춰 있어도 이 단계는 성공으로 보였다 —
+        유니버스 한 종목의 가격 공백이 공분산 계산을 막으면 그렇게 된다(감사 TR2-04).
+        실행 전후의 최신 목표를 비교해 **진전이 없었다는 사실을 단계 결과에 남긴다.**
+        """
+        before = self._latest_system_target_id()
         self.command_runner.run(PythonModuleCommand(
             "investment_agent.operations.commands.system_portfolio",
             ("--as-of", context.now.isoformat()),
             self.timeouts.get("system_portfolio", 30 * 60),
         ), stop_event=context.stop_event)
-        return StageOutcome.succeeded({"system_portfolio_run_at": self.now().isoformat()})
+        after = self._latest_system_target_id()
+        metadata: dict[str, Any] = {
+            "system_portfolio_run_at": self.now().isoformat(),
+            "target_id": after or "",
+        }
+        if after is not None and after != before:
+            return StageOutcome.succeeded(metadata)
+        # 목표가 그대로다. 평가만 하고 넘어간 날과 재료가 없어 막힌 날을 여기서는 구별할 수
+        # 없으므로 `skipped`으로 올려 하네스 health가 세게 한다(연속 누적이 곧 신호다).
+        return StageOutcome.skipped({**metadata, "reason": "system_target_unchanged"})
+
+    def _latest_system_target_id(self) -> str | None:
+        """최신 System 목표 id. 원장을 못 읽으면 비교를 포기하지 않고 None으로 둔다."""
+        from investment_agent.trading.system.store import SystemPortfolioStore
+
+        latest = SystemPortfolioStore().latest_target()
+        return None if latest is None else str(latest.target_id)
     def reanalyze_events(self, context: StageContext) -> StageOutcome:
         """새 공시·고영향 사건·검증된 글로벌 사건이 있는 보유 종목만 곧바로 다시 분석한다."""
         self.command_runner.run(PythonModuleCommand(

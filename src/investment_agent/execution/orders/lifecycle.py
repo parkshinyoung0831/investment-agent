@@ -39,6 +39,13 @@ class AutonomyEvidence:
     kill_switch_test_passed: bool
     broker_reconciliation_passed: bool
 
+    def __post_init__(self) -> None:
+        # 이 저장소의 낙폭 관례는 **양수**다(`RuntimeRiskState.drawdown_fraction`은
+        # `max(0, (peak-equity)/peak)`, `LiveTradingControls.max_drawdown_fraction`도 양수).
+        # 부호를 강제하지 않으면 같은 사실을 음수로 넣었는지에 따라 판정이 갈린다(감사 EX2-15).
+        if not 0.0 <= float(self.max_drawdown) <= 1.0:
+            raise ValueError("max_drawdown must be a positive fraction between 0 and 1")
+
 
 @dataclass(frozen=True)
 class AutonomyCriteria:
@@ -85,7 +92,8 @@ class LifecyclePromotionGate:
                 violations.append("paper evidence is too short")
             if evidence.sharpe < self.criteria.min_sharpe:
                 violations.append("risk-adjusted performance is below the autonomy threshold")
-            if evidence.max_drawdown < -self.criteria.max_drawdown:
+            # 양수 관례. 전에는 `< -0.15`라 어떤 낙폭도 위반이 되지 않았다(감사 EX2-15).
+            if evidence.max_drawdown > self.criteria.max_drawdown:
                 violations.append("maximum drawdown exceeds the autonomy threshold")
             incidents = {
                 "execution": evidence.execution_errors,

@@ -200,7 +200,7 @@ BACKTEST → SHADOW → PAPER → LIVE_MANUAL → LIVE_AUTONOMOUS
 한 번에 한 단계만 이동한다. model artifact 승격과 시스템 운용 단계 승격도 별개다.
 
 - `ManualPromotionGate`: artifact를 `shadow → paper → live`로 승인
-- `LifecyclePromotionGate`: 시스템 권한을 5단계로 전진
+- `LifecyclePromotionGate`: 시스템 권한을 5단계로 전진. 하네스가 부르지 않는 계약이라 운영자가 승격을 판단할 때 직접 평가한다
 
 Paper 단계는 외부 모의주문을 실행하지 않는다. live
 artifact가 있어도 lifecycle이 LIVE_MANUAL이면 Discord 승인 없이 주문할 수 없다.

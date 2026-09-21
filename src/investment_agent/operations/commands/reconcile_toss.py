@@ -73,7 +73,20 @@ def main(argv: list[str] | None = None) -> int:
             "discord_reconciliation_status_updated",
             sent=published.sent,
         )
-    return 1 if result.unresolved_unknown or result.external_open_order_ids or result.position_mismatches else 0
+    # 종료 코드는 "재실행하면 달라지는가"를 뜻한다. 아래 셋은 **사람이 확인할 사실**이고
+    # 재실행으로 사라지지 않는다 — 토스 앱에서 직접 낸 미체결 주문 하나가 있으면
+    # `external_open_order_ids`가 계속 비지 않아 이 job이 60초마다 영구 실패했고,
+    # 실패마다 운영 채널로 경보가 나가 진짜 대사 장애와 구분되지 않았다(감사 OP2-19).
+    # 실행 실패는 위쪽 `except`가 이미 1로 처리한다. 발견 사항은 조용해지지 않도록
+    # `reporter.error`로 한 번 올리고 종료 코드는 0으로 둔다.
+    findings = {
+        "unresolved_unknown": list(result.unresolved_unknown),
+        "external_open_orders": list(result.external_open_order_ids),
+        "position_mismatches": [mismatch.ticker for mismatch in result.position_mismatches],
+    }
+    if any(findings.values()):
+        reporter.error("toss_reconciliation_needs_operator_review", **findings)
+    return 0
 
 
 if __name__ == "__main__":

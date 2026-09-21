@@ -282,7 +282,6 @@ def _valuation(
     }
     # 왜 못 만들었는지가 값만큼 중요하다.
     payload["missing_reasons"] = dict(observation.get("missing_reasons") or {})
-    payload["source_version"] = observation.get("source_version")
     return DossierSection(
         section_id="valuation",
         title=SECTION_TITLES["valuation"],
@@ -339,9 +338,6 @@ class DossierBuilder:
             provenance={
                 "bundle_evidence_count": len(bundle.evidence),
                 "bundle_missing_count": len(bundle.missing_data),
-                "valuation_source_version": (
-                    (valuation or {}).get("source_version") if valuation else None
-                ),
                 "price_history_bars": len(price_history or ()),
                 "filing_history_rows": len(filing_history or ()),
             },

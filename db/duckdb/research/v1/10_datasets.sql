@@ -11,7 +11,7 @@
 --   3. 전략 연구 — `strategy_runs`, `strategy_allocations`
 --      월간 전략 배분 파이프라인의 관계형 계약. ML 실험과 다른 축이다.
 CREATE TABLE IF NOT EXISTS feature_sets (
-    feature_version VARCHAR PRIMARY KEY,
+    feature_set VARCHAR PRIMARY KEY,
     root_path VARCHAR NOT NULL,
     latest_trade_date DATE,
     updated_at TIMESTAMPTZ NOT NULL
@@ -31,8 +31,6 @@ CREATE TABLE IF NOT EXISTS datasets (
     row_count BIGINT NOT NULL CHECK (row_count >= 0),
     period_start DATE,
     period_end DATE,
-    feature_version VARCHAR,
-    label_version VARCHAR,
     code_commit VARCHAR NOT NULL,
     stage VARCHAR NOT NULL,
     status VARCHAR NOT NULL,

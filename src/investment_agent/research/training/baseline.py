@@ -113,7 +113,6 @@ def train_baseline_dataset(
         validation_labels=dataset.targets[list(validation)],
         oos_features=dataset.features[list(test)],
         oos_labels=dataset.targets[list(test)],
-        feature_version=dataset.manifest.feature_version,
         horizon_days=horizon_days,
         train_period=_period_for_indexes(dataset, train),
         validation_period=_period_for_indexes(dataset, validation),

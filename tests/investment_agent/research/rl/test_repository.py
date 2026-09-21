@@ -99,7 +99,6 @@ class _Supabase:
 
 def _feature() -> FeatureSnapshot:
     return FeatureSnapshot(
-        feature_version="rl-v1",
         as_of_at="2026-01-01T21:00:00+00:00",
         ticker="AAPL",
         available_at="2026-01-01T20:59:00+00:00",
@@ -112,7 +111,7 @@ def _feature() -> FeatureSnapshot:
 
 def _model_version(artifact_id: str = "artifact-1") -> dict:
     return {
-        "artifact_id": artifact_id, "algorithm": "ridge", "feature_version": "v1",
+        "artifact_id": artifact_id, "algorithm": "ridge",
         "artifact_uri": f"s3://bucket/{artifact_id}", "sha256": "a" * 64,
     }
 

@@ -27,7 +27,7 @@ from investment_agent.research.rl.environment import FeatureDataset, make_gym_en
 from investment_agent.research.rl.features import FeatureSpec, HistoricalTrainingSet, load_training_set
 from investment_agent.research.rl.pipeline import split_dataset, nonoverlapping_dataset
 from investment_agent.research.rl.bundle import load_policy_bundle, save_policy_bundle
-from investment_agent.research.features.layer import FEATURE_COLUMNS, FEATURE_VERSION
+from investment_agent.research.features.layer import FEATURE_COLUMNS
 from investment_agent.research.datasets.universe import DataUniverseReader
 from investment_agent.research.storage.repository import ResearchStore
 from investment_agent.platform.storage_paths import rl_policy_dir
@@ -51,7 +51,7 @@ DEFAULT_MAX_SYMBOLS = 30
 
 def default_spec() -> FeatureSpec:
     """FeatureLayer가 실제로 적재하는 컬럼과 버전을 그대로 쓴다."""
-    return FeatureSpec(version=FEATURE_VERSION, names=FEATURE_COLUMNS)
+    return FeatureSpec(names=FEATURE_COLUMNS)
 
 
 def _train_with_stable_baselines(dataset: FeatureDataset, *, timesteps: int) -> Any:
@@ -186,7 +186,7 @@ def run_continuous_retrain(
     if dry_run:
         return PromotionDecision(False, None, None, 0.0, "학습 입력 준비 완료", status="ready")
     champion = load_policy_bundle(active_path) if active_path.exists() else None
-    if champion is not None and (champion.symbols, champion.feature_names, champion.feature_version) != (holdout_dataset.symbols, holdout_dataset.feature_names, holdout_dataset.feature_version):
+    if champion is not None and (champion.symbols, champion.feature_names) != (holdout_dataset.symbols, holdout_dataset.feature_names):
         raise ValueError("champion axes differ; explicit new research lineage required")
     model = trainer(train_dataset, timesteps=timesteps)
     learner = ContinuousLearner(
@@ -211,7 +211,6 @@ def run_continuous_retrain(
     candidate_path = save_policy_bundle(model, directory, dataset=train_dataset,
         score=asdict(challenger_score), training={
             "symbols": list(train_dataset.symbols),
-            "feature_version": train_dataset.feature_version,
             "train_periods": len(train_dataset.as_of_values),
             "holdout_periods": len(holdout_dataset.as_of_values),
             "holdout_start": holdout_dataset.as_of_values[0],

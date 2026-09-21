@@ -157,6 +157,34 @@ def evaluate(
             missing_tickers=missing_segment_states,
             missing=missing_segment_tickers,
         ))
+        # 같은 결측을 처방별로 나눠 한 줄 더 올린다. 하나로 합쳐 두면 매일 같은 오류가
+        # 나면서 backfill이 필요한 것인지 처리가 깨진 것인지 알 수 없다(감사 AU-01).
+        never_attempted = sorted({
+            str(ticker) for ticker in (segment.get("segments_never_attempted_tickers") or [])
+            if str(ticker).strip()
+        })
+        stuck = sorted({
+            str(ticker) for ticker in (segment.get("segments_stuck_tickers") or [])
+            if str(ticker).strip()
+        })
+        if never_attempted:
+            checks.append(_check(
+                "segment_backfill_required",
+                ERROR,
+                f"세그먼트 처리를 한 번도 시도하지 않은 추적 ticker {len(never_attempted)}개 — "
+                "증분(7일 창) 밖의 과거 공시다. "
+                "python -m investment_agent.data.fundamentals.commands.backfill_history "
+                "--content segments --period quarter --scope missing (annual도 함께)",
+                tickers=never_attempted,
+            ))
+        if stuck:
+            checks.append(_check(
+                "segment_processing_stuck",
+                ERROR,
+                f"세그먼트 처리를 시도했지만 terminal 상태가 없는 추적 ticker {len(stuck)}개 — "
+                "재처리·원인 조사가 필요하다(backfill로는 해결되지 않는다)",
+                tickers=stuck,
+            ))
 
         contract_keys = (
             "valueless_metric_rows",

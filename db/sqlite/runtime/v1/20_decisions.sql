@@ -18,7 +18,6 @@ CREATE TABLE IF NOT EXISTS model_versions (
   algorithm       text NOT NULL CHECK (algorithm IN (
                     'naive','ridge','lightgbm','xgboost',
                     'a2c','ddpg','ppo','sac','td3','llm','rule')),
-  feature_version text NOT NULL CHECK (trim(feature_version) <> ''),
   train_start     TEXT,
   train_end       TEXT,
   seed            int,

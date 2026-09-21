@@ -200,7 +200,7 @@ def run_system(
         ml_artifact_id=ml.model_artifact_id if ml.is_available else None,
     )
     repository.save_model_artifact({
-        "artifact_id": artifact["artifact_id"], "algorithm": "rule", "feature_version": selected.version,
+        "artifact_id": artifact["artifact_id"], "algorithm": "rule",
         "train_start": None, "train_end": None, "seed": None,
         "artifact_uri": f"code://system_portfolio/{selected.version}",
         "sha256": hashlib.sha256(canonical_json(artifact["params"]).encode("utf-8")).hexdigest(),

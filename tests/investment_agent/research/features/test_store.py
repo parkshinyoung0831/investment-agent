@@ -11,7 +11,6 @@ from investment_agent.research.commands.build_features import build_features
 from investment_agent.research.commands.build_labels import build_labels
 from investment_agent.research.features.layer import (
     FEATURE_COLUMNS,
-    FEATURE_VERSION,
     MISSING_SUFFIX,
     OPTIONAL_FEATURES,
     REQUIRED_BARS,
@@ -373,7 +372,6 @@ class _LabelStore:
     def rl_feature_snapshot_rows(self, symbols, **kwargs):
         self.read_calls.append(("features", symbols, kwargs))
         return [{
-            "feature_version": kwargs["feature_version"],
             "as_of_at": _AS_OF,
             "ticker": "AAA",
         }]
@@ -413,7 +411,6 @@ class BuildLabelsEntryTest(unittest.TestCase):
         self.assertEqual(payload["detail"]["built"], 1)
         self.assertEqual(len(store.saved), 1)
         row = store.saved[0]
-        self.assertEqual(row["feature_version"], FEATURE_VERSION)
         self.assertGreaterEqual(
             parse_datetime(row["label_available_at"]),
             parse_datetime(row["forward_end_at"]),

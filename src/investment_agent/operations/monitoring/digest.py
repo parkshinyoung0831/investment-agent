@@ -232,6 +232,20 @@ def severity_color(
     return COLOR_OK
 
 
+# 자르기 한도. 평문은 Discord 메시지 2,000자, embed description은 4,096자가 상한이고
+# 각각 말줄임 여유를 뺀 값이다.
+PLAIN_TEXT_LIMIT = 1900
+EMBED_LIMIT = 4000
+
+
+def _truncate(body: str, limit: int) -> str:
+    """한도를 넘으면 자르되 **잘렸다는 사실을 남긴다** — 조용히 사라지면 아무도 모른다."""
+    if len(body) <= limit:
+        return body
+    notice = f"\n…({len(body) - limit}자 생략)"
+    return body[: max(0, limit - len(notice))] + notice
+
+
 def build_embed(
     verdict: dict[str, list[dict[str, Any]]],
     window_end: datetime,
@@ -240,11 +254,11 @@ def build_embed(
 ) -> dict[str, Any]:
     """발송용 embed. 평문 2000자 대신 4096자를 쓸 수 있고, 색이 심각도를 진다."""
     day = window_end.astimezone(_KST)
-    body = render(verdict, window_end, channels, counters, head=False)
+    body = render(verdict, window_end, channels, counters, head=False, limit=EMBED_LIMIT)
     return {
         "title": f"📋 파이프라인 일일 점검 · {day:%m-%d}({_WEEKDAYS[day.weekday()]}) "
                  f"{day:%H:%M} KST",
-        "description": body[:4000],
+        "description": body,
         "color": severity_color(verdict, channels),
     }
 
@@ -256,8 +270,14 @@ def render(
     counters: list[str] | None = None,
     *,
     head: bool = True,
+    limit: int = PLAIN_TEXT_LIMIT,
 ) -> str:
-    """점검 본문. 평문으로 보낼 때는 2000자, embed 설명으로 쓸 때는 4096자가 한도다."""
+    """점검 본문. 평문으로 보낼 때는 2000자, embed 설명으로 쓸 때는 4096자가 한도다.
+
+    자르기 한도는 **목적지가 정한다**. 전에는 렌더러가 항상 1,900자로 잘라, 4,096자를
+    쓰려고 만든 embed에서도 맨 뒤의 `📡 채널 도착` 표가 통째로 사라졌다 — 사고가 많은
+    날, 즉 그 표가 가장 필요한 날에만 그랬다(감사 OP2-17).
+    """
     day = window_end.astimezone(_KST)
     headline = (f"📋 **일일 점검** · {day:%Y-%m-%d}({_WEEKDAYS[day.weekday()]}) "
                 f"{day:%H:%M} KST")
@@ -315,4 +335,4 @@ def render(
         c["alert"] for c in (channels or [])
     ):
         lines.insert(2, "지난 24시간 이상 없습니다.")
-    return "\n".join(lines)[:1900]
+    return _truncate("\n".join(lines), limit)

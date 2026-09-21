@@ -38,5 +38,5 @@ def valuation_contract_rows() -> list[dict[str, str]]:
         {"항목": "PBR", "계약": "market_cap / 양수 book_value; 0·음수는 null과 사유입니다."},
         {"항목": "PSR", "계약": "market_cap / 양수 revenue_ttm; 0·음수는 null과 사유입니다."},
         {"항목": "FCF yield", "계약": "양수 free_cash_flow_ttm / market_cap; 비양수 FCF는 null과 사유입니다."},
-        {"항목": "재현성", "계약": "정규화된 입력·source_version·근거 ID를 SHA-256 input_hash에 결박합니다."},
+        {"항목": "재현성", "계약": "정규화된 입력·근거 ID를 SHA-256 input_hash에 결박합니다."},
     ]

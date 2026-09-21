@@ -148,3 +148,23 @@ gurus_13f                       9    2    22   (이름이 사라진 옛 워크�
 → `research/evaluation/returns.py`의 `shares *= ratio`는 분할을 **두 번** 반영한다.
    RR2-06·RR2-06a·RR2-07은 이 관측으로 확정이다. 반대로
    `research/features/layer.py`·`research/valuation/inputs.py`의 주석(조정돼 있다)이 맞다.
+
+### [AU-05] Actions 예산이 이미 91% 소진 — 실행을 늘리는 시각 제안은 채택할 수 없다  [확정] [중간] [성능]
+`python scripts/actions_budget.py` (실측 빈도 기준):
+  SCHEDULED TOTAL   1818.0 min/월
+  allowance         2000   min/월
+  headroom           182.0 min/월 (91% 사용, 스크립트가 "여유 30% 미만" 경고)
+상위 소비: macro_etl 87.0 · market_daily 65.2 · econ_calendar_daily 60.9 · ops_heartbeat 60.9 ·
+notify_macro_core 52.2 · notify_macro_watch 52.2 · fundamentals_daily 43.5 ·
+fundamentals_earnings_watch 43.5 · fundamentals_watchlist_fast 43.5 · institutional_13f 43.5
+
+→ 판단: **실행 횟수를 늘리는 시각 재설계는 하지 않는다.**
+- AU-02(`econ_calendar_ics` cron 제거)로 **30.4 min/월** 확보. 체인이 29/29 발화하므로 커버리지 손실 없음.
+- `fundamentals_integrity`를 `fundamentals_dimensions` 체인으로 옮기는 안은 **철회**한다.
+  ① dimensions는 schedule 17 + workflow_run 15 = 32회/월이라 점검이 21 → 32회로 늘어 약 +11 min,
+  ② 그런데 이미 `concurrency: fundamentals-etl`(cancel-in-progress: false)이 ETL과의 겹침을 막고 있고,
+  현재 cron 09:00 UTC는 실측 13:30 UTC에 돌아 상류 종료(08:20~09:00 UTC) 뒤다 — 순서는 사실상 지켜진다.
+  얻는 것(명시적 순서 보장)이 예산 대비 작다.
+- 예산을 늘리려면 먼저 볼 곳: `notify_macro_core`·`notify_macro_watch`가 각각 cron 22·39회 + 체인 26회로
+  **하루 두 번 같은 판정을 한다**(WF-09가 의도라 했지만 실측 드롭이 16~20%뿐이라 안전망의 값이 작다).
+  둘의 cron을 주 1회로 낮추면 약 70 min/월이 빈다 — 발송 정책 결정이라 사용자 판단 대상이다.

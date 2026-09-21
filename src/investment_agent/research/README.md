@@ -94,7 +94,7 @@ payload 전체를 복원하지 않고 서명에 필요한 scalar만 DuckDB에서
 
 ## 고칠 때 함께 볼 곳
 
-- 새 feature → `features/`, 그리고 그 feature를 쓰는 dataset의 `feature_version`
+- 새 feature → `features/`. feature·label에는 버전 컬럼이 없다 — 컬럼 구성이 바뀌면 `FeatureLayer.definition_hash`가 달라져 backfill이 다시 만들고, 값 정의만 바뀌면(컬럼은 그대로) 저장된 feature snapshot·label·학습 표본을 지우고 다시 적재한다. 옛 값을 새 값과 섞지 않는 유일한 방법이다
 - 표를 늘린다 → `db/duckdb/research/v1/*.sql`의 머리주석(세 묶음 구분)이 기준
 - 화면 노출 → `reporting/readers/research.py`
 - 3축 이름(`stage`/`execution_mode`/`source_kind`) → CLAUDE.md 규칙 14

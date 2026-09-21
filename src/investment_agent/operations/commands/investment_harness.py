@@ -17,6 +17,10 @@ from investment_agent.operations.harness.contracts import HarnessMode
 from investment_agent.operations.harness.health import inspect_health
 from investment_agent.operations.harness.kill_switches import default_job_kill_env
 from investment_agent.operations.harness.lock import ProcessFileLock
+from investment_agent.operations.harness.maintenance import (
+    MAINTENANCE_HOLD_EXIT_CODE,
+    read_maintenance_hold,
+)
 from investment_agent.operations.harness.pipeline import (
     account_risk_snapshot_job,
     continuous_learning_job,
@@ -237,6 +241,25 @@ def main(argv: list[str] | None = None) -> int:
             "discord_gateway_service": "separate",
         })
         return 0
+
+    # 정비 보류는 **기동 경로**에서 막아야 한다. 전에는 `harness_switch`와
+    # `start_harness_service`만 sentinel을 읽어서, 등록된 Windows Task·launchd 서비스가
+    # 로그온·재부팅 때 이 모듈을 직접 불러 그대로 떴다 — 명령이 출력하는 "하네스는
+    # 기동하지 않습니다"가 사실이 아니었다(감사 OP2-04). 코드를 고치는 중에 편집 중인
+    # 모듈이 subprocess로 실행되는 것도 여기서 막힌다.
+    hold = read_maintenance_hold(state_dir)
+    if hold is not None:
+        _emit({
+            "refused": "maintenance_hold",
+            "reason": hold.get("reason"),
+            "held_at": hold.get("held_at"),
+            "hold_id": hold.get("hold_id"),
+            "state_dir": str(state_dir),
+            "hint": "harness_switch --maintenance off 로 해제한 뒤 다시 기동한다",
+        })
+        # 서비스가 1분마다 재시작을 시도하므로(RestartOnFailure Count=999) 실패가 아니라
+        # "의도된 거부"로 구분되는 코드를 쓴다.
+        return MAINTENANCE_HOLD_EXIT_CODE
 
     reporter = HarnessReporter(logger=log, alerts=DiscordOpsAlert(log))
     scheduler = HarnessScheduler(

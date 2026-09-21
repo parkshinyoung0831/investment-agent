@@ -6,14 +6,13 @@ import unittest
 from investment_agent.research.rl.contracts import RLSafetyError
 from investment_agent.research.rl.features import FeatureSpec, load_training_set
 
-SPEC = FeatureSpec(version="v3", names=("momentum_20d", "volatility_20d"))
+SPEC = FeatureSpec(names=("momentum_20d", "volatility_20d"))
 PERIODS = ("2026-08-03T00:00:00+00:00", "2026-08-10T00:00:00+00:00")
 CUTOFF = "2026-09-01T00:00:00+00:00"
 
 
 def _feature_row(as_of_at: str, ticker: str, values: tuple[float, float]):
     return {
-        "feature_version": "v3",
         "as_of_at": as_of_at,
         "ticker": ticker,
         "available_at": as_of_at,
@@ -27,7 +26,6 @@ def _feature_row(as_of_at: str, ticker: str, values: tuple[float, float]):
 def _label_row(as_of_at: str, ticker: str, forward: float, benchmark: float):
     end = as_of_at.replace("-03T", "-08T").replace("-10T", "-15T")
     return {
-        "feature_version": "v3",
         "as_of_at": as_of_at,
         "ticker": ticker,
         "forward_end_at": end,
@@ -58,7 +56,7 @@ class _Store:
         self._features = features
         self._labels = labels
 
-    def rl_feature_snapshot_rows(self, symbols, *, start_as_of, end_as_of, feature_version):
+    def rl_feature_snapshot_rows(self, symbols, *, start_as_of, end_as_of):
         if self._features is not None:
             return list(self._features)
         return [
@@ -67,7 +65,7 @@ class _Store:
             for index, ticker in enumerate(symbols)
         ]
 
-    def rl_training_label_rows(self, symbols, *, start_as_of, end_as_of, feature_version, label_cutoff_at):
+    def rl_training_label_rows(self, symbols, *, start_as_of, end_as_of, label_cutoff_at):
         if self._labels is not None:
             return list(self._labels)
         return [

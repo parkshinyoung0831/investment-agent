@@ -180,6 +180,21 @@ class ExpectedReturnSignalsTest(unittest.TestCase):
         # MID: factor는 상승, ML은 하락. 최종값과 같은 방향은 둘 중 하나다.
         self.assertEqual(signals["MID"].confidence, 0.5)
 
+    def test_a_cancelled_out_signal_is_not_recorded_as_full_confidence(self):
+        """근거가 방향을 말했는데 최종 기대수익이 0이면 가장 불확실한 경우다 —
+        "방향을 말한 근거가 없다"(1.0)와 같은 값으로 적으면 원장이 거짓을 말한다(감사 TR2-13)."""
+        from investment_agent.trading.decision.alpha import source_agreement
+
+        # 방향을 말한 근거가 없다 → 축소할 근거도 없다.
+        self.assertEqual(source_agreement(0.0, directions=[0, 0]), 1.0)
+        self.assertEqual(source_agreement(0.02, directions=[]), 1.0)
+        # 근거는 상승을 말했는데 게이트가 기대수익을 0으로 깎았다.
+        self.assertEqual(source_agreement(0.0, directions=[1, 0]), 0.0)
+        # 근거가 서로 상쇄됐다.
+        self.assertEqual(source_agreement(0.0, directions=[1, -1]), 0.0)
+        # 정상 경로는 그대로다.
+        self.assertEqual(source_agreement(0.02, directions=[1, -1]), 0.5)
+
     def test_thesis_switched_off_for_ablation_does_not_block_unverified_entries(self):
         plan = self._plan(views={}, policy=AlphaPolicy(candidate_count=3, use_thesis=False))
         self.assertIsNone(_by_symbol(plan)["TOP"].constraint)

@@ -35,7 +35,7 @@ VIEWS: Mapping[str, ViewSpec] = MappingProxyType({
     "execution_orders": ViewSpec("client_order_id,attempt_id,intent_id,approval_id,broker_order_id,ticker,side,quantity,reference_price,notional,status,raw_broker_status,submitted_at,updated_at", "updated_at,client_order_id"),
     "execution_fills": ViewSpec("broker_fill_id,client_order_id,broker_order_id,ticker,side,quantity,price,commission,filled_at,created_at", "filled_at,broker_fill_id"),
     "current_model_stage": ViewSpec(
-        "artifact_id,algorithm,feature_version,train_start,train_end,seed,artifact_uri,sha256,params,code_commit,created_at,stage,current_promotion_id,stage_changed_at", "artifact_id"),
+        "artifact_id,algorithm,train_start,train_end,seed,artifact_uri,sha256,params,code_commit,created_at,stage,current_promotion_id,stage_changed_at", "artifact_id"),
     "institutional_filings": ViewSpec(
         "accession_no,manager_cik,period_end,form_type,report_type,filing_date,accepted_at,amendment_type,amendment_no,reported_value_usd,reported_line_count,confidential_omitted,source_url,content_sha256", "manager_cik,period_end,accession_no", "period_end", "manager_cik"),
     "institutional_positions": ViewSpec(

@@ -22,7 +22,6 @@ class FeatureDataset:
     forward_returns: np.ndarray
     benchmark_forward_returns: np.ndarray
     availability: np.ndarray
-    feature_version: str
 
     def __post_init__(self) -> None:
         symbols = tuple(symbol.upper() for symbol in self.symbols)
@@ -50,8 +49,6 @@ class FeatureDataset:
             raise ValueError("benchmark_forward_returns must match time")
         if len(self.as_of_values) < 1:
             raise ValueError("feature dataset requires at least one period")
-        if not self.feature_version:
-            raise ValueError("feature_version is required")
         if not np.isfinite(feature_array).all() or not np.isfinite(return_array).all() or not np.isfinite(benchmark_array).all():
             raise ValueError("feature dataset values must be finite; encode missingness in availability/features")
         if (return_array < -1.0).any() or (benchmark_array < -1.0).any():

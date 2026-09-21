@@ -12,7 +12,21 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, Iterable, Mapping, Sequence
 
+from investment_agent.data.fundamentals.domain.periods import FISCAL_PERIODS, PeriodError, parse_period
+
 _TRADING_DAYS = 252
+# 회계기간 어휘의 owner는 fundamentals domain이다. 여기서 문자열을 다시 선언하지 않는다.
+_ANNUAL_PERIOD = "FY"
+_QUARTERS_PER_YEAR = 4
+
+
+def _fiscal_period(value: Any) -> str | None:
+    """`FY`·`Q1`~`Q4` 중 하나로 정규화한다. 알 수 없는 값은 버린다."""
+    try:
+        period = parse_period(value)
+    except PeriodError:
+        return None
+    return period if period in FISCAL_PERIODS else None
 
 # 사람이 실제로 말하는 구간이다. 거래일 환산이라 달력 기준과 며칠 어긋난다.
 PRICE_WINDOWS: tuple[tuple[str, int], ...] = (
@@ -224,17 +238,30 @@ class AnnualPoint:
 
 
 def _annual_points(rows: Iterable[Mapping[str, Any]]) -> list[AnnualPoint]:
+    """회계연도별 합산. **FY 행과 Q1~Q4 행을 함께 더하지 않는다.**
+
+    `fundamentals.financial_versions`는 같은 `fiscal_year`에 FY 1행과 Q1~Q4 4행을 함께
+    담는다. period 문자열만으로 중복을 제거하면 다섯 행이 모두 서로 달라 연간 + 4분기가
+    전부 더해져 매출·이익이 정확히 2배가 된다(감사 TR2-16). 분자·분모가 같이 2배인
+    마진은 맞게 나오고, 전 연도가 똑같이 2배면 CAGR도 맞게 나와 **오류가 가려진다**.
+
+    FY 행이 있으면 그것 하나만 쓰고, 없으면 분기 행을 더한다. `quarters`는 그때만
+    "몇 분기를 더했나"라는 뜻을 갖는다(FY 한 행은 4분기 전체로 센다).
+    """
     by_year: dict[int, dict[str, Any]] = {}
     for row in rows:
         year = row.get("fiscal_year")
         if year is None:
             continue
-        bucket = by_year.setdefault(int(year), {"quarters": set(), "rows": []})
-        period = str(row.get("fiscal_period") or "")
-        if period in bucket["quarters"]:
+        bucket = by_year.setdefault(int(year), {"annual": None, "quarters": {}})
+        period = _fiscal_period(row.get("fiscal_period"))
+        if period is None:
             continue
-        bucket["quarters"].add(period)
-        bucket["rows"].append(row)
+        if period == _ANNUAL_PERIOD:
+            if bucket["annual"] is None:
+                bucket["annual"] = row
+        elif period not in bucket["quarters"]:
+            bucket["quarters"][period] = row
 
     def _sum(entries: list[Mapping[str, Any]], field: str) -> float | None:
         total = 0.0
@@ -250,12 +277,18 @@ def _annual_points(rows: Iterable[Mapping[str, Any]]) -> list[AnnualPoint]:
     points: list[AnnualPoint] = []
     for year in sorted(by_year):
         bucket = by_year[year]
+        if bucket["annual"] is not None:
+            entries = [bucket["annual"]]
+            quarters = _QUARTERS_PER_YEAR
+        else:
+            entries = [bucket["quarters"][period] for period in sorted(bucket["quarters"])]
+            quarters = len(entries)
         points.append(AnnualPoint(
             fiscal_year=year,
-            quarters=len(bucket["quarters"]),
-            revenue=_sum(bucket["rows"], "revenue"),
-            net_income=_sum(bucket["rows"], "net_income"),
-            operating_income=_sum(bucket["rows"], "operating_income_loss"),
+            quarters=quarters,
+            revenue=_sum(entries, "revenue"),
+            net_income=_sum(entries, "net_income"),
+            operating_income=_sum(entries, "operating_income_loss"),
         ))
     return points
 

@@ -23,7 +23,6 @@ class PPOExperimentContractTest(unittest.TestCase):
             forward_returns=np.array([[0.05], [-0.02]]),
             benchmark_forward_returns=np.array([0.01, 0.01]),
             availability=np.array([[True], [True]]),
-            feature_version="v1",
         )
         result = _evaluate(_AlwaysCash(), dataset, RewardConfig())
         self.assertEqual(result.periods, 2)

@@ -9,7 +9,6 @@ from investment_agent.research.rl.environment import FeatureDataset
 from investment_agent.research.rl.features import HistoricalTrainingSet
 from investment_agent.research.rl.contracts import RLDataNotReadyError
 
-FEATURE_VERSION = "decision_v1"
 ACTIONS = ("open", "increase", "hold", "reduce", "exit", "watch", "avoid")
 FEATURE_NAMES = ("decision_confidence", "decision_probability_up", "decision_expected_excess_return", *(f"decision_action_{action}" for action in ACTIONS))
 
@@ -69,7 +68,7 @@ def decision_training_set(rows, *, as_of_at, max_symbols):
             features[t,i]=[float(row["features"][name]) for name in FEATURE_NAMES]
             returns[t,i]=float(row["asset_return"])
             masks[t,i]=True; ids.append(row["record_key"])
-    dataset=FeatureDataset(symbols, FEATURE_NAMES, times, features, returns, benchmarks, masks, FEATURE_VERSION)
+    dataset=FeatureDataset(symbols, FEATURE_NAMES, times, features, returns, benchmarks, masks)
     digest=hashlib.sha256(canonical_json(rows).encode()).hexdigest()
     membership=hashlib.sha256(canonical_json({"symbols":symbols,"times":times,"availability":masks.tolist()}).encode()).hexdigest()
     return HistoricalTrainingSet(dataset,tuple(ends),membership,tuple(ids),tuple(ids),digest)

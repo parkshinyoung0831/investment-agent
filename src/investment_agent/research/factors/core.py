@@ -54,7 +54,12 @@ FACTOR_CATEGORIES: dict[str, tuple[tuple[str, int], ...]] = {
 }
 # 가치 비교는 업종 안에서 한다. 은행의 PSR과 소프트웨어의 PSR을 한 줄로 세우면 업종 선택이 되고 만다.
 SECTOR_RELATIVE_CATEGORIES = frozenset({"value"})
-# 한 category에서 이 비율 이상의 factor가 있어야 점수를 준다. 하나만으로 category를 대표하게 두지 않는다.
+# 한 category에서 관측된 factor가 전체의 이 비율 이상일 때만 점수를 준다.
+# **members가 2개인 category(6개 중 4개)에서는 1개로 통과한다**(1/2 >= 0.5). 그것이 지금의
+# 규칙이다 — "하나만으로 대표하게 두지 않는다"는 더 엄한 규칙은 이 문턱으로 강제되지 않는다.
+# 문턱을 올리면 탈락하는 category가 늘고, composite이 남은 category로 재정규화되므로
+# (아래 `composite` 계산) 결측이 많은 종목의 점수가 오히려 올라간다 — 그 상호작용을
+# 정하지 않은 채 문턱만 올리면 순위가 나빠질 수 있다(감사 RR2-02, 결정 대기).
 _MIN_CATEGORY_COVERAGE = 0.5
 # 업종 안 순위를 매길 최소 종목 수. 이보다 적으면 전체 유니버스 순위를 쓴다.
 _MIN_GROUP_SIZE = 5
@@ -222,17 +227,16 @@ def feature_rows_by_ticker(rows: Sequence[Mapping]) -> dict[str, Mapping[str, fl
 def latest_cross_section(
     rows: Sequence[Mapping],
     *,
-    feature_version: str,
     min_coverage: int,
 ) -> tuple[str, dict[str, Mapping[str, float | None]]] | None:
     """판단 시각이 가장 최근이면서 종목 수가 `min_coverage` 이상인 한 시점의 feature 횡단면.
 
     feature 적재가 중간에 끊긴 날은 종목이 일부뿐이라 백분위가 그 일부 안의 순위가 된다. 그런 날은
-    건너뛰고 직전의 온전한 날을 쓴다. 다른 feature 세대와 섞지 않는다.
+    건너뛰고 직전의 온전한 날을 쓴다.
     """
     by_as_of: dict[str, dict[str, Mapping[str, float | None]]] = {}
     for row in rows:
-        if str(row.get("feature_version")) != feature_version or not row.get("is_available", True):
+        if not row.get("is_available", True):
             continue
         by_as_of.setdefault(str(row["as_of_at"]), {})[str(row["ticker"]).upper()] = dict(row.get("features") or {})
     for as_of in sorted(by_as_of, reverse=True):

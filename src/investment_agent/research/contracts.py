@@ -50,7 +50,6 @@ class FeatureRecord:
     ticker: str
     as_of_at: str
     available_at: str
-    feature_version: str
     features: Mapping[str, Any]
     source_ids: tuple[str, ...] = ()
     provenance: Mapping[str, Any] = field(default_factory=dict)
@@ -61,14 +60,10 @@ class FeatureRecord:
         available = parse_datetime(self.available_at).isoformat()
         if not ticker or available > as_of:
             raise ContractError("feature ticker and available_at<=as_of_at are required")
-        version = str(self.feature_version).strip()
-        if not version:
-            raise ContractError("feature_version is required")
         source_ids = _strings(self.source_ids, "source_ids")
         object.__setattr__(self, "ticker", ticker)
         object.__setattr__(self, "as_of_at", as_of)
         object.__setattr__(self, "available_at", available)
-        object.__setattr__(self, "feature_version", version)
         object.__setattr__(self, "features", _finite_features(self.features, "features"))
         object.__setattr__(self, "source_ids", source_ids)
         object.__setattr__(self, "provenance", dict(self.provenance))
@@ -85,7 +80,6 @@ class LabelRecord:
     as_of_at: str
     forward_end_at: str
     label_available_at: str
-    feature_version: str
     label_definition: str
     label: float
     benchmark_label: float = 0.0
@@ -98,10 +92,9 @@ class LabelRecord:
         label_available = parse_datetime(self.label_available_at).isoformat()
         if not ticker or forward_end <= as_of or label_available < forward_end:
             raise ContractError("label times must satisfy as_of < forward_end <= label_available")
-        feature_version = str(self.feature_version).strip()
         definition = str(self.label_definition).strip()
-        if not feature_version or not definition:
-            raise ContractError("label feature_version and label_definition are required")
+        if not definition:
+            raise ContractError("label_definition is required")
         for name in ("label", "benchmark_label"):
             raw = getattr(self, name)
             if isinstance(raw, bool) or not isinstance(raw, (int, float)) or not math.isfinite(float(raw)):
@@ -111,7 +104,6 @@ class LabelRecord:
         object.__setattr__(self, "as_of_at", as_of)
         object.__setattr__(self, "forward_end_at", forward_end)
         object.__setattr__(self, "label_available_at", label_available)
-        object.__setattr__(self, "feature_version", feature_version)
         object.__setattr__(self, "label_definition", definition)
         label_id = str(self.label_id).strip() if self.label_id is not None else ""
         object.__setattr__(
@@ -129,7 +121,6 @@ class DatasetManifest:
     """dataset hash·기간·PIT cutoff을 모델 artifact와 함께 추적한다."""
 
     dataset_version: str
-    feature_version: str
     label_definition: str
     pit_cutoff_at: str
     train_period: tuple[str, str]
@@ -144,7 +135,6 @@ class DatasetManifest:
     def __post_init__(self) -> None:
         values = {
             "dataset_version": str(self.dataset_version).strip(),
-            "feature_version": str(self.feature_version).strip(),
             "label_definition": str(self.label_definition).strip(),
             "dataset_hash": str(self.dataset_hash).strip(),
             "code_version": str(self.code_version).strip(),

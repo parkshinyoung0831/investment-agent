@@ -43,7 +43,7 @@ ExecutionIntent                 이 지점부터 `investment_agent.execution`이
 |---|---|---|
 | `EvidenceItem` | `research/evidence/contracts.py` | domain별 payload와 observed/available time, source, stable ID |
 | `EvidenceBundle` | `research/evidence/contracts.py` | 하나의 ticker·cutoff·source kind에 대한 근거와 결측 목록 |
-| `FeatureBundle` | `feature_layer.py` | 학습과 inference가 공유하는 feature version/hash |
+| `FeatureBundle` | `feature_layer.py` | 학습과 inference가 공유하는 feature 정의 hash |
 | `FeatureSnapshot` | `rl/contracts.py` | 저장 가능한 종목×시점 feature row |
 | `SecurityProposal` | `portfolio/contracts.py` | LLM의 종목별 정성 판단. 주문 권한 없음 |
 | `ExpectedReturnSignal` | `portfolio/optimizer.py` | ALPHA의 기대초과수익·근거 일치도·제약을 optimizer에 전달 |
@@ -211,7 +211,7 @@ Qlib, LumiBot, LightGBM/XGBoost, SB3는 선택 dependency입니다. import 가�
 
 ## 평가와 승격
 
-모델 artifact에는 feature version, dataset hash, train/validation/OOS 기간, seed, parameter, code
+모델 artifact에는 feature 컬럼 목록, dataset hash, train/validation/OOS 기간, seed, parameter, code
 version과 artifact hash를 저장합니다. `ManualPromotionGate`는 현재 model artifact stage를
 `shadow → backtest → out_of_sample → walk_forward → paper → live` 순서로 한 단계씩만 올리며,
 단계마다 사람이 정확한 확인 문구로 승인합니다. 이 순서와 확인 문구, 실주문 직전 검사

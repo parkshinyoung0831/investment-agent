@@ -35,6 +35,22 @@ class QualityStatisticsTest(unittest.TestCase):
         self.assertAlmostEqual(stats["debt_to_equity"], 0.5)
         self.assertAlmostEqual(stats["revenue_growth_ttm_yoy"], 400 / 320 - 1)
 
+    def test_prior_year_window_must_be_consecutive_and_adjacent(self):
+        """전년 창에 구멍이 있거나 현재 TTM과 맞붙지 않으면 성장률을 만들지 않는다.
+
+        4행이 모였다는 것만으로는 12개월이 아니고, 그러면 성장률이 조용히 다른 기간의
+        비교가 된다(감사 RR2-03). 현재 TTM 창은 이미 같은 검사를 받는다.
+        """
+        rows = _eight_quarters()
+        self.assertIn("revenue_growth_ttm_yoy", quality_statistics(rows))
+        # 전년 창의 중간 분기(2024 Q4)를 두 해 전 분기로 바꾼다 — 4행은 유지되지만 연속이 아니다.
+        with_hole = [row for row in rows if not (row["fiscal_year"] == 2024 and row["fiscal_period"] == "Q4")]
+        with_hole.append(_quarter(2023, 4, revenue=80.0))
+        stats = quality_statistics(with_hole)
+        self.assertNotIn("revenue_growth_ttm_yoy", stats)
+        # 현재 TTM 지표는 영향을 받지 않는다 — 그 창은 그대로 연속이다.
+        self.assertIn("roe_ttm", stats)
+
     def test_order_of_rows_does_not_matter(self):
         rows = _eight_quarters()
         self.assertEqual(quality_statistics(rows), quality_statistics(list(reversed(rows))))
@@ -80,12 +96,28 @@ class FactorFeatureTest(unittest.TestCase):
                 {"target_fiscal_year": 2026, "target_fiscal_period": "FY", "eps_avg": -1.0}]
         self.assertAlmostEqual(estimate_statistics(rows)["eps_avg_change"], 0.5)
 
-    def test_earnings_yield_comes_only_from_positive_pe(self):
+    def test_value_yields_keep_sign_and_distinguish_loss_from_missing(self):
+        """적자는 "결측"이 아니라 음수 관측이어야 한다 — 결측으로 접으면 순위에서 빠져 유리해진다."""
         from datetime import datetime, timezone
         as_of = datetime(2026, 9, 14, tzinfo=timezone.utc)
         base = {"available_at": "2026-09-13T00:00:00+00:00"}
-        self.assertAlmostEqual(_valuation({**base, "pe_ttm": 20.0}, as_of=as_of)["valuation_earnings_yield"], 0.05)
-        self.assertIsNone(_valuation({**base, "pe_ttm": None}, as_of=as_of)["valuation_earnings_yield"])
+        profitable = _valuation(
+            {**base, "pe_ttm": 20.0, "earnings_to_market_cap": 0.05, "fcf_to_market_cap": 0.04},
+            as_of=as_of,
+        )
+        self.assertAlmostEqual(profitable["valuation_earnings_yield"], 0.05)
+        self.assertAlmostEqual(profitable["valuation_fcf_yield"], 0.04)
+        # 적자·현금소진: 비율(pe_ttm)은 정의되지 않지만 수익률은 음수로 남는다.
+        loss_making = _valuation(
+            {**base, "pe_ttm": None, "earnings_to_market_cap": -0.08, "fcf_to_market_cap": -0.02},
+            as_of=as_of,
+        )
+        self.assertAlmostEqual(loss_making["valuation_earnings_yield"], -0.08)
+        self.assertAlmostEqual(loss_making["valuation_fcf_yield"], -0.02)
+        # 진짜 결측(미공시)은 여전히 None이다.
+        undisclosed = _valuation({**base, "pe_ttm": None}, as_of=as_of)
+        self.assertIsNone(undisclosed["valuation_earnings_yield"])
+        self.assertIsNone(undisclosed["valuation_fcf_yield"])
 
 
 if __name__ == "__main__":

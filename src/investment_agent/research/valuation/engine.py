@@ -81,7 +81,6 @@ class PITValuationInputs:
     ticker: str
     as_of_at: str
     source_kind: str
-    source_version: str
     price: PITScalar
     shares_outstanding: PITScalar
     earnings_ttm: PITScalar
@@ -94,8 +93,6 @@ class PITValuationInputs:
             raise ContractError(f"invalid ticker: {self.ticker}")
         if self.source_kind not in _SOURCE_KINDS:
             raise ContractError(f"invalid valuation source_kind: {self.source_kind}")
-        if not self.source_version.strip():
-            raise ContractError("valuation source_version is required")
         as_of_at = parse_datetime(self.as_of_at)
         for field_name, item in self._items().items():
             if item.available_at and parse_datetime(item.available_at) > as_of_at:
@@ -127,7 +124,6 @@ class PITValuationInputs:
             "ticker": self.ticker,
             "as_of_at": self.as_of_at,
             "source_kind": self.source_kind,
-            "source_version": self.source_version,
             "inputs": {name: item.to_dict() for name, item in self._items().items()},
         }
         return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
@@ -141,7 +137,6 @@ class PITValuationObservation:
     as_of_at: str
     available_at: str | None
     source_kind: str
-    source_version: str
     price: Decimal | None
     shares_outstanding: Decimal | None
     market_cap: Decimal | None
@@ -149,6 +144,12 @@ class PITValuationObservation:
     pb: Decimal | None
     ps_ttm: Decimal | None
     fcf_yield: Decimal | None
+    # 아래 둘은 **부호가 살아 있는** 수익률이다. 비율(pe/fcf_yield)은 분모가 0 이하면
+    # 정의되지 않아 `None`이 되는데, 적자·현금소진은 결측이 아니라 **나쁜 관측**이다.
+    # 둘을 같은 `None`으로 접으면 순위에서 빠져 오히려 유리해진다(감사 RR2-01).
+    # 분모가 시가총액이라 항상 양수이므로 여기서는 값이 음수로 남는다.
+    earnings_to_market_cap: Decimal | None
+    fcf_to_market_cap: Decimal | None
     is_meaningful_pe_ttm: bool
     is_meaningful_pb: bool
     is_meaningful_ps_ttm: bool
@@ -163,7 +164,6 @@ class PITValuationObservation:
             "as_of_at": self.as_of_at,
             "available_at": self.available_at,
             "source_kind": self.source_kind,
-            "source_version": self.source_version,
             "price": self.price,
             "shares_outstanding": self.shares_outstanding,
             "market_cap": self.market_cap,
@@ -171,6 +171,8 @@ class PITValuationObservation:
             "pb": self.pb,
             "ps_ttm": self.ps_ttm,
             "fcf_yield": self.fcf_yield,
+            "earnings_to_market_cap": self.earnings_to_market_cap,
+            "fcf_to_market_cap": self.fcf_to_market_cap,
             "is_meaningful_pe_ttm": self.is_meaningful_pe_ttm,
             "is_meaningful_pb": self.is_meaningful_pb,
             "is_meaningful_ps_ttm": self.is_meaningful_ps_ttm,
@@ -250,12 +252,22 @@ def build_pit_valuation(inputs: PITValuationInputs) -> PITValuationObservation:
         else:
             fcf_yield = inputs.free_cash_flow_ttm.value / market_cap
 
+    # 부호를 보존하는 수익률. 분모는 시가총액(>0)이므로 적자·음의 FCF가 음수로 남는다.
+    # 순위 매김은 이 값을 쓴다 — 비율(pe_ttm·fcf_yield)의 `None`이 "미공시"와
+    # "적자"를 구별하지 못하는 것이 RR2-01의 원인이었다.
+    earnings_to_market_cap: Decimal | None = None
+    fcf_to_market_cap: Decimal | None = None
+    if market_cap is not None:
+        if inputs.earnings_ttm.value is not None:
+            earnings_to_market_cap = inputs.earnings_ttm.value / market_cap
+        if inputs.free_cash_flow_ttm.value is not None:
+            fcf_to_market_cap = inputs.free_cash_flow_ttm.value / market_cap
+
     return PITValuationObservation(
         ticker=inputs.ticker,
         as_of_at=inputs.as_of_at,
         available_at=inputs.available_at,
         source_kind=inputs.source_kind,
-        source_version=inputs.source_version,
         price=inputs.price.value,
         shares_outstanding=inputs.shares_outstanding.value,
         market_cap=market_cap,
@@ -263,6 +275,8 @@ def build_pit_valuation(inputs: PITValuationInputs) -> PITValuationObservation:
         pb=pb,
         ps_ttm=ps_ttm,
         fcf_yield=fcf_yield,
+        earnings_to_market_cap=earnings_to_market_cap,
+        fcf_to_market_cap=fcf_to_market_cap,
         is_meaningful_pe_ttm=pe_ttm is not None,
         is_meaningful_pb=pb is not None,
         is_meaningful_ps_ttm=ps_ttm is not None,

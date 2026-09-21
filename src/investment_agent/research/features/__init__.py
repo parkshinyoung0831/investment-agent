@@ -20,7 +20,6 @@ ROLLING_DAYS = STORAGE_DAYS * 252 // 365 + BACKFILL_WARMUP_TRADING_DAYS
 
 # PIT feature layer contracts share this package with the local ETL helpers.
 from investment_agent.research.features.layer import (
-    FEATURE_VERSION,
     REQUIRED_BARS,
     FeatureBundle,
     FeatureLayer,
@@ -31,7 +30,6 @@ from investment_agent.research.rl.contracts import FeatureSnapshot
 __all__ = [
     "BACKFILL_WARMUP_TRADING_DAYS",
     "BACKFILL_YEARS",
-    "FEATURE_VERSION",
     "FeatureBundle",
     "FeatureLayer",
     "FeatureRecord",

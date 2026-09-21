@@ -110,7 +110,6 @@ def latest_cross_section(
     latest_point = parse_datetime(str(latest))
     snapshots = [
         FeatureSnapshot(
-            feature_version=str(row["feature_version"]),
             as_of_at=str(row["as_of_at"]),
             ticker=str(row["ticker"]).upper(),
             available_at=str(row["available_at"]),
@@ -161,15 +160,17 @@ def champion_forecast(
             tuple(repository.current_tracked_tickers()),
             start_as_of=(point - timedelta(days=lookback_days)).isoformat(),
             end_as_of=point.isoformat(),
-            feature_version=model.feature_version,
         )
         feature_as_of, snapshots = latest_cross_section(rows, as_of_at=point, lookback_days=lookback_days)
         imputed = dict(zip((item.ticker for item in snapshots), impute_cross_section(snapshots), strict=True))
         wanted = [ticker for ticker in wanted_tickers if ticker in imputed]
         if not wanted:
             return ChampionForecast(reason="no requested ticker has a feature snapshot", **identity)
-        if any(snapshot.feature_version != model.feature_version for snapshot in snapshots):
-            raise ContractError("feature version mismatch between snapshots and the model")
+        absent = sorted({
+            name for ticker in wanted for name in model.feature_names if name not in imputed[ticker]
+        })
+        if absent:
+            raise ContractError(f"model feature columns are absent from the snapshots: {absent[:5]}")
         matrix = [[float(imputed[ticker][name]) for name in model.feature_names] for ticker in wanted]
         raw = model.predict(np.asarray(matrix, dtype=float))
         predictions: dict[str, float] = {}

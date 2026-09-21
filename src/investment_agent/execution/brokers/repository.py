@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from investment_agent.execution.contracts import ExecutionSafetyError
 from investment_agent.execution.orders.market_state import MarketQuote
+from investment_agent.execution.safety.repository import PRIOR_BASELINE_MAX_AGE
 from investment_agent.platform.db.sqlite import default_runtime_database_path, runtime_connection
 from investment_agent.platform.serialization import parse_datetime
 
@@ -115,7 +116,10 @@ class BrokerRepository:
                  artifact.get("raw_artifact_path"), artifact.get("raw_sha256")),
             )
             # 주문 전후 위험 계산용 상세점은 짧게 유지하고 장기 사실은 일일 표가 맡는다.
-            cutoff = (moment - timedelta(days=2)).isoformat()
+            # 보관 창은 **조회 창과 같은 상수**에서 나온다 — 전에는 보관 2일 · 조회 5일이라
+            # 연휴 뒤 첫 장에서 fallback 기준점이 이미 지워져 실주문이 전부 막혔고, 오류 문구는
+            # 원인을 "장전 스냅샷을 찍어라"로 돌렸다(감사 EX2-05).
+            cutoff = (moment - PRIOR_BASELINE_MAX_AGE).isoformat()
             connection.execute(
                 "DELETE FROM runtime_records WHERE record_type='account_snapshot' "
                 "AND json_extract(payload_json,'$.captured_at') < ?",

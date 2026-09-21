@@ -14,7 +14,6 @@ from investment_agent.research.rl.contracts import (
 class RLStorageContractTest(unittest.TestCase):
     def test_feature_and_future_label_payloads_are_physically_separate(self):
         feature = FeatureSnapshot(
-            feature_version="v1",
             as_of_at="2026-01-01T21:00:00+00:00",
             ticker="aapl",
             available_at="2026-01-01T20:00:00+00:00",
@@ -24,7 +23,6 @@ class RLStorageContractTest(unittest.TestCase):
             provenance={"dataset": "market.prices_daily", "point_in_time": True},
         )
         label = ForwardReturnLabel(
-            feature_version="v1",
             as_of_at="2026-01-01T21:00:00+00:00",
             ticker="AAPL",
             forward_end_at="2026-01-02T21:00:00+00:00",
@@ -43,7 +41,6 @@ class RLStorageContractTest(unittest.TestCase):
     def test_future_feature_and_early_label_are_rejected(self):
         with self.assertRaisesRegex(RLSafetyError, "available_at"):
             FeatureSnapshot(
-                feature_version="v1",
                 as_of_at="2026-01-01T21:00:00+00:00",
                 ticker="AAPL",
                 available_at="2026-01-01T22:00:00+00:00",
@@ -54,7 +51,6 @@ class RLStorageContractTest(unittest.TestCase):
             )
         with self.assertRaisesRegex(RLSafetyError, "future label field"):
             FeatureSnapshot(
-                feature_version="v1",
                 as_of_at="2026-01-01T21:00:00+00:00",
                 ticker="AAPL",
                 available_at="2026-01-01T20:00:00+00:00",
@@ -65,7 +61,6 @@ class RLStorageContractTest(unittest.TestCase):
             )
         with self.assertRaisesRegex(RLSafetyError, "cannot be available"):
             ForwardReturnLabel(
-                feature_version="v1",
                 as_of_at="2026-01-01T21:00:00+00:00",
                 ticker="AAPL",
                 forward_end_at="2026-01-02T21:00:00+00:00",
@@ -77,7 +72,6 @@ class RLStorageContractTest(unittest.TestCase):
     def test_feature_requires_structured_provenance(self):
         with self.assertRaisesRegex(RLSafetyError, "structured provenance"):
             FeatureSnapshot(
-                feature_version="v1",
                 as_of_at="2026-01-01T21:00:00+00:00",
                 ticker="AAPL",
                 available_at="2026-01-01T20:00:00+00:00",

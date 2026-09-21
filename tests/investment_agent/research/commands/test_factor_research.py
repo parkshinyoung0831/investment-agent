@@ -140,22 +140,18 @@ class SignalDirectionTest(unittest.TestCase):
 
 
 class GroupSnapshotsTest(unittest.TestCase):
-    def test_other_feature_versions_and_unavailable_rows_are_dropped(self):
+    def test_unavailable_rows_are_dropped(self):
         rows = [
-            {"feature_version": "v5", "as_of_at": "2024-01-05T23:30:00+00:00", "ticker": "aapl", "features": {"x": 1}},
-            {"feature_version": "v4", "as_of_at": "2024-01-05T23:30:00+00:00", "ticker": "MSFT", "features": {"x": 2}},
-            {"feature_version": "v5", "as_of_at": "2024-01-05T23:30:00+00:00", "ticker": "GOOG", "features": {},
+            {"as_of_at": "2024-01-05T23:30:00+00:00", "ticker": "aapl", "features": {"x": 1}},
+            {"as_of_at": "2024-01-05T23:30:00+00:00", "ticker": "GOOG", "features": {},
              "is_available": False},
         ]
-        self.assertEqual(group_snapshots(rows, feature_version="v5"), {date(2024, 1, 5): {"AAPL": {"x": 1}}})
+        self.assertEqual(group_snapshots(rows), {date(2024, 1, 5): {"AAPL": {"x": 1}}})
 
 
 class FactorResearchMainDataOwnerTest(unittest.TestCase):
     def test_cli_composes_market_and_universe_owner_reads(self):
-        from investment_agent.research.features.layer import FEATURE_VERSION
-
         rows = [{
-            "feature_version": FEATURE_VERSION,
             "as_of_at": "2024-01-05T23:30:00+00:00",
             "ticker": "AAPL",
             "features": {"momentum_12_1": 0.1},

@@ -47,11 +47,13 @@ class ExperienceTest(unittest.TestCase):
         self.assertAlmostEqual(build_experience(Prices(),case,as_of_at=datetime(2026,1,8,tzinfo=timezone.utc),horizon_days=5)["net_reward"],.048)
 
     def test_split_does_not_create_fake_loss(self):
+        # 저장 계약대로 분할 조정된 연속 종가를 준다(분할일에 가격이 끊기지 않는다).
+        # 분할 비율이 수익률에 들어가면 여기서 +100%가 나온다.
         from datetime import date, datetime, timedelta, timezone
         from investment_agent.research.commands.build_decision_experiences import build_experience
         class Prices:
             def price_path(self,ticker,start_date,limit=80):
-                return [dict(trade_date=str(date(2026,1,2)+timedelta(days=i)),close=100 if i==0 else 50,split_ratio=2 if i==1 else None,div_amount=0) for i in range(6)]
+                return [dict(trade_date=str(date(2026,1,2)+timedelta(days=i)),close=100,split_ratio=2 if i==1 else None,div_amount=0) for i in range(6)]
         case=dict(case_key="c",ticker="ABC",as_of_at="2026-01-01T00:00:00+00:00",final_decision=dict(signal="hold",confidence=.8,probability_up=.5,expected_excess_return=0))
         row=build_experience(Prices(),case,as_of_at=datetime(2026,1,8,tzinfo=timezone.utc),horizon_days=5)
         self.assertAlmostEqual(row["asset_return"],0)

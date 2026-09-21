@@ -24,7 +24,7 @@ from investment_agent.research.factors import (
     percentile_ranks,
     score_cross_section,
 )
-from investment_agent.research.features.layer import FEATURE_VERSION, REQUIRED_BARS
+from investment_agent.research.features.layer import REQUIRED_BARS
 from investment_agent.research.ml_serving import (
     NO_FORECAST,
     ChampionForecast,
@@ -60,7 +60,6 @@ __all__ = [
     "EvidenceBundle",
     "EvidenceItem",
     "FILING_ROWS_IN_PROMPT",
-    "FEATURE_VERSION",
     "NO_FORECAST",
     "REQUIRED_BARS",
     "ChampionForecast",

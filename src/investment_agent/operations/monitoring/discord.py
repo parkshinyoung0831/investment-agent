@@ -58,10 +58,16 @@ def activity(channel_id: str, since: datetime, *, forum: bool = False) -> dict[s
     """
     # 채널 생성 시각도 ID에 박혀 있다. 어제 만든 채널을 '오래 조용하다'고 경보하면
     # 첫 카드가 올 때까지 며칠을 거짓으로 우는데, 그 며칠이 경보를 못 믿게 만든다.
-    out: dict[str, Any] = {
-        "last_at": None, "count": None, "error": None,
-        "created_at": snowflake_time(channel_id),
-    }
+    out: dict[str, Any] = {"last_at": None, "count": None, "error": None, "created_at": None}
+    try:
+        # 이 줄도 try 안이어야 한다. 채널 ID가 숫자가 아니면(이름·URL을 넣은 설정 오류)
+        # `int()`가 여기서 터져 호출부까지 올라가고, 16개 채널 점검이 통째로 사라졌다 —
+        # 위 docstring이 막겠다고 한 바로 그 일이다(감사 OP2-18).
+        out["created_at"] = snowflake_time(channel_id)
+    except (TypeError, ValueError) as exc:
+        out["error"] = f"invalid channel id: {str(exc)[:60]}"
+        log.warning("discord channel id is not a snowflake: ch=%s", channel_id)
+        return out
     try:
         res = requests.get(f"{_API}/channels/{channel_id}",
                            headers=_headers(), timeout=_TIMEOUT)

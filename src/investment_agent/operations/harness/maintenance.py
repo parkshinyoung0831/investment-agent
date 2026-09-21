@@ -24,6 +24,9 @@ from investment_agent.operations.paths import (
     HARNESS_STATE_DIR as _DEFAULT_STATE_DIR,
 )
 MAINTENANCE_SENTINEL_FILENAME = "MAINTENANCE_HOLD"
+# 기동 경로가 보류 때문에 거부할 때의 종료 코드. 서비스가 1분마다 재시작을 시도하므로
+# (RestartOnFailure Count=999) 일반 실패(1)와 구분되는 값을 쓴다.
+MAINTENANCE_HOLD_EXIT_CODE = 3
 
 
 def get_maintenance_path(state_dir: Path | str | None = None) -> Path:
@@ -83,6 +86,7 @@ __all__ = [
     "MAINTENANCE_SENTINEL_FILENAME",
     "clear_maintenance_hold",
     "get_maintenance_path",
+    "MAINTENANCE_HOLD_EXIT_CODE",
     "is_maintenance_held",
     "read_maintenance_hold",
     "set_maintenance_hold",

@@ -34,7 +34,6 @@ class ModelArtifact:
 
     artifact_id: str
     model_kind: str
-    feature_version: str
     horizon_days: int
     train_period: tuple[str, str]
     validation_period: tuple[str, str]
@@ -67,7 +66,6 @@ class ModelArtifact:
         return {
             "artifact_id": self.artifact_id,
             "algorithm": self.model_kind,
-            "feature_version": self.feature_version,
             "train_start": self.train_period[0],
             "train_end": self.train_period[1],
             "seed": self.random_seed,
@@ -203,7 +201,6 @@ def fit_baseline(
     validation_labels: Any,
     oos_features: Any,
     oos_labels: Any,
-    feature_version: str,
     horizon_days: int = 5,
     train_period: Sequence[str],
     validation_period: Sequence[str],
@@ -269,7 +266,6 @@ def fit_baseline(
     dataset_hash = _dataset_hash(train_x, train_y, val_x, val_y, oos_x, oos_y)
     identity = {
         "model_kind": kind,
-        "feature_version": feature_version,
         "horizon_days": horizon_days,
         "parameters": params,
         "random_seed": random_seed,
@@ -281,7 +277,6 @@ def fit_baseline(
     artifact = ModelArtifact(
         artifact_id=f"model_{artifact_hash[:24]}",
         model_kind=kind,
-        feature_version=feature_version,
         horizon_days=horizon_days,
         train_period=_period(train_period, "train_period"),
         validation_period=_period(validation_period, "validation_period"),

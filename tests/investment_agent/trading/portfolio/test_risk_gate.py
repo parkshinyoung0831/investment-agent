@@ -152,3 +152,68 @@ class MandatoryTurnoverTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ConcentrationLimitReachabilityTest(unittest.TestCase):
+    """HHI 한도가 종목 상한과 같은 스케일에서 골라졌는지 고정한다(감사 TR2-01).
+
+    HHI = Σw² ≤ max(w)·Σw ≤ max_symbol_weight × (1 − min_cash_weight)다.
+    기본 정책은 상한 0.095인데 한도는 0.15여서 그 검사는 어떤 입력에서도 발동하지 않는다.
+    값을 임의로 바꾸지 않고, **그 사실이 코드와 원장에 드러나게** 한다 — 세 값 중
+    하나를 고치는 사람은 이 테스트로 관계를 보게 된다.
+    """
+
+    def test_reachable_bound_follows_the_symbol_cap_and_cash_floor(self):
+        policy = PortfolioRiskPolicy()
+        self.assertAlmostEqual(policy.reachable_concentration_hhi, 0.095)
+        self.assertGreater(policy.max_concentration_hhi, policy.reachable_concentration_hhi)
+        self.assertFalse(policy.concentration_hhi_limit_binds)
+
+    def test_a_limit_below_the_reachable_bound_binds(self):
+        policy = PortfolioRiskPolicy(max_concentration_hhi=0.08)
+        self.assertTrue(policy.concentration_hhi_limit_binds)
+
+    def test_the_maximally_concentrated_portfolio_stays_under_the_bound(self):
+        """상한을 꽉 채운 입력의 HHI가 유도한 상한을 넘지 않는다 — 부등식 자체의 검증."""
+        policy = PortfolioRiskPolicy()
+        count = int(round((1.0 - policy.min_cash_weight) / policy.max_symbol_weight))
+        weights = {f"S{index}": policy.max_symbol_weight for index in range(count)}
+        hhi = sum(weight * weight for weight in weights.values())
+        self.assertLessEqual(hhi, policy.reachable_concentration_hhi + 1e-12)
+        self.assertLess(hhi, policy.max_concentration_hhi)
+
+
+class UnmappedSectorWeightTest(unittest.TestCase):
+    """섹터 지도를 받았는데 분류가 없는 종목은 합계에서 빠져 한도가 조용히 통과했다(감사 TR2-07).
+
+    분류 없는 비중이 섹터 상한을 넘으면 그 상한을 지켰다고 말할 수 없다 — 그 종목들이
+    모두 같은 섹터일 수 있다. 새 임계를 만들지 않고 기존 상한으로 판정한다.
+    """
+
+    DECIDED = datetime(2026, 8, 21, 12, tzinfo=timezone.utc)
+
+    def _evaluate(self, sector_by_symbol):
+        gate = DeterministicRiskGate(PortfolioRiskPolicy(max_symbol_weight=0.20, min_cash_weight=0.0))
+        weights = {"AAA": 0.2, "BBB": 0.2, "CCC": 0.2, "CASH": 0.4}
+        return gate.evaluate(
+            proposal(weights), current_weights=weights,
+            tradable_symbols={"AAA", "BBB", "CCC"},
+            sector_by_symbol=sector_by_symbol, decided_at=self.DECIDED,
+        )
+
+    def test_unmapped_weight_over_the_sector_cap_is_a_violation(self):
+        result = self._evaluate({"AAA": "Manufacturing"})
+        self.assertFalse(result.is_approved)
+        self.assertTrue(any("unmapped-sector weight" in v for v in result.violations))
+        self.assertEqual(result.metrics["unmapped_sector_symbols"], ["BBB", "CCC"])
+        self.assertAlmostEqual(result.metrics["unmapped_sector_weight"], 0.4)
+
+    def test_a_fully_mapped_portfolio_has_no_unmapped_weight(self):
+        result = self._evaluate({"AAA": "A", "BBB": "B", "CCC": "C"})
+        self.assertEqual(result.metrics["unmapped_sector_symbols"], [])
+        self.assertAlmostEqual(result.metrics["unmapped_sector_weight"], 0.0)
+
+    def test_not_supplying_a_map_at_all_is_left_to_require_sector_map(self):
+        """지도를 안 넘긴 호출은 이 검사의 대상이 아니다 — 정책 레버가 따로 있다."""
+        result = self._evaluate(None)
+        self.assertFalse(any("unmapped-sector weight" in v for v in result.violations))

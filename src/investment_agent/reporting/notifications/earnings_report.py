@@ -701,8 +701,11 @@ def load_health(tickers: list[str]) -> dict[str, dict]:
             "interest_coverage": (
                 None if not interest or operating is None else operating / abs(interest)
             ),
+            # EBITDA가 음수면 배수가 음수로 나오고, "낮을수록 좋다" 게이지에서 가장 좋은
+            # 쪽으로 표시된다 — 실제 의미는 "EBITDA로 부채를 전혀 갚을 수 없다"다.
+            # 빈칸이 틀린 숫자보다 낫다(감사 RR2-10).
             "net_debt_to_ebitda": (
-                None if not ebitda or net_debt is None else net_debt / ebitda
+                None if not ebitda or ebitda <= 0 or net_debt is None else net_debt / ebitda
             ),
             "altman_z": _altman_z(current, operating_ttm=operating),
         }

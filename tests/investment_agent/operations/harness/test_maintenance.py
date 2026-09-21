@@ -151,3 +151,63 @@ class MaintenanceCliTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MaintenanceBlocksTheEntryPointTest(unittest.TestCase):
+    """보류는 **기동 경로**에서 막아야 한다.
+
+    전에는 `harness_switch`와 `start_harness_service`만 sentinel을 읽어서, 등록된
+    Windows Task·launchd 서비스가 로그온·재부팅 때 `investment_harness`를 직접 불러
+    그대로 떴다 — 명령이 출력하는 "하네스는 기동하지 않습니다"가 사실이 아니었다
+    (감사 OP2-04).
+    """
+
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.state_dir = Path(self.temp_dir.name)
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def _main(self, *args: str) -> int:
+        from investment_agent.operations.commands.investment_harness import main
+
+        with patch(
+            "investment_agent.operations.commands.investment_harness.build_registry",
+            return_value=MagicMock(definitions=lambda: ()),
+        ):
+            return main(["--state-dir", str(self.state_dir), *args])
+
+    def test_run_once_is_refused_while_held(self) -> None:
+        from investment_agent.operations.harness.maintenance import MAINTENANCE_HOLD_EXIT_CODE
+
+        set_maintenance_hold(state_dir=self.state_dir, reason="editing execution code")
+        with patch(
+            "investment_agent.operations.commands.investment_harness.HarnessService"
+        ) as service:
+            self.assertEqual(self._main("--run-once"), MAINTENANCE_HOLD_EXIT_CODE)
+            service.assert_not_called()
+
+    def test_serve_is_refused_while_held(self) -> None:
+        from investment_agent.operations.harness.maintenance import MAINTENANCE_HOLD_EXIT_CODE
+
+        set_maintenance_hold(state_dir=self.state_dir, reason="editing execution code")
+        with patch(
+            "investment_agent.operations.commands.investment_harness.HarnessService"
+        ) as service:
+            self.assertEqual(self._main("--serve"), MAINTENANCE_HOLD_EXIT_CODE)
+            service.assert_not_called()
+
+    def test_the_refusal_code_is_not_a_plain_failure(self) -> None:
+        """서비스가 1분마다 재시작을 시도하므로 일반 실패(1)와 구분돼야 한다."""
+        from investment_agent.operations.harness.maintenance import MAINTENANCE_HOLD_EXIT_CODE
+
+        self.assertNotIn(MAINTENANCE_HOLD_EXIT_CODE, (0, 1))
+
+    def test_without_a_hold_the_service_runs(self) -> None:
+        with patch(
+            "investment_agent.operations.commands.investment_harness.HarnessService"
+        ) as service:
+            service.return_value.run_once.return_value = 0
+            self.assertEqual(self._main("--run-once"), 0)
+            service.return_value.run_once.assert_called_once_with()

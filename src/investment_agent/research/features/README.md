@@ -118,7 +118,7 @@ python -m investment_agent.research.commands.build_features --dry-run
 ## 유용한 SQL 점검 쿼리
 
 저장형 RSI·MACD는 로컬 DuckDB의 `feature_signals_daily`에서 ticker와 날짜로 읽습니다.
-모델 입력은 `rl_feature_snapshots`에서 feature version과 `as_of_at`을 함께 확인합니다.
+모델 입력은 `rl_feature_snapshots`에서 `as_of_at`과 모델이 학습한 컬럼 집합을 함께 확인합니다.
 
 ```sql
 -- 1. AAPL 최근 10거래일 저장형 기술지표 조회
@@ -143,7 +143,7 @@ order by trade_date desc, ticker;
 | 수정 목적 | 확인할 파일 및 함수 | 주의사항 |
 |---|---|---|
 | RSI / MACD 계산 알고리즘 수정 | `src/investment_agent/research/features/compute.py` (`rsi`, `macd`) | 저장값의 재현성을 위해 750거래일 워밍업 유지 |
-| feature 추가 | `compute.py`, `layer.py` | `FEATURE_COLUMNS`, missing 표식, feature version을 함께 검토 |
+| feature 추가 | `compute.py`, `layer.py` | `FEATURE_COLUMNS`, missing 표식을 함께 검토. 값 정의를 바꾸면 저장된 snapshot·label·표본을 지우고 다시 적재 |
 | 보존 기간 변경 | `src/investment_agent/research/features/retention.py` (`prune_history`) | ResearchStore의 저장 정책과 일관되게 조정 |
 
 함께 움직이는 곳:

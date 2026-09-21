@@ -10,7 +10,6 @@ from investment_agent.research.rl.contracts import FeatureSnapshot
 
 def _snapshot(ticker: str, as_of_at: str, value: float) -> FeatureSnapshot:
     return FeatureSnapshot(
-        feature_version="v1",
         as_of_at=as_of_at,
         ticker=ticker,
         available_at=as_of_at,

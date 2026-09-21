@@ -41,9 +41,33 @@ MANAGER_PRESENTATION: dict[str, dict[str, object]] = {
 }
 
 
+# strategy_group → 화면 라벨과 한 줄 설명. 전에는 13F 화면이 매니저 **이름 부분문자열**
+# 14쌍으로 같은 것을 다시 골랐다 — 거장을 한 명 추가하면 성향·설명이 조용히 비고,
+# 한글 needle 7개는 카탈로그 표기와 달라 죽어 있었고, 같은 성씨가 둘이면 오매칭이었다
+# (감사 AU-03). 여기가 그 값의 owner다.
+STRATEGY_GROUP_PRESENTATION: dict[str, tuple[str, str]] = {
+    "value": ("가치투자", "하락장 대응력·현금 여력·경제적 해자를 중시하는 장기 가치투자"),
+    "concentrated_quality": ("행동주의 가치투자", "주주가치 개선을 직접 이끄는 행동주의 가치투자"),
+    "quality_growth": ("집중 장기투자", "소수의 고확신 기업에 장기 집중 투자"),
+    "innovation_growth": ("성장주 중심 투자", "성장 가능성이 큰 기업을 장기 보유"),
+    "macro_momentum": ("거시 전술투자", "거시 흐름과 시장 변화에 빠르게 대응하는 전술 투자"),
+    "macro_policy": ("가치·거시 투자", "가치 판단과 거시 환경을 함께 보는 투자"),
+    "contrarian_value": ("가치투자", "가격 대비 가치가 높은 기업을 장기 보유"),
+}
+
+
 def presentation_for(manager_cik: str) -> dict[str, object]:
-    """관리자 사실에 붙일 화면용 해석. 미등록 manager도 수집은 가능하다."""
-    return dict(MANAGER_PRESENTATION.get(str(manager_cik).zfill(10), {}))
+    """관리자 사실에 붙일 화면용 해석. 미등록 manager도 수집은 가능하다.
+
+    `strategy_group`에서 파생되는 `strategy_label`·`strategy_summary`를 함께 붙인다 —
+    표시 계층이 이름으로 다시 고르지 않게 한다.
+    """
+    row = dict(MANAGER_PRESENTATION.get(str(manager_cik).zfill(10), {}))
+    label, summary = STRATEGY_GROUP_PRESENTATION.get(str(row.get("strategy_group") or ""), (None, None))
+    if label is not None:
+        row["strategy_label"] = label
+        row["strategy_summary"] = summary
+    return row
 
 
 # 추적 대상 manager의 SEC 사실. key는 10자리 manager CIK.

@@ -124,14 +124,13 @@ class ReplayRepository:
             self._record_factor_categories(result)
             return result
         from investment_agent.research.factors import latest_cross_section, score_cross_section
-        from investment_agent.research.features.layer import FEATURE_VERSION
 
         members = set(self.current_tracked_tickers())
         rows = [
             row for row in self._feature_rows(as_of_at - timedelta(days=_CROSS_SECTION_WINDOW_DAYS), as_of_at)
             if parse_datetime(str(row["available_at"])) <= as_of_at and str(row["ticker"]).upper() in members
         ]
-        section = latest_cross_section(rows, feature_version=FEATURE_VERSION, min_coverage=max(1, len(members) // 2))
+        section = latest_cross_section(rows, min_coverage=max(1, len(members) // 2))
         if section is None:
             return None
         snapshot_as_of, features = section

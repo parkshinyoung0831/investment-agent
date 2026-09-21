@@ -12,7 +12,6 @@ from investment_agent.research.commands.build_training_samples import (
 )
 from investment_agent.research.features.layer import (
     ALWAYS_KNOWN_FEATURES,
-    FEATURE_VERSION,
     MISSING_SUFFIX,
     OPTIONAL_FEATURES,
 )
@@ -99,11 +98,10 @@ class _ResearchStore:
         self.feature_symbols: list[tuple[str, ...]] = []
         self.label_symbols: list[tuple[str, ...]] = []
 
-    def rl_feature_snapshot_rows(self, symbols, *, as_of_values=None, feature_version, **_kwargs):
+    def rl_feature_snapshot_rows(self, symbols, *, as_of_values=None, **_kwargs):
         self.full_feature_reads.append(None if as_of_values is None else tuple(as_of_values))
         self.feature_symbols.append(tuple(symbols))
         rows = [{
-            "feature_version": feature_version,
             "as_of_at": self.owner._as_of(index).isoformat(),
             "ticker": ticker,
             "available_at": (self.owner._as_of(index) - timedelta(hours=1)).isoformat(),
@@ -117,7 +115,7 @@ class _ResearchStore:
             row for row in rows if row["as_of_at"] in as_of_values
         ]
 
-    def rl_training_label_rows(self, symbols, *, as_of_values=None, feature_version, **_kwargs):
+    def rl_training_label_rows(self, symbols, *, as_of_values=None, **_kwargs):
         self.full_label_reads.append(None if as_of_values is None else tuple(as_of_values))
         self.label_symbols.append(tuple(symbols))
         rows = []
@@ -125,7 +123,6 @@ class _ResearchStore:
             end = self.owner._as_of(index) + timedelta(days=5)
             for position, ticker in enumerate(_TICKERS):
                 rows.append({
-                    "feature_version": feature_version,
                     "as_of_at": self.owner._as_of(index).isoformat(),
                     "ticker": ticker,
                     "forward_end_at": end.isoformat(),
@@ -181,7 +178,6 @@ class BuildTrainingSamplesTest(unittest.TestCase):
         self.assertEqual(payload["detail"]["samples"], 6)
         self.assertEqual(len(repository.store.saved), 6)
         self.assertEqual(repository.store.saved[0].label_definition, LABEL_DEFINITION)
-        self.assertEqual(repository.store.saved[0].feature_version, FEATURE_VERSION)
 
     def test_all_samples_are_persisted_in_one_repository_write(self):
         repository = _Repository(periods=60)
@@ -245,12 +241,10 @@ class BuildTrainingSamplesTest(unittest.TestCase):
                 snapshots = super().rl_feature_snapshot_rows(
                     symbols,
                     start_as_of=kwargs["start_as_of"], end_as_of=kwargs["end_as_of"],
-                    feature_version=kwargs["feature_version"],
                 )
                 labels = super().rl_training_label_rows(
                     symbols,
                     start_as_of=kwargs["start_as_of"], end_as_of=kwargs["end_as_of"],
-                    feature_version=kwargs["feature_version"],
                     label_cutoff_at=kwargs["label_cutoff_at"],
                 )
                 # metadata projection을 만드는 fixture 동작은 full payload read 계수에서 제외한다.
@@ -258,10 +252,10 @@ class BuildTrainingSamplesTest(unittest.TestCase):
                 self.full_label_reads.pop()
                 return {
                     "snapshots": [{
-                        key: row[key] for key in ("as_of_at", "ticker", "feature_version", "input_hash")
+                        key: row[key] for key in ("as_of_at", "ticker", "input_hash")
                     } for row in snapshots],
                     "labels": [{
-                        key: row[key] for key in ("as_of_at", "ticker", "feature_version", "label_id")
+                        key: row[key] for key in ("as_of_at", "ticker", "label_id")
                     } for row in labels],
                 }
 

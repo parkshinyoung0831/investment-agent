@@ -21,7 +21,6 @@ SUPPORTED_ALGORITHMS = ("a2c", "ddpg", "ppo", "sac", "td3")
 class TrainingArtifact:
     artifact_id: str
     algorithm: str
-    feature_version: str
     train_start: str
     train_end: str
     seed: int
@@ -97,7 +96,6 @@ class FinRLTrainer:
         path: Path,
         *,
         algorithm: str,
-        feature_version: str,
         train_start: str,
         train_end: str,
         seed: int,
@@ -111,7 +109,6 @@ class FinRLTrainer:
         digest = hashlib.sha256(actual.read_bytes()).hexdigest()
         identity = {
             "algorithm": algorithm,
-            "feature_version": feature_version,
             "train_start": train_start,
             "train_end": train_end,
             "seed": seed,
@@ -122,7 +119,6 @@ class FinRLTrainer:
         return TrainingArtifact(
             artifact_id=artifact_id,
             algorithm=algorithm,
-            feature_version=feature_version,
             train_start=train_start,
             train_end=train_end,
             seed=seed,

@@ -191,3 +191,50 @@ class TestEmergencyStop(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EmergencyStopSignalsTest(unittest.TestCase):
+    """성공 신호가 "요청한 일을 다 했는가"를 말해야 한다.
+
+    전에는 `process_killed`가 False로 시작해서, `--lockdown-env`만 쓰고 프로세스가
+    살아 있으면 잠금·상태 전이·.env 기록이 모두 성공해도 `success: False`·종료 코드 1이
+    나왔다(감사 OP2-08). 그리고 `.env`를 못 찾으면 조용히 `env_locked=False`로 끝나
+    운영자가 킬스위치가 잠겼다고 오해할 수 있었다(감사 OP2-09).
+    """
+
+    def setUp(self) -> None:
+        self._temp = tempfile.TemporaryDirectory()
+        self.state_dir = Path(self._temp.name) / "ops"
+        self.state_dir.mkdir(parents=True)
+        self.store = JsonStateStore(self.state_dir / "state.json")
+        self.store.save(HarnessState(process_id=4242, stopped_cleanly=False, jobs={}))
+
+    def tearDown(self) -> None:
+        self._temp.cleanup()
+
+    def test_lockdown_only_is_a_success_even_with_a_live_process(self):
+        root = Path(self._temp.name)
+        (root / ".env").write_text("TRADING_KILL_SWITCH=off\n", encoding="utf-8")
+        res = emergency_stop(
+            state_dir=self.state_dir, kill_process=False,
+            lockdown_env_file=True, repository_root=root,
+        )
+        self.assertTrue(res["success"])
+        self.assertTrue(res["env_locked"])
+        self.assertIsNone(res["process_killed"])
+        self.assertIn("TRADING_KILL_SWITCH=on", (root / ".env").read_text(encoding="utf-8"))
+
+    def test_a_missing_env_file_is_an_error_not_a_quiet_false(self):
+        with self.assertRaises(FileNotFoundError):
+            emergency_stop(
+                state_dir=self.state_dir, kill_process=False,
+                lockdown_env_file=True, repository_root=Path(self._temp.name) / "nowhere",
+            )
+
+    def test_a_failed_kill_is_still_a_failure(self):
+        with patch("investment_agent.operations.harness.emergency._is_process_alive", return_value=True), \
+             patch("investment_agent.operations.harness.switch._find_running_harness_pids", return_value=[4242]), \
+             patch("investment_agent.operations.harness.emergency._terminate_process", return_value=False):
+            res = emergency_stop(state_dir=self.state_dir, kill_process=True)
+        self.assertFalse(res["success"])
+        self.assertFalse(res["process_killed"])

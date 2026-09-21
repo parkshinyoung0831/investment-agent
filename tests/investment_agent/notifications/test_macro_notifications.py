@@ -160,3 +160,29 @@ class CoreDigestTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DailyChangeReasonTest(unittest.TestCase):
+    """경보 사유는 **판정한 값과 같은 단위**로 적혀야 한다.
+
+    전에는 ±0.10 밴드로 걸고 사유에는 상대 변화율(%)을 적어서, 같은 0.12 변화가
+    기준값에 따라 "+3.00%"와 "+60.00%"로 달리 보였다(감사 RR2-14).
+    """
+
+    def _reason(self, series_id: str, curr: float, prev: float) -> str:
+        from investment_agent.reporting.services.macro.thresholds import eval_row
+
+        tier, reason = eval_row({
+            "series_id": series_id, "series_kind": "", "curr": curr,
+            "prev_value": prev, "metrics": {},
+        })
+        self.assertIsNotNone(tier, "0.12 변화는 daily_change watch 밴드를 넘어야 한다")
+        return reason
+
+    def test_reason_reports_the_judged_change_not_a_relative_rate(self) -> None:
+        low_base = self._reason("TYX", 0.32, 0.20)
+        high_base = self._reason("TNX", 4.12, 4.00)
+        # 같은 변화폭이면 기준값과 무관하게 같은 문구다.
+        self.assertEqual(low_base, high_base)
+        self.assertIn("daily_change=+0.12", low_base)
+        self.assertNotIn("%", low_base)

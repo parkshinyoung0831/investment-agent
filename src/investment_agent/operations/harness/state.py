@@ -33,7 +33,13 @@ def utc_iso(value: datetime | None = None) -> str:
 @dataclass
 class StageRuntime:
     status: str = "pending"
+    # stage에 **진입한** 횟수. 이벤트 로그의 `attempt` 번호가 이 값이다.
     attempts: int = 0
+    # handler가 **예외로 끝난** 횟수. 재시도 정책(`max_attempts`)은 이 값과 비교한다.
+    # `waiting`으로 폴링하는 stage(승인 대기·background 감싼 13개)는 같은 자리로 계속
+    # 다시 들어와 `attempts`를 태우므로, 그 값으로 판정하면 첫 실제 오류가 곧바로
+    # terminal 실패가 된다 — 선언한 재시도가 한 번도 쓰이지 않았다(감사 OP2-01).
+    failures: int = 0
     started_at: str | None = None
     completed_at: str | None = None
     resume_at: str | None = None
@@ -45,6 +51,10 @@ class StageRuntime:
             raise StateCorruptionError(f"invalid stage state: {self.status}")
         if not isinstance(self.attempts, int) or self.attempts < 0:
             raise StateCorruptionError("stage attempts must be non-negative")
+        if not isinstance(self.failures, int) or self.failures < 0:
+            raise StateCorruptionError("stage failures must be non-negative")
+        if self.failures > self.attempts:
+            raise StateCorruptionError("stage failures cannot exceed attempts")
         for value in (self.started_at, self.completed_at, self.resume_at):
             if value is not None:
                 parse_datetime(value)
@@ -123,6 +133,8 @@ class HarnessState:
                 elif "current_stage" in raw:
                     raw.pop("current_stage")
                 raw["stages"] = {
+                    # 옛 state.json에는 `failures`가 없다. 없으면 0으로 시작한다 —
+                    # 그 job은 재시도 예산을 한 번 새로 받는다(안전한 방향이다).
                     str(stage_id): StageRuntime(**dict(stage))
                     for stage_id, stage in dict(raw.get("stages") or {}).items()
                 }

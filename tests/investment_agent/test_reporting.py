@@ -280,9 +280,9 @@ class LocalRuntimeViewTest(unittest.TestCase):
     def test_current_model_stage_derives_from_approved_promotions(self) -> None:
         with runtime_connection() as connection:
             connection.execute(
-                "INSERT INTO model_versions(artifact_id,algorithm,feature_version,artifact_uri,sha256) "
-                "VALUES(?,?,?,?,?)",
-                ("artifact-1", "ridge", "v1", "s3://bucket/artifact-1", "a" * 64),
+                "INSERT INTO model_versions(artifact_id,algorithm,artifact_uri,sha256) "
+                "VALUES(?,?,?,?)",
+                ("artifact-1", "ridge", "s3://bucket/artifact-1", "a" * 64),
             )
             connection.execute(
                 "INSERT INTO model_promotions(artifact_id,from_stage,to_stage,status,evidence,approved_by,approved_at,confirmation_text) "

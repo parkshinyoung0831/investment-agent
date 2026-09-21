@@ -6,9 +6,10 @@ on:
     workflows: ["econ_calendar_daily"]
     types: [completed]
     branches: [main]
-  schedule:
-    # 안전망. workflow_run이 발화하지 않아도 하루 한 번은 다시 발행한다.
-    - cron: "10 5 * * *" # 14:10 KST daily (상류 workflow_run이 끝난 뒤 안전망)
+  # cron 안전망은 두지 않는다. 실측(2026-08-21~09-21): 상류 체인은 29/29 발화하고
+  # 지연 중앙 0.0분인데, 같은 일을 하던 cron은 드롭 30% · 지연 중앙 270분이었다.
+  # 안전망이 얻는 것 없이 하루 두 번 실행과 두 번의 실패 알림만 만들었다(감사 AU-02).
+  # 상류가 아예 안 도는 날은 상류 알림이 이미 울린다.
   workflow_dispatch:
 
 permissions:

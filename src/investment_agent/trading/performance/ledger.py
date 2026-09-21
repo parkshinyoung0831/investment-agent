@@ -182,6 +182,13 @@ def nav_returns(snapshots, cashflows, *, is_cashflow_history_complete=False, cur
     if is_complete:
         for row in periods:
             cumulative *= 1 + number(row["twr"])
-    return dict(currency=currency, periods=periods, daily_return=periods[-1]["twr"] if periods else None,
+    # 이름을 `daily_return`으로 두면 다음 소비자가 "일간 수익률"로 쓴다. 실제로는
+    # **연속한 두 계좌 스냅샷 사이**의 수익률이고, 스냅샷은 하네스가 돌 때 찍히므로
+    # 하루 여러 개일 수도, 주말을 건너 3일일 수도 있다(감사 TR2-11). 구간을 함께 남긴다.
+    latest = periods[-1] if periods else None
+    return dict(currency=currency, periods=periods,
+                latest_period_return=latest["twr"] if latest else None,
+                latest_period_start_at=latest["start_at"] if latest else None,
+                latest_period_end_at=latest["end_at"] if latest else None,
                 cumulative_return=float(cumulative - 1) if is_complete else None, quality_issues=sorted(issues),
                 return_method="time_weighted_subperiods")

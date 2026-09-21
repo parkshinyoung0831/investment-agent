@@ -19,7 +19,7 @@ def _artifact(*, mean_ic: float, t_stat: float, coefficient: float = 0.01, horiz
               label: str = "excess_return_20d") -> dict:
     return {
         "artifact": {
-            "artifact_id": "model_test", "model_kind": "ridge", "feature_version": "pit-test",
+            "artifact_id": "model_test", "model_kind": "ridge",
             "horizon_days": horizon, "out_of_sample": {"rank_correlation": 0.9, "direction_accuracy": 0.6},
         },
         "model_state": {"coefficients": [coefficient], "intercept": 0.0},
@@ -43,13 +43,13 @@ class FakeStore:
     def __init__(self, rows):
         self.rows = rows
 
-    def rl_feature_snapshot_rows(self, symbols, *, start_as_of, end_as_of, feature_version):
-        return [row for row in self.rows if row["feature_version"] == feature_version]
+    def rl_feature_snapshot_rows(self, symbols, *, start_as_of, end_as_of):
+        return list(self.rows)
 
 
 def _row(ticker: str, value: float, *, as_of: datetime = FEATURE_DAY, available: datetime | None = None):
     return {
-        "ticker": ticker, "feature_version": "pit-test", "as_of_at": as_of.isoformat(),
+        "ticker": ticker, "as_of_at": as_of.isoformat(),
         "available_at": (available or as_of).isoformat(), "is_available": True,
         "features": {"evidence_domain_count": value, "missing_domain_count": 0.0},
         "source_ids": [f"market:{ticker}"], "provenance": {"market": "test"},
@@ -105,6 +105,17 @@ class ChampionForecastTest(unittest.TestCase):
         outcome = self.forecast()
         self.assertFalse(outcome.is_available)
         self.assertIn("horizon", outcome.reason)
+
+    def test_model_columns_missing_from_the_snapshots_are_refused(self):
+        """feature 버전 라벨이 없으니 학습한 컬럼이 지금 snapshot에 있는지가 정의 어긋남의 유일한 신호다."""
+        payload = _artifact(mean_ic=0.03, t_stat=3.0)
+        payload["feature_names"] = ["evidence_domain_count", "retired_feature"]
+        payload["model_state"]["coefficients"] = [0.01, 0.01]
+        self.write(payload)
+        outcome = self.forecast()
+        self.assertFalse(outcome.is_available)
+        self.assertIn("absent from the snapshots", outcome.reason)
+        self.assertIn("retired_feature", outcome.reason)
 
     def test_cross_section_uses_one_date_and_ignores_unpublished_rows(self):
         rows = [
@@ -170,18 +181,18 @@ class TrainingRecordsAlphaTest(unittest.TestCase):
                 signal = float(rng.normal())
                 ticker = f"T{name}"
                 features.append({
-                    "ticker": ticker, "as_of_at": as_of, "available_at": as_of, "feature_version": "pit-test",
+                    "ticker": ticker, "as_of_at": as_of, "available_at": as_of,
                     "features": {"x": signal}, "source_ids": [], "provenance": {},
                 })
                 labels.append({
                     "ticker": ticker, "as_of_at": as_of,
                     "forward_end_at": (start + timedelta(days=day + 7)).isoformat(),
                     "label_available_at": (start + timedelta(days=day + 7)).isoformat(),
-                    "feature_version": "pit-test", "label_definition": "excess_return_20d",
+                    "label_definition": "excess_return_20d",
                     "label": 0.02 * signal + float(rng.normal(0, 0.01)), "benchmark_label": 0.0,
                 })
         dataset = build_research_dataset(
-            features, labels, feature_version="pit-test", label_definition="excess_return_20d",
+            features, labels, label_definition="excess_return_20d",
             label_cutoff_at=(start + timedelta(days=60)).isoformat(), feature_names=["x"],
         )
         rows = len(dataset.rows)

@@ -126,7 +126,10 @@ def emergency_stop(
     store.save(state)
 
     # 3. Terminate process and verify termination
-    process_killed = False
+    # `None` = 종료를 요청하지 않았다. 전에는 False로 시작해서, `--lockdown-env`만 쓰고
+    # 프로세스가 살아 있으면 잠금이 모두 성공해도 `success: False`·종료 코드 1이 나왔다 —
+    # "죽였는가"와 "요청한 일을 다 했는가"를 한 변수로 합친 탓이다(감사 OP2-08).
+    process_killed: bool | None = None
     if kill_process and pid is not None:
         from investment_agent.operations.harness.switch import _find_running_harness_pids
 
@@ -141,24 +144,34 @@ def emergency_stop(
     # 4. Update .env if requested
     env_locked = False
     if lockdown_env_file:
-        root = repository_root or state_dir.parents[2]
-        env_path = root / ".env"
-        if env_path.exists():
-            content = env_path.read_text(encoding="utf-8")
-            if "TRADING_KILL_SWITCH=" in content:
-                import re
-                new_content = re.sub(
-                    r"^TRADING_KILL_SWITCH=.*$",
-                    "TRADING_KILL_SWITCH=on",
-                    content,
-                    flags=re.MULTILINE,
-                )
-            else:
-                new_content = content + "\nTRADING_KILL_SWITCH=on\n"
-            env_path.write_text(new_content, encoding="utf-8")
-            env_locked = True
+        # 루트를 `state_dir.parents[2]`로 역산하면 `--state-dir`을 다른 깊이로 준 순간
+        # 엉뚱한 곳(또는 IndexError)을 본다. 저장소 루트의 owner는 `operations.paths`다
+        # (감사 OP2-09).
+        from investment_agent.operations.paths import REPOSITORY_ROOT
 
-    overall_success = lockdown_file.exists() and process_killed
+        root = repository_root or REPOSITORY_ROOT
+        env_path = root / ".env"
+        if not env_path.exists():
+            # 조용히 False로 끝내면 운영자는 킬스위치가 잠겼다고 오해한다.
+            raise FileNotFoundError(
+                f"cannot lock the kill switch: {env_path} does not exist"
+            )
+        content = env_path.read_text(encoding="utf-8")
+        if "TRADING_KILL_SWITCH=" in content:
+            import re
+            new_content = re.sub(
+                r"^TRADING_KILL_SWITCH=.*$",
+                "TRADING_KILL_SWITCH=on",
+                content,
+                flags=re.MULTILINE,
+            )
+        else:
+            new_content = content + "\nTRADING_KILL_SWITCH=on\n"
+        env_path.write_text(new_content, encoding="utf-8")
+        env_locked = True
+
+    # 요청하지 않은 종료(`None`)는 실패가 아니다.
+    overall_success = lockdown_file.exists() and process_killed is not False
 
     if reporter is not None:
         reporter.error(

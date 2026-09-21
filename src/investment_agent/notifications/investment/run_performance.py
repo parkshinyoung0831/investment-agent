@@ -60,7 +60,10 @@ def render(batch):
         accounting, nav = row["accounting"], row["nav"]
         fields = [dict(name="기록된 체결 손익 · 비용 반영", value=_amount(accounting["realized_pnl"], currency)),
                   dict(name="미실현손익", value=_amount(accounting["unrealized_pnl"], currency)),
-                  dict(name="최근 평가 구간 수익률 · 시간가중", value=_percent(nav["daily_return"])),
+                  # 옛 보고서 payload는 `daily_return` 키로 저장돼 있다(이름이 값과 달라
+                  # `latest_period_return`으로 바꿨다 — 감사 TR2-11). 둘 다 받는다.
+                  dict(name="최근 평가 구간 수익률 · 시간가중",
+                       value=_percent(nav.get("latest_period_return", nav.get("daily_return")))),
                   dict(name="관측 기간 누적 수익률", value=_percent(nav["cumulative_return"]))]
         horizons = row.get("recommendation", {}).get("horizons", [])
         text = "\n".join(f"{item['horizon_days']}일 · {item['count']}건 · 평균 {_percent(item['mean_net_reward'])}" for item in horizons)

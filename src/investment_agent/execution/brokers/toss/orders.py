@@ -352,7 +352,17 @@ class TossOrderApi:
         **kwargs: Any,
     ) -> requests.Response:
         """401만 공용 token 갱신 뒤 한 번 재전송하고 그 밖의 retry는 하지 않는다."""
-        token = self._token_provider()
+        # 토큰 발급은 **첫 요청 전**이다. 여기서 실패하면 주문은 브로커에 닿지 않았으므로
+        # "결과 불명"이 아니라 사전 안전 차단이다. `TossAuthError`(RuntimeError)를 그대로
+        # 올리면 worker의 except 세 개(`TossOrderOutcomeUnknown`·`TossOrderRejected`·
+        # `ExecutionSafetyError`)를 모두 빠져나가, 원장에 `planned` 주문과 `executing`
+        # intent가 남고 대사는 `planned`를 보지 않아 사람 손 없이는 안 풀렸다(감사 EX2-07).
+        try:
+            token = self._token_provider()
+        except TossAuthError as exc:
+            raise ExecutionSafetyError(
+                "Toss authentication failed before the request was sent"
+            ) from exc
         sender = getattr(self._session, method)
         response = sender(
             url,

@@ -56,6 +56,17 @@ class DerivedReadModelTest(unittest.TestCase):
         # 순부채 = 부채 1000 − 현금 400 = 600, EBITDA TTM = 800+200
         self.assertAlmostEqual(0.60, health["net_debt_to_ebitda"], places=4)
 
+    def test_negative_ebitda_leaves_net_debt_multiple_empty(self):
+        """음의 EBITDA로 나누면 배수가 음수가 되어 "낮을수록 좋다" 게이지에서
+        가장 좋은 쪽에 표시된다 — 빈칸이 맞다(감사 RR2-10)."""
+        rows = _quarters()
+        for row in rows:
+            row["operating_income_loss"] = -300.0
+            row["depreciation_amortization_cf"] = 50.0
+        with mock.patch.object(db, "_financial_rows", return_value=rows):
+            health = db.load_health(["TEST"])["TEST"]
+        self.assertIsNone(health["net_debt_to_ebitda"])
+
     def test_altman_z_uses_ttm_operating_income(self):
         """분기 영업이익을 연간 자산과 견주면 항이 1/4로 줄어 우량 기업이 위험으로 나온다."""
         health = db.load_health(["TEST"])["TEST"]

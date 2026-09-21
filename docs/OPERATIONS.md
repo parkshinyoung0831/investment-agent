@@ -313,7 +313,7 @@ python -m investment_agent.operations.commands.harness_switch --status
 |---|---|
 | DATA | critical pipeline이 fresh하고 품질 issue가 허용 가능한가? |
 | AI | 마지막 decision run은 언제 어떤 stage로 끝났는가? |
-| MODEL | artifact와 feature version은 무엇인가? |
+| MODEL | artifact와 feature 컬럼 정의는 무엇인가? |
 | BACKTEST | 최근 재현 가능한 평가가 있는가? |
 | PAPER | Paper run과 승격 증거가 쌓였는가? |
 | EXECUTION | intent/order/fill이 정상 종료됐는가? |

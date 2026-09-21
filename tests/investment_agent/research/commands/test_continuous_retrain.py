@@ -12,7 +12,7 @@ from investment_agent.research.commands.continuous_retrain import run_continuous
 from investment_agent.research.rl.contracts import RLSafetyError
 from investment_agent.research.rl.features import FeatureSpec
 
-SPEC = FeatureSpec(version="rl-test-v1", names=("momentum", "quality"))
+SPEC = FeatureSpec(names=("momentum", "quality"))
 PERIODS = tuple(f"2026-06-{day:02d}T21:00:00+00:00" for day in range(1, 13))
 SYMBOLS = ("AAPL", "MSFT")
 
@@ -43,13 +43,12 @@ class _Store:
         self._features = features
         self._labels = labels
 
-    def rl_feature_snapshot_rows(self, symbols, *, start_as_of, end_as_of, feature_version):
+    def rl_feature_snapshot_rows(self, symbols, *, start_as_of, end_as_of):
         self.owner.seen_windows.append((start_as_of, end_as_of))
         if self._features is not None:
             return list(self._features)
         return [
             {
-                "feature_version": SPEC.version,
                 "as_of_at": period,
                 "ticker": ticker,
                 "available_at": period,
@@ -62,12 +61,11 @@ class _Store:
             for ticker in symbols
         ]
 
-    def rl_training_label_rows(self, symbols, *, start_as_of, end_as_of, feature_version, label_cutoff_at):
+    def rl_training_label_rows(self, symbols, *, start_as_of, end_as_of, label_cutoff_at):
         if self._labels is not None:
             return list(self._labels)
         return [
             {
-                "feature_version": SPEC.version,
                 "as_of_at": period,
                 "ticker": ticker,
                 "forward_end_at": period.replace("T21:", "T22:"),
@@ -171,7 +169,7 @@ class ContinuousRetrainTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             active = Path(temp) / "active_policy.json"
             active.write_text("{}")
-            champion = PPOPolicy(_StubModel(2), {"symbols": list(SYMBOLS), "feature_names": list(SPEC.names), "feature_version": SPEC.version})
+            champion = PPOPolicy(_StubModel(2), {"symbols": list(SYMBOLS), "feature_names": list(SPEC.names)})
             seen = []
             original = ContinuousLearner.evaluate_model
             def evaluate(learner, model, dataset, **kwargs):

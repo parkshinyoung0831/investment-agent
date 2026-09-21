@@ -27,14 +27,26 @@ class FakeRepository:
 
 class EvaluatorTest(unittest.TestCase):
     def test_split_and_dividend_total_return_is_deterministic(self):
+        # 저장 계약: close·div_amount는 이미 분할 조정(back-adjust)돼 있어 분할일에
+        # 가격이 끊기지 않는다. 따라서 분할 비율은 수익률을 바꾸지 않아야 한다.
         rows = [
             {"close": 100.0},
-            {"close": 50.0, "split_ratio": 2.0, "div_amount": 1.0},
-            {"close": 55.0, "div_amount": 0.5},
+            {"close": 105.0, "split_ratio": 2.0, "div_amount": 1.0},
+            {"close": 110.0, "div_amount": 0.5},
         ]
-        self.assertAlmostEqual(total_return(rows, 2), 0.13)
+        self.assertAlmostEqual(total_return(rows, 2), 0.115)
+        without_split = [
+            {key: value for key, value in row.items() if key != "split_ratio"}
+            for row in rows
+        ]
+        self.assertAlmostEqual(total_return(rows, 2), total_return(without_split, 2))
         with self.assertRaisesRegex(ValueError, "insufficient price path"):
             total_return(rows, 3)
+
+    def test_total_return_rejects_corrupt_split_ratio(self):
+        rows = [{"close": 100.0}, {"close": 105.0, "split_ratio": 0.0}]
+        with self.assertRaisesRegex(ValueError, "invalid split ratio"):
+            total_return(rows, 1)
 
     def test_returns_all_mature_horizons_and_scores_probability(self):
         case = {

@@ -83,7 +83,7 @@ class PolicyAndModelRepositoryTest(unittest.TestCase):
     def test_model_version_drops_non_ledger_payload(self) -> None:
         self.repo.record_model_version({
             "artifact_id": "a1", "artifact_uri": "file:///model", "sha256": "a" * 64,
-            "algorithm": "rule", "feature_version": "v1", "private_weights": [1, 2],
+            "algorithm": "rule", "private_weights": [1, 2],
         })
         table, rows = self.db.inserts[0]
         self.assertEqual((SCHEMA, T_MODEL_VERSIONS), table)

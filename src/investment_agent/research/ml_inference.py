@@ -29,7 +29,6 @@ class LoadedModel:
     """artifact 상태에서 복원한 예측기와 그 신뢰도 근거다."""
 
     model_kind: str
-    feature_version: str
     feature_names: tuple[str, ...]
     horizon_days: int
     artifact_id: str
@@ -145,7 +144,6 @@ def load_model(payload: Mapping[str, Any]) -> LoadedModel:
     oos = artifact.get("out_of_sample") or {}
     return LoadedModel(
         model_kind=kind,
-        feature_version=str(artifact.get("feature_version") or ""),
         feature_names=feature_names,
         horizon_days=horizon,
         artifact_id=str(artifact.get("artifact_id") or "unknown"),

@@ -73,7 +73,7 @@ def build_experience(repository, case: dict, *, as_of_at: datetime, horizon_days
         "original_decision": original,
         "provenance": {**identity, "source_kind": case.get("source_kind"),
                        "context_hash": case.get("context_hash"), "run_id": case.get("run_id"),
-                       "feature_source": "original_decision", "feature_version": "decision_v1",
+                       "feature_source": "original_decision",
                        "decision_sha256": hashlib.sha256(canonical_json(original).encode()).hexdigest(),
                        "reward_kind": "hypothetical_unit_exposure_not_account_pnl",
                        "entry_rule": "next_day_or_later_close_after_decision_available",

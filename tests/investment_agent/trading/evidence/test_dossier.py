@@ -34,7 +34,6 @@ def _bundle(*items: EvidenceItem, missing=(), warnings=(), source_kind="live_sha
 
 def _valuation(**overrides) -> dict:
     payload = {
-        "source_version": "pit-valuation-v1",
         "available_at": _AVAILABLE,
         "price": 50.0, "shares_outstanding": 1000.0, "market_cap": 50000.0,
         "pe_ttm": 1250.0, "pb": 100.0, "ps_ttm": 125.0, "fcf_yield": 0.0012,

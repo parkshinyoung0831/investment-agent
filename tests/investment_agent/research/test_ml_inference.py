@@ -24,7 +24,7 @@ def _fitted(kind: str = "ridge", *, rank_correlation=None, direction_accuracy=No
         train_features=x[:50], train_labels=y[:50],
         validation_features=x[50:70], validation_labels=y[50:70],
         oos_features=x[70:], oos_labels=y[70:],
-        feature_version="v3", horizon_days=5,
+        horizon_days=5,
         train_period=["2026-01-01T00:00:00+00:00", "2026-03-01T00:00:00+00:00"],
         validation_period=["2026-03-02T00:00:00+00:00", "2026-04-01T00:00:00+00:00"],
         oos_period=["2026-04-02T00:00:00+00:00", "2026-05-01T00:00:00+00:00"],

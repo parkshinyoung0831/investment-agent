@@ -23,16 +23,16 @@ def _dataset(*, dead_column: bool):
             ticker = f"T{name}"
             values = {"x": signal, "technical_rsi14": 50.0 if dead_column else float(rng.normal())}
             features.append({"ticker": ticker, "as_of_at": as_of, "available_at": as_of,
-                             "feature_version": "pit-test", "features": values, "source_ids": [], "provenance": {}})
+                             "features": values, "source_ids": [], "provenance": {}})
             labels.append({
                 "ticker": ticker, "as_of_at": as_of,
                 "forward_end_at": (start + timedelta(days=day + 7)).isoformat(),
                 "label_available_at": (start + timedelta(days=day + 7)).isoformat(),
-                "feature_version": "pit-test", "label_definition": "excess_return_20d",
+                "label_definition": "excess_return_20d",
                 "label": 0.02 * signal + float(rng.normal(0, 0.01)), "benchmark_label": 0.0,
             })
     return build_research_dataset(
-        features, labels, feature_version="pit-test", label_definition="excess_return_20d",
+        features, labels, label_definition="excess_return_20d",
         label_cutoff_at=(start + timedelta(days=60)).isoformat(), feature_names=["x", "technical_rsi14"],
     )
 

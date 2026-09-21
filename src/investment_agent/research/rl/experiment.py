@@ -66,8 +66,8 @@ def run_ppo_experiment(
     model_kwargs: Mapping[str, Any] | None = None,
     reward_config: RewardConfig | None = None,
 ) -> PPOExperimentResult:
-    if training_dataset.feature_version != oos_dataset.feature_version:
-        raise ValueError("training and OOS feature versions differ")
+    if training_dataset.feature_names != oos_dataset.feature_names:
+        raise ValueError("training and OOS feature columns differ")
     reward = reward_config or RewardConfig()
     trainer = FinRLTrainer(make_gym_environment(training_dataset, reward))
     model = trainer.train(
@@ -77,7 +77,6 @@ def run_ppo_experiment(
     params = {"total_timesteps": total_timesteps, **dict(model_kwargs or {})}
     artifact = trainer.save_artifact(
         model, artifact_path, algorithm="ppo",
-        feature_version=training_dataset.feature_version,
         train_start=training_dataset.as_of_values[0],
         train_end=training_dataset.as_of_values[-1],
         seed=seed, params=params,

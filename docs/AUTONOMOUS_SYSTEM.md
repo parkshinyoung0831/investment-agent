@@ -155,7 +155,7 @@ runtime SQLite는 local filesystem 경계와 `runtime_connection()`의 읽기 �
 | 1 | contracts, Event Intelligence, MarketRegime, CandidateRanker·우선 레인·글로벌 사건 영향, TradingAgents 논지와 채택 champion ML의 ALPHA 보정 | 구현됨 |
 | 2 | feature/label/dataset manifest, baseline model façade, 실제 Ridge 등 baseline 학습 CLI, purged walk-forward와 challenger 비교 경계 | 구현됨 |
 | 3 | Selection/Allocation/Timing 분리, PPO allocation/timing 명세 (PPO는 broker API를 호출하지 않는다) | 구현됨 |
-| 4 | RAM MarketState, quote snapshot, Reality Model 및 Native Backtest 변환 경계 | 구현됨 |
+| 4 | RAM MarketState, quote snapshot, Reality Model 및 Native Backtest 변환 경계 | 계약·테스트만 구현됨(하네스·실주문 경로는 부르지 않음) |
 | 5 | PnL/Attribution, TrainingSample 누적 경계 | 구현됨 |
 | 6 | System Portfolio(비중 기반 NAV)·My Portfolio 추종·ML 후보 자동 비교 | 구현됨 |
 | 7 | System 성과 축적, 충분한 walk-forward/OOS 증거, 사람의 promotion 승인, Live 전환 | 운영 작업 |

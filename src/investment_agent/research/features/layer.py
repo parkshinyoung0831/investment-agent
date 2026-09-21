@@ -31,10 +31,6 @@ class FeatureEvidenceBundle(Protocol):
     missing_data: Sequence[str]
 
 
-# feature 계약 세대. `rl_feature_snapshots`의 identity 구성요소이며, 컬럼 계약이
-# 바뀌면 snapshot과 label이 다른 세대로 분리된다. 값이 바뀌는 입력 수정도 같다 — v6은 시가총액이
-# 회사 전체 주식수 기준으로, guru 신호가 ticker 조인 뒤의 값으로 바뀐 세대다(v5 행과 섞지 않는다).
-FEATURE_VERSION = "v6"
 HORIZONS = (1, 5, 20)
 
 # 20거래일 수익률은 오늘 종가와 20거래일 전 종가가 둘 다 필요하다. ContextBuilder가
@@ -77,10 +73,12 @@ _GURU_FEATURES = tuple(f"guru_{name}" for name in _GURU_FIELDS)
 
 # 밸류에이션은 EvidenceBundle이 아니라 trading의 valuation 관측값에서 온다.
 # 적자·자본잠식 구간은 원장에서 이미 None이라 여기서 0으로 바꾸지 않는다.
-_VALUATION_RATIOS = ("pe_ttm", "pb", "ps_ttm", "fcf_yield")
+# 비율은 원장 값을 그대로 쓴다. 수익률 둘은 부호를 보존하는 열에서 온다(아래 `_valuation`).
+_VALUATION_RATIOS = ("pe_ttm", "pb", "ps_ttm")
 _VALUATION_FEATURES = (
     *(f"valuation_{name}" for name in _VALUATION_RATIOS),
     "valuation_earnings_yield",
+    "valuation_fcf_yield",
     "valuation_market_cap_log",
 )
 _MACRO_FEATURES = tuple(f"macro_{series.lower()}" for series in MACRO_SERIES)
@@ -257,9 +255,12 @@ def _valuation(
     result = dict(empty)
     for name in _VALUATION_RATIOS:
         result[f"valuation_{name}"] = _number(observation.get(name))
-    pe = result["valuation_pe_ttm"]
-    # 순위를 매길 때는 이익수익률이 PER보다 낫다 — PER은 이익이 0 근처에서 발산한다. 적자는 원장에서 PER이 비어 있다.
-    result["valuation_earnings_yield"] = 1.0 / pe if pe is not None and pe > 0 else None
+    # 순위를 매길 때는 수익률이 비율보다 낫다 — 비율은 분모가 0 근처에서 발산하고,
+    # 적자·음의 FCF면 정의되지 않아 원장에서 비어 버린다. 그러면 결측(미공시)과
+    # 나쁜 관측(적자)이 같은 `None`이 되고, category coverage에서 함께 탈락해
+    # 오히려 종합점수가 올라간다(감사 RR2-01). 부호가 살아 있는 값을 쓴다.
+    result["valuation_earnings_yield"] = _number(observation.get("earnings_to_market_cap"))
+    result["valuation_fcf_yield"] = _number(observation.get("fcf_to_market_cap"))
     market_cap = _number(observation.get("market_cap"))
     if market_cap is not None and market_cap > 0:
         result["valuation_market_cap_log"] = math.log(market_cap)
@@ -271,7 +272,6 @@ class FeatureBundle:
     """feature 값과 정의 hash를 함께 전달해 training-serving skew를 탐지한다."""
 
     snapshot: FeatureSnapshot
-    definition_version: str
     definition_hash: str
     horizons: tuple[int, ...] = HORIZONS
 
@@ -279,7 +279,6 @@ class FeatureBundle:
         return {
             "snapshot": self.snapshot.to_storage_row(),
             "snapshot_id": self.snapshot.snapshot_id,
-            "definition_version": self.definition_version,
             "definition_hash": self.definition_hash,
             "horizons": list(self.horizons),
         }
@@ -288,7 +287,6 @@ class FeatureBundle:
 class FeatureLayer:
     """EvidenceBundle 외의 SQL 접근을 모델에서 금지하는 단일 feature 경계다."""
 
-    definition_version = FEATURE_VERSION
     _definition = {
         "columns": list(FEATURE_COLUMNS),
         "macro_series": list(MACRO_SERIES),
@@ -338,7 +336,6 @@ class FeatureLayer:
             raise RLSafetyError("EvidenceBundle contains a feature unavailable at as_of_at")
         values.update(_valuation(valuation, as_of=as_of))
         snapshot = FeatureSnapshot(
-            feature_version=self.definition_version,
             as_of_at=as_of.isoformat(),
             ticker=bundle.ticker,
             available_at=max(available, default=as_of).isoformat(),
@@ -352,7 +349,7 @@ class FeatureLayer:
                 "news_social_enabled": bundle.source_kind == "live_shadow",
             },
         )
-        return FeatureBundle(snapshot, self.definition_version, self.definition_hash)
+        return FeatureBundle(snapshot, self.definition_hash)
 
     @staticmethod
     def _normalize(values: Mapping[str, float | None]) -> dict[str, float | None]:
@@ -377,7 +374,6 @@ class FeatureLayer:
     @staticmethod
     def forward_label(
         *,
-        feature_version: str,
         as_of_at: str,
         ticker: str,
         horizon_days: int,
@@ -401,7 +397,6 @@ class FeatureLayer:
         if parse_datetime(forward_end_at) != parse_datetime(benchmark_forward_end_at):
             raise RLSafetyError("asset and benchmark label endpoints must match")
         return ForwardReturnLabel(
-            feature_version=feature_version,
             as_of_at=as_of_at,
             ticker=ticker,
             forward_end_at=forward_end_at,
@@ -429,7 +424,6 @@ class FeatureLayer:
             end_at, close = future_closes[horizon]
             benchmark_end_at, benchmark_close = benchmark_closes[horizon]
             labels.append(FeatureLayer.forward_label(
-                feature_version=snapshot.feature_version,
                 as_of_at=snapshot.as_of_at,
                 ticker=snapshot.ticker,
                 horizon_days=horizon,
@@ -484,7 +478,6 @@ def impute_cross_section(
 __all__ = [
     "ALWAYS_KNOWN_FEATURES",
     "FEATURE_COLUMNS",
-    "FEATURE_VERSION",
     "HORIZONS",
     "MACRO_SERIES",
     "MISSING_SUFFIX",

@@ -22,7 +22,7 @@ from investment_agent.trading.decision.candidate_ranker import (
 )
 from investment_agent.trading.contracts import ContractError, parse_datetime
 from investment_agent.trading.repository import LedgerAccess
-from investment_agent.research.adapters.trading import (FEATURE_VERSION, guru_candidate_signals, latest_cross_section, score_cross_section, technical_features_since)
+from investment_agent.research.adapters.trading import (guru_candidate_signals, latest_cross_section, score_cross_section, technical_features_since)
 from investment_agent.trading.decision.universe import normalize_ticker
 from investment_agent.trading.decision.event_impact import PROXY_BY_THEME, global_event_priorities
 from investment_agent.trading.portfolio.market_risk import estimate_betas
@@ -414,7 +414,7 @@ class CandidateSelection(LedgerAccess):
         # 과거 재현 행은 판단 시각이 과거라 이 창에 거의 없지만, 섞이지 않게 live 행만 쓴다.
         live_rows = [row for row in rows if (row.get("provenance") or {}).get("source_kind") != "historical_replay"]
         section = latest_cross_section(
-            live_rows, feature_version=FEATURE_VERSION, min_coverage=max(1, tickers_count // 2),
+            live_rows, min_coverage=max(1, tickers_count // 2),
         )
         if section is None:
             return None

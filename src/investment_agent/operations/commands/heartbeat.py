@@ -125,7 +125,15 @@ def main() -> int:
         except Exception:
             log.warning("heartbeat: 채널 도착 확인 실패 — 워크플로 점검만 보낸다", exc_info=True)
         # 게이트가 '정상적으로' 0건을 내는 날을 잡는 유일한 줄.
-        counter_lines = counters.collect()
+        # 전부 실패하면 `collect()`가 빈 리스트를 주고 카드에서 그 줄이 **그냥 사라진다** —
+        # "0건"과 "못 읽었다"가 같은 모습이 된다(감사 OP2-16). 실패 이름을 받아 적는다.
+        counter_failures: list[str] = []
+        counter_lines = counters.collect(counter_failures)
+        if counter_failures:
+            counter_lines = [
+                *counter_lines,
+                "⚠️ 조회 실패: " + ", ".join(sorted(counter_failures)),
+            ]
 
     body = digest.render(verdict, end, judged, counter_lines)
     log.info(

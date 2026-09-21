@@ -14,7 +14,7 @@ class MLBaselineTest(unittest.TestCase):
         kwargs = dict(
             train_features=x[:6], train_labels=y[:6],
             validation_features=x[6:8], validation_labels=y[6:8],
-            oos_features=x[8:], oos_labels=y[8:], feature_version="pit-v1",
+            oos_features=x[8:], oos_labels=y[8:],
             train_period=("2025-01-01T00:00:00+00:00", "2025-06-01T00:00:00+00:00"),
             validation_period=("2025-06-01T00:00:00+00:00", "2025-08-01T00:00:00+00:00"),
             oos_period=("2025-08-01T00:00:00+00:00", "2025-10-01T00:00:00+00:00"),
@@ -36,7 +36,6 @@ class MLBaselineTest(unittest.TestCase):
         rescaled = x.copy()
         rescaled[:, 2] *= 1000.0  # 같은 정보를 다른 단위로 적은 feature
         periods = dict(
-            feature_version="pit-v1",
             train_period=("2025-01-01T00:00:00+00:00", "2025-06-01T00:00:00+00:00"),
             validation_period=("2025-06-01T00:00:00+00:00", "2025-08-01T00:00:00+00:00"),
             oos_period=("2025-08-01T00:00:00+00:00", "2025-10-01T00:00:00+00:00"),

@@ -7,6 +7,7 @@ import math
 import random
 import re
 import tempfile
+import threading
 import unittest
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -535,3 +536,45 @@ class BuildSystemTargetTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SystemPortfolioStageVisibilityTest(unittest.TestCase):
+    """목표가 진전되지 않은 날을 단계 결과가 성공으로 덮지 않는다(감사 TR2-04).
+
+    `system_portfolio` 명령은 재료가 없어 목표를 만들지 못해도 종료코드 0으로 끝난다.
+    전에는 어댑터가 반환값을 보지 않고 항상 succeeded를 줘서, 유니버스 한 종목의 가격
+    공백이 공분산 계산을 막아 목표가 며칠 멈춰도 하네스는 정상으로 보였다.
+    """
+
+    def _stage(self, target_ids):
+        from types import SimpleNamespace
+        from unittest import mock
+        from datetime import datetime, timezone
+        from investment_agent.operations.adapters.trading import TradingAdapters
+        from investment_agent.operations.harness.contracts import StageContext
+
+        adapters = TradingAdapters()
+        adapters.command_runner = SimpleNamespace(run=lambda command, *, stop_event: None)
+        adapters.timeouts = {}
+        adapters.now = lambda: datetime(2026, 9, 21, tzinfo=timezone.utc)
+        context = mock.Mock(spec=StageContext)
+        context.now = datetime(2026, 9, 21, tzinfo=timezone.utc)
+        context.stop_event = threading.Event()
+        with mock.patch.object(
+            TradingAdapters, "_latest_system_target_id", side_effect=list(target_ids)
+        ):
+            return adapters.run_system_portfolio(context)
+
+    def test_a_new_target_is_a_success(self):
+        outcome = self._stage(["old", "new"])
+        self.assertEqual(outcome.status, "succeeded")
+        self.assertEqual(outcome.metadata["target_id"], "new")
+
+    def test_an_unchanged_target_is_reported_as_skipped(self):
+        outcome = self._stage(["same", "same"])
+        self.assertEqual(outcome.status, "skipped")
+        self.assertEqual(outcome.metadata["reason"], "system_target_unchanged")
+
+    def test_no_target_at_all_is_also_not_a_success(self):
+        outcome = self._stage([None, None])
+        self.assertEqual(outcome.status, "skipped")

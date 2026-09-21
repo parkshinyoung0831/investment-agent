@@ -12,7 +12,7 @@ from investment_agent.research.rl.environment import FeatureDataset
 
 class BundleTest(unittest.TestCase):
     def dataset(self):
-        return FeatureDataset(("AAPL",), ("x",), tuple(f"2026-01-{d:02}T00:00:00+00:00" for d in (1,2,6)), np.ones((3,1,1)), np.zeros((3,1)), np.zeros(3), np.ones((3,1), dtype=bool), "v1")
+        return FeatureDataset(("AAPL",), ("x",), tuple(f"2026-01-{d:02}T00:00:00+00:00" for d in (1,2,6)), np.ones((3,1,1)), np.zeros((3,1)), np.zeros(3), np.ones((3,1), dtype=bool))
 
     def test_nonoverlap_removes_duplicate_market_intervals(self):
         result = nonoverlapping_dataset(self.dataset(), ("2026-01-06T00:00:00+00:00", "2026-01-07T00:00:00+00:00", "2026-01-11T00:00:00+00:00"))

@@ -152,6 +152,35 @@ class FundamentalTrendTest(unittest.TestCase):
         self.assertEqual(first["quarters"], 4)
         self.assertAlmostEqual(first["revenue"], 100.0)
 
+    def test_annual_row_is_not_added_to_its_own_quarters(self):
+        """`financial_versions`는 같은 회계연도에 FY 1행과 Q1~Q4 4행을 함께 담는다.
+        period 문자열만으로 중복을 제거하면 다섯 행이 모두 더해져 매출이 정확히 2배가 된다
+        (감사 TR2-16). 전 연도가 똑같이 2배면 CAGR·마진이 맞게 나와 오류가 가려진다."""
+        rows = _quarters(3)
+        for year in {row["fiscal_year"] for row in rows}:
+            quarters = [row for row in rows if row["fiscal_year"] == year]
+            rows.append({
+                "fiscal_year": year, "fiscal_period": "FY",
+                "revenue": sum(row["revenue"] for row in quarters),
+                "net_income": sum(row["net_income"] for row in quarters),
+                "operating_income_loss": sum(row["operating_income_loss"] for row in quarters),
+            })
+        with_annual = fundamental_trend(rows)
+        quarters_only = fundamental_trend(_quarters(3))
+        self.assertAlmostEqual(with_annual["years"][0]["revenue"], 100.0)
+        self.assertEqual(
+            [year["revenue"] for year in with_annual["years"]],
+            [year["revenue"] for year in quarters_only["years"]],
+        )
+        self.assertEqual(with_annual["years"][0]["quarters"], 4)
+
+    def test_annual_row_alone_is_a_complete_year(self):
+        rows = [{"fiscal_year": 2025, "fiscal_period": "FY",
+                 "revenue": 400.0, "net_income": 40.0, "operating_income_loss": 80.0}]
+        year = fundamental_trend(rows)["years"][0]
+        self.assertEqual(year["quarters"], 4)
+        self.assertAlmostEqual(year["revenue"], 400.0)
+
     def test_cagr_matches_the_configured_growth(self):
         trend = fundamental_trend(_quarters(6, growth=0.10))
         self.assertAlmostEqual(trend["revenue_cagr"], 0.10, places=6)

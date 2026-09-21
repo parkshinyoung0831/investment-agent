@@ -127,7 +127,7 @@ class SharesOutstandingTest(unittest.TestCase):
 class ValuationInputsTest(unittest.TestCase):
     def _inputs(self, **overrides):
         payload = {
-            "ticker": "AAA", "as_of_at": _AS_OF, "source_version": "test-v1",
+            "ticker": "AAA", "as_of_at": _AS_OF,
             "price_rows": [{"ticker": "AAA", "trade_date": "2026-08-20", "close": 50.0,
                             "ingested_at": "2026-08-20T21:30:00+00:00"}],
             "fundamental_rows": _four_quarters(),

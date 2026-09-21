@@ -182,8 +182,15 @@ def quality_statistics(rows: Iterable[Mapping[str, Any]]) -> dict[str, float]:
         ),
         "debt_to_equity": _ratio(debt, equity, positive=True),
     }
+    # 전년 창도 현재 TTM과 같은 검사를 받아야 한다. 4분기가 "모여 있다"만으로는 부족하고
+    # ① 전년 창 안에서 연속이고 ② 현재 TTM의 가장 오래된 분기와 맞붙어야 한다.
+    # 그러지 않으면 중간 분기 누락이 12개월이 아닌 기간과의 비교를 성장률로 만든다(감사 RR2-03).
     prior = quarters[_TTM_QUARTERS:_TTM_QUARTERS * 2]
-    prior_revenue = _sum(prior, "revenue") if len(prior) == _TTM_QUARTERS else None
+    prior_revenue = None
+    if len(prior) == _TTM_QUARTERS and are_consecutive_quarters(
+        row["period_end"] for row in (*ttm, *prior)
+    ):
+        prior_revenue = _sum(prior, "revenue")
     if revenue is not None and prior_revenue is not None and prior_revenue > 0:
         values["revenue_growth_ttm_yoy"] = revenue / prior_revenue - 1
     margins = [

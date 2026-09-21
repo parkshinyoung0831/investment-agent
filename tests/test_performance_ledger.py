@@ -67,16 +67,16 @@ class NavTests(unittest.TestCase):
                       occurred_at=self.snapshots()[1]["captured_at"])]
         result = nav_returns(self.snapshots(), flows, is_cashflow_history_complete=True)
         self.assertAlmostEqual(result["cumulative_return"], .15)
-        self.assertAlmostEqual(result["daily_return"], .15)
+        self.assertAlmostEqual(result["latest_period_return"], .15)
 
     def test_missing_cashflows_currency_and_intraday_valuation_are_unknown(self):
-        self.assertIsNone(nav_returns(self.snapshots(), []) ["daily_return"])
+        self.assertIsNone(nav_returns(self.snapshots(), []) ["latest_period_return"])
         snapshots = self.snapshots()
         snapshots[0].pop("currency")
-        self.assertIsNone(nav_returns(snapshots, [], is_cashflow_history_complete=True)["daily_return"])
+        self.assertIsNone(nav_returns(snapshots, [], is_cashflow_history_complete=True)["latest_period_return"])
         flows = [dict(event_id="d", kind="deposit", amount=50, currency="USD",
                       occurred_at="2026-09-01T12:00:00+00:00")]
-        self.assertIsNone(nav_returns(self.snapshots(), flows, is_cashflow_history_complete=True)["daily_return"])
+        self.assertIsNone(nav_returns(self.snapshots(), flows, is_cashflow_history_complete=True)["latest_period_return"])
 
     def test_exact_subperiod_twr_and_no_future_flow(self):
         flows = [dict(event_id="d", kind="deposit", amount=50, currency="USD", nav_before=110, nav_after=160,
@@ -87,8 +87,29 @@ class NavTests(unittest.TestCase):
     def test_same_endpoint_flows_are_net_adjusted_once(self):
         flows = [dict(event_id="d", kind="deposit", amount=60, currency="USD", occurred_at=self.snapshots()[1]["captured_at"]),
                  dict(event_id="w", kind="withdrawal", amount=10, currency="USD", occurred_at=self.snapshots()[1]["captured_at"])]
-        self.assertAlmostEqual(nav_returns(self.snapshots(), flows, is_cashflow_history_complete=True)["daily_return"], .15)
+        self.assertAlmostEqual(nav_returns(self.snapshots(), flows, is_cashflow_history_complete=True)["latest_period_return"], .15)
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LatestPeriodNamingTest(unittest.TestCase):
+    """키 이름이 값의 의미를 말해야 한다 — 스냅샷 간 수익률을 `daily_return`으로
+    적으면 다음 소비자가 달력 하루로 읽고 그때 조용히 틀린다(감사 TR2-11)."""
+
+    def test_latest_period_carries_its_own_window(self):
+        from datetime import datetime, timedelta, timezone
+
+        base = datetime(2026, 9, 18, 13, tzinfo=timezone.utc)
+        snapshots = [
+            {"captured_at": (base + timedelta(hours=offset)).isoformat(), "equity": equity, "currency": "USD"}
+            for offset, equity in ((0, "100"), (3, "110"), (72, "121"))
+        ]
+        result = nav_returns(snapshots, [], is_cashflow_history_complete=True)
+        self.assertNotIn("daily_return", result)
+        self.assertAlmostEqual(result["latest_period_return"], 0.1)
+        # 마지막 구간은 3시간이 아니라 69시간(주말 건너뜀)이고, 그 사실이 payload에 있다.
+        self.assertEqual(result["latest_period_start_at"], snapshots[1]["captured_at"])
+        self.assertEqual(result["latest_period_end_at"], snapshots[2]["captured_at"])
+        self.assertEqual(result["return_method"], "time_weighted_subperiods")

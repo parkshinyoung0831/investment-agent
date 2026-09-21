@@ -312,11 +312,11 @@ def research(
     }
 
 
-def group_snapshots(rows: Iterable[Mapping[str, Any]], *, feature_version: str) -> dict[date, dict[str, dict]]:
-    """저장 행을 판단일 → ticker → feature로. 다른 feature 세대는 섞지 않는다."""
+def group_snapshots(rows: Iterable[Mapping[str, Any]]) -> dict[date, dict[str, dict]]:
+    """저장 행을 판단일 → ticker → feature로."""
     output: dict[date, dict[str, dict]] = defaultdict(dict)
     for row in rows:
-        if str(row.get("feature_version")) != feature_version or not row.get("is_available", True):
+        if not row.get("is_available", True):
             continue
         as_of = datetime.fromisoformat(str(row["as_of_at"]).replace("Z", "+00:00")).date()
         output[as_of][str(row["ticker"]).upper()] = dict(row.get("features") or {})
@@ -331,15 +331,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-dir", default=str(repository_artifact_root() / "research" / "factor_ic"))
     args = parser.parse_args(argv)
 
-    from investment_agent.research.features.layer import FEATURE_VERSION
     from investment_agent.research.storage.repository import ResearchStore
 
     rows = ResearchStore(read_only=True).records("rl_feature_snapshots")
     if args.source_kind:
         rows = [row for row in rows if (row.get("provenance") or {}).get("source_kind") in (None, args.source_kind)]
-    snapshots = group_snapshots(rows, feature_version=FEATURE_VERSION)
+    snapshots = group_snapshots(rows)
     if not snapshots:
-        log.warning("factor research has no %s snapshots", FEATURE_VERSION)
+        log.warning("factor research has no feature snapshots")
         return 1
     tickers = sorted({ticker for day in snapshots.values() for ticker in day})
     first = min(snapshots)
@@ -355,7 +354,6 @@ def main(argv: list[str] | None = None) -> int:
     )
     report.update({
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "feature_version": FEATURE_VERSION,
         "source_kind": args.source_kind or None,
     })
     output_dir = Path(args.output_dir)

@@ -91,6 +91,21 @@ class PortfolioRiskPolicy:
             return float(self.max_stress_loss)
         return self.max_abs_beta * 0.10
 
+    @property
+    def reachable_concentration_hhi(self) -> float:
+        """종목 상한과 현금 하한이 허용하는 HHI의 수학적 상한.
+
+        HHI = Σw² ≤ max(w)·Σw ≤ `max_symbol_weight` × (1 − `min_cash_weight`)다.
+        기본값(0.10 · 0.05)에서는 0.095이므로 `max_concentration_hhi=0.15`는
+        **어떤 입력에서도 발동할 수 없다** — 종목 상한이 이미 더 센 제약이다(감사 TR2-01).
+        """
+        return float(self.max_symbol_weight) * (1.0 - float(self.min_cash_weight))
+
+    @property
+    def concentration_hhi_limit_binds(self) -> bool:
+        """HHI 한도가 실제로 거절을 만들 수 있는가. False면 그 한도는 장식이다."""
+        return float(self.max_concentration_hhi) < self.reachable_concentration_hhi
+
     def to_config(self) -> dict:
         return {**asdict(self), "cvar_95_5d_limit": self.cvar_95_5d_limit,
                 "stress_loss_limit": self.stress_loss_limit}
@@ -213,6 +228,19 @@ class DeterministicRiskGate:
         missing_sectors = sorted(s for s in invested_symbols if not sectors.get(s))
         if self.policy.require_sector_map and missing_sectors:
             violations.append("missing sector mapping: " + ", ".join(missing_sectors))
+        # 분류가 없는 종목은 어떤 섹터 버킷에도 들어가지 않아 합계에서 빠진다. 출처
+        # (`select_sp500_sector_map`)가 tracked만 주므로 S&P 500에서 빠진 보유가 그 자리에 온다.
+        # 그 종목들이 모두 같은 섹터일 수도 있으므로, **합계가 섹터 상한을 넘으면 상한을
+        # 지켰다고 말할 수 없다.** 새 임계를 만들지 않고 이미 있는 상한으로 판정한다(감사 TR2-07).
+        # 지도를 **아예 넘기지 않은** 호출(`None`)은 다른 상황이다 — 그때는 섹터 제약을
+        # 요구할지가 `require_sector_map`의 몫이고, 여기서 대신 정하지 않는다.
+        unmapped_weight = math.fsum(weights[s] for s in missing_sectors)
+        if sector_by_symbol is not None and unmapped_weight > self.policy.max_sector_weight:
+            violations.append(
+                f"unmapped-sector weight cannot satisfy the sector limit: "
+                f"{unmapped_weight:.6f} > {self.policy.max_sector_weight:.6f} "
+                f"({', '.join(missing_sectors)})"
+            )
         if sectors:
             by_sector: dict[str, list[str]] = {}
             for symbol in invested_symbols:
@@ -405,6 +433,14 @@ class DeterministicRiskGate:
                 **risk_inputs,
                 "drawdown_fraction": drawdown_fraction,
                 "concentration_hhi": concentration_hhi,
+                # 원장이 "검사했고 통과했다"만 남기면 발동할 수 없는 한도도 통과로 보인다.
+                # 한도가 실제로 구속력이 있는지를 함께 남긴다(감사 TR2-01).
+                "concentration_hhi_limit_binds": self.policy.concentration_hhi_limit_binds,
+                "reachable_concentration_hhi": self.policy.reachable_concentration_hhi,
+                # 섹터 한도가 "검사했고 통과"로 보이는 동안 분류 없는 종목이 합계에서
+                # 빠져 있었다. 그 목록과 비중을 남긴다(감사 TR2-07).
+                "unmapped_sector_symbols": list(missing_sectors),
+                "unmapped_sector_weight": unmapped_weight,
                 "turnover": portfolio_turnover(current, weights),
                 "mandatory_turnover": mandatory_turnover,
                 "discretionary_turnover": portfolio_turnover(base, weights),

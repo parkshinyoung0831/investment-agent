@@ -62,8 +62,14 @@ class ApprovalRepository:
         if request is None or request.status != "approved" or request.manifest_hash != manifest_hash or request.expires_at <= now:
             return None
         return self._update_approval(ApprovalRequest(**{**request.__dict__, "status": "consumed", "consumed_at": now}), expected=request)
-    def expire_due_approvals(self) -> int:
-        now = datetime.now(timezone.utc)
+    def expire_due_approvals(self, *, now: datetime | None = None) -> int:
+        """만료 시각이 지난 pending·approved를 `expired`로 옮긴다.
+
+        `now`를 받는 이유는 한 동작 안에서 두 시계가 갈라지지 않게 하기 위해서다 —
+        호출부(`request_toss_approval`)는 이미 판단 시각을 갖고 있고, 그 시각과 다른
+        벽시계로 만료를 판정하면 같은 실행이 스스로 모순된 결과를 본다.
+        """
+        now = now or datetime.now(timezone.utc)
         with runtime_connection() as connection:
             rows = connection.execute("SELECT payload_json FROM approvals WHERE status IN ('pending','approved') AND expires_at <= ?", (now.isoformat(),)).fetchall()
             for row in rows:

@@ -36,7 +36,7 @@ class EventContractTest(unittest.TestCase):
         )
         self.assertEqual(EventFeatureSnapshot.__module__, "investment_agent.research.features.event_contracts")
         self.assertEqual(feature.to_dict()["source_ids"], ["a", "b"])
-        self.assertEqual(feature.input_hash, "e0c335180cc462375627c3db5e9d889c8c1ade2c64f37cb055cadff3c60588f7")
+        self.assertEqual(feature.input_hash, "3b3337cb8583c4f79364ae62efe09db83e1bc58490cb13aa637c82d18bae1743")
         with self.assertRaisesRegex(ContractError, "available_at cannot be after as_of_at"):
             replace(feature, available_at="2026-08-20T23:00:00Z")
 

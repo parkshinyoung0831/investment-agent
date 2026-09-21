@@ -17,7 +17,6 @@ class TrainingSample:
     ticker: str
     as_of_at: str
     label_available_at: str
-    feature_version: str
     label_definition: str
     features: Mapping[str, float]
     labels: Mapping[str, float]
@@ -29,9 +28,8 @@ class TrainingSample:
         ticker = str(self.ticker).upper().strip()
         as_of = parse_datetime(self.as_of_at).isoformat()
         label_available = parse_datetime(self.label_available_at).isoformat()
-        version = str(self.feature_version).strip()
         definition = str(self.label_definition).strip()
-        if not ticker or not version or not definition or label_available < as_of:
+        if not ticker or not definition or label_available < as_of:
             raise ContractError("training sample identity or PIT timing is invalid")
         features = self._numbers(self.features, "features", require_non_empty=True)
         labels = self._numbers(self.labels, "labels", require_non_empty=True)
@@ -39,7 +37,6 @@ class TrainingSample:
             "ticker": ticker,
             "as_of_at": as_of,
             "label_available_at": label_available,
-            "feature_version": version,
             "label_definition": definition,
             "features": features,
             "labels": labels,
@@ -52,7 +49,6 @@ class TrainingSample:
         object.__setattr__(self, "ticker", ticker)
         object.__setattr__(self, "as_of_at", as_of)
         object.__setattr__(self, "label_available_at", label_available)
-        object.__setattr__(self, "feature_version", version)
         object.__setattr__(self, "label_definition", definition)
         object.__setattr__(self, "features", features)
         object.__setattr__(self, "labels", labels)
@@ -93,11 +89,9 @@ def build_training_sample(
     outcome_id: str | None = None,
     additional_labels: Mapping[str, float] | None = None,
 ) -> TrainingSample:
-    """동일 시점·버전의 feature/label만 학습 sample로 결합한다."""
+    """동일 시점의 feature/label만 학습 sample로 결합한다."""
     if feature.ticker != label.ticker or feature.as_of_at != label.as_of_at:
         raise ContractError("feature and label identity does not match")
-    if feature.feature_version != label.feature_version:
-        raise ContractError("feature and label version does not match")
     labels = {
         label.label_definition: label.label,
         "benchmark": label.benchmark_label,
@@ -108,7 +102,6 @@ def build_training_sample(
         ticker=feature.ticker,
         as_of_at=feature.as_of_at,
         label_available_at=label.label_available_at,
-        feature_version=feature.feature_version,
         label_definition=label.label_definition,
         features=feature.features,
         labels=labels,

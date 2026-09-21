@@ -37,8 +37,6 @@ class ResearchDataset:
             raise ContractError("research dataset shape or feature names are invalid")
         if not np.isfinite(features).all() or not np.isfinite(targets).all():
             raise ContractError("research dataset contains non-finite values")
-        if any(row.feature_version != self.manifest.feature_version for row in rows):
-            raise ContractError("dataset row feature_version does not match manifest")
         features.setflags(write=False)
         targets.setflags(write=False)
         object.__setattr__(self, "rows", rows)
@@ -65,7 +63,6 @@ def _feature_row(value: FeatureRecord | Mapping[str, Any]) -> FeatureRecord:
         ticker=str(value["ticker"]),
         as_of_at=str(value["as_of_at"]),
         available_at=str(value.get("available_at") or value["as_of_at"]),
-        feature_version=str(value["feature_version"]),
         features=dict(value["features"]),
         source_ids=tuple(value.get("source_ids") or ()),
         provenance=dict(value.get("provenance") or {}),
@@ -80,7 +77,6 @@ def _label_row(value: LabelRecord | Mapping[str, Any], *, label_definition: str)
         as_of_at=str(value["as_of_at"]),
         forward_end_at=str(value["forward_end_at"]),
         label_available_at=str(value.get("label_available_at") or value["forward_end_at"]),
-        feature_version=str(value["feature_version"]),
         label_definition=str(value.get("label_definition") or label_definition),
         label=float(value.get("label", value.get("forward_return"))),
         benchmark_label=float(value.get("benchmark_label", value.get("benchmark_forward_return", 0.0))),
@@ -128,7 +124,6 @@ def build_research_dataset(
     feature_rows: Sequence[FeatureRecord | Mapping[str, Any]],
     label_rows: Sequence[LabelRecord | Mapping[str, Any]],
     *,
-    feature_version: str,
     label_definition: str,
     label_cutoff_at: str,
     dataset_version: str = "research-dataset-v1",
@@ -145,26 +140,22 @@ def build_research_dataset(
     labels = tuple(_label_row(row, label_definition=label_definition) for row in label_rows)
     if not features:
         raise ContractError("research dataset requires feature rows")
-    if any(row.feature_version != feature_version for row in features):
-        raise ContractError("feature row version does not match requested feature_version")
-    labels_by_key: dict[tuple[str, str, str], LabelRecord] = {}
+    labels_by_key: dict[tuple[str, str], LabelRecord] = {}
     for label in labels:
-        key = (label.ticker, label.as_of_at, label.feature_version)
+        key = (label.ticker, label.as_of_at)
         if key in labels_by_key:
             raise ContractError("duplicate research label identity")
-        if label.feature_version != feature_version:
-            raise ContractError("label row version does not match feature_version")
         if label.label_definition != label_definition:
             raise ContractError("label definition mismatch")
         if parse_datetime(label.label_available_at) > cutoff:
             continue
         labels_by_key[key] = label
     selected: list[tuple[FeatureRecord, LabelRecord]] = []
-    seen: set[tuple[str, str, str]] = set()
+    seen: set[tuple[str, str]] = set()
     for feature in sorted(features, key=lambda row: (row.as_of_at, row.ticker)):
         if parse_datetime(feature.available_at) > cutoff:
             continue
-        key = (feature.ticker, feature.as_of_at, feature.feature_version)
+        key = (feature.ticker, feature.as_of_at)
         if key in seen:
             raise ContractError("duplicate research feature identity")
         seen.add(key)
@@ -183,7 +174,6 @@ def build_research_dataset(
     matrix = np.asarray([[row.features[name] for name in names] for row in rows], dtype=np.float64)
     targets = np.asarray([label.label for label in selected_labels], dtype=np.float64)
     payload = {
-        "feature_version": feature_version,
         "label_definition": label_definition,
         "cutoff": cutoff.isoformat(),
         "rows": [row.to_dict() for row in rows],
@@ -202,7 +192,6 @@ def build_research_dataset(
         )  # type: ignore[arg-type]
     manifest = DatasetManifest(
         dataset_version=dataset_version,
-        feature_version=feature_version,
         label_definition=label_definition,
         pit_cutoff_at=cutoff.isoformat(),
         train_period=tuple(train_period or inferred_periods[0]),
@@ -225,7 +214,6 @@ def load_dataset_json(path: str | Path) -> ResearchDataset:
     return build_research_dataset(
         payload.get("feature_rows") or payload.get("features") or (),
         payload.get("label_rows") or payload.get("labels") or (),
-        feature_version=str(payload["feature_version"]),
         label_definition=str(payload["label_definition"]),
         label_cutoff_at=str(payload["label_cutoff_at"]),
         dataset_version=str(payload.get("dataset_version") or "research-dataset-v1"),

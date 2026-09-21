@@ -61,19 +61,15 @@ class SelectFactorCandidatesTest(unittest.TestCase):
 
 
 class LatestCrossSectionTest(unittest.TestCase):
-    def _rows(self, as_of: str, count: int, version: str = "v5") -> list[dict]:
-        return [{"feature_version": version, "as_of_at": as_of, "ticker": f"t{i}", "features": {"x": i}}
+    def _rows(self, as_of: str, count: int) -> list[dict]:
+        return [{"as_of_at": as_of, "ticker": f"t{i}", "features": {"x": i}}
                 for i in range(count)]
 
     def test_partial_latest_day_falls_back_to_the_last_complete_day(self):
         rows = self._rows("2026-09-14T22:00:00+00:00", 3) + self._rows("2026-09-13T22:00:00+00:00", 10)
-        as_of, features = latest_cross_section(rows, feature_version="v5", min_coverage=5)
+        as_of, features = latest_cross_section(rows, min_coverage=5)
         self.assertEqual(as_of, "2026-09-13T22:00:00+00:00")
         self.assertEqual(len(features), 10)
-
-    def test_other_versions_do_not_count(self):
-        rows = self._rows("2026-09-14T22:00:00+00:00", 10, version="v4")
-        self.assertIsNone(latest_cross_section(rows, feature_version="v5", min_coverage=5))
 
 
 class _Repository:

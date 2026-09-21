@@ -928,3 +928,35 @@ commit·push·운영 DB 쓰기·재적재·발송·하네스 조작은 하지 �
 - **RS-15(승격 게이트의 입력 `portfolio_evaluations` 생산자)**: 새 평가 기능이라 결정이 아니라 설계 작업이다. 지금은 게이트가 fail-closed로 닫혀 있어 안전하다.
 - **PB-6(정합성 점검 count RPC)**: 운영 DB DDL로 얻는 것이 7.8초라 DDL 위험 대비 이득이 없다.
 - **TE-14**: 문서가 "구현됨"이라 적은 안전 설계의 미연결 부품(`LifecyclePromotionGate`·`MarketState`)이라 삭제와 연결 중 하나를 제품이 정해야 한다.
+
+### 11.8 다섯 번째 묶음 — 남은 항목의 마지막 판단
+
+| ID | 결론 | 근거 |
+|---|---|---|
+| TE-14 | 문서 표기를 실제와 맞췄다. `LifecyclePromotionGate`는 하네스가 부르지 않고 운영자가 승격을 판단할 때 직접 평가하는 계약이라고, `MarketState`·quote snapshot은 계약·테스트만 구현됐다고 적었다. 세 부품은 지우지 않았다 | `MarketState`는 native 변환 경계 테스트가 쓰고, 승격 게이트는 Live 전환 전에 필요한 안전 설계다 |
+| TE-14(`reconcile_orders`) | 실제 재조정은 `reconciliation/worker.py`가 같은 규칙(broker_order_id로만 결합, 외부 주문은 경보·운영자 확인)으로 하고 테스트도 따로 있어서, `reconciliation/service.py`와 `test_reconciliation.py`는 **중복이다. 삭제 대기** | 파일 삭제 명령이 권한 검사에서 거부되어 남겨 뒀다 |
+| 은행·리츠 매출(HBAN·MTB·FITB·CPT) | **원천 한계, 고치지 않았다.** HBAN·FITB는 총계 태그가 없고 NII와 비이자수익만 있다(HBAN 5,991M+2,175M). CPT는 최근 연도 총계 태그가 없다. NII+비이자수익으로 합산하면 MTB 자신의 `Revenues`(순수익) 정의와 같아 합리적이지만, 합산 규칙은 `SEMANTIC_POLICY_VERSION` 승격과 기존 행 전체 재처리를 부르므로 결정 후에 한다 | SEC companyfacts 직접 조회 |
+| PB-5·8·9 | **하지 않는 것으로 확정.** 재처리·백필에서만 도는 삭제 루프(PB-5), 대상이 수십 건인 원장 조회(PB-8), 측정된 적 없는 저장 비용(PB-9)이라 얻는 이득이 없고 삭제 경로를 바꾸는 위험만 있다 | 원본 분석의 우선순위 "낮음" |
+
+전체 테스트: 3,435개 실행, 통과, skipped 1, 실패 0(194초).
+
+**research v6 재적재 결과** (`backfill_research_history --start 2021-09-03 --every-days 7`): 259개 날짜를 모두 만들었다(마지막 2026-08-14). 이번 실행에서 132개를 만들고 127개는 이미 있어 건너뛰었다. forward label 118,697행(SPY 대비 20거래일, 가격 결측으로 849건 제외), 학습 표본 118,697행(259개 기간, 왕복 비용 0.2% 차감 후 순초과수익 평균 -0.39%, 비용으로 부호가 뒤집힌 표본 1,496건). 모두 실행 로그 기준이며 저장소를 따로 세어 대조하지는 않았다.
+
+### 11.9 여섯 번째 묶음 — feature 버전 컬럼 제거
+
+사용자 결정으로 `feature_version`(feature·label·학습 표본·모델 artifact의 세대 라벨)과 밸류에이션 `source_version`을
+코드와 로컬 저장소 선언에서 걷어냈다.
+
+- **지운 것**: `FeatureSnapshot`·`ForwardReturnLabel`·`FeatureRecord`·`LabelRecord`·`DatasetManifest`·`TrainingSample`·
+  `EventFeatureSnapshot`·`FeatureDataset`·`LiveInferenceFrame`·`FeatureSpec`·모델 artifact의 버전 필드, 저장소 record_key의
+  버전 접두, `FEATURE_VERSION`·`SOURCE_VERSION` 상수, DuckDB `datasets.feature_version`·`label_version`,
+  SQLite `model_versions.feature_version`. `feature_sets`의 키는 버전이 아니라 이름(`feature_set = 'technical'`)이 됐다.
+- **남긴 것**: `SEMANTIC_POLICY_VERSION`(fundamentals 재처리 판정 — 운영 DB에 v2 행이 있다), 위험 `policy_version`,
+  판단 제안의 `source_version`(제안자 식별, 다른 개념), `financial_versions`(공시 수정본).
+- **잃은 것과 대신 둔 것**: 버전 라벨은 "값 정의가 바뀌면 옛 행과 섞지 않는다"를 자동으로 보장했다. 이제는
+  컬럼 구성 변화는 `FeatureLayer.definition_hash`가(backfill 완료 판정), 학습한 컬럼이 지금 snapshot에 없는 모델은
+  `ml_serving`의 명시적 거절이 잡는다(주입 확인: 가드를 빼면 테스트가 실패). **값 정의만 바뀌고 컬럼이 그대로면 아무도 잡지 못한다** —
+  그때는 저장된 파생 dataset을 지우고 다시 적재하는 것이 유일한 방법이다(`research/README.md`에 규칙으로 적었다).
+- **저장소 정리**: `scripts/reset_feature_version_stores.py`(dry-run 기본)가 SQLite 컬럼 삭제, 기술지표 폴더 이름 변경
+  (값 그대로), 파생 dataset 7종 삭제(약 238 MB), 옛 ML 후보 모델 9개 삭제를 한다. **실행은 사용자가 한다.**
+- 전체 테스트 3,510개 통과, skipped 1, 실패 0(옛 3,511개에서 "다른 버전은 세지 않는다" 테스트 1개가 계약과 함께 사라졌다). 그 뒤 서빙 가드 테스트를 1개 더해 해당 모듈 13개가 통과한다.

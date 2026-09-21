@@ -20,7 +20,6 @@ from investment_agent.platform.logging import get_logger
 from investment_agent.platform.serialization import ContractError, parse_datetime
 from investment_agent.research.features.layer import (
     FEATURE_COLUMNS,
-    FEATURE_VERSION,
     impute_cross_section,
 )
 from investment_agent.research.rl.contracts import FeatureSnapshot
@@ -48,14 +47,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--horizon", type=int, default=SIGNAL_HORIZON_DAYS, choices=(SIGNAL_HORIZON_DAYS,),
         help="label_definition에 기록할 horizon. 원장에 저장된 구간과 일치해야 한다",
     )
-    parser.add_argument("--feature-version", default=FEATURE_VERSION)
     parser.add_argument("--dry-run", action="store_true", help="계산만 하고 파일을 쓰지 않는다")
     return parser.parse_args(argv)
 
 
 def _snapshot(row: Mapping[str, Any]) -> FeatureSnapshot:
     return FeatureSnapshot(
-        feature_version=str(row["feature_version"]),
         as_of_at=str(row["as_of_at"]),
         ticker=str(row["ticker"]),
         available_at=str(row["available_at"]),
@@ -72,7 +69,6 @@ def export_dataset(
     end_as_of: str,
     label_cutoff_at: str,
     horizon_days: int = SIGNAL_HORIZON_DAYS,
-    feature_version: str = FEATURE_VERSION,
     output: Path | None = None,
     repository: UniverseRepository | None = None,
     store: ResearchStore | None = None,
@@ -89,11 +85,11 @@ def export_dataset(
 
     selected_store = store if store is not None else ResearchStore(read_only=True)
     snapshot_rows = selected_store.rl_feature_snapshot_rows(
-        symbols, start_as_of=start_as_of, end_as_of=end_as_of, feature_version=feature_version,
+        symbols, start_as_of=start_as_of, end_as_of=end_as_of,
     )
     label_rows = selected_store.rl_training_label_rows(
         symbols, start_as_of=start_as_of, end_as_of=end_as_of,
-        feature_version=feature_version, label_cutoff_at=label_cutoff_at,
+        label_cutoff_at=label_cutoff_at,
     )
     if not snapshot_rows:
         raise ContractError("no feature snapshot is stored for the requested window")
@@ -123,7 +119,6 @@ def export_dataset(
                 "ticker": snapshot.ticker,
                 "as_of_at": snapshot.as_of_at,
                 "available_at": snapshot.available_at,
-                "feature_version": snapshot.feature_version,
                 "features": values,
                 "source_ids": list(snapshot.source_ids),
                 "provenance": dict(snapshot.provenance),
@@ -138,7 +133,6 @@ def export_dataset(
             "as_of_at": str(row["as_of_at"]),
             "forward_end_at": str(row["forward_end_at"]),
             "label_available_at": str(row["label_available_at"]),
-            "feature_version": str(row["feature_version"]),
             "label_definition": definition,
             "label": float(row["forward_return"]) - float(row["benchmark_forward_return"]),
             "benchmark_label": float(row["benchmark_forward_return"]),
@@ -150,13 +144,11 @@ def export_dataset(
     dataset = build_research_dataset(
         feature_payload,
         label_payload,
-        feature_version=feature_version,
         label_definition=definition,
         label_cutoff_at=label_cutoff_at,
         feature_names=list(FEATURE_COLUMNS),
     )
     document = {
-        "feature_version": feature_version,
         "label_definition": definition,
         "label_cutoff_at": label_cutoff_at,
         "feature_names": list(FEATURE_COLUMNS),
@@ -182,7 +174,6 @@ def export_dataset(
         duration_sec=round(time.monotonic() - started, 3),
         started_at=started_at,
         detail={
-            "feature_version": feature_version,
             "label_definition": definition,
             "dataset_hash": dataset.dataset_hash,
             "rows": len(dataset.rows),
@@ -211,7 +202,6 @@ def main(argv: list[str] | None = None) -> int:
         end_as_of=end.isoformat(),
         label_cutoff_at=cutoff.isoformat(),
         horizon_days=args.horizon,
-        feature_version=args.feature_version,
         output=None if args.dry_run else args.output,
     )
     return 0

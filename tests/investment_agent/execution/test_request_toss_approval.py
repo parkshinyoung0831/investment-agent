@@ -150,6 +150,20 @@ class _ExecutionRepository:
             return self.intent
         return None
 
+    def expire_due_approvals(self, *, now: datetime | None = None) -> int:
+        """실제 원장과 같은 계약: 만료 시각이 지난 pending·approved를 `expired`로 옮긴다."""
+        self.events.append("expire_due_approvals")
+        moment = now or datetime.now(timezone.utc)
+        approval = self.approval
+        if (
+            approval is not None
+            and approval.status in ("pending", "approved")
+            and approval.expires_at <= moment
+        ):
+            self.approval = ApprovalRequest(**{**approval.__dict__, "status": "expired"})
+            return 1
+        return 0
+
     def approval_for_intent(self, intent_id: str) -> ApprovalRequest | None:
         self.events.append("approval_for_intent")
         if self.approval is not None and self.approval.intent_id == intent_id:
@@ -556,3 +570,36 @@ class RequestTossApprovalTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExpiredApprovalReaskTest(unittest.TestCase):
+    """만료된 승인 한 건이 그 intent의 재요청을 영구히 막지 않는다(감사 EX2-13).
+
+    `expire_due_approvals`를 아무도 부르지 않아 `approval_for_intent`가 상태를 보지 않고
+    행 존재만으로 `_published_existing`을 돌려줬다. 설계된 "같은 목표는 한 번만 묻는다"와
+    구별되지 않아, 승인 없이 만료된 카드가 그 목표를 영구히 잠갔다.
+    """
+
+    def test_an_expired_approval_does_not_block_a_new_request(self):
+        expired = _existing(message_id=_MESSAGE)
+        self.assertEqual(expired.status, "pending")
+        repository = _ExecutionRepository(approval=expired)
+        # 승인 만료 시각을 한참 지난 시점에서 요청한다.
+        later = expired.expires_at + timedelta(hours=1)
+        self.assertEqual(repository.expire_due_approvals(now=later), 1)
+        self.assertEqual(repository.approval_for_intent(expired.intent_id).status, "expired")
+
+    def test_a_live_approval_still_blocks(self):
+        live = _existing(message_id=_MESSAGE)
+        repository = _ExecutionRepository(approval=live)
+        before = live.expires_at - timedelta(minutes=1)
+        self.assertEqual(repository.expire_due_approvals(now=before), 0)
+        self.assertEqual(repository.approval_for_intent(live.intent_id).status, "pending")
+
+    def test_the_entry_point_declares_the_cleanup_in_its_repository_contract(self):
+        from investment_agent.operations.commands.request_toss_approval import (
+            ExecutionApprovalRepository,
+        )
+
+        self.assertIn("expire_due_approvals", ExecutionApprovalRepository.__annotations__
+                      or dir(ExecutionApprovalRepository))

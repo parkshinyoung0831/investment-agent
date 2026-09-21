@@ -25,7 +25,6 @@ from investment_agent.research.valuation.inputs import build_valuation_inputs
 log = get_logger(__name__)
 
 WORKFLOW = "ai_investor_build_valuations"
-SOURCE_VERSION = "pit-valuation-v2"
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -51,7 +50,6 @@ def _storage_row(observation: PITValuationObservation) -> dict[str, Any]:
         "ticker": observation.ticker,
         "as_of_at": observation.as_of_at,
         "source_kind": observation.source_kind,
-        "source_version": observation.source_version,
         "available_at": observation.available_at,
         "price": _number(observation.price),
         "shares_outstanding": _number(observation.shares_outstanding),
@@ -60,6 +58,8 @@ def _storage_row(observation: PITValuationObservation) -> dict[str, Any]:
         "pb": _number(observation.pb),
         "ps_ttm": _number(observation.ps_ttm),
         "fcf_yield": _number(observation.fcf_yield),
+        "earnings_to_market_cap": _number(observation.earnings_to_market_cap),
+        "fcf_to_market_cap": _number(observation.fcf_to_market_cap),
         "is_meaningful_pe_ttm": observation.is_meaningful_pe_ttm,
         "is_meaningful_pb": observation.is_meaningful_pb,
         "is_meaningful_ps_ttm": observation.is_meaningful_ps_ttm,
@@ -106,7 +106,6 @@ def build_valuations(
             observation = build_pit_valuation(build_valuation_inputs(
                 ticker=ticker,
                 as_of_at=as_of_at,
-                source_version=SOURCE_VERSION,
                 price_rows=selected.market_prices(ticker, as_of_at, limit=5),
                 fundamental_rows=selected.fundamentals_pit(ticker, as_of_at, limit=12),
                 share_rows=selected.share_class_snapshots_pit(ticker, as_of_at),
@@ -140,7 +139,6 @@ def build_valuations(
         duration_sec=round(time.monotonic() - started, 3),
         started_at=started_at,
         detail={
-            "source_version": SOURCE_VERSION,
             "source_kind": source_kind,
             "as_of_at": as_of_at.isoformat(),
             "built": len(rows),
@@ -188,7 +186,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
 
-__all__ = ["SOURCE_VERSION", "WORKFLOW", "build_valuations", "main"]
+__all__ = ["WORKFLOW", "build_valuations", "main"]
 
 
 if __name__ == "__main__":

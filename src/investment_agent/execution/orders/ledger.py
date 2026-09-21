@@ -31,6 +31,29 @@ from investment_agent.execution.safety.control import ExecutionSafetyError
 from investment_agent.platform.clock import ensure_aware, utc_now
 from investment_agent.platform.serialization import canonical_json, parse_datetime
 
+# 주문 상태 어휘와 전이표의 SSOT. 전에는 전이표가 `OrderRepository.update_order_execution`
+# 안에만 있었고 `replaced`는 세 곳(`reconcilable_orders`·대사 worker의 intent 판정·
+# `classify_remote_order`)이 아는데 **쓰는 곳 하나만 몰라서**, 브로커가 정정 상태를 주면
+# `invalid order execution transition`이 대사 패스 전체를 끊었다. 그러면 `unresolved_orders`가
+# 비지 않아 이후 모든 실주문이 "대사 대기"로 막힌다(감사 EX2-03).
+ORDER_TERMINAL_STATUSES: frozenset[str] = frozenset({
+    "filled", "cancelled", "rejected", "failed", "replaced",
+})
+_LIVE_TARGETS: frozenset[str] = frozenset({
+    "partially_filled", "filled", "cancelled", "rejected", "replaced",
+    "outcome_unknown", "reconciling",
+})
+ORDER_STATUS_TRANSITIONS: dict[str, frozenset[str]] = {
+    "planned": frozenset({"submitted", "outcome_unknown", "rejected", "failed", "cancelled", "replaced"}),
+    "submitted": _LIVE_TARGETS,
+    # 이미 일부 체결된 주문은 거절로 돌아갈 수 없고 부분체결로 재진입하지도 않는다.
+    "partially_filled": _LIVE_TARGETS - {"partially_filled", "rejected"},
+    "outcome_unknown": _LIVE_TARGETS | {"submitted", "failed"},
+    "reconciling": _LIVE_TARGETS | {"submitted", "failed"},
+}
+ORDER_STATUSES: frozenset[str] = frozenset(ORDER_STATUS_TRANSITIONS) | ORDER_TERMINAL_STATUSES
+
+
 ATTEMPT_ID_RE = re.compile(r"^attempt_[0-9a-f]{32}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 

@@ -161,6 +161,32 @@ class SegmentIntegrity(unittest.TestCase):
         self.assertEqual(check["severity"], OK)
         self.assertEqual(check["detail"]["missing"], [])
 
+    def test_backfill_needed_and_stuck_processing_are_separate_checks(self):
+        """처방이 다른 두 결측을 한 줄로 합치면, 매일 같은 오류가 나면서 무엇을
+        해야 하는지는 알 수 없다(감사 AU-01). 둘 다 ERROR로 남긴다 — 완화가 아니다."""
+        segment = {
+            **HEALTHY["segment_integrity"],
+            "tracked_without_filing_rows": 3,
+            "tracked_without_segment_state_tickers": ["FDXF", "HONA", "XOM"],
+            "segments_never_attempted_tickers": ["FDXF", "HONA"],
+            "segments_stuck_tickers": ["XOM"],
+        }
+        checks = _run(segment_integrity=segment)
+        self.assertEqual(checks["segment_tracked_coverage"]["severity"], ERROR)
+        backfill = checks["segment_backfill_required"]
+        self.assertEqual(backfill["severity"], ERROR)
+        self.assertEqual(backfill["detail"]["tickers"], ["FDXF", "HONA"])
+        # 처방이 메시지에 들어 있어야 한다.
+        self.assertIn("--scope missing", backfill["message"])
+        stuck = checks["segment_processing_stuck"]
+        self.assertEqual(stuck["severity"], ERROR)
+        self.assertEqual(stuck["detail"]["tickers"], ["XOM"])
+
+    def test_a_healthy_run_reports_neither_split_check(self):
+        checks = _run()
+        self.assertNotIn("segment_backfill_required", checks)
+        self.assertNotIn("segment_processing_stuck", checks)
+
     def test_orphan_segment_metric_is_an_error(self):
         check = self._with_segment_error("orphan_metric_rows")[
             "segment_data_contract"

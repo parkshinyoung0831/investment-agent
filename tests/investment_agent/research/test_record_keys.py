@@ -23,24 +23,22 @@ class RecordKeysTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             store = ResearchStore(Path(temporary) / "research.duckdb")
             store.upsert_records("rl_feature_snapshots", [{
-                "record_key": "v5:2026-01-02T00:00:00+00:00:AAA",
+                "record_key": "2026-01-02T00:00:00+00:00:AAA",
                 "ticker": "AAA",
                 "as_of_at": "2026-01-02T00:00:00+00:00",
-                "feature_version": "v5",
                 "input_hash": "input-123",
                 "features": {"large_payload": [1, 2, 3]},
             }], key="record_key")
 
             rows = store.records_with_payload_fields(
-                "rl_feature_snapshots", ("feature_version", "input_hash"),
+                "rl_feature_snapshots", ("input_hash",),
             )
 
             self.assertEqual(rows, [{
-                "record_key": "v5:2026-01-02T00:00:00+00:00:AAA",
+                "record_key": "2026-01-02T00:00:00+00:00:AAA",
                 "ticker": "AAA",
                 "as_of_at": "2026-01-02T00:00:00+00:00",
                 "available_at": None,
-                "feature_version": "v5",
                 "input_hash": "input-123",
             }])
 

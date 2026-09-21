@@ -13,7 +13,6 @@ from investment_agent.research.commands.export_dataset import export_dataset
 from investment_agent.research.features.layer import (
     ALWAYS_KNOWN_FEATURES,
     FEATURE_COLUMNS,
-    FEATURE_VERSION,
     MISSING_SUFFIX,
     OPTIONAL_FEATURES,
 )
@@ -56,13 +55,12 @@ class _Store:
     def __init__(self, owner):
         self.owner = owner
 
-    def rl_feature_snapshot_rows(self, symbols, *, start_as_of, end_as_of, feature_version):
+    def rl_feature_snapshot_rows(self, symbols, *, start_as_of, end_as_of):
         rows = []
         for index in range(self.owner.periods):
             as_of = self.owner._as_of(index)
             for position, ticker in enumerate(_TICKERS):
                 rows.append({
-                    "feature_version": feature_version,
                     "as_of_at": as_of.isoformat(),
                     "ticker": ticker,
                     "available_at": (as_of - timedelta(hours=1)).isoformat(),
@@ -76,7 +74,7 @@ class _Store:
                 })
         return rows
 
-    def rl_training_label_rows(self, symbols, *, start_as_of, end_as_of, feature_version, label_cutoff_at):
+    def rl_training_label_rows(self, symbols, *, start_as_of, end_as_of, label_cutoff_at):
         cutoff = parse_datetime(label_cutoff_at)
         rows = []
         for index in range(self.owner.periods):
@@ -86,7 +84,6 @@ class _Store:
                 continue
             for position, ticker in enumerate(_TICKERS):
                 rows.append({
-                    "feature_version": feature_version,
                     "as_of_at": as_of.isoformat(),
                     "ticker": ticker,
                     "forward_end_at": end.isoformat(),
@@ -119,7 +116,6 @@ class ExportDatasetTest(unittest.TestCase):
             self.assertEqual(payload["detail"]["features"], len(FEATURE_COLUMNS))
             dataset = load_dataset_json(path)
             self.assertEqual(dataset.features.shape, (36, len(FEATURE_COLUMNS)))
-            self.assertEqual(dataset.manifest.feature_version, FEATURE_VERSION)
             self.assertEqual(dataset.manifest.label_definition, "excess_return_5d")
             self.assertAlmostEqual(dataset.labels[0].label, -0.0005)
 
@@ -156,15 +152,14 @@ class PurgedSplitTest(unittest.TestCase):
         end = _START + timedelta(days=7 * periods + 30)
         features = repository.store.rl_feature_snapshot_rows(
             _TICKERS, start_as_of=_START.isoformat(), end_as_of=end.isoformat(),
-            feature_version=FEATURE_VERSION,
         )
         labels = repository.store.rl_training_label_rows(
             _TICKERS, start_as_of=_START.isoformat(), end_as_of=end.isoformat(),
-            feature_version=FEATURE_VERSION, label_cutoff_at=end.isoformat(),
+            label_cutoff_at=end.isoformat(),
         )
         feature_rows = [{
             "ticker": row["ticker"], "as_of_at": row["as_of_at"],
-            "available_at": row["available_at"], "feature_version": row["feature_version"],
+            "available_at": row["available_at"],
             "features": {name: (0.0 if value is None else value)
                          for name, value in row["features"].items()},
             "source_ids": row["source_ids"], "provenance": row["provenance"],
@@ -173,12 +168,11 @@ class PurgedSplitTest(unittest.TestCase):
             "ticker": row["ticker"], "as_of_at": row["as_of_at"],
             "forward_end_at": row["forward_end_at"],
             "label_available_at": row["label_available_at"],
-            "feature_version": row["feature_version"],
             "label_definition": "forward_return_5d",
             "label": row["forward_return"], "benchmark_label": row["benchmark_forward_return"],
         } for row in labels]
         return build_research_dataset(
-            feature_rows, label_rows, feature_version=FEATURE_VERSION,
+            feature_rows, label_rows,
             label_definition="forward_return_5d", label_cutoff_at=end.isoformat(),
             feature_names=list(FEATURE_COLUMNS),
         )
