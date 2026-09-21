@@ -369,7 +369,7 @@ def main(argv: list[str] | None = None) -> int:
                     bundle.ticker, case_key, archived.artifact_error,
                 )
             longest_case = max(longest_case, time.monotonic() - case_started)
-        except ModelPoolError as exc:
+        except ModelPoolError:
             # 예산이 바닥나 시작도 못 한 종목은 실패가 아니다. 요청에서 빼 배치를 불완전하게 만들지 않고
             # 다음 회차 후보로 남긴다(같은 날 사건 재분석이 예산을 먼저 쓰면 생긴다).
             attempted.pop()

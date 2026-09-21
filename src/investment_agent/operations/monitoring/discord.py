@@ -21,10 +21,11 @@ from typing import Any
 import requests
 
 from investment_agent.platform.logging import get_logger
+from investment_agent.platform.endpoints import DISCORD_API_BASE
 
 log = get_logger(__name__)
 
-_API = "https://discord.com/api/v10"
+_API = DISCORD_API_BASE
 _TIMEOUT = 20
 # Discord 스노플레이크의 기준 시각(2015-01-01 UTC, 밀리초).
 _EPOCH_MS = 1420070400000

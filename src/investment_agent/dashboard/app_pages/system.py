@@ -9,6 +9,7 @@ import streamlit as st
 
 from investment_agent.dashboard.ops import read_harness_state
 from investment_agent.platform.storage_paths import harness_state_dir, repository_root
+from investment_agent.platform.trading_switch import KILL_SWITCH_FLAG, kill_switch_on
 from investment_agent.dashboard.components.operations_view import render_operations_guide
 from investment_agent.dashboard.components.ui import (
     SOURCE_LOCAL,
@@ -28,15 +29,14 @@ STATE_PATH = harness_state_dir() / "state.json"
 
 
 def _kill_switch_label() -> tuple[str, str]:
-    raw = os.getenv("TRADING_KILL_SWITCH")
-    if raw is None:
+    raw = os.getenv(KILL_SWITCH_FLAG)
+    if raw is None or not raw.strip():
         return "ON (안전 기본값)", "환경변수 미설정은 기존 안전 정책상 ON으로 해석"
-    normalised = raw.strip().lower()
-    if normalised in {"0", "false", "off", "no"}:
+    if not kill_switch_on(raw):
         return "OFF", "환경변수의 현재 읽기값"
-    if normalised in {"1", "true", "on", "yes"}:
+    if raw.strip().lower() == "on":
         return "ON", "환경변수의 현재 읽기값"
-    return "ON (값 해석 불가)", "알 수 없는 값은 기존 안전 정책상 ON으로 해석"
+    return "ON (값 해석 불가)", "실주문 게이트는 정확히 `off`만 OFF로 읽는다 — 그 밖의 값은 ON"
 
 
 def _jobs_from_state(state: dict[str, Any]) -> dict[str, dict[str, Any]]:

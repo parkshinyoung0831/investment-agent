@@ -22,6 +22,7 @@ from investment_agent.operations.harness.pipeline import (
     continuous_learning_job,
     decision_experience_job,
     earnings_watch_job,
+    econ_release_watch_job,
     event_reanalysis_job,
     feature_store_job,
     intelligence_job,
@@ -54,6 +55,7 @@ def build_registry(
     reconciliation_interval_seconds: float = 60,
     reconciliation_interval_provider: Callable[[datetime], float] | None = None,
     earnings_watch_interval_seconds: float = 60,
+    econ_release_watch_interval_seconds: float = 60,
     feature_store_interval_seconds: float = 24 * 60 * 60,
     intelligence_interval_seconds: float = 24 * 60 * 60,
     adapters: ProductionInvestmentAdapters | None = None,
@@ -81,6 +83,12 @@ def build_registry(
         watch=selected.watch,
         interval_seconds=earnings_watch_interval_seconds,
     ))
+    # 경제지표 발표 속보. Actions cron이 수 시간 늦게 도는 것이 실측이라 노트북이 켜져 있을 때의 1차 경로다.
+    if hasattr(selected, "watch_releases"):
+        registry.register(econ_release_watch_job(
+            watch_releases=selected.watch_releases,
+            interval_seconds=econ_release_watch_interval_seconds,
+        ))
     # Supabase 원본의 로컬 사본. 판단·연구가 종목마다 원격 표를 읽지 않게 한다.
     if hasattr(selected, "sync_local_mirror"):
         registry.register(local_mirror_job(sync_local_mirror=selected.sync_local_mirror))
@@ -157,6 +165,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--risk-snapshot-interval-seconds", type=float, default=5 * 60)
     parser.add_argument("--reconciliation-interval-seconds", type=float, default=60)
     parser.add_argument("--earnings-watch-interval-seconds", type=float, default=60)
+    parser.add_argument("--econ-release-watch-interval-seconds", type=float, default=60)
     parser.add_argument("--feature-store-interval-seconds", type=float, default=24 * 60 * 60)
     parser.add_argument("--intelligence-interval-seconds", type=float, default=24 * 60 * 60)
     parser.add_argument("--poll-seconds", type=float, default=15.0)
@@ -187,6 +196,7 @@ def main(argv: list[str] | None = None) -> int:
         reconciliation_interval_seconds=reconciliation_interval,
         reconciliation_interval_provider=reconciliation_interval_provider,
         earnings_watch_interval_seconds=args.earnings_watch_interval_seconds,
+        econ_release_watch_interval_seconds=args.econ_release_watch_interval_seconds,
         feature_store_interval_seconds=args.feature_store_interval_seconds,
         intelligence_interval_seconds=args.intelligence_interval_seconds,
         interval_seconds=args.interval_seconds,

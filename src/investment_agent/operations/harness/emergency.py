@@ -18,6 +18,7 @@ from investment_agent.execution.safety.lockdown import (
 )
 from investment_agent.operations.harness.reporting import HarnessReporter
 from investment_agent.operations.harness.state import JsonStateStore, utc_iso
+from investment_agent.platform.trading_switch import KILL_SWITCH_FLAG, kill_switch_on
 
 
 def _is_process_alive(pid: int) -> bool:
@@ -76,7 +77,7 @@ def check_runtime_status(
 
     pid = state.process_id
     process_alive = _is_process_alive(pid) if pid is not None else False
-    trading_kill_switch = env.get("TRADING_KILL_SWITCH", "on").strip().lower()
+    trading_kill_switch = "on" if kill_switch_on(env.get(KILL_SWITCH_FLAG)) else "off"
     lockdown_active = is_execution_locked_down(state_dir)
     lockdown_info = read_execution_lockdown(state_dir) if lockdown_active else None
 

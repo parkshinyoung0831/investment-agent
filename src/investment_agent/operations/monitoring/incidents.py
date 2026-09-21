@@ -40,10 +40,10 @@ _NOISE_RE = re.compile(
 _CATEGORY_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("cancelled", re.compile(r"(?i)cancelled|canceled")),
     ("timeout", re.compile(r"(?i)timeout|timed out|deadline exceeded|statement timeout")),
-    ("configuration", re.compile(r"(?i)not set|missing secret|required secret|permission denied|forbidden|401|403")),
+    ("configuration", re.compile(r"(?i)not set|missing secret|required secret|permission denied|forbidden|\b40[13]\b")),
     ("dependency", re.compile(r"(?i)module not found|modulenotfounderror|no module named|pip.*failed|dependency")),
     ("database", re.compile(r"(?i)supabase|postgres|postgrest|pgrst\d+|sqlstate|database|relation .* does not exist")),
-    ("provider", re.compile(r"(?i)rate.?limit|429|connection|dns|http|request|provider|edgar|fred|yahoo|openfigi")),
+    ("provider", re.compile(r"(?i)rate.?limit|\b429\b|connection|dns|http|request|provider|edgar|fred|yahoo|openfigi")),
     ("data_contract", re.compile(r"(?i)integrity|contract|schema drift|validation|invalid|mismatch|quality")),
 )
 

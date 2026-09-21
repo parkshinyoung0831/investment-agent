@@ -10,7 +10,7 @@ from investment_agent.research.commands.adopt_ml_model import check_adoptable, m
 
 def _payload(**alpha) -> dict:
     values = {"mean_ic": 0.04, "ic_t_stat": 3.0, "date_count": 60, "mean_quantile_spread": 0.004,
-              "inference_method": "newey_west_bartlett_iid_floor_v1", "horizon_days": 20, "hac_lags": 19}
+              "inference_method": "newey_west_bartlett_iid_floor_v2", "horizon_days": 20, "hac_lags": 19}
     values.update(alpha)
     return {
         "artifact": {

@@ -75,6 +75,8 @@
 
 수정 후 `python -m unittest discover -s tests -t .`는 본문 6절 참조.
 
+> **최신 상태는 11절(이 세션의 진행 분석)이, 그다음 10절이 우선한다.** 아래 표와 2~9절의 "후속·미수정" 표기 중 10.1·11.2에 있는 항목은 이후 수정됐다.
+
 ## 2. 항목
 
 ### 2.1 fundamentals (FI)
@@ -732,3 +734,197 @@ migration 검증이나 실broker/원격 LLM representative pipeline은 실행하
 - **주요 파일/명령**: 위 9.2/9.4 표와 9.8 명령이 시작점이다. graph 결과가 오래됐으면 실제 소스와 대조한다.
 - **알려진 미검증**: 실제 시장 OOS/실시간 outage recovery/실체결 TCA/완전한 drift·calibration·자동 rollback 없음.
   이 개선을 수익성 입증 또는 live-ready 선언으로 읽지 않는다.
+
+## 10. 상태 원장과 인계 (2026-09-21, 이 세션 종료 시점)
+
+이 절이 앞 절들보다 **최신**이다. 앞 절의 "후속"·"미수정" 표기 중 아래 10.1에 있는 것은 수정됐다. 작업은 코드·테스트·문서만 했고
+commit·push·운영 DB 쓰기·재적재·발송·하네스 조작은 하지 않았다(`SEMANTIC_POLICY_VERSION`도 그대로다).
+
+### 10.1 이 세션에서 고친 것 (모두 테스트 동반)
+
+| 영역 | ID | 한 줄 |
+|---|---|---|
+| trading·execution | TE-7 | 외부 근거 가용 여부를 본문 전체가 아니라 시작 문구로 판정 |
+| | TE-8 | 오늘 장전 스냅샷이 없을 때 전일 기준점은 5일 안 것만(`PRIOR_BASELINE_MAX_AGE`), 오래된 자산을 기준으로 삼지 않음 |
+| | TE-10 | 승인 카드 주문 목록이 한도를 넘으면 줄 단위로 담고 "외 N건"을 밝힘 |
+| | TE-12 | `CANCEL_REJECTED`류(취소 거절)는 종결로 접지 않고 계속 대사 |
+| | TE-13 | System 보유 원장을 못 읽으면 "보유 없음"이 아니라 오류로 올림 |
+| | TE-15·HC-6 | lockdown 기본 경로를 `harness_state_dir()` 하나로. `--state-dir`가 기본과 다르면 경고 |
+| | TE-16 | 실패 사례의 모델명은 답한 모델(`failure_model`), 풀이 바닥났을 때만 `exhausted` |
+| 알림 | NT-01 | Chromium을 프로세스당 하나로 재사용(전용 루프 스레드, 실 Chromium 측정 콜드 6.7초 → 이후 0.75초/장, 실패 시 폐기) |
+| | NT-03 | 속보 EPS 정의 불일치(GAAP↔조정)는 비교 제외·미확인은 색을 정하지 않음(`eps_basis_match`) |
+| | NT-04 | 보관 스레드 조회를 `has_more`/`before`로 페이지 이어받기(상한 10쪽) |
+| | NT-05 | "오늘"을 `platform.clock`(`kst_today`/`us_market_today`) 한 곳으로, 가드 `test_no_local_date_sources` |
+| | NT-06·HC-7·8 | PNG 보존 경로를 저장소 루트 기준으로, 임시 캡처 삭제, `_persist_png` 중복 제거, 폰트 탐색·이중 주입 방지 |
+| | NT-07 | `env_int/env_float`에 범위 검사(음수 lookback 등은 변수 이름과 함께 거절) |
+| | NT-08 | `sending`에서 멈춘 알림을 `stuck_sending`으로 드러내고 하트비트 카운터에 "전송 미확정 알림 N건" |
+| | NT-09 | 길드 디렉터리 캐시 TTL 1시간 |
+| | NT-10 | 주문 알림 창을 시각으로 비교(문자열 사전순 폐기) |
+| reporting·dashboard | RP-05 | 항상 빈 값을 흘리던 stub(`load_sector_rows`·`load_price_targets`)과 async 분기 제거 |
+| | RP-06 | 예정 시각이 지났는데 값이 없는 발표를 `load_econ_past_due`로 읽어 화면에 표시 |
+| | RP-07 | 13F 화면이 정정 공시를 분기 단위로 결합(`reporting/services/guru_quarters.py`) |
+| | RP-08·09·10 | view `order_by`에 유일 키 추가, `select_rows` 상한 도달·같은 CIK 종목 충돌을 로그로 드러냄 |
+| | DB-04·05 | 화면 원장 조회를 SQL 정렬·상한으로, 손상된 정책 파일을 "챔피언 없음"으로 접지 않음 |
+| data | DA-4 | 일정·예상 버전을 값이 바뀔 때만 append |
+| | DA-5 | 발표 요약이 관련 지표의 일정·관측·예상만 읽음 |
+| | DA-7 | FOMC 페이지 마지막 연도 상수 제거 |
+| | DA-11 | 소스가 더는 주지 않는 미래 일정을 취소 버전으로 남김(`stale_future_events`) |
+| | DI-2 | 원본+NEW HOLDINGS를 한 규칙(institutional `domain/holdings.py`의 `select_effective`)으로 결합, PIT 포지션이 분기 전체로 묶임 |
+| | DI-3 | 죽은 `etl.main` 제거 |
+| | DU-1 | 동작하지 않던 `--retry-after-days` 제거(시도 시각을 저장하지 않으므로 실행마다 재조회) |
+| | DU-2 | `set_membership`이 이미 그 값이면 쓰지 않고 반환값은 실제 변경 수 |
+| research | RS-3 | label 시작 종가를 snapshot 시각에 확정된 마지막 봉으로, 종료 확정 시각을 뉴욕 18:00으로 |
+| | RS-4·12 | `build_features/valuations/labels`: 밸류에이션 전 종목 결측은 `partial`, 저장 0건은 `failed`, 실패 5% 이하·저장 있음은 exit 0(`exit_code_for_run`) |
+| | RS-5 | DSR을 기간 단위 샤프로 통일(`variance_trials` 기본 1/(n-1), 연환산은 표시만) |
+| | RS-6 | 승격 게이트 turnover를 연환산해 평가 창 길이에 판정이 좌우되지 않게 |
+| | RS-8 | 종목 상한을 이름순이 아니라 판단 경험 수 기준으로(fallback 경로는 조용히 자르지 않고 거절) |
+| | RS-13 | label CLI는 저장된 구간(20일) 하나만 받음 |
+| | RS-14(a) | 백필 감사에 `snapshot_coverage` 추가(끝난 비율 `coverage`가 가리던 표본 누락) |
+| | RS-16 | IC 종가 캐시를 (날짜, 종목)별로 |
+| intelligence | IN-2 | 호출 한도로 멈춘 종목부터 이어 받는 커서(`resume_from`) |
+| | IN-4 | 화면 뉴스 태그를 단어 경계로 |
+| 플랫폼·구조 | PF-6 | 로컬 데이터·artifact 기본 경로를 저장소 루트 기준 절대 경로로, `storage_paths`에 `ai_investor_artifact_dir`·`repository_artifact_root` 신설, 중복 `DEFAULT_*` 상수 5개 제거 |
+
+### 10.2 남은 것 — 코드만으로 진행 가능 (다음 세션 대상)
+
+원본 분석은 `audits/raw/*.txt`(항목 ID로 검색)에 있다. 아래는 아직 손대지 않았거나 일부만 한 것이다.
+
+- **하네스·operations** (정비 보류 하에서): OP-04(heartbeat 스레드와 tick의 state 경합·락), OP-05(일별 job이 완료 시각 기준으로 밀림 → 시작 시각 기준),
+  OP-06(`TRADING_KILL_SWITCH` 해석 4곳 → 가장 엄격한 execution 규칙 하나, 안전 방향으로만 바뀜), OP-07(레지스트리에 없는 job 정리), OP-08(intelligence 단계 영구 실패 가시화),
+  OP-09(incident 분류 정규식), OP-10(`monitoring` 소소한 결함 3개), OP-11(`control_center` 종료 코드 무시), OPS-5(POSIX PID 탐색, 탐색 실패와 0건 구분), OPS-6(프로세스 생존·종료 복사본 통합), OPS-7·8, OPS-10.
+- **워크플로·스크립트**: WF-01(cron 분 비정렬), WF-04(`earnings_watch` 안전망을 창 비의존으로), WF-07(placeholder step 9개), WF-08(`RESEARCH_DB` env 주석), WF-09, SC-02(`verify_integration` 0건 통과), SC-03(project-ref 확인 fail-open — 파괴적 도구라 확인 로직만 조이기), SC-05(`verify_data` 읽기 전용 강제), SC-01 나머지.
+- **research·intelligence**: RS-2(replay에서 22개 열이 100% 결측 — 학습 진입점에 "상수(전부 결측) 열" 검사), RS-7(HAC lag를 관측 간격 기준으로 — 기존 artifact 재학습 필요), RS-11(live snapshot 세대가 코드 `FEATURE_VERSION`과 다르면 헬스체크에서 경보), RS-17, IN-3(dedup으로 버려진 기사의 고아 mention), IN-5(근거 캐시가 기사를 첫 종목에만 귀속), PF-1(sqlite 쓰기 연결마다 전체 DDL — 실주문 원장 경로), PF-4(`is_transient`가 `OSError` 전체·57014를 재시도), PF-5(chunk 헬퍼 3중).
+- **구조**: TE-14 죽은 코드(`reconcile_orders`, `LifecyclePromotionGate`(EXECUTION_AND_SAFETY.md가 언급), `MarketState`(native 테스트·AUTONOMOUS_SYSTEM.md가 언급), `save_quote_snapshot`), `execution/db.py:_attempt_event`, `trading/evidence/report.py`의 `dossier_sections`·`valuation_contract_rows`, execution 미사용 import 재점검(pyflakes), HC-9(endpoint 상수 중복), HC-11·12(표·컬럼 상수 재선언), HC-15(배치 크기).
+- **성능**: PB-1(live `build_valuations` 배치 사전 적재, 결과 동일성 테스트 필수), PB-3(SPY 경로 memo), PB-5(행 단위 삭제 배치), PB-8, PB-9(뉴스 저장 측정).
+- **그 밖**: RP-02의 카드별 N+1(원장이 정한 뒤 지연 조회가 의도라 보류), DI-3(b) 실패 공시 7일 재시도 창(저장할 곳이 없어 코드만으로 불가).
+
+### 10.3 사용자 결정·조치가 필요한 것
+
+- **동작이 바뀐 변경(의도 확인)**: TE-8(전일 기준점 5일 상한 — 라이브에서 기준점이 없으면 fail-closed), TE-13(보유 원장 읽기 실패 시 분석 실패), RS-5(DSR 계산식 — RL challenger 채택 빈도가 바뀜), RS-6(turnover 문턱이 연환산 의미), RS-12(부분 실패 5% 이하는 exit 0), NT-07(범위를 벗어난 env는 오류), DU-1(CLI 옵션 제거).
+- **재적재·정리(사용자 실행)**: `SEMANTIC_POLICY_VERSION` 승격과 fundamentals 재처리(FI-1·2), `FEATURE_VERSION` v6 재적재(RS-1·9·DI-2가 feature 값을 바꿈), DA-2·10 오염 행 정리 스크립트(`scripts/cleanup_macro_release_artifacts.py`, 기본 dry-run).
+- **운영 조치**: `DISCORD_CHANNEL_AI_APPROVALS` 시크릿 등록 여부, `econ-calendar` Storage 공개 버킷 생성(WF-02), 2027 BOK 금통위 일정 전사(2026-11-27 전), Pershing Square 새 CIK 반영(DI-1, 알림·채널 선언 동반).
+- **설계 결정**: `fundamentals_integrity` 킬 게이트, 조기폐장·캘린더 라이브러리(OP-01), WF-01/04/09 안전망 정책, WF-06 킬 게이트 확장 범위, RS-15(승격 게이트 입력 `portfolio_evaluations`의 생산자 — 새 기능), HC-2 regime 임계(값·버전), NT-02·03 이미 나간 카드 재발송, IN-6 뉴스 정본 경로.
+- **DDL 필요**: PB-6(count RPC/뷰).
+
+### 10.4 다음 세션이 알아야 할 함정
+
+- 이 트리는 여러 세션이 동시에 고칠 수 있다. `git add`는 파일 경로로만 하고 남의 변경은 건드리지 않는다. 전체 테스트 중에는 다른 세션이 만든 임시 `probe.py`가 `test_view_reachability`를 흔들 수 있다(ST-4).
+- 일부 파일은 CRLF와 LF가 섞여 있다. 여러 줄 치환 도구는 줄바꿈을 정규화하지 않는 것을 써야 하고, 삭제 후 diff가 비면 적용된 것이 아니다.
+- 도구 호출에서 문자열 안의 백슬래시가 한 겹 벗겨질 수 있다(`\b`가 사라진 정규식이 실제로 있었다). 정규식·`\n`이 든 코드는 저장한 뒤 실제 파일을 다시 읽어 확인한다.
+- 서브에이전트를 4개 넘게 동시에 돌리면 세션 한도로 전멸한다(메모리 `subagent-audit-rate-limit-loses-work`).
+- 가드 테스트를 쓰거나 고치면 위반을 하나씩 주입해 실제로 실패하는지 확인한다. 이번에 새로 만든 가드: `test_no_local_date_sources`, `test_view_order_is_unique`(부분).
+- 이번 세션의 허용 목록 갱신: notifications 가드에 `atexit`·`threading`, reporting 가드에 `guru_quarters`·`holdings`.
+
+## 11. 진행 분석과 후속 수정 (2026-09-21, 단일 세션 인계 뒤)
+
+다른 세션의 수정이 모두 정리된 뒤 이 트리를 한 세션이 이어받았다. 시작 시점의 기준선은 `python -m unittest discover -s tests -t .`
+**3,342개 실행, 실패 1(다른 세션이 남긴 문서 검증 1건 — 10.1의 13F 결합 서술이 `schema.table` 꼴로 읽힘), skipped 1**이었고 그 자리에서 고쳤다.
+
+**이 세션의 최종 실행**: `python -m unittest discover -s tests -t .` → **3,384개 실행, 통과, skipped 1, 실패 0**(235초). 두 번째 묶음(11.5) 뒤 재실행은 **3,393개, 통과, skipped 1, 실패 0**(139초). 세 번째 묶음(11.6) 뒤 최종 실행은 **3,404개, 통과, skipped 1, 실패 0**(131초). 네 번째 묶음(11.7) 뒤 최종 실행은 **3,431개, 통과, skipped 1, 실패 0**(134초). 중간 실행에서 나온 실패 1건(워크플로 artifact 경로 테스트가 `${{ env.NAME }}/파일명` 꼴을 못 풀던 것)은 내 WF-08 변경이 만든 것이라 그 자리에서 테스트의 해석 규칙을 넓혀 고쳤다.
+
+### 11.1 얼마나 진행됐나
+
+원본 분석의 항목 ID를 영역별로 세었다(부분 수정·가시화만 한 것은 수정으로 세지 않았다). 시작 시점과 이 세션 뒤의 값을 함께 적는다.
+
+| 영역 | 항목 수 | 시작 시점 수정 | 이 세션 뒤 수정 | 남은 것의 성격 |
+|---|---|---|---|---|
+| fundamentals·research 값 오류 (FI·RS) | 19 | 13 | 15 | RS-11·15, RS-2는 학습에서 이미 계수 0인 열이라 가시화만 함 |
+| trading·execution (TE) | 16 | 14 | 14 | TE-11·14, 나머지는 문서가 설명하는 미연결 설계 |
+| notifications·reporting·dashboard (NT·RP·DB) | 25 | 23 | 23 | RP-02 카드별 조회(의도), RP-01은 오탐 기각 |
+| data (DA·DM·DU·DI) | 17 | 12 | 16 | DA-6 재적재. DA-8·DM-1·2는 앞선 정리와 시각 가드가 이미 해결한 것을 이번에 확인 |
+| 하드코딩 (HC) | 16 | 9 | 11 | HC-11·12(가드만)·15·16 |
+| operations·workflows·scripts (OP·OPS·WF·SC, 신규 WF-10 포함) | 29 | 8 | 23 | OP-04(설계), WF-09(안전망 이중 실행은 의도라 유지) |
+| 성능 (PB) | 9 | 3 | 5 | PB-5·8·9, PB-6은 DDL |
+| 플랫폼·intelligence (PF·IN) | 12 | 5 | 11 | — |
+| **합계** | **143** | **87 (61%)** | **118 (83%)** | 남은 25건은 재적재·DDL·일부러 보류(아래 11.6·11.7) |
+
+### 11.2 이 세션에서 고친 것 (모두 테스트 동반, 새 가드는 위반을 주입해 실패를 확인)
+
+| ID | 한 줄 | 검증 |
+|---|---|---|
+| OP-05 | 하루·주 단위 harness job이 완료 시각에 맞춰 밀리던 것(실행 40분이면 매일 40분씩, 한 달에 반나절) → 1시간 이상 주기는 시작 시각 기준, 분 단위 polling은 완료 뒤 간격 유지 | 테스트 3개, 두 방향 주입으로 실패 확인 |
+| OP-04(일부) | heartbeat 스레드가 저장 실패를 삼켜 heartbeat가 멈춘 이유가 안 남던 것 → 첫 실패만 보고. job heartbeat 갱신이 hung handler를 못 잡는 점은 설계 사항으로 남김 | 테스트 1개 |
+| OP-06 | `TRADING_KILL_SWITCH`·`TOSS_LIVE_ENABLED` 해석이 게이트·하네스·점검·대시보드 4곳에서 달라(`false`·`0`·`no`를 어떤 곳은 OFF로 읽음) 화면은 "주문 가능"인데 게이트는 막혀 있던 것 → 플랫폼 모듈 하나(정확히 `off`일 때만 풀림, 안전 방향으로만 바뀜) | 테스트 5개, 4곳 각각 관대한 읽기 주입으로 실패 확인 |
+| OP-07·08 | 레지스트리에 없는 잔재 job을 paused·stale 집계에서 분리(`orphan_jobs`), 단계가 오류로 건너뛰어진 job을 `degraded_jobs`로 노출(healthy는 안 바꿈) | 테스트 3개, 주입 2건 |
+| OP-09 | incident 분류가 요약문의 아무 숫자열(`4030행`)을 401·403으로 읽던 것 → 단어 경계 | 테스트 2개, 주입 확인 |
+| OP-11 | 하네스 시작·정지 subprocess의 종료 코드를 무시해 정지 실패가 "완료"처럼 보이던 것 | 테스트 3개, 주입 확인 |
+| WF-04 | Actions 스케줄 실행이 시각 창(BMO/AMC)을 보다가 창 밖에 돌아 대상 0건 "성공"이던 것(BMO 실행 전부 창 밖) → 스케줄은 창 없이 전 관심종목을 한 번 훑음 | 테스트 1개 추가 |
+| WF-07 | 아무 일도 안 하는 placeholder step 9개 삭제, 낡은 주석 정리 | 워크플로 배선 테스트 통과 |
+| WF-08 | 파이썬이 읽지 않는 `RESEARCH_DB` 환경변수가 경로를 들고 있던 것 → 실제 변수 `INVESTMENT_AGENT_RESEARCH_ROOT`, 기존 경로 일치 테스트가 접두 참조를 풀도록 확장 | 테스트 2개 + 기존 1개 확장, 주입 2건 |
+| WF-10(신규) | macro_etl이 market_daily가 채운 가격 표를 읽는데 순서를 cron 시각 차이 55분에만 맡기던 것 → workflow_run으로 이음(cron은 안전망) | 테스트 2개, 주입 2건 |
+| SC-02 | 카운터가 전부 실패해도 "0건 OK"이던 점검 → 실패 이름을 돌려받아 FAIL | 테스트 1개 |
+| SC-03 | 파괴적 도구 3개의 project ref 확인이 ref를 못 읽으면 통과(빈 `--confirm`도 통과)하던 것, `v1_reset`은 확인 자체가 없던 것 → 공용 규칙 하나, 연결하기 전에 거절 | 테스트 8개, 주입 5건 |
+| SC-05 | 검증 도구가 읽기 전용을 강제하지 않던 것 → 세션을 read-only로 | 테스트 1개, 주입 확인 |
+| RS-2(가시화) | 학습 구간에서 값이 변하지 않는 열(재현 표본의 technical·macro·revision 22개)이 조용히 학습되던 것 → 이름을 경고·요약에 노출. 열을 채우거나 빼는 것은 feature 계약 변경이라 결정 사항 | 테스트 5개, 주입 확인 |
+| PF-4 | `OSError` 전체를 일시적 오류로 봐 없는 파일·권한 오류까지 4회 재시도하던 것 | 테스트 1개(4종), 주입 확인 |
+| PF-5 | `chunk_filter_values`가 `chunk_values`의 별칭일 뿐이라 제거 | 관련 스위트 통과 |
+| PB-3 | 사후 평가가 케이스마다 같은 기준 종목 경로를 다시 읽던 것 → 실행 안 캐시(600초). 왕복 절감은 견적(케이스 200개면 SPY 200회 → 날짜 수만큼) | 테스트 3개, 주입 확인 |
+| HC-9 | Toss 5곳·Discord 4곳·FRED 4곳·ECOS 2곳·SEC 3곳에 흩어진 기준 주소 → 플랫폼 모듈 하나. 재선언 가드가 처음 실행에서 놓친 2곳(SEC 색인·제출 목록)을 더 찾았다 | 테스트 2개 |
+| ST(죽은 코드) | 참조가 전혀 없는 정의 10개 삭제(`default_config`·`close_history_as_of`·`Entity`·`_attempt_event`·`anon_client`(그 환경변수와 문서 포함)·`latest_technical_signals_as_of`·`latest_allocation_per_strategy`·`replay_context`·`RoleAnalysis`·`MarketRegimeCalculator`), 미사용 import·변수 정리 | 아키텍처·문서 가드 통과 |
+
+### 11.3 알림·적재 시각 — 실측과 판단
+
+`gh run list --limit 1000`(2026-08-21~09-21)으로 workflow별 실제 생성 시각을 직전 tick과 비교했다.
+
+| workflow | 명목 UTC | 실측 지연 중앙값 / p90 (분) | 판단 |
+|---|---|---|---|
+| market_daily | 23:30 | 109 / 149 | 실행 자체는 3~4분. 이 값이 하류 체인의 출발점 |
+| macro_etl | 00:25 | 267 / 297 (최대 671) | **market_daily 종료(01:12~01:40 UTC)보다 3.4시간 뒤에 돌았다 → 체인으로 이어 앞당김**(수정됨) |
+| fundamentals_daily | 03:30 | 285 / 322 | 앞당기지 않음 — SEC 일별 색인이 전일 23:30 ET 이후 확정이라 market_daily 뒤에 이으면 공시를 놓칠 수 있다(코드가 색인에 의존) |
+| econ_calendar_watch | 12~15시 15분마다 | 한 달에 17회만 실행(설계 약 350회), 실행 시각 15:40~18:52 | Actions cron으로는 12:30 UTC 발표 속보를 못 잡는다. 하네스 job 신설(결정 사항) |
+| fundamentals_earnings_watch | 13:00·22:00 | BMO 실행 100% 창 밖 | 창 판정 제거(수정됨) |
+| ops_heartbeat | 06:40 | 간격 중앙값 24시간, 34시간 1회, 67.6시간(누락) 1회 | 30시간 침묵 기준은 34시간 지연을 사실대로 잡는다. 표시 시각 문구만 실제와 다름 |
+
+- 분 정렬(정각·15분 배수) 여부와 지연의 상관은 이 표본에서 보이지 않아(정렬되지 않은 25분·40분·10분 cron도 4~5시간 지연) 분을 옮기는 변경은 하지 않았다.
+- 체인(workflow_run)은 상류 종료 직후 발화하므로 cron 지연의 영향을 받지 않는다. 그래서 순서가 필요한 곳은 체인으로, 시각이 중요한 곳은 하네스로 옮기는 것이 실측이 가리키는 방향이다.
+- macro 체인의 효과(카드가 약 3시간 일찍 나감)는 코드·실측 기반 예상이며, 다음 정규 실행에서 확인해야 한다.
+
+### 11.4 남은 것
+
+- **코드로 가능**: PB-1(live 밸류에이션 배치 적재, 결과 동일성 테스트 필수), PB-5·8·9, HC-11·12(표·컬럼 상수 재선언)·15, DA-8·DM-1·2, IN-3·5, PF-1(실주문 원장 DDL 반복), OP-10, SC-01 나머지, TE-14 중 문서가 설명하는 3개(`LifecyclePromotionGate`·`MarketState`·`reconcile_orders`는 문서와 함께 처리해야 함).
+- **결정 필요**: WF-01(econ 발표 속보를 하네스 job으로), WF-06(킬 게이트 범위), WF-09(안전망 이중 실행), HC-2(regime 임계), RS-2의 열 처리(채울지 뺄지), RS-7·15·17, DI-1, 조기폐장 처리.
+- **사용자 실행**: 정리 스크립트 적용(기본 dry-run), 재적재(FEATURE_VERSION v6·fundamentals 재처리), 운영 조치(버킷·2027 BOK 일정·시크릿).
+- 이 세션에서도 commit·push·운영 DB 쓰기·Discord 발송·하네스 조작은 하지 않았다. 정비 보류 파일은 그대로다.
+
+### 11.5 이어서 고친 것 (같은 세션, 두 번째 묶음)
+
+| ID | 한 줄 | 검증 |
+|---|---|---|
+| PB-1 | live 밸류에이션 적재가 종목마다 재무·주식수·분할을 왕복하던 것 → 세 도메인만 한 번에 읽어 단건 계약 캐시에 배치(503종목 약 79초 → 약 21초 견적, 분할까지 하면 더). 배치는 상장 중인 종목만 읽고 단건은 상장 폐지 종목도 읽으므로 **배치가 행을 준 종목만 seed**하고 나머지는 단건에 맡겨 값이 달라지지 않게 했다. 배치 실패는 종목별 조회로 되돌아가 같은 값을 만든다 | 테스트 4개, 주입 3건. 운영 조회로 배치 값과 단건 값을 대조하지는 못했다 |
+| PF-1 | runtime 원장(SQLite) 연결마다 선언 전체와 이관 검사를 다시 실행하고 쓰기 잠금을 두 번 잡던 것 → 파일·선언 지문당 프로세스 한 번. 이관이 거절되면 기억하지 않고, 파일이 다시 만들어지면 다시 적용 | 테스트 3개, 주입 2건, execution 222개 통과. 실주문 원장 코드라 정비 보류 하에서만 배포 |
+| IN-3 | 다른 URL·같은 내용이라 저장에서 버려진 기사의 id로 언급이 저장돼 고아가 되던 것 → 저장 결과가 남은 기사 id를 돌려주고 언급은 그 id로 | 테스트 1개, 주입 확인 |
+| HC-11·12(가드) | `SCHEMA_*`·`T_*` 상수가 여러 모듈에 다시 선언돼 한 곳만 고쳐지면 조용히 없는 표를 보는 위험 → 같은 이름이 다른 값을 가지면 실패하는 가드(로컬 미러 저장소만 예외). 현재 충돌 0건. 재선언 자체는 도메인 간 import 경계 때문에 두었다 | 충돌 주입으로 실패 확인 |
+
+- 남은 코드 작업: PB-5·8·9, IN-5·6(정본 경로 결정), OP-10, SC-01 나머지, TE-14의 문서 연동 3개.
+
+### 11.6 세 번째 묶음 — 결정 항목 중 권장안 적용
+
+| ID | 한 줄 | 검증 |
+|---|---|---|
+| WF-01 | 경제지표 발표 속보를 **하네스(1차)와 Actions(안전망)가 함께** 잡도록 했다. 하네스에 `econ_release_watch` job(평일 UTC 12~15시에만 1분마다 `econ_calendar_watch_releases`, 창 밖에는 subprocess를 띄우지 않음, 토큰이 없으면 확인만). 둘이 같은 진입점·같은 발송 원장을 쓰므로 겹쳐도 한 번만 나간다 | 테스트 7개, 창 게이트 주입 확인 |
+| WF-06 | 가격·매크로 사고를 다른 도메인과 같은 절차로 끌 수 있게 `MARKET_KILL`(market_*·tech_indicators*)·`MACRO_KILL`(macro_*·notify_macro_*) 워크플로 게이트 추가, 접두 표에 등록 | 게이트 삭제 주입 3건으로 실패 확인 |
+| OP-10 | 한 번의 카운터 수집이 원장을 한 번만 만들게(표를 열 때마다 SSL 컨텍스트 약 0.4초) | 테스트 1개, 주입 확인 |
+| SC-01 | 예산 스크립트가 설계 빈도만 세던 것 → 이력에서 본 schedule 실행 횟수를 함께 보고, 설계의 절반도 안 도는 cron을 표시(econ_calendar_watch 설계 348/월·실측 17/월) | 테스트 3개, 주입 확인 |
+
+**의도적으로 하지 않은 것**
+- PB-5(행 단위 stale 삭제 배치)·PB-8·PB-9: 빈도가 낮고(재처리·백필 때만) 삭제 경로 변경의 위험이 이득보다 커 보류했다.
+- TE-14(`LifecyclePromotionGate`·`MarketState`·`reconcile_orders`·`save_quote_snapshot`): 문서가 "구현됨"이라 적은 안전 설계의 미연결 부품이다. 지우느냐 연결하느냐는 제품 결정이다.
+- WF-09(안전망 cron이 workflow_run과 이중 실행): 이중 실행은 알림 원장이 막고 안전망의 목적이라 유지.
+- HC-2(regime 임계값)·RS-2(학습 상수 열의 처리)·IN-5·6(뉴스 정본)·RS-7·15·17: 값·정책을 정하는 결정이라 코드만으로 확정하지 않았다.
+
+### 11.7 네 번째 묶음 — 남은 결정 항목을 권장안으로 처리
+
+| ID | 한 줄 | 검증 |
+|---|---|---|
+| OP-01(조기폐장) | NYSE 조기 마감(13:00 ET: 추수감사절 다음 금요일·12/24·7/3)을 알게 함. 판단 창·위험 감시 창의 끝을 정규 마감(16:00)에 대한 상대 위치로 두어 조기 마감일에는 마감이 앞당겨진 만큼 당긴다(폐장 뒤 14:30까지 창이 열려 있던 것). 시장 국면도 13:00에 장후로 바뀜 | 2024~2027 공식 일정과 매일 대조, 주입 확인 |
+| DI-1 | Pershing Square가 2026-06-30분부터 13F 제출자를 모회사(새 CIK)로 바꿔 최신 분기가 영구히 안 들어오던 것 → 후속 CIK를 같은 사람으로 귀속해 적재. SEC 제출 목록으로 새 CIK를 직접 확인했다. **그 이전 분기는 두 CIK가 모두 제출해 이중 계상되므로 기준분기 이후만** 받는다. 스레드·태그는 옛 CIK 하나 그대로 | 테스트 5개, 주입 2건 |
+| RS-7 | HAC 지연 수를 관측 간격으로 센다(주 1회 표본이면 19가 아니라 3). 추론 방식 식별자를 v2로 올려 옛 artifact는 채택·서빙에서 거절된다 — **로컬에 채택된 모델이 없어 영향 없음**, 다음 학습부터 v2 | 테스트 6개, 주입 확인 |
+| RS-17 | 후보를 여러 개 견줘 최고를 추천하면 우연히 좋은 하나가 t≥2를 넘던 것 → 견준 후보 수만큼 t 문턱을 올림(4개면 약 2.5) | 테스트 2개, 주입 확인 |
+| HC-2 | regime 경계가 함수 안 인라인이라 기록되는 thresholds·version에 안 실리던 것 → `RegimeThresholds`로 이동(값 동일), 버전 v2. 분산(dispersion) 0.75 경계는 입력이 일수익률 표준편차(0.01~0.03)라 영원히 거짓이던 죽은 분기여서 제거 — 의미 있는 경계는 과거 분포로 보정해야 해서 값을 지어내지 않았다 | 테스트 4개(비교식 인라인 숫자 금지 가드 포함), 주입 확인 |
+| IN-5·6 | 사건 추출이 LLM 판단 때 채워지는 근거 캐시만 읽어, 스케줄 수집(cap을 소비)의 결과가 학습 feature로 안 가고 판단이 안 도는 날은 갱신도 안 되던 것 → 두 원천을 읽는다(archive는 종목 언급마다 한 행이라 한 기사가 첫 조회 종목 하나에만 귀속되던 IN-5도 해소). 같은 기사는 (종목, 내용)당 하나로 중복 제거하고 원천별 행 수를 결과에 남김. 시각은 처음 본 시각 기준이라 판단 시각 이후 기사는 읽히지 않는다 | 테스트 6개, 주입 2건 |
+
+**하지 않은 것과 이유**
+- **RS-2(학습의 상수 열)**: 열을 빼도 모델은 달라지지 않는다 — 릿지는 상수 열의 계수가 0이고 트리는 나누지 않는다. 빼면 artifact의 feature 계약만 바뀌어 비교가 어려워지므로 가시화(이름을 경고·요약에 노출)로 둔다. 진짜 해법은 replay에서 technical·macro 열을 채우는 것(재적재와 feature 계약 변경).
+- **RS-15(승격 게이트의 입력 `portfolio_evaluations` 생산자)**: 새 평가 기능이라 결정이 아니라 설계 작업이다. 지금은 게이트가 fail-closed로 닫혀 있어 안전하다.
+- **PB-6(정합성 점검 count RPC)**: 운영 DB DDL로 얻는 것이 7.8초라 DDL 위험 대비 이득이 없다.
+- **TE-14**: 문서가 "구현됨"이라 적은 안전 설계의 미연결 부품(`LifecyclePromotionGate`·`MarketState`)이라 삭제와 연결 중 하나를 제품이 정해야 한다.

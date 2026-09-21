@@ -9,8 +9,9 @@ import requests
 
 from investment_agent.platform.retry import retry_on_5xx
 from investment_agent.data.macro.infrastructure.releases.sources.actuals import _fred_slot
+from investment_agent.platform.endpoints import FRED_OBSERVATIONS_URL
 
-_BASE = "https://api.stlouisfed.org/fred/series/observations"
+_BASE = FRED_OBSERVATIONS_URL
 
 
 @retry_on_5xx()

@@ -19,10 +19,11 @@ from investment_agent.notifications.channels.contracts import (
 from investment_agent.platform.serialization import canonical_json
 
 from investment_agent.platform.logging import get_logger
+from investment_agent.platform.endpoints import DISCORD_API_BASE
 
 log = get_logger(__name__)
 
-_API_BASE = "https://discord.com/api/v10"
+_API_BASE = DISCORD_API_BASE
 def validate_message(message: dict[str, Any]) -> dict[str, Any]:
     """이 어댑터의 text/embed 계약과 Discord 길이 한도를 전송 전에 검사한다."""
     if not isinstance(message, dict) or set(message) - {"content", "embeds", "allowed_mentions"}:

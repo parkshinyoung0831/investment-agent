@@ -28,7 +28,7 @@ from investment_agent.data.fundamentals.domain.taxonomy import gaap_concepts as 
 log = get_logger(__name__)
 
 _BASE = sec.DATA_BASE
-_ARCHIVES = "https://www.sec.gov/Archives/edgar/daily-index"
+_ARCHIVES = f"{sec.ARCHIVE_BASE}/edgar/daily-index"
 _MASTER_INDEX_RE = re.compile(r"^master\.(\d{8})\.idx$")
 # 정정 8-K/A는 원 속보의 보정이지 새 실적 발표가 아니다. accession이 달라 중복
 # Flash가 나갈 수 있으므로, 실시간 속보 대상은 최초 8-K만 허용한다.

@@ -6,7 +6,7 @@
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from investment_agent.platform.clock import ensure_aware
@@ -122,6 +122,9 @@ class StoreResult:
 
     stored: int = 0
     duplicates: int = 0
+    # 입력 기사 id → 저장소에 실제로 남은 id. url·내용이 같아 버려진 기사는 먼저 저장된 기사의 id로 이어진다.
+    # 언급은 이 id로 저장해야 존재하지 않는 기사를 가리키는 고아가 되지 않는다.
+    ids: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass

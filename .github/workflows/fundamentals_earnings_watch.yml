@@ -1,17 +1,21 @@
 name: fundamentals_earnings_watch
 
-# 발표 세션(BMO/AMC)이 끝난 직후 관심종목 실적 공시를 재확인하는 안전망.
+# 발표 세션(BMO/AMC)이 끝난 뒤 관심종목 실적 공시를 재확인하는 안전망.
 #
 # 왜 두 번인가: 장전 발표는 06:00~09:30 ET, 장후 발표는 16:00~17:30 ET에 접수된다.
 # 하루 한 번만 훑으면 장전 발표가 최대 15시간 늦게 잡힌다. 세션마다 한 번씩 건다.
+#
+# 스케줄 실행은 **시각 창을 보지 않는다**(`--session any`). GitHub schedule은 정시보다 2~5시간
+# 늦게 도는 것이 실측이라(1,000회 이력: BMO 실행은 전부 창 밖) 창 판정을 걸면 대상 0건으로
+# "성공" 종료한다. 창 판정은 1분 주기로 부르는 로컬 하네스만 쓴다.
 #
 # 이 워크플로는 **수집 안전망**이다. 완료 뒤 `notify_fundamentals`가 발화해
 # producer-scoped runtime 원장을 복원하고 Discord 발송을 담당한다.
 on:
   schedule:
-    # 1차 — 13:00 UTC = 22:00 KST = 09:00 ET. 장전(BMO) 발표가 끝난 직후.
+    # 1차 — 13:00 UTC = 22:00 KST = 09:00 ET(서머타임). 장전(BMO) 발표가 끝난 뒤.
     - cron: "0 13 * * 1-5"
-    # 2차 — 22:00 UTC = 07:00 KST(익일) = 18:00 ET. 장후(AMC) 발표가 끝난 직후.
+    # 2차 — 22:00 UTC = 07:00 KST(익일) = 18:00 ET(서머타임). 장후(AMC) 발표가 끝난 뒤.
     # fundamentals_watchlist_fast가 21:30 UTC에 같은 concurrency 그룹으로 돌기 때문에
     # 30분 비켜 세운다. 겹치면 뒤에 온 쪽이 앞 잡(timeout 30분)이 끝날 때까지 큐에서
     # 대기해 시각이 되레 불규칙해진다.
@@ -53,22 +57,23 @@ jobs:
           group: notifications
           require-env: "SUPABASE_URL SUPABASE_SERVICE_KEY EDGAR_USER_AGENT"
 
-      # cron으로 들어오면 어느 스케줄이 깨웠는지로 세션을 정한다. auto도 같은 답을
-      # 내지만, 워크플로 로그에 의도가 남는 편이 사후 추적에 낫다.
+      # 스케줄은 창 없이 전 관심종목을 한 번 훑는다(위 머리주석). 수동 실행만 세션과 재확인 횟수를 고른다.
       - name: Resolve session
         id: resolve
         run: |
-          case "${{ github.event.schedule }}" in
-            "0 13 * * 1-5")  echo "session=bmo" >> "$GITHUB_OUTPUT" ;;
-            "0 22 * * 1-5")  echo "session=amc" >> "$GITHUB_OUTPUT" ;;
-            *) echo "session=${{ inputs.session || 'auto' }}" >> "$GITHUB_OUTPUT" ;;
-          esac
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "session=any" >> "$GITHUB_OUTPUT"
+            echo "polls=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "session=${{ inputs.session || 'auto' }}" >> "$GITHUB_OUTPUT"
+            echo "polls=5" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Watch earnings filings
         run: >-
           python -m investment_agent.operations.commands.watch_earnings
           --session "${{ steps.resolve.outputs.session }}"
-          --poll-attempts 5
+          --poll-attempts "${{ steps.resolve.outputs.polls }}"
 
   notify-error:
     if: ${{ failure() || cancelled() }}

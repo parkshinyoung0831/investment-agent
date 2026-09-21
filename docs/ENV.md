@@ -31,9 +31,8 @@ Actions secrets/variables(CI)에 주입하며, 이 파일에는 이름·용도·
 | `DISCORD_CHANNEL_LAB_CARDS` / `_LAB_OPS` / `_LAB_FORUM` | 실험용. 카드 형식을 다듬을 때 운영 채널 대신 여기로 (포럼은 포럼끼리 바꿔 끼운다) |
 | `DISCORD_ADMIN_TOKEN` | Discord 채널·역할을 만들고 고치는 adapter. **로컬 전용 — CI에 주입 금지** |
 | `DISCORD_GUILD_ID` | 봇이 채널을 **이름으로** 찾을 때 쓰는 길드 ID. 자격증명이 아니라 식별자라 CI에도 넣는다 — 거장 포럼처럼 채널이 늘어날 수 있는 곳은 채널 ID를 시크릿으로 받지 않는다 |
-| `FUNDAMENTALS_KILL`, `GURUS_KILL`, `ECON_CALENDAR_KILL` | 킬 스위치 (레포 변수) |
+| `FUNDAMENTALS_KILL`, `GURUS_KILL`, `ECON_CALENDAR_KILL`, `MARKET_KILL`, `MACRO_KILL` | 킬 스위치 (레포 변수). 값이 `on`이면 그 도메인 워크플로가 안 돈다 |
 | `GURUS_POLL_WINDOW_DAYS` | gurus 수집 창 |
-| `SUPABASE_ANON_KEY` | 공개 읽기 클라이언트용. 현재 실행 경로에서는 쓰지 않음 |
 | `AI_INVESTOR_LOCAL_DATA_ROOT` | 로컬 저장소 공통 루트. 기본 `data/local`; store별 명시 경로가 우선 |
 | `AI_INVESTOR_LOCAL_ARTIFACT_ROOT` | 모델·evidence·broker·report artifact 루트. 기본 `data/local/artifacts` |
 | `INVESTMENT_AGENT_RESEARCH_ROOT` | Research DuckDB·Parquet 루트. 기본 `data/local/research` |

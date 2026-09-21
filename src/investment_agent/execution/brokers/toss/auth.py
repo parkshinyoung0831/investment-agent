@@ -25,8 +25,9 @@ from typing import Any
 
 import requests
 from investment_agent.platform.storage_paths import repository_root
+from investment_agent.platform.endpoints import TOSS_OPENAPI_BASE
 
-_BASE = "https://openapi.tossinvest.com"
+_BASE = TOSS_OPENAPI_BASE
 _TOKEN_URL = f"{_BASE}/oauth2/token"
 _CACHE_VERSION = 1
 _DEFAULT_TOKEN_TTL_SEC = 3600.0

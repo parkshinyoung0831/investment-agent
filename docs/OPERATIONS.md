@@ -391,6 +391,8 @@ flowchart LR
   `econ_calendar_watch`는 미국 지표 발표창(UTC 12~15시 평일)에서 15분마다 깨어나
   DB `scheduled_at` 기준 due release만 bounded polling합니다. 24시간 `*/5`는 한 달
   8,766회로 할당을 8배 넘깁니다 — 시드의 미국 지표 21개가 그 창 안에 들어옵니다.
+  다만 GitHub schedule이 수 시간 늦게 돌아(실측 한 달 17회) 이 워크플로는 안전망이고, 노트북이 켜져 있을 때는
+  하네스 `econ_release_watch` job이 같은 진입점을 같은 창에서 1분마다 불러 첫 actual을 바로 잡습니다.
   `econ_calendar_revision_audit`만 넓은 ALFRED vintage range를 확인합니다. ICS는 daily 뒤,
   Discord는 confirmed first actual 뒤에 각각 갱신합니다.
 - **관심종목 실적 체인은 cron이 아니라 `workflow_run`으로 이어집니다.** SEC 일별 인덱스가
@@ -421,7 +423,8 @@ flowchart LR
   10-Q/K를 훑어 뜨는 즉시 잡습니다. 8-K는 속보를 보내고, 10-Q/K는 회사 전체·세그먼트를
   적재한 뒤 정밀 카드를 보냅니다. 꺼져 있을 때를 대비해 `fundamentals_earnings_watch`가 장전 마감 후
   (13:00 UTC = 22:00 KST)와 장후 마감 후(22:00 UTC = 07:00 KST) 두 번 안전망으로
-  돕니다. 둘 다 같은 진입점(`watch_earnings`)을 쓰므로 수집 경로가 갈리지 않습니다.
+  돕니다. 스케줄 실행은 시각 창을 보지 않고 전 관심종목을 한 번 훑습니다(GitHub schedule이 수 시간 늦게 도는 것이
+  실측이라 창 판정은 창 밖 실행으로 대상 0건 성공을 만듭니다). 둘 다 같은 진입점(`watch_earnings`)을 쓰므로 수집 경로가 갈리지 않습니다.
 - **중복 발송은 발송 *전* 선점으로 막습니다.** `notifications/engine.py`의 `publish()`가
   원장의 `reserve` 함수로 `(topic, subject, occurrence)`를 먼저 예약하고, 예약한 쪽만
   카드를 그려 보냅니다. 발송 뒤에 기록하면 두 러너가 모두 "미발송"을 읽고 둘 다 보냅니다.

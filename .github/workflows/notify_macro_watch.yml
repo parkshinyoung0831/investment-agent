@@ -26,7 +26,9 @@ jobs:
   run:
     # ETL은 53개 지표 중 3개만 실패해도 exit 1 한다 — 한 소스(ECOS 15종)의 키가
     # 만료되면 미국 지표는 멀쩡히 적재됐는데도 카드가 통째로 묻힌다. 취소만 거른다.
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion != 'cancelled' }}
+    if: >-
+      ${{ vars.MACRO_KILL != 'on'
+      && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion != 'cancelled') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:

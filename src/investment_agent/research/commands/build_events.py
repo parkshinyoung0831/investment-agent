@@ -20,6 +20,7 @@ from investment_agent.platform.logging import get_logger
 from investment_agent.platform.serialization import parse_datetime
 from investment_agent.research.storage.repository import ResearchStore
 from investment_agent.intelligence.evidence_cache import LocalEvidenceCache
+from investment_agent.intelligence.repository import IntelligenceRepository
 from investment_agent.research.features.event_intelligence import (
     NormalizedContent,
     extract_events,
@@ -46,6 +47,18 @@ def _normalized(rows: Sequence[dict[str, Any]]) -> tuple[list[NormalizedContent]
     return items, skipped
 
 
+def _distinct(items: list[NormalizedContent]) -> list[NormalizedContent]:
+    """두 원천(근거 캐시·수집 archive)에 같은 기사가 있으면 (종목, 내용)당 하나만 남긴다."""
+    seen: set[tuple[str | None, str]] = set()
+    unique: list[NormalizedContent] = []
+    for item in items:
+        key = (item.ticker, item.content_hash)
+        if key not in seen:
+            seen.add(key)
+            unique.append(item)
+    return unique
+
+
 def build_events(
     *,
     cache: LocalEvidenceCache,
@@ -54,15 +67,23 @@ def build_events(
     window_days: int = DEFAULT_WINDOW_DAYS,
     dry_run: bool = False,
     store: ResearchStore | None = None,
+    archive: IntelligenceRepository | None = None,
 ) -> dict[str, Any]:
-    """cutoff 이전 원문만 읽어 사건을 만들고 종목별 feature snapshot을 남긴다."""
+    """cutoff 이전 원문만 읽어 사건을 만들고 종목별 feature snapshot을 남긴다.
+
+    원문은 두 곳에서 온다: LLM 판단 때 채워지는 근거 캐시, 그리고 스케줄 수집이 쌓는 Intelligence archive.
+    archive가 없으면 예전처럼 근거 캐시만 읽는다 — 그러면 판단이 안 도는 날은 사건 feature가 갱신되지 않는다.
+    """
     as_of = parse_datetime(as_of_at)
     wanted = frozenset(str(value).upper().strip() for value in tickers if str(value).strip())
-    rows = cache.iter_contents(
-        since=(as_of - timedelta(days=window_days)).isoformat(),
-        until=as_of.isoformat(),
-    )
+    since = (as_of - timedelta(days=window_days)).isoformat()
+    rows = list(cache.iter_contents(since=since, until=as_of.isoformat()))
+    cache_rows = len(rows)
+    if archive is not None:
+        rows.extend(archive.event_contents(since=since, until=as_of.isoformat()))
     items, skipped = _normalized(rows)
+    before_dedup = len(items)
+    items = _distinct(items)
     events = tuple(
         event for event in extract_events(items, as_of_at=as_of.isoformat())
         # ticker가 없는 글로벌 뉴스는 FK가 NULL을 허용하므로 그대로 둔다.
@@ -81,6 +102,9 @@ def build_events(
         selected_store.save_event_features(snapshots)
     return {
         "rows_read": len(rows),
+        "rows_from_cache": cache_rows,
+        "rows_from_archive": len(rows) - cache_rows,
+        "rows_deduplicated": before_dedup - len(items),
         "rows_skipped": skipped,
         "events": len(events),
         "snapshots": len(snapshots),
@@ -102,8 +126,12 @@ def main(argv: list[str] | None = None) -> int:
     started = time.monotonic()
     started_at = datetime.now(timezone.utc).isoformat()
     as_of = args.as_of or started_at
+    # 수집 archive는 스케줄 수집이 한 번이라도 돌아 파일이 생겼을 때만 읽는다(없으면 근거 캐시만).
+    archive_repository = IntelligenceRepository(read_only=True)
+    archive = archive_repository if archive_repository.path.is_file() else None
     result = build_events(
         cache=LocalEvidenceCache(args.cache_path),
+        archive=archive,
         as_of_at=as_of,
         tickers=select_tracked_tickers(),
         window_days=args.window_days,

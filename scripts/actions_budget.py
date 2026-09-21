@@ -76,17 +76,43 @@ def _parse_workflows() -> dict[str, dict]:
     return out
 
 
-def _observed_minutes(limit: int) -> dict[str, float]:
+def _fetch_rows(limit: int) -> list[dict]:
     proc = subprocess.run(
         ["gh", "run", "list", "--limit", str(limit),
-         "--json", "name,startedAt,updatedAt"],
+         "--json", "name,event,createdAt,startedAt,updatedAt"],
         cwd=ROOT, capture_output=True, text=True, encoding="utf-8",
     )
     if proc.returncode != 0:
         print(f"경고: gh run list 실패 — 기본값으로만 추정한다\n{proc.stderr.strip()}", file=sys.stderr)
+        return []
+    return json.loads(proc.stdout or "[]")
+
+
+def scheduled_rate_per_month(rows: list[dict]) -> dict[str, float]:
+    """이력에서 본 워크플로별 **schedule 실행** 월 횟수.
+
+    설계 빈도는 cron 문법으로 센 값이라, GitHub이 고빈도 cron을 큐에서 버리면 실제와 크게 다르다(15분 cron이
+    한 달에 17번). 이력이 덮는 기간(가장 이른 실행~가장 늦은 실행)으로 나눠 월 값으로 환산한다.
+    """
+    stamps = [
+        datetime.fromisoformat(str(row["createdAt"]).replace("Z", "+00:00"))
+        for row in rows if row.get("createdAt")
+    ]
+    if len(stamps) < 2:
         return {}
+    span_days = (max(stamps) - min(stamps)).total_seconds() / 86400
+    if span_days < 1:
+        return {}
+    counts: dict[str, int] = {}
+    for row in rows:
+        if row.get("event") == "schedule":
+            counts[row["name"]] = counts.get(row["name"], 0) + 1
+    return {name: count / span_days * DAYS_PER_MONTH for name, count in counts.items()}
+
+
+def _observed_minutes(limit: int) -> dict[str, float]:
     samples: dict[str, list[float]] = {}
-    for row in json.loads(proc.stdout or "[]"):
+    for row in _fetch_rows(limit):
         started, updated = row.get("startedAt"), row.get("updatedAt")
         if not started or not updated:
             continue
@@ -109,6 +135,7 @@ def main(argv: list[str] | None = None) -> int:
 
     workflows = _parse_workflows()
     observed = _observed_minutes(args.limit)
+    actual_rate = scheduled_rate_per_month(_fetch_rows(args.limit))
 
     frequency: dict[str, float] = {}
     for name, spec in workflows.items():
@@ -135,6 +162,15 @@ def main(argv: list[str] | None = None) -> int:
             estimated += monthly
         print(f"{name:34s} {runs:9.1f} {minutes:8.2f} {monthly:9.1f}  {source}")
 
+    # 설계대로 돌지 않는 cron. 분 예산은 설계 빈도로 재므로 이 워크플로들은 예산과 별개로 "안 도는" 문제다.
+    dropped = [
+        (name, cron_only[name], actual_rate.get(name, 0.0)) for name in sorted(workflows)
+        if cron_only[name] >= 10 and actual_rate.get(name, 0.0) < cron_only[name] * 0.5
+    ]
+    if dropped:
+        print("\n설계 빈도의 절반도 안 도는 schedule (GitHub이 고빈도 cron을 버림):")
+        for name, designed, seen in dropped:
+            print(f"  {name:32s} 설계 {designed:7.1f}/월  실측 {seen:6.1f}/월")
     manual = [n for n in sorted(workflows) if frequency[n] == 0]
     print(f"\n{'SCHEDULED TOTAL':34s} {'':9s} {'':8s} {total:9.1f} min/month")
     print(f"{'allowance':34s} {'':9s} {'':8s} {args.allowance:9d} min/month")

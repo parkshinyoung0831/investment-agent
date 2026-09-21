@@ -36,6 +36,7 @@ _MODULES = frozenset({
     "investment_agent.operations.commands.notify",
     "investment_agent.research.commands.continuous_retrain",
     "investment_agent.operations.commands.watch_earnings",
+    "investment_agent.operations.commands.econ_calendar_watch_releases",
     "investment_agent.operations.commands.request_toss_approval",
     "investment_agent.operations.commands.execute_toss_live",
     "investment_agent.operations.commands.reconcile_toss",
@@ -198,6 +199,10 @@ class ProductionInvestmentAdapters(
             # 관심종목 실적 감시. 평시에는 1분 안에 끝나고, 정식 보고서 적재만 더 길다.
             "earnings_watch": _positive_float(
                 values, "HARNESS_EARNINGS_WATCH_TIMEOUT_SEC", 12 * 60, maximum=15 * 60,
+            ),
+            # 발표 시간대에만 돌고 due 지표가 없으면 즉시 끝난다.
+            "econ_release_watch": _positive_float(
+                values, "HARNESS_ECON_RELEASE_WATCH_TIMEOUT_SEC", 5 * 60, maximum=15 * 60,
             ),
             # 503종목 x 4단계라 느리다. 하루 한 번이므로 넉넉히 준다.
             "build_valuations": _positive_float(

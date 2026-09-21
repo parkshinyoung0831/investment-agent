@@ -9,10 +9,11 @@ import requests
 
 from investment_agent.platform.logging import get_logger
 from investment_agent.execution.contracts import ExecutionSafetyError
+from investment_agent.platform.endpoints import DISCORD_API_BASE
 
 log = get_logger(__name__)
 
-_API_BASE = "https://discord.com/api/v10"
+_API_BASE = DISCORD_API_BASE
 
 
 @dataclass(frozen=True)

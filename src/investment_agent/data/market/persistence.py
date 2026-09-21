@@ -303,11 +303,6 @@ def trading_dates(reference_ticker: str, *, start: date, end: date) -> list[date
     return [date.fromisoformat(str(row["trade_date"])) for row in _price_rows(reference_ticker, start=start, end=end)]
 
 
-def close_history_as_of(ticker: str, as_of_at: datetime, *, max_bars: int = 2100) -> list[dict]:
-    rows = _price_rows(ticker, start=date(1900, 1, 1), end=as_of_at.date(), known_at=as_of_at)
-    return [{"ticker": ticker.upper(), "trade_date": row["trade_date"], "close": row["close"]} for row in rows[-max_bars:]]
-
-
 def forward_closes_after(ticker: str, *, after_date: str, limit: int = 40) -> list[dict]:
     rows = _price_rows(ticker, start=date.fromisoformat(after_date), end=us_market_today())
     return [
@@ -387,7 +382,7 @@ __all__ = [
     "SCHEMA_MARKET", "SCHEMA_UNIVERSE", "T_ACTIONS_DAILY", "T_PRICES_DAILY", "configure",
     "universe_tracked", "universe_company_tickers", "universe_missing_prices", "price_targets",
     "missing_price_targets", "targets_for_tickers", "latest_price_date", "prices_since",
-    "upsert_prices", "merge_actions", "split_keys", "split_history", "price_history_as_of", "close_history_as_of",
+    "upsert_prices", "merge_actions", "split_keys", "split_history", "price_history_as_of",
     "closes_on_date", "trading_dates",
     "forward_closes_after", "price_path_from", "monthly_close_history",
 ]

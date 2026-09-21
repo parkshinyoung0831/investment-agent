@@ -66,11 +66,16 @@ class HarnessService:
         heartbeat_interval = min(5.0, self.poll_seconds)
 
         def _heartbeat_worker() -> None:
+            failing = False
             while not self.stop_event.wait(heartbeat_interval):
                 try:
                     self.scheduler.update_process_heartbeat(now=self.now())
-                except Exception:
-                    pass
+                    failing = False
+                except Exception as exc:  # noqa: BLE001 - 한 번의 저장 실패가 heartbeat를 영구히 멈추면 안 된다
+                    # 삼키면 heartbeat가 멈춘 이유가 남지 않는다. 연속 실패는 첫 회만 알려 로그를 채우지 않는다.
+                    if not failing:
+                        self.reporter.error("heartbeat_failed", error_type=type(exc).__name__)
+                    failing = True
 
         import threading
         heartbeat_thread = threading.Thread(

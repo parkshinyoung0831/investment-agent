@@ -308,6 +308,53 @@ class MacroChainTest(unittest.TestCase):
         self.assertGreater((int(hour), int(minute)), (0, 25))
 
 
+class ResearchStorePathTest(unittest.TestCase):
+    """계산·되찾기·보존이 파이썬이 실제로 읽는 변수로 같은 자리를 본다.
+
+    예전에는 파이썬이 읽지 않는 `RESEARCH_DB`가 경로를 들고 있어, 기본 경로가 바뀌면 되찾기·보존은 옛 자리를,
+    계산은 새 자리를 보고 전 구간을 조용히 다시 계산했다.
+    """
+
+    _WORKFLOWS_USING_STORE = ("tech_indicators", "strategy_monthly")
+
+    def test_workflows_declare_the_variable_python_reads(self):
+        for name in self._WORKFLOWS_USING_STORE:
+            with self.subTest(workflow=name):
+                text = _text(name)
+                self.assertNotIn("RESEARCH_DB", text)
+                self.assertRegex(text, r"INVESTMENT_AGENT_RESEARCH_ROOT:\s*\S+")
+
+    def test_declared_root_is_where_python_puts_the_store(self):
+        import os
+        from unittest import mock
+
+        from investment_agent.platform.storage_paths import repository_root, research_database_path
+
+        with mock.patch.dict(os.environ, {"INVESTMENT_AGENT_RESEARCH_ROOT": ""}):
+            default = research_database_path().relative_to(repository_root()).as_posix()
+        for name in self._WORKFLOWS_USING_STORE:
+            with self.subTest(workflow=name):
+                declared = re.search(r"INVESTMENT_AGENT_RESEARCH_ROOT:\s*(\S+)", _text(name)).group(1)
+                self.assertEqual(f"{declared}/research.duckdb", default)
+
+
+class MacroFollowsMarketTest(unittest.TestCase):
+    """macro의 BREADTH_200DMA는 market.prices_daily를 읽는다 — 순서를 cron 시각 차이에 맡기지 않는다."""
+
+    def test_macro_etl_runs_after_market_daily_not_by_clock_alone(self):
+        text = _text("macro_etl")
+        self.assertRegex(text, r'workflows:\s*\["market_daily"\]')
+        self.assertIn("schedule:", text, "market_daily가 안 돈 날의 안전망 cron은 남는다")
+
+    def test_macro_etl_is_not_gated_on_market_success(self):
+        """종목 하나로 market_daily가 실패해도 FRED·ECOS 지표 적재는 막지 않는다."""
+        code = "\n".join(
+            line for line in _text("macro_etl").splitlines() if not line.lstrip().startswith("#")
+        )
+        self.assertIn("conclusion != 'cancelled'", code)
+        self.assertNotIn("conclusion == 'success'", code)
+
+
 class EconCalendarChainTest(unittest.TestCase):
     def test_release_notify_is_a_safety_net_not_a_second_runner(self):
         """watcher가 같은 러너에서 이미 보내므로 여기에 workflow_run을 걸지 않는다.
@@ -545,6 +592,11 @@ class KillSwitchTest(unittest.TestCase):
         ("institutional_", "GURUS_KILL"),
         ("econ_calendar_", "ECON_CALENDAR_KILL"),
         ("notify_econ_calendar_", "ECON_CALENDAR_KILL"),
+        # 가격·매크로 사고(잘못된 값 적재)도 같은 절차로 끈다. tech_indicators는 가격에서 파생된다.
+        ("market_", "MARKET_KILL"),
+        ("tech_indicators", "MARKET_KILL"),
+        ("macro_", "MACRO_KILL"),
+        ("notify_macro_", "MACRO_KILL"),
     )
     # 게이트가 없는 것이 맞는 워크플로와 그 이유. 이유를 적지 못하면 여기 넣지 않는다.
     KILL_EXEMPT = {

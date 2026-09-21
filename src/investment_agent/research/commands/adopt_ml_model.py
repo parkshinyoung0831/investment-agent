@@ -12,6 +12,7 @@ import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
+from statistics import NormalDist
 from typing import Any, Mapping
 
 from investment_agent.forecasting import SIGNAL_HORIZON_DAYS
@@ -32,7 +33,18 @@ class AdoptionCheck:
     reasons: tuple[str, ...]
 
 
-def check_adoptable(payload: Mapping[str, Any]) -> AdoptionCheck:
+def required_t_stat(comparisons: int = 1) -> float:
+    """후보를 `comparisons`개 견줘 최고를 고르면 t 문턱도 그만큼 올린다(Bonferroni, 단측 2.0 문턱 기준).
+
+    후보 네 개를 같은 OOS 창에서 비교해 가장 좋은 것을 추천하면 우연히 좋은 하나가 t≥2를 넘는다.
+    """
+    if comparisons <= 1:
+        return MIN_IC_T_STAT
+    base_tail = 1.0 - NormalDist().cdf(MIN_IC_T_STAT)
+    return max(MIN_IC_T_STAT, NormalDist().inv_cdf(1.0 - base_tail / comparisons))
+
+
+def check_adoptable(payload: Mapping[str, Any], *, comparisons: int = 1) -> AdoptionCheck:
     reasons: list[str] = []
     try:
         model = load_model(payload)
@@ -48,8 +60,9 @@ def check_adoptable(payload: Mapping[str, Any]) -> AdoptionCheck:
     dates = int(alpha.get("date_count") or 0)
     if not math.isfinite(mean_ic) or mean_ic <= 0.0:
         reasons.append(f"OOS mean IC must be positive (got {mean_ic:.4f})")
-    if not math.isfinite(t_stat) or t_stat < MIN_IC_T_STAT:
-        reasons.append(f"OOS IC t-stat must be >= {MIN_IC_T_STAT} (got {t_stat:.2f})")
+    threshold = required_t_stat(comparisons)
+    if not math.isfinite(t_stat) or t_stat < threshold:
+        reasons.append(f"OOS IC t-stat must be >= {threshold:.2f} across {comparisons} compared candidate(s) (got {t_stat:.2f})")
     if dates < MIN_OOS_DATES:
         reasons.append(f"OOS must span >= {MIN_OOS_DATES} dates (got {dates})")
     spread = float(alpha.get("mean_quantile_spread") or 0.0)

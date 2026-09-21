@@ -432,6 +432,49 @@ class PitReader:
 
         self._memo(key, read)
 
+    def prepare_valuation_inputs(self, tickers: Sequence[str], as_of_at: datetime) -> None:
+        """밸류에이션에 필요한 재무·발행주식수·분할만 한 번에 읽어 단건 계약 캐시에 배치한다.
+
+        live 적재가 종목마다 재무 3·주식수 3·분할 2왕복을 하던 것(503종목 약 79초)을 배치로 바꾼다(약 21초).
+        seed 키와 값의 모양이 단건 조회와 같아 `fundamentals_pit`·`share_class_snapshots_pit`·`split_history`는
+        그대로다. 컨센서스·세그먼트는 밸류에이션이 읽지 않아 가져오지 않는다.
+        """
+        symbols = sorted({normalize_ticker(ticker) for ticker in tickers})
+        key = ("valuation_inputs", tuple(symbols), as_of_at.isoformat())
+
+        def read() -> bool:
+            with ThreadPoolExecutor(max_workers=2, thread_name_prefix="valuation-input") as executor:
+                fundamentals_future = executor.submit(
+                    _historical_input_read, fundamentals_expectations.securities_fundamentals_filed_before,
+                    symbols, as_of_at, limit=12,
+                )
+                shares_future = executor.submit(
+                    _historical_input_read, fundamentals_shares.share_class_snapshots_for_tickers_filed_before,
+                    symbols, as_of_at, limit=24,
+                )
+                fundamentals = fundamentals_future.result()
+                shares = shares_future.result()
+            fundamentals_by_ticker: dict[str, list[dict]] = {}
+            for row in fundamentals:
+                fundamentals_by_ticker.setdefault(normalize_ticker(row.get("ticker")), []).append(dict(row))
+            mirror = self._mirror(as_of_at)
+            splits = mirror.split_histories(symbols) if mirror is not None else {
+                ticker: market_db.split_history(ticker) for ticker in symbols
+            }
+            for ticker in symbols:
+                # 배치가 행을 준 종목만 seed한다. 배치는 상장 중인 종목만 읽지만 단건 조회는 상장 폐지 종목도 읽으므로,
+                # 배치에 없는 종목을 빈 값으로 seed하면 단건이 줬을 값을 조용히 지운다 — 비워 두어 단건이 처리하게 한다.
+                if fundamentals_by_ticker.get(ticker):
+                    self._memo_seed(("fundamentals_pit", ticker, as_of_at.isoformat(), 12),
+                                    fundamentals_by_ticker[ticker])
+                if shares.get(ticker):
+                    self._memo_seed(("share_class_snapshots_pit", ticker, as_of_at.isoformat(), 24),
+                                    list(shares[ticker]))
+                self._memo_seed(("split_history", ticker), list(splits.get(ticker, [])))
+            return True
+
+        self._memo(key, read)
+
     def segment_capability(self) -> dict[str, Any]:
         """코드에 구현된 도메인 저장소 기능을 반환한다.
 
@@ -628,8 +671,13 @@ class PitReader:
         ]
 
     def price_path(self, ticker: str, start_date: date, limit: int = 80) -> list[dict]:
-        """사후 평가용 경로. PIT 조회가 아니다."""
-        return market_db.price_path_from(ticker, start_date, limit=limit)
+        """사후 평가용 경로. PIT 조회가 아니다.
+
+        같은 실행에서 케이스마다 같은 기준 종목(SPY)을 같은 날짜부터 다시 읽던 것을 한 번만 읽는다(종목ID 조회와
+        가격 조회 2왕복). 캐시 수명이 짧아(600초) 실행이 끝나기 전에 낡은 경로를 붙잡지는 않는다.
+        """
+        key = ("price_path", str(ticker).upper(), start_date.isoformat(), int(limit))
+        return list(self._memo(key, lambda: market_db.price_path_from(ticker, start_date, limit=limit)))
 
 
 __all__ = ["PitReader", "PointInTimeReaderCache", "guru_candidate_signals"]

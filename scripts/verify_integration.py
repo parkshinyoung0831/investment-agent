@@ -121,7 +121,16 @@ def run() -> int:
     check("notify.gurus.pending_state", lambda: gurus_state.pending_state(ledger))
 
     from investment_agent.operations.monitoring import counters
-    check("ops.counters.collect", (counters, "collect"))
+
+    def collect_all_counters() -> list[str]:
+        # `collect`는 실패한 카운터를 조용히 뺀다 — 세 개가 모두 실패해도 "0건"으로 통과하지 않게 이름을 받아 올린다.
+        failed: list[str] = []
+        values = counters.collect(failed)
+        if failed:
+            raise RuntimeError(f"카운터 조회 실패: {', '.join(failed)}")
+        return values
+
+    check("ops.counters.collect", collect_all_counters)
 
     from investment_agent.trading.supabase_repository import SupabaseRepository
     repo = SupabaseRepository()

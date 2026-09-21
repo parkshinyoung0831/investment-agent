@@ -73,6 +73,11 @@ RL 연구 후보를 점검하고 새 성숙 비중첩 구간이 2개 미만이�
 대상 0건으로 즉시 끝나 SEC를 때리지 않습니다. 노트북이 꺼져 있을 때는 Actions의
 `fundamentals_earnings_watch`가 같은 진입점을 안전망으로 돌립니다.
 
+`econ_release_watch`는 경제지표 발표 직후의 첫 actual을 속보로 보냅니다. 평일 UTC 12~15시에만 1분마다
+`econ_calendar_watch_releases`를 부르고 그 밖에는 stage가 바로 끝납니다. GitHub schedule이 수 시간 늦게 도는 것이
+실측이라(한 달 17회) Actions의 `econ_calendar_watch`는 안전망이고, 이 job이 노트북이 켜져 있을 때의 1차 경로입니다.
+주문이 아니라 데이터 수집이라 모드·거래 kill switch와 무관합니다.
+
 ---
 
 ## 세션 시간대 및 멱등적 장애 복구

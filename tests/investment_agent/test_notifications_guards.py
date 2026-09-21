@@ -11,6 +11,8 @@ ALLOWED_ROOTS = {
     "__future__", "copy", "dataclasses", "datetime", "typing", "collections", "math",
     "json", "urllib", "statistics", "os", "asyncio", "shutil", "argparse", "re",
     "tempfile", "pathlib", "playwright", "jinja2", "zoneinfo", "time", "hashlib",
+    # 표준 라이브러리: 브라우저 호스트 스레드와 종료 정리(notifications/playwright.py).
+    "atexit", "threading",
 }
 INTERNAL = ("investment_agent.notifications", "investment_agent.reporting",
             "investment_agent.platform", "investment_agent.config",

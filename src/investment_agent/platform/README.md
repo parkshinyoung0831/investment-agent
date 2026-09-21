@@ -22,12 +22,15 @@ src/investment_agent/platform/
 ├── artifacts.py      # 큰 산출물을 DB 밖에 두고 주소와 지문만 남긴다
 ├── cache.py          # 선택적 Streamlit 데이터 캐시 경계
 ├── clock.py          # 시장 시계와 일봉 확정 시각 헬퍼
+├── endpoints.py      # 외부 provider 기준 주소(Toss·Discord·FRED·ECOS·SEC)의 유일한 선언
+├── env.py            # 빈 값을 미설정으로 읽는 숫자·문자열 환경변수 helper
 ├── external_usage.py # 외부 provider 호출량의 원자적 로컬 원장
 ├── logging.py        # stdout JSON 구조화 로거
 ├── retry.py          # 네트워크 재시도 정책과 데코레이터
 ├── secret_scope.py   # 판단·학습 프로세스에서 broker·승인 비밀을 지우는 범위 규칙
 ├── serialization.py  # 안정적 JSON 직렬화와 콘텐츠 해시
 ├── storage_paths.py  # 로컬 저장소의 canonical 경로와 저장소 루트
+├── trading_switch.py # TRADING_KILL_SWITCH·TOSS_LIVE_ENABLED를 읽는 규칙 하나(게이트·하네스·점검·대시보드 공용)
 └── __init__.py       # 패키지 마커
 ```
 
@@ -116,6 +119,6 @@ flowchart TD
 
 | 수정 목적 | 확인할 파일 및 함수 | 주의사항 |
 |---|---|---|
-| Supabase 클라이언트 초기화 변경 | `src/investment_agent/platform/db/postgres.py` (`service_client`, `anon_client`) | Service vs Anon 키 분리 유지 |
+| Supabase 클라이언트 초기화 변경 | `src/investment_agent/platform/db/postgres.py` (`service_client`) | service-role 키만 쓴다 |
 | JSON 로깅 포맷 필드 추가 | `src/investment_agent/platform/logging.py` (`JsonFormatter`) | stdout 한 줄 JSON 유지 |
 | SEC 요청 속도(Rate limit) 조정 | `src/investment_agent/data/universe/infrastructure/sources/sec.py` | 초당 10회 제한(SEC 공식 정책) 엄수 |

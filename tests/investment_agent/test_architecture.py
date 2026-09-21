@@ -26,6 +26,7 @@ PLATFORM_MODULES = {
     "cli",
     "clock",
     # 빈 값을 미설정으로 읽는 숫자·문자열 환경변수 helper. 여러 도메인이 같은 규칙을 쓴다.
+    "endpoints",
     "env",
     "external_usage",
     "logging",
@@ -34,6 +35,8 @@ PLATFORM_MODULES = {
     "secret_scope",
     "serialization",
     "storage_paths",
+    # 실주문 게이트·하네스·점검·대시보드가 같은 규칙으로 읽는 전역 거래 스위치.
+    "trading_switch",
 }
 PLATFORM_DB_MODULES = {"postgres", "duckdb", "sqlite"}
 

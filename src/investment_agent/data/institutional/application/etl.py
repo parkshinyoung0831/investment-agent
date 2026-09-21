@@ -17,6 +17,22 @@ from investment_agent.data.institutional.infrastructure.sources import openfigi
 log = get_logger(__name__)
 
 
+def iter_manager_filings(manager_cik: str, since, **options):
+    """이 사람의 공시를 본인 CIK와 후속 제출자 CIK에서 모아 **본인 CIK로 귀속**해 내보낸다.
+
+    후속 제출자의 공시는 `successors`에 적힌 기준분기 이후 것만 받는다(그 전에는 두 CIK가 함께 제출해 이중 계상된다).
+    """
+    from dataclasses import replace
+
+    from investment_agent.data.institutional.domain.managers import filing_sources
+
+    for source_cik, from_period in filing_sources(manager_cik):
+        for record in edgar.iter_filings(source_cik, since, **options):
+            if from_period is not None and record.period_end < date.fromisoformat(from_period):
+                continue
+            yield record if record.manager_cik == manager_cik else replace(record, manager_cik=manager_cik)
+
+
 class GuruEtlError(RuntimeError):
     """Gurus ETL 실행 실패의 공통 기반 예외."""
 
@@ -315,7 +331,7 @@ def _run(
         )
         filing_error_sink = _make_filing_error_sink(manager_cik, metrics)
         try:
-            for record in edgar.iter_filings(
+            for record in iter_manager_filings(
                 manager_cik,
                 since,
                 sec_client=sec_client,

@@ -49,7 +49,11 @@ def presentation_for(manager_cik: str) -> dict[str, object]:
 # 추적 대상 manager의 SEC 사실. key는 10자리 manager CIK.
 MANAGER_CATALOG: dict[str, dict[str, object]] = {
     "0001067983": {"name": "Warren Buffett", "fund_name": "Berkshire Hathaway", "is_active": True},
-    "0001336528": {"name": "Bill Ackman", "fund_name": "Pershing Square", "is_active": True},
+    # 2026-08-14에 13F-NT로 "보유는 상장 모회사(Pershing Square Inc.) 보고서에 포함된다"고 밝혔다(2026-06-30 기준부터).
+    # 사람의 identity는 옛 CIK로 두고(포럼 스레드·태그 키), 그 기간 이후의 후속 제출자 공시를 같은 사람으로 적재한다.
+    # 그 이전 분기는 두 CIK가 모두 13F-HR을 냈으므로 후속 CIK를 가져오지 않는다 — 같은 보유를 두 번 세게 된다.
+    "0001336528": {"name": "Bill Ackman", "fund_name": "Pershing Square", "is_active": True,
+                   "successors": {"0002026053": "2026-06-30"}},
     "0001647251": {"name": "Chris Hohn", "fund_name": "TCI Fund Management", "is_active": True},
     "0001167483": {"name": "Chase Coleman", "fund_name": "Tiger Global", "is_active": True},
     "0001536411": {"name": "Stanley Druckenmiller", "fund_name": "Duquesne Family Office", "is_active": True},
@@ -103,6 +107,18 @@ def guru_tags() -> tuple[dict[str, object], ...]:
             "display_order": int(presentation.get("display_order") or 0),
         })
     return tuple(sorted(rows, key=lambda row: (row["display_order"], row["cik"])))
+
+
+def filing_sources(manager_cik: str, catalog: dict[str, dict[str, object]] | None = None) -> tuple[tuple[str, str | None], ...]:
+    """이 사람의 공시를 가져올 제출자 CIK와, 그 CIK 공시를 받아들이는 시작 기준분기(없으면 전부).
+
+    첫 항목은 본인 CIK다. 제출자가 바뀐 사람(예: 모회사로 이관)은 후속 CIK가 뒤따르고, 후속 공시는 본인 CIK로
+    귀속돼 하류(포지션·스레드·evidence)는 한 사람으로 본다.
+    """
+    source = MANAGER_CATALOG if catalog is None else catalog
+    cik = str(manager_cik).zfill(10)
+    successors = source.get(cik, {}).get("successors") or {}
+    return ((cik, None), *((str(successor).zfill(10), str(since)) for successor, since in successors.items()))
 
 
 def all_managers(catalog: dict[str, dict[str, object]] | None = None) -> list[dict[str, object]]:

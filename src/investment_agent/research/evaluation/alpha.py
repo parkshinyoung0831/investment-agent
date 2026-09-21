@@ -14,7 +14,22 @@ from typing import Any, Hashable, Sequence
 
 import numpy as np
 
-IC_INFERENCE_METHOD = "newey_west_bartlett_iid_floor_v1"
+# v2: 지연 수를 관측 간격으로 센다(v1은 표본이 매일이라고 가정해 horizon-1개를 썼다).
+IC_INFERENCE_METHOD = "newey_west_bartlett_iid_floor_v2"
+
+TRADING_TO_CALENDAR_DAYS = 7 / 5
+
+
+def overlap_lags(horizon_days: int, sample_spacing_days: float | None) -> int:
+    """겹치는 label 때문에 자기상관이 남는 지연 수.
+
+    h 거래일 label은 약 h*7/5 달력일에 걸친다. 표본이 `spacing`일 간격이면 그 안에 든 인접 관측만 겹친다
+    (20거래일 label·주 1회 표본이면 4개). 간격을 모르면 매일 관측이라고 보아 h-1을 쓴다 — 가장 보수적이다.
+    """
+    if sample_spacing_days is None or sample_spacing_days <= 0:
+        return horizon_days - 1
+    return max(0, math.ceil(horizon_days * TRADING_TO_CALENDAR_DAYS / sample_spacing_days) - 1)
+
 
 @dataclass(frozen=True)
 class CrossSectionalAlphaScore:
@@ -31,6 +46,7 @@ class CrossSectionalAlphaScore:
     inference_method: str
     horizon_days: int
     hac_lags: int
+    sample_spacing_days: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -71,6 +87,7 @@ def cross_sectional_alpha_metrics(
     quantiles: int = 5,
     min_names_per_date: int = 5,
     horizon_days: int = 1,
+    sample_spacing_days: float | None = None,
 ) -> CrossSectionalAlphaScore:
     """날짜별 IC와 분위 spread를 모아 한 모델의 순위 능력을 요약한다."""
     if not len(dates) == len(actual) == len(predicted) or not dates:
@@ -115,7 +132,7 @@ def cross_sectional_alpha_metrics(
     # Bartlett HAC(h-1), 유한표본 n/(n-1) 보정. 음의 자기상관으로 채택 근거가
     # 더 강해지지 않도록 IID 평균분산을 하한으로 둔다. 이는 확률 calibration은 아니다.
     count = len(values)
-    lags = min(horizon_days - 1, count - 1)
+    lags = min(overlap_lags(horizon_days, sample_spacing_days), count - 1)
     residual = values - mean_ic
     variance_sum = float(residual @ residual)
     for lag in range(1, lags + 1):
@@ -136,7 +153,8 @@ def cross_sectional_alpha_metrics(
         inference_method=IC_INFERENCE_METHOD,
         horizon_days=horizon_days,
         hac_lags=lags,
+        sample_spacing_days=sample_spacing_days,
     )
 
 
-__all__ = ["IC_INFERENCE_METHOD", "CrossSectionalAlphaScore", "cross_sectional_alpha_metrics", "spearman_ic"]
+__all__ = ["IC_INFERENCE_METHOD", "overlap_lags", "CrossSectionalAlphaScore", "cross_sectional_alpha_metrics", "spearman_ic"]

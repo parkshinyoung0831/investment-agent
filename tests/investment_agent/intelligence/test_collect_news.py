@@ -40,6 +40,21 @@ class CollectNewsTest(unittest.TestCase):
         counts = self.repo.mention_counts(since="2000-01-01", limit=5)
         self.assertEqual([{"ticker": "AAPL", "mention_count": 2}], counts)
 
+    def test_mention_of_a_dropped_duplicate_points_at_the_stored_article(self) -> None:
+        """URL은 다르지만 제목·내용이 같은 기사는 저장에서 버려진다 — 언급은 남은 기사를 가리켜야 고아가 되지 않는다(IN-3)."""
+        def fetch(ticker: str) -> list[dict]:
+            first = _payload("original")
+            twin = {**_payload("mirror"), "title": first["title"]}  # 다른 URL, 같은 제목
+            return [first, twin]
+
+        service.collect_news(repository=self.repo, fetch=fetch, tickers=["AAPL", "MSFT"], now=NOW)
+        with self.repo._connect() as connection:
+            stored = {row[0] for row in connection.execute("SELECT content_id FROM content_index").fetchall()}
+            sources = [row[0] for row in connection.execute("SELECT source_id FROM entity_mentions").fetchall()]
+        self.assertEqual(len(stored), 1)
+        self.assertTrue(sources)
+        self.assertTrue(set(sources) <= stored, f"고아 언급: {set(sources) - stored}")
+
     def test_mention_match_kind_is_queried(self) -> None:
         """조회해서 받은 것은 '화제'가 아니다 — 등급을 남긴다."""
         service.collect_news(

@@ -16,6 +16,7 @@ from investment_agent.operations.paths import REPOSITORY_ROOT
 from typing import Any, Mapping
 
 from investment_agent.operations.harness.contracts import HarnessMode
+from investment_agent.platform.trading_switch import KILL_SWITCH_FLAG, LIVE_FLAG, kill_switch_on, live_enabled
 
 _TIME_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 _WEAK_SECRETS = {
@@ -76,8 +77,8 @@ def _check_kill_switches(environ: Mapping[str, str], mode: HarnessMode) -> list[
     category = "KILL_SWITCHES"
 
     # 1. TRADING_KILL_SWITCH
-    raw_kill = environ.get("TRADING_KILL_SWITCH", "on").strip().lower()
-    is_kill_on = raw_kill not in {"off", "false", "0", "no", "disabled"}
+    raw_kill = environ.get(KILL_SWITCH_FLAG, "on").strip().lower()
+    is_kill_on = kill_switch_on(raw_kill)
 
     if is_kill_on:
         results.append(CheckResult(
@@ -106,8 +107,8 @@ def _check_kill_switches(environ: Mapping[str, str], mode: HarnessMode) -> list[
             ))
 
     # 2. TOSS_LIVE_ENABLED
-    raw_live = environ.get("TOSS_LIVE_ENABLED", "false").strip().lower()
-    is_live = raw_live in {"true", "1", "yes", "enabled", "on"}
+    raw_live = environ.get(LIVE_FLAG, "false").strip().lower()
+    is_live = live_enabled(raw_live)
 
     if not is_live:
         results.append(CheckResult(

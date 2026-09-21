@@ -23,6 +23,20 @@ DDL_DIR = Path("db/sqlite/runtime/v1")
 _PROJECT_ROOT = repository_root()
 
 
+# 이 프로세스가 이미 스키마를 적용한 (파일, 선언 지문). 연결마다 선언 전체를 다시 실행하고 쓰기 잠금을 두 번 잡던 것을
+# 파일당 한 번으로 줄인다. 파일이 지워졌다 다시 만들어지거나(inode 변경) 선언 파일이 바뀌면 지문이 달라져 다시 적용한다.
+_PREPARED: set[tuple] = set()
+
+
+def _schema_key(database_path: Path) -> tuple:
+    stat = database_path.stat()
+    declarations = tuple(
+        (path.name, path.stat().st_mtime_ns, path.stat().st_size)
+        for path in sorted((_PROJECT_ROOT / DDL_DIR).glob("*.sql"))
+    )
+    return (str(database_path.resolve()), stat.st_dev, stat.st_ino, declarations)
+
+
 class RuntimeMigrationRequired(RuntimeError):
     """기존 주문을 새 원장으로 검증해 옮겨야 한다."""
 
@@ -121,7 +135,10 @@ def runtime_connection(
         if not read_only:
             connection.execute("PRAGMA journal_mode = WAL")
             connection.execute("PRAGMA synchronous = FULL")
-            _apply_schema(connection)
+            key = _schema_key(database_path)
+            if key not in _PREPARED:
+                _apply_schema(connection)  # 이관이 거절되면 예외가 나므로 지문을 남기지 않는다
+                _PREPARED.add(key)
             connection.execute("BEGIN IMMEDIATE")
         yield connection
         if not read_only:

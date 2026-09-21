@@ -30,11 +30,10 @@ from typing import Protocol, Sequence
 from investment_agent.config import Config
 from investment_agent.execution.contracts import ExecutionSafetyError
 from investment_agent.platform.clock import ensure_aware, utc_now
+from investment_agent.platform.trading_switch import KILL_SWITCH_FLAG, LIVE_FLAG, kill_switch_on, live_enabled
 from investment_agent.platform.serialization import parse_datetime
 
-# 실거래 스위치. 이름을 상수로 둬서 오타가 조용히 "꺼짐"이 되지 않게 한다.
-LIVE_FLAG = "TOSS_LIVE_ENABLED"
-KILL_SWITCH_FLAG = "TRADING_KILL_SWITCH"
+# 실거래 스위치 이름과 해석은 platform/trading_switch.py 하나다 — 화면·하네스·점검이 같은 규칙으로 읽는다.
 ACCOUNT_SETTING = "TOSS_ACCOUNT_SEQ"
 
 # 위험 상태가 이보다 오래되면 주문하지 않는다.
@@ -111,8 +110,8 @@ class LiveTradingControls:
             raise ExecutionSafetyError(f"{ACCOUNT_SETTING} must be an integer") from exc
         return cls(
             # 두 값 모두 명시돼야 열린다. 기본 상태는 이중 fail-closed다.
-            live_enabled=(config.get(LIVE_FLAG) or "false").strip().lower() == "true",
-            kill_switch_on=(config.get(KILL_SWITCH_FLAG) or "on").strip().lower() != "off",
+            live_enabled=live_enabled(config.get(LIVE_FLAG)),
+            kill_switch_on=kill_switch_on(config.get(KILL_SWITCH_FLAG)),
             account_seq=account_seq,
             max_order_notional_usd=_positive_float(config, "TOSS_MAX_ORDER_NOTIONAL_USD", 5_000.0),
             max_daily_notional_usd=_positive_float(config, "TOSS_MAX_DAILY_NOTIONAL_USD", 20_000.0),

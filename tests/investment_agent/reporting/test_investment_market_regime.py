@@ -34,7 +34,7 @@ class InvestmentMarketRegimeTest(unittest.TestCase):
         self.assertEqual("RISK_ON", result["risk_state"])
         self.assertEqual("up", result["trend"])
         self.assertEqual("normal", result["volatility_state"])
-        self.assertEqual("native-regime-v1", result["metadata"]["calculation"])
+        self.assertEqual("native-regime-v2", result["metadata"]["calculation"])
         self.assertEqual(result, live_regime_from_prices(prices))
 
 

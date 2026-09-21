@@ -7,7 +7,7 @@ from datetime import date
 from investment_agent.data.universe.watchlists import db as alerts_db
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.db.postgres import (
-    chunk_filter_values,
+    chunk_values,
     sb,
     select_all_paged,
     select_paged_in_chunks,
@@ -325,7 +325,7 @@ def reconcile_wide_history(cik_ceiling: dict[str, str], floor: date) -> int:
             or []
         )
         removed += len(stale)
-    for chunk in chunk_filter_values(ciks, _UPSERT_BATCH):
+    for chunk in chunk_values(ciks, _UPSERT_BATCH):
         expired = (
             sb.schema(SCHEMA_FUNDAMENTALS)
             .table(T_FINANCIAL_VERSIONS)

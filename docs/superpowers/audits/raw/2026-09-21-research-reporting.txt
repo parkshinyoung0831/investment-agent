@@ -1,0 +1,441 @@
+# research · reporting 값 계산 감사 (RR2) — 2026-09-21
+
+대상: research/{features,valuation,evaluation,training,rl,datasets,models,backtest,system_validation},
+reporting/{services,notifications 도메인 계산}, portfolio_weights.py, forecasting.py
+사전 확인: 2026-09-20-code-quality-overhaul.md 1절·2.8·2.10·6·10·11절.
+회귀 확인(재검증 없이 코드만 대조): RS-1(attach_tickers 존재)·RS-3·4·5·6·7·8·9(company_shares_outstanding 우선)·
+RS-10/RP-04(are_consecutive_quarters)·RS-12·RS-13·RS-16·RS-17·RP-03·RP-05~10·DB-01~05는 코드에 반영돼 있고
+아래에서 다시 세지 않는다. RS-2·RS-11·RS-15는 의도적 보류로 남아 있는 것을 확인했다(재발견 아님).
+
+### [RR2-01] 적자·현금소진 기업은 value factor category가 통째로 빠져 종합점수가 오히려 올라간다  [확정] [높음] [정확성]
+- 파일: src/investment_agent/research/factors/core.py:41-58,184-196 / src/investment_agent/research/valuation/engine.py:229-251
+- 증상: 적자(PER 없음)·음의 FCF 기업은 value category의 3개 factor 중 2개가 결측이 되고,
+  `len(parts)/len(members) = 1/3 < _MIN_CATEGORY_COVERAGE(0.5)`라서 value category 점수가 아예 만들어지지 않는다.
+  composite은 "있는 category의 가중평균"이므로 value가 빠지면 **나쁜 점수를 안 받는 것이 아니라 평균에서 제외**되어
+  종합점수가 올라간다.
+- 근거:
+    engine.py: `if inputs.free_cash_flow_ttm.value <= 0: reasons.setdefault("fcf_yield", "…_nonpositive")`  (fcf_yield=None)
+               `result["valuation_earnings_yield"] = 1.0 / pe if pe is not None and pe > 0 else None` (layer.py:262)
+    core.py:   `if parts and len(parts) / len(members) >= _MIN_CATEGORY_COVERAGE: category_scores[ticker][category] = …`
+               `composite = math.fsum(weight * value for …) / weight_sum`
+- 재현(구체 숫자): 동일가중 6 category. 흑자 저평가주 A가 quality/balance/growth/revision/momentum 각 0.5,
+  value 0.9 → composite 0.567. 적자주 B가 같은 5개 0.5, value는 ps_ttm만 남아 category 탈락 → composite 0.500.
+  반대로 B의 value를 실제 랭크로 넣으면(earnings_yield·fcf_yield 최하위 → 약 0.1) composite 0.433이 된다.
+  즉 적자 때문에 **0.433 대신 0.500**을 받는다. 후보 상위 N 컷에서 순위가 뒤집힌다.
+- 원인: "결측은 그 factor에서 빠질 뿐 0점을 받지 않는다"(모듈 docstring)는 규칙이 *공시가 늦은* 결측을 위한 것인데,
+  적자·자본잠식·음의 FCF는 결측이 아니라 **나쁜 관측**이다. 원장이 그 둘을 같은 None으로 접는다
+  (engine.py가 `*_nonpositive` 사유를 남기지만 feature 계층은 사유를 보지 않는다).
+- 해결: (a) 비율 대신 부호가 살아 있는 형태를 feature로 쓴다 — earnings_yield = earnings_ttm/market_cap,
+  fcf_yield = fcf_ttm/market_cap (둘 다 음수 허용, market_cap>0만 요구). 이러면 적자는 최하위 랭크를 받고
+  결측(미공시)과 구별된다. (b) 그때까지의 완화책은 `missing_reasons`에 `*_nonpositive`가 있으면
+  value 랭크를 관측된 최하위로 두는 것.
+- 위험: 후보 선정 순위가 바뀐다. FEATURE_VERSION 승격 대상(원장에 음수 yield가 새로 생김).
+
+### [RR2-02] 2개짜리 category는 factor 하나만 있어도 점수를 받는다 — 주석이 막겠다고 한 것이 안 막힌다  [확정] [낮음] [정확성]
+- 파일: src/investment_agent/research/factors/core.py:57-58,189
+- 증상: 주석은 "한 category에서 이 비율 이상의 factor가 있어야 점수를 준다. 하나만으로 category를 대표하게
+  두지 않는다"인데, `_MIN_CATEGORY_COVERAGE = 0.5`이고 검사가 `>=`라서 members가 2개인 category
+  (balance_sheet·growth·revision·momentum — 6개 중 4개)는 1/2 = 0.5로 **통과**한다.
+- 근거: `if parts and len(parts) / len(members) >= _MIN_CATEGORY_COVERAGE:`
+- 재현: growth = (growth_revenue_ttm_yoy, fundamental_net_income_growth). 매출 성장만 있고 순이익 성장이
+  결측인 종목은 growth category 점수 = 매출 성장 랭크 하나. revision은 관측 시작 전 구간에서 대부분
+  한 축만 있어 이 경로가 상시 발동한다.
+- 원인: 비율 문턱과 `>=`의 조합이 2-member category에서 의도와 반대로 작동.
+- 해결: 문턱을 `> 0.5`로 하거나 최소 factor 수(2)를 따로 두고, 2-member category에 대한 의도를 주석과 일치시킨다.
+- 위험: 낮음. 통과하던 category가 탈락하면 composite 구성이 바뀐다(테스트 필요).
+
+### [RR2-03] TTM 매출성장(YoY)만 분기 연속성 검사를 안 받는다 — RP-04/RS-10 수정의 사각  [확정] [중간] [정확성]
+- 파일: src/investment_agent/research/evidence/statistics.py:154,185-188
+- 증상: 현재 TTM 창(`ttm = quarters[:4]`)에는 `are_consecutive_quarters` 검사가 붙었지만(RS-10 수정),
+  전년 창(`prior = quarters[4:8]`)에는 **어떤 연속성·정렬 검사도 없다.** 중간 분기가 빠지면
+  `growth_revenue_ttm_yoy`가 5~6분기 전 자료와의 비교가 되고, 두 창이 인접하지 않아도 통과한다.
+- 근거:
+    if len(ttm) < _TTM_QUARTERS or not are_consecutive_quarters(row["period_end"] for row in ttm): return output
+    ...
+    prior = quarters[_TTM_QUARTERS:_TTM_QUARTERS * 2]
+    prior_revenue = _sum(prior, "revenue") if len(prior) == _TTM_QUARTERS else None
+    if revenue is not None and prior_revenue is not None and prior_revenue > 0:
+        values["revenue_growth_ttm_yoy"] = revenue / prior_revenue - 1
+- 재현: 분기말이 2026-06-30·03-31·2025-12-31·09-30(현재 TTM, 연속 통과) / 2025-06-30·03-31·
+  2024-09-30·06-30(전년 창 — 2024-12-31 누락)이면 prior 합은 실제로 **15개월**분이 아니라
+  4분기이긴 하나 기간이 2024-06~2025-06로 12개월을 넘겨 어긋난다. 매출이 연 10% 성장하는 기업이
+  0%~-3% 성장으로 계산될 수 있다.
+- 원인: RS-10/RP-04 수정이 "최근 4분기"에만 공통 규칙을 적용하고 비교 창을 빠뜨렸다.
+- 해결: `prior`에도 `are_consecutive_quarters`를 걸고, `ttm[-1].period_end`와 `prior[0].period_end`가
+  인접 분기인지(`are_consecutive_quarters([ttm[-1], prior[0]])`) 함께 검사해 아니면 지표를 만들지 않는다.
+- 위험: 낮음(값이 결측으로 바뀌는 방향). `growth_revenue_ttm_yoy`는 growth category의 factor이고
+  RR2-02 때문에 나머지 하나만으로 category가 유지된다.
+
+### [RR2-04] `_total_debt`가 누락된 차입 구성요소를 0으로 접어 레버리지를 좋게 만든다 (RP-03과 같은 부류, 다른 파일)  [의심] [중간] [정확성]
+- 파일: src/investment_agent/research/evidence/statistics.py:127-134,183
+- 증상: `total_debt_including_current`가 없을 때 short/current-portion/long-term 중 **하나라도 있으면**
+  그것만 더해 총차입으로 쓴다. 장기차입만 태깅된 기업은 단기차입이 NULL이라는 이유로 총차입이
+  과소, `debt_to_equity`가 과소, balance_sheet factor 랭크가 과대가 된다.
+- 근거:
+    parts = [_finite(row.get(name)) for name in ("short_term_debt", "current_portion_of_long_term_debt", "long_term_debt")]
+    known = [part for part in parts if part is not None]
+    return math.fsum(known) if known else None
+- 재현: long_term_debt=8,000M, short_term_debt=NULL(실제 2,000M), common_equity=5,000M이면
+  D/E가 2.0 대신 1.6. `balance_sheet_floor=0.2` 게이트와 랭크가 함께 움직인다.
+- 원인: NULL(미태깅)과 0(차입 없음)을 구별할 수 없는데 0으로 읽는다. RP-03에서 카드 경로는 같은
+  이유로 수정됐지만 이 함수는 그대로다.
+- 해결: 구성요소 합산은 **세 항목이 모두 관측될 때만** 허용하고, 부분 관측은
+  `debt_components_incomplete` 사유로 결측을 남긴다(현재도 `positive=True` 결측 경로가 있어 계약 변화 없음).
+- 위험: 총차입이 결측이 되는 종목이 늘어 balance_sheet category가 RR2-02 경로로 1개 factor만 남는다 —
+  RR2-02와 함께 고쳐야 한다. 실제 태깅 분포를 운영 DB로 확인하지 못해 [의심]으로 둔다.
+
+### [RR2-05] 컨센서스 변화율(`revision_eps_change`)에 비교 기간이 없다 — 하루 전과 반년 전이 같은 열에 섞인다  [확정] [낮음] [정확성]
+- 파일: src/investment_agent/research/evidence/statistics.py:221-235
+- 증상: `comparable`은 "같은 target 회계기간을 가진 **그다음 최신 스냅샷**"일 뿐 기간 제약이 없다.
+  스냅샷 간격은 종목·시기마다 다르므로 같은 열에 1일 변화와 180일 변화가 섞인다. 같은 category의
+  `revision_breadth_30d`는 30일 창이라 정의가 다른 둘을 평균한다(`FACTOR_CATEGORIES["revision"]`).
+- 근거: `comparable = next((row for row in rows[1:] if row.get("target_fiscal_year") == … and row.get("target_fiscal_period") == …), None)`
+- 재현: 관심종목 A가 매주 스냅샷을 받으면 7일 변화, 수집이 끊긴 B는 90일 변화. 횡단면 백분위가
+  "얼마나 바뀌었나"가 아니라 "얼마나 오래 안 봤나"의 순위가 된다.
+- 원인: 비교 대상을 개수(next)로 고르고 시간으로 고르지 않았다.
+- 해결: `snapshot_date`가 기준일 − 30일 이내인 가장 이른 행을 비교 대상으로 삼고(없으면 결측),
+  열 이름에 창을 넣는다(`revision_eps_change_30d`).
+- 위험: revision factor가 결측되는 종목이 늘어난다(이미 과거 재현에서는 대부분 결측).
+
+### [RR2-06] 사후평가·RL 보상의 총수익률이 분할을 두 번 반영한다 — 4:1 분할 구간에서 +300% 가짜 수익  [확정] [높음] [정확성]
+- 파일: src/investment_agent/research/evaluation/returns.py:10-27
+  (소비자: research/evaluation/evaluator.py:46-47, research/commands/build_decision_experiences.py:55-56)
+- 증상: `total_return`이 구간 안의 `split_ratio`를 곱해 보유 주식수를 늘린 뒤 종료 종가에 곱한다.
+  그런데 `market.prices_daily.close`는 **이미 현재 분할 기준으로 정규화된 값**이다(스키마 주석:
+  "종가(USD, 분할 조정, 배당 미조정)", 수집기 `yahoo.py:30 auto_adjust=False` — yfinance는 분할만 back-adjust).
+  따라서 분할이 든 구간의 수익률이 분할 비율만큼 부풀려진다.
+- 근거:
+    returns.py:
+      shares = 1.0
+      for row in rows_asc[1:end_index + 1]:
+          ratio = finite_float(row.get("split_ratio"))
+          if ratio is not None: shares *= ratio
+          dividends += shares * (finite_float(row.get("div_amount")) or 0.0)
+      return (end * shares + dividends) / start - 1
+    같은 저장소의 다른 두 곳은 반대를 명시한다 —
+      research/features/layer.py:123 "저장된 종가는 … 이미 현재 분할 기준으로 정규화돼 있다.
+        여기서 분할을 한 번 더 되돌리면 가짜 급등락이 생긴다"
+      research/valuation/inputs.py:190 "저장 종가는 수집 시점의 분할 기준으로 과거까지 정규화돼 있다"
+- 재현(구체 숫자): 4:1 분할이 든 20거래일 구간. 분할 전 종가 400 → 저장된 close는 분할 기준으로
+  100으로 정규화돼 있고 분할 후에도 100 근처로 이어진다. start=100, end=100, split_ratio=4
+  → `(100*4 + 0)/100 - 1 = +300%`. 실제 수익률은 0%. SPY 대비 excess_return이 +300%p가 되고
+  `EvaluationResult.direction_correct`·`brier_score`, `build_decision_experiences`의
+  `net_reward = exposure*asset - cost`가 그 값으로 원장에 들어간다.
+- 원인: 함수가 **미조정 종가**를 가정하고 쓰였는데 실제 원천은 분할 조정 종가다. `merge_corporate_actions`
+  (data/market/domain/actions.py)가 분할 행을 그대로 붙여 주기 때문에 값이 항상 존재한다.
+- 해결: `shares` 곱을 제거하고 `(end + dividends)/start - 1`로 둔다. 배당의 주당 금액 기준도
+  같은 질문을 받아야 한다(분할 전 배당액이 분할 조정돼 저장되는지 market owner가 확정) —
+  확정 전까지는 배당도 `shares` 곱 없이 더한다. 회귀 테스트는 분할이 든 구간에서 수익률이
+  분할 비율과 무관함을 검사한다(현재 테스트에 그런 케이스가 없다).
+- 위험: 이미 저장된 `decision_experiences`·평가 원장의 분할 구간 행이 오염됐다. RL·판단 성과 주장에
+  섞여 있으므로 재계산 대상이다. 분할은 드물어(S&P 500에서 연 수 건) 전체 평균은 크게 안 흔들리지만,
+  그 몇 건이 정확히 꼬리값이라 보상 학습·성과 요약에서 가장 큰 가중을 받는다.
+
+### [RR2-06a] RR2-06을 가리는 테스트 픽스처 — 미조정 종가를 만들어 결함이 정답으로 보인다  [확정] [높음] [구조]
+- 파일: tests/investment_agent/trading/test_decision_learning.py:49-57,
+        tests/investment_agent/research/evaluation/test_evaluator.py:29-36
+- 증상: 두 테스트가 분할 날짜에 종가가 **100 → 50으로 떨어지는** 가격 경로를 만든다. 이것은
+  분할 미조정 원본 시계열의 모양이고, 실제 `market.prices_daily`는 분할 기준으로 정규화돼
+  떨어지지 않는다. 픽스처가 미조정을 가정하므로 `shares *= ratio`가 정확히 상쇄돼
+  `asset_return == 0`이 되고 테스트 이름("분할이 가짜 손실을 만들지 않는다")이 통과한다.
+- 근거:
+    test_decision_learning.py: `close=100 if i==0 else 50, split_ratio=2 if i==1 else None`
+      → `self.assertAlmostEqual(row["asset_return"], 0)`
+    test_evaluator.py: `rows = [{"close":100.0},{"close":50.0,"split_ratio":2.0,"div_amount":1.0},{"close":55.0,…}]`
+      → `assertAlmostEqual(total_return(rows, 2), 0.13)`
+  같은 저장소의 `FakeRepository`(test_evaluator.py:13-26)는 `split_ratio`를 아예 넣지 않아
+  분할 경로가 `evaluate_case` 통합 테스트에서는 한 번도 실행되지 않는다.
+- 재현: 픽스처를 실제 저장 형태(분할 전후 모두 50, split_ratio=2)로 바꾸면
+  `total_return` = `(55*2)/50 - 1 = +120%`가 나온다 — 정답 0%가 아니다.
+- 원인: 리더(저장소 계약)보다 픽스처가 "풍부한" 것이 아니라 **다른 계약**을 담고 있다.
+  분할 조정 여부는 스키마 주석에만 있고 테스트가 그것을 참조하지 않는다.
+- 해결: 픽스처를 저장 계약(분할 조정 연속 종가)으로 바꾸고, RR2-06 수정과 함께
+  "분할 비율이 수익률에 영향을 주지 않는다"를 단정한다.
+- 위험: 수정하면 두 테스트의 기대값이 바뀐다(0.13 → 0.13은 유지 불가). 값이 아니라 계약을 물어야 한다.
+
+### [RR2-07] 백테스트 시뮬레이터가 분할을 수량에 적용하는데, 저장소의 유일한 가격 원천은 이미 분할 조정돼 있다  [확정] [중간] [정확성]
+- 파일: src/investment_agent/research/backtest/simulator.py:124-127 / research/backtest/cli.py:32-58
+- 증상: `apply_actions`가 `split` 행마다 `position.quantity *= action.value`를 적용한다. 백테스트 입력
+  manifest(`MarketBar`)를 이 저장소의 유일한 가격 원천(`market.prices_daily`, 분할 조정 종가)으로
+  만들면 NAV가 분할 비율만큼 부풀려진다. 입력이 "완전한 오프라인 JSON"이라 어떤 가드도 없다.
+- 근거:
+    if action.kind == "split":
+        if before > _EPSILON:
+            position.quantity *= action.value
+  그리고 `research/backtest/*`에서 `BacktestRequest`를 실제 데이터로 조립하는 생산자는 저장소에 없다
+  (`BacktestRequest` 참조: cli.py·contracts.py·engine.py·validation.py와 테스트 3개뿐).
+- 재현: 4:1 분할일에 100주 보유·분할 조정 종가 100 → split 적용 후 400주 × 100 = 40,000.
+  실제 평가액은 10,000. `mark_close`의 회계 항등식(`total_pnl == nav - initial_cash`)은
+  양쪽이 같이 틀리므로 **통과한다** — 오류를 잡지 못한다.
+- 원인: 엔진은 미조정 가격 + 수량 조정 규약을, 저장소는 조정 가격 규약을 쓴다. 두 규약이 어디에도 선언돼 있지 않다.
+- 해결: `MarketBar`에 `price_basis`("split_adjusted"|"raw")를 넣어 manifest가 규약을 밝히게 하고,
+  `split_adjusted`면 `apply_actions`가 split을 수량에 적용하지 않도록 한다(현재 동작은 raw 전용).
+  최소한 `BacktestConfig`에 그 가정을 문서화하고 엔진이 거절하게 한다.
+- 위험: 현재 생산자가 없어 사용자에게 가는 숫자는 없다. 그러나 이 패키지를 연결하는 순간
+  RR2-06과 같은 오류가 backtest 성과 주장으로 들어간다.
+
+### [RR2-08] 순부채가 같은 카드 안에서 두 정의로 계산된다 — 한쪽은 단기투자자산을 빼고 한쪽은 안 뺀다  [확정] [중간] [정확성]
+- 파일: src/investment_agent/reporting/services/earnings/metrics.py:37-54 (헤드라인 `net_debt`)
+        src/investment_agent/reporting/notifications/earnings_report.py:469-486 (EV·`net_debt_to_ebitda`·Altman Z 입력)
+- 증상: 같은 실적 카드가 두 가지 순부채를 쓴다.
+  * services 쪽: `현금 = cash_and_cash_equivalents + short_term_investments`
+  * earnings_report 쪽: `현금 = cash_and_cash_equivalents` 하나
+  services 쪽 docstring이 그 이유를 명시한다 — "합산 태그 하나만 보던 시절에는 분기 행의 98%에서
+  현금이 0으로 취급돼 순부채가 계통적으로 과대평가됐다." 즉 **알려진 결함의 옛 정의가
+  EV·순부채/EBITDA·Altman Z 경로에 그대로 남아 있다.**
+- 근거:
+    metrics.py: `def _cash(row): cash = as_float(row.get("cash_and_cash_equivalents"));
+                 short_term = as_float(row.get("short_term_investments")); … return (cash or 0.0) + (short_term or 0.0)`
+    earnings_report.py: `def _net_debt(row): debt = total_debt(row); cash = f(row.get("cash_and_cash_equivalents")); …
+                 return debt - cash`
+- 재현: 단기투자자산 300억 달러를 보유한 대형주(현금 300억 + 단기투자 300억, 총차입 1,000억):
+  헤드라인 순부채 400억, EV 계산의 순부채 700억. EV가 300억 달러 과대이고
+  `net_debt_to_ebitda`가 1.75배 대신 3.06배로 나온다(게이지 등급이 바뀐다).
+- 원인: 같은 값의 owner가 둘이다. 파일 머리주석은 "EV 가산분 자체는 earnings_report가 소유한다"고
+  선언하지만 그 안의 순부채는 services의 정의를 쓰지 않는다.
+- 해결: `_net_debt`/`_cash`를 `reporting/services/financial_row.py`(또는 metrics)로 올려 한 곳에서 쓰고,
+  카드 두 블록이 같은 값을 말하는지 확인하는 동일성 테스트를 둔다.
+- 위험: 카드 숫자가 바뀐다(EV·순부채/EBITDA·Altman Z 아님 — Z는 현금을 쓰지 않는다). 이미 나간 카드의 값과 달라진다.
+
+### [RR2-09] `total_debt` 정의가 reporting과 research에서 다르다 — 운용리스 포함 여부  [확정] [중간] [정확성]
+- 파일: src/investment_agent/reporting/services/financial_row.py:18-34 vs
+        src/investment_agent/research/evidence/statistics.py:127-134
+- 증상: 두 함수가 같은 이름·같은 목적인데 구성요소가 다르다.
+  * reporting: short_term_debt + current_portion_of_long_term_debt + long_term_debt
+               + operating_lease_current_debt_equivalent + operating_lease_non_current_debt_equivalent
+  * research:  short_term_debt + current_portion_of_long_term_debt + long_term_debt (운용리스 없음)
+  따라서 카드의 순부채/부채비율과 research의 `quality_debt_to_equity`(balance_sheet factor)가
+  리스가 큰 업종(유통·항공·통신)에서 체계적으로 다르다.
+- 근거: 위 두 파일의 `parts` 튜플을 나란히 보면 마지막 두 항목이 research에는 없다.
+  카드 쪽 주석은 "운용리스"를 부채로 세는 이유를 적고 있고(`fundamentals.v_quality/v_value` 뷰와 정렬),
+  research 쪽은 그 언급이 없다.
+- 재현: 운용리스 부채 200억, 차입 100억, 자본 300억인 유통업체 → 카드 D/E 1.0, research D/E 0.33.
+  balance_sheet factor 랭크가 실제보다 높게 나오고 `balance_sheet_floor` 게이트를 통과한다.
+- 원인: 같은 재무 정의를 두 계층이 각자 구현했다(중복 진실).
+- 해결: `fundamentals` 도메인이 `total_debt`(및 운용리스 포함 여부 플래그)를 소유하고 두 소비자가 그것을
+  import한다. 어느 정의를 쓸지는 `v_quality`/`v_value` 뷰와 맞추는 쪽(운용리스 포함)이 이미 선언돼 있다.
+- 위험: research feature 값이 바뀌므로 FEATURE_VERSION 승격 대상이다(RS-1·9와 함께).
+  RR2-04(부분 합)와 같은 함수라 함께 고쳐야 한다.
+
+### [RR2-10] EBITDA가 음수면 `net_debt_to_ebitda`가 음수로 나와 "건전해 보인다"  [확정] [중간] [정확성]
+- 파일: src/investment_agent/reporting/notifications/earnings_report.py:704-706
+- 증상: `None if not ebitda or net_debt is None else net_debt / ebitda` — `not ebitda`는 0·None만
+  걸러내므로 **음의 EBITDA는 통과한다.** 순부채가 큰 적자 기업의 배수가 음수가 되어,
+  "낮을수록 좋다"는 게이지에서 가장 좋은 쪽으로 표시된다.
+- 근거: 위 한 줄. 같은 파일 `_ebitda_ttm`은 부호 제약이 없다(영업이익 + D&A).
+- 재현: 순부채 100억, TTM EBITDA −20억 → `-5.0x`. 게이지 경계가 "3배 이하 양호"라면 −5.0x는
+  양호 구간으로 들어간다. 실제 의미는 "EBITDA로 부채를 전혀 갚을 수 없다"다.
+- 원인: 분모의 부호를 검사하지 않았다. research의 같은 계열 비율은 `_ratio(..., positive=True)`로
+  음수 분모를 결측 처리한다(research/evidence/statistics.py:137-142) — 여기만 빠졌다.
+- 해결: `ebitda <= 0`이면 None으로 두고 카드는 "EBITDA 음수"를 사유로 표시한다(빈칸이 틀린 숫자보다 낫다 —
+  같은 파일 `eps_diluted` docstring의 규칙).
+- 위험: 적자 기업 카드에서 게이지 하나가 빈다. 값 자체가 사라지는 방향이라 안전하다.
+
+### [RR2-11] 역사 EV 시계열이 순부채 결측을 0으로 접어 EV/EBITDA 백분위를 싸게 만든다  [확정] [중간] [정확성]
+- 파일: src/investment_agent/reporting/services/earnings/valuation_history.py:90,95
+- 증상: `ev = mcap + (_f(snap.get("ev_ex_market_cap")) or 0.0)` — 순부채·소수주주지분을 계산할 수
+  없던 분기에는 EV를 **시가총액과 같게** 만들고 그 값으로 EV/EBITDA를 계산해 백분위 통계에 넣는다.
+  같은 카드의 현재값 경로(`earnings_report.load_valuation`)는 같은 결측에서 `enterprise_value`를
+  None으로 둔다 — 현재값은 빈칸인데 과거 분포는 채워져 있다.
+- 근거:
+    valuation_history.py: `ev = mcap + (_f(snap.get("ev_ex_market_cap")) or 0.0)`
+    earnings_report.py:   `latest["enterprise_value"] = (None if latest["market_cap"] is None
+                              or latest.get("ev_ex_market_cap") is None else …)`
+  그리고 `_ev_ex_market_cap`은 `_net_debt`가 None이면 None을 돌려준다 —
+  `cash_and_cash_equivalents`가 한 분기만 비어도 그 분기 스냅샷의 EV 가산분이 사라진다.
+- 재현: 순부채 500억·시총 1,000억·EBITDA 200억인 기업의 한 분기 현금 태그가 비면
+  그 분기 EV/EBITDA가 7.5배 대신 5.0배로 기록되고, 5년 백분위에서 "역사적으로 싼 구간"으로 밀려난다.
+- 원인: 같은 결측에 두 경로가 다른 규칙(0 대체 vs 결측)을 쓴다.
+- 해결: `ev_ex_market_cap`이 None인 스냅샷은 `ev_ebitda` 계열을 None으로 두고 그 관측을 통계에서 뺀다
+  (`_MIN_POINTS` 검사가 이미 표본 부족을 걸러 준다).
+- 위험: EV/EBITDA 백분위 관측 수가 줄어 일부 종목에서 창이 탈락한다. 값이 사라지는 방향이라 안전하다.
+
+### [RR2-12] 분할 조정 기준일 규약이 두 곳에서 다르다(`>=` vs `>`)  [의심] [낮음] [정확성]
+- 파일: src/investment_agent/reporting/services/earnings/valuation_history.py:62-65 vs
+        src/investment_agent/research/valuation/inputs.py:196-203
+- 증상: 과거 발행주식수를 현재 분할 기준으로 올릴 때
+  * reporting: `if split_date >= as_of: factor *= ratio` (분할일 당일 스냅샷도 조정)
+  * research:  `if action_date > observed_on: factor *= ratio` (당일 스냅샷은 조정하지 않음)
+  스냅샷 기준일이 분할일과 같은 경우 두 계산이 **분할 비율만큼** 갈린다.
+- 근거: 위 두 조건문. reporting 쪽 주석은 "yfinance shares 이력은 분할일 스냅샷도 분할 전 수량인
+  경우가 있다"고 근거를 대지만, research 쪽 입력(`share_class_snapshots.as_of_date`는 공시 표지 기준일)에
+  같은 성질이 있는지는 선언돼 있지 않다.
+- 재현: 4:1 분할일과 같은 날짜의 주식수 스냅샷 → reporting은 4배로, research는 그대로 쓴다.
+  시가총액·PER이 4배 차이 난다(한쪽만 맞다).
+- 원인: 두 원천(yfinance shares 이력 / SEC 표지 주식수)의 기준일 의미가 다를 수 있는데 그 차이가
+  코드에만 있고 계약으로 적혀 있지 않다.
+- 해결: 원천별 기준일 의미를 fundamentals·market owner가 선언하고 조정 함수를 하나로 합친다.
+  두 원천이 정말 다르면 함수 이름·docstring에 그 사실을 남긴다.
+- 위험: 실측(운영 DB에서 분할일과 as_of_date가 겹치는 행 수)을 못 해 [의심]으로 둔다.
+
+### [RR2-13] rate·spread 지표의 고저 계산이 소비자가 없어 전부 버려지고, 금리 4종은 어떤 경보도 낼 수 없다  [확정] [낮음] [정확성·구조]
+- 파일: src/investment_agent/reporting/services/macro/metrics.py:71-84,
+        src/investment_agent/reporting/services/macro/thresholds.py:54-79,87-89,150-151
+- 증상: `_KIND_MATRIX`가 spread·rate kind에 `hilo_bps`를 켜서 `drawdown_bps`·`rebound_bps`를 계산하는데,
+  `_KIND_THRESHOLDS`에는 spread·rate 항목이 없고 `_SERIES_THRESHOLDS`의 어느 series도
+  `drawdown_bps`/`rebound_bps` 밴드를 선언하지 않는다. `eval_row`가 그 두 키를 읽는 루프를 갖고 있지만
+  밴드가 없어 항상 건너뛴다(저장소 전체에서 다른 소비자도 없다).
+  더 나아가 `thresholds_for`가 빈 dict를 주면 `eval_row`가 **즉시 (None, None)**을 돌려주므로
+  `KR_TB3Y`·`KR_CD91`·`KR_CORP_AA3Y`·`BEI_10Y`(모두 rate kind, 개별 임계 없음)는
+  값이 어떻게 움직여도 경보 등급을 받지 못한다.
+- 근거:
+    metrics.py: `"spread": {..., "hilo_bps": True}`, `"rate": {..., "hilo_bps": True}` → out["drawdown_bps"] …
+    thresholds.py: `_KIND_THRESHOLDS`에 "spread"·"rate" 키 없음; `if not thresholds: return (None, None)`
+    grep(src 전체): `drawdown_bps`는 위 두 파일에만 나온다.
+- 재현: `HY_SPREAD`가 365일 최저에서 300bp 벌어져도 `rebound_bps=+300`이 계산되지만 밴드가 없어
+  무시되고, `value` 밴드(4.5/6.0/8.0)만으로 판정된다. `KR_CORP_AA3Y`는 밴드가 하나도 없어 항상 무등급이다.
+- 원인: 생산자(metrics)와 소비자(thresholds)의 키 집합이 짝이 맞는지 검사하는 것이 없다.
+  metrics.py 주석은 "metrics.py _KIND_MATRIX가 계산하는 지표와 짝이 맞아야 한다"고 적었지만 강제되지 않는다.
+- 해결: (a) spread·rate에 bp 밴드를 선언하거나 (b) `hilo_bps` 계산을 끄고 (c)
+  `_KIND_MATRIX`가 켠 지표 이름 집합 ⊆ `eval_row`가 읽는 키 집합임을 검사하는 가드를 둔다.
+  금리 4종을 일부러 무등급으로 둘 것인지는 정책 결정이다.
+- 위험: 낮음. 밴드를 새로 켜면 알림 건수가 늘어난다(알림 원장 baseline 필요).
+
+### [RR2-14] `daily_change` 경보의 판정값과 표시값이 다르다 — 절대 변화로 걸고 상대 변화율로 적는다  [확정] [낮음] [정확성]
+- 파일: src/investment_agent/reporting/services/macro/thresholds.py:200-208
+- 증상: 밴드 `_DAILY_CHANGE_RATE`는 `diff = curr - prev`(퍼센트포인트)로 비교하는데, 사유 문구는
+  `pct = diff / abs(prev) * 100`(상대 변화율)을 적는다. 읽는 사람은 "±10%를 넘어서 걸렸다"고 읽지만
+  실제 문턱은 ±0.10pp(=10bp)다.
+- 근거:
+    diff = float(curr) - float(prev_value)
+    if _check_band(diff, dcb.get(name)):
+        pct = (diff / abs(float(prev_value)) * 100) if prev_value else diff
+        _consider(_EMOJI[name], f"daily_change={pct:+.2f}%")
+- 재현: TNX가 4.00% → 4.12%(12bp 상승, caution 아님·watch 해당) → 사유는 "daily_change=+3.00%".
+  반대로 BEI가 0.20 → 0.32(12bp)면 "+60.00%"로 적혀 같은 12bp가 20배 다르게 보인다.
+- 원인: 판정 단위(절대 pp)와 표시 단위(상대 %)가 섞였다.
+- 해결: 사유 문구를 `daily_change=+12bp`(= diff*100)로 적어 판정과 같은 단위로 둔다.
+- 위험: 없음(문구만). 임계값 자체를 상대 변화율로 바꾸는 것은 정책 결정이다.
+
+### [RR2-15] 최대낙폭의 부호 규약이 세 곳에서 다르고, 승격 게이트는 그중 하나를 "데이터 오류"로 센다  [확정] [중간] [정확성]
+- 파일: src/investment_agent/research/rl/pipeline.py:153 (양수)
+        src/investment_agent/research/rl/experiment.py:54 (음수)
+        src/investment_agent/research/rl/continuous_learner.py:95 (양수)
+        소비자: src/investment_agent/research/promotion/gate.py:137,290 (음수 전제)
+- 증상: `WeightEnvironmentCore`가 만드는 `info["drawdown"]`은 항상 **비음수**(`max(0.0, 1 - nav/peak)`)다.
+  이것을 `pipeline.PolicyEvaluation`과 `ContinuousLearner`는 그대로(양수) 담고,
+  `experiment.RLPolicyEvaluation`은 `-drawdown`(음수)으로 담는다. 승격 게이트는 음수를 전제한다:
+  `if summary.max_drawdown < -self.criteria.max_drawdown` (양수는 절대 걸리지 않는다),
+  `if … drawdown > 0 … : data_integrity_incidents += 1` (양수는 데이터 오류로 센다).
+- 근거:
+    environment.py:234  `drawdown = max(0.0, 1.0 - self.nav / self.peak_nav)`
+    pipeline.py:153     `max_drawdown=float(max((info["drawdown"] for info in infos), default=0.0))`
+    experiment.py:54    `max_drawdown=-drawdown,`
+    gate.py:290         `if excess is None or drawdown is None or drawdown > 0 or …: data_integrity_incidents += 1`
+- 재현: 낙폭 25%인 정책을 `pipeline` 경로로 평가하면 `max_drawdown=0.25`.
+  게이트의 한도 검사 `0.25 < -0.20`은 거짓이라 **한도를 지나가고**, 동시에 정합성 검사에서
+  `0.25 > 0`이라 오류 1건으로 세어 승격이 다른 이유로 막힌다 — 어느 쪽도 "낙폭이 크다"고 말하지 않는다.
+  `experiment` 경로로 평가한 같은 정책은 `-0.25`로 올바르게 걸린다.
+- 원인: 부호 규약이 한 곳에 선언돼 있지 않다. 생산자가 셋, 소비자가 하나다.
+- 해결: `info["drawdown"]`(비음수)와 원장 컬럼(`max_drawdown`, 음수)의 의미를 각각 이름으로 갈라
+  (`drawdown_fraction` / `max_drawdown`) 변환을 한 함수에만 둔다. 게이트는 부호를 검사하지 말고
+  절대값 한도로 판정하거나, 잘못된 부호를 조용히 오류로 접지 말고 거절 사유로 드러낸다.
+- 위험: 현재 `portfolio_evaluations` 생산자가 없어(RS-15) 사용자에게 가는 숫자는 없다.
+  생산자가 붙는 순간 낙폭 한도가 조용히 무력화된다.
+
+### [RR2-16] RL 학습·추론은 결측 feature를 0으로 채운다 — layer가 금지한 규칙이고 log 스케일 열에서는 극단값이 된다  [확정] [중간] [정확성]
+- 파일: src/investment_agent/research/rl/features.py:215,398
+- 증상: `features[t, i, j] = 0.0 if value is None else float(value)` — 결측을 0으로 채운다.
+  ML 경로(`impute_cross_section`)는 같은 결측을 **같은 날 종목들의 중앙값**으로 채우고,
+  `features/layer.py:361`의 docstring은 0 채움을 명시적으로 금지한다
+  ("RSI 0은 극도 과매도라는 실제 값이라 관측 없음과 구별되지 않게 된다").
+- 근거:
+    features.py(RL): `features[t, i, j] = 0.0 if value is None else float(value)`  (두 곳: 학습·live)
+    layer.py(ML):    `normalized[name] = None if value is None else float(value)` + `impute_cross_section`(중앙값)
+- 재현: `valuation_market_cap_log`의 정상 범위는 log(2e9)≈21.4 ~ log(4e12)≈28.9다. 결측이면 0이 들어가
+  같은 열에서 21 단위 떨어진 이상치가 된다. PPO의 관측 정규화가 없으므로 그 종목의 상태 벡터가
+  통째로 다른 영역으로 이동한다. 중앙값 채움이면 25 근처를 받는다.
+- 원인: 두 학습 경로가 같은 feature 계약을 다른 규칙으로 행렬화한다. `__is_missing` 열이 있어
+  이론상 구별은 가능하지만, 값 자체가 분포를 흔드는 것은 그와 별개다.
+- 해결: RL도 `impute_cross_section`(같은 as_of 단면 중앙값)을 쓰거나, 최소한 log·수준 스케일 열에
+  대해 0이 유효 범위 밖임을 검사한다. 운영 경로(`decision_training_set`)는 결측이 없으므로
+  현재 영향은 `load_training_set` 경로(fallback)에 한정된다 — 그 경로가 실제로 쓰이게 되는 시점의 함정이다.
+- 위험: RL은 challenger 전용이라 실계좌에 직접 닿지 않는다. 정책 비교 결과의 해석이 달라진다.
+
+### [RR2-17] 판단 한 종목의 가격 경로가 어긋나면 RL 재학습 전체가 예외로 선다  [확정] [중간] [구조]
+- 파일: src/investment_agent/research/rl/decision_dataset.py:61-63
+- 증상: 같은 시점의 판단 경험들이 `end_trade_date`와 `benchmark_return`을 **정확히 하나씩만** 가져야 한다.
+  `build_decision_experiences`는 종목별로 `dates = sorted(set(asset_path) & set(spy_path))`의
+  교집합으로 구간을 잡으므로, 어느 한 종목에 봉이 하나 빠지면 그 종목의 `end_trade_date`·
+  `benchmark_return`이 달라지고 `decision_training_set`이 `ValueError`로 전체 학습을 세운다.
+- 근거:
+    decision_dataset.py: `if len(horizons)!=1 or len(benchmark)!=1: raise ValueError("inconsistent decision label horizons")`
+    build_decision_experiences.py:53-56: `dates = sorted(set(paths[0]) & set(paths[1]))`
+      `asset = total_return([paths[0][key] for key in dates], horizon_days)`
+      `benchmark = total_return([paths[1][key] for key in dates], horizon_days)`
+- 재현: 같은 날 판단한 A·B 중 A가 거래정지로 하루 봉이 없으면 A의 20거래일 종료일이 B보다
+  하루 뒤가 되고, SPY 교집합도 달라져 `benchmark_return`이 미세하게 다르다(부동소수 집합 비교라
+  1e-16 차이도 원소 2개다). `run_continuous_retrain`이 실패하고 그날 후보가 만들어지지 않는다.
+- 원인: 종목별로 계산한 벤치마크를 시점 단위 스칼라로 접으면서 완전 일치를 요구한다.
+  벤치마크는 종목과 무관한 값이므로 SPY 경로에서 **한 번만** 계산해야 한다.
+- 해결: 벤치마크 구간을 SPY 자체 거래일로 시점당 한 번 계산해 모든 종목이 같은 값을 쓰게 하고,
+  종료일이 다른 종목은 그 시점에서 제외(availability=False)하되 전체를 세우지 않는다.
+- 위험: 낮음(값이 아니라 가용성). 현재 실패가 나면 로그에만 남고 후보가 조용히 안 생긴다.
+
+### [RR2-18] 순위 상관을 세 가지 서로 다른 동점 규칙으로 계산한다  [확정] [낮음] [구조]
+- 파일: src/investment_agent/research/evaluation/alpha.py:55-67 (동점 = 평균 순위)
+        src/investment_agent/research/models/baselines.py:156-163 (`argsort(argsort(...))` = 입력 순서로 동점 분리)
+        src/investment_agent/research/evaluation/metrics.py:209-212 (고유값 dense rank = 동점에 같은 정수)
+- 증상: 같은 "순위 상관"이라는 이름으로 세 구현이 있고 동점 처리가 전부 다르다. `alpha.py`의 주석이
+  `baselines.py`가 쓰는 방식을 명시적으로 배척한다 — "argsort 두 번은 동점을 입력 순서로 갈라 IC를 흔든다".
+  그런데 artifact 원장에 저장되는 `out_of_sample.rank_correlation`은 그 배척된 구현의 값이다.
+- 근거: 위 세 곳. `ml_inference.LoadedModel.rank_correlation`은 `baselines._rank_correlation`의 결과를 읽는다.
+- 재현: 예측이 모두 같은 값(naive 모델)이면 `alpha._rank`는 std 0으로 IC를 None으로 두고,
+  `baselines._rank_correlation`은 `np.std(p)==0`을 잡아 0.0을 주지만, 동점이 일부만 있는 경우
+  두 값이 달라진다(동점 5개 중 dense rank는 간격 1, 평균 순위는 간격 0).
+- 원인: 순위 계산의 owner가 없다.
+- 해결: `alpha._rank`(평균 순위)를 유일한 순위 함수로 두고 나머지 두 곳이 그것을 부른다.
+  `metrics.evaluate_predictions`는 날짜를 섞은 pooled 순위라 의미가 다르므로 이름에 그 사실을 넣는다.
+- 위험: 낮음. 저장된 artifact의 `rank_correlation`이 바뀐다(신뢰도는 `oos_alpha`에서 오므로 채택 판정에는 영향 없음).
+
+### [RR2-19] 변동성이 0인 수익률 시계열이 DSR 검정을 통과한다  [의심] [낮음] [정확성]
+- 파일: src/investment_agent/research/evaluation/deflated_sharpe.py:246
+- 증상: `std_r = math.sqrt(var_r) if var_r > 1e-12 else 1e-6` — 표본 분산이 0이면 표준편차를
+  1e-6으로 **대체**한다. 매 구간 수익률이 동일한(분산 0) 양수 시계열은 기간 샤프가 1,000이 되고
+  DSR 확률이 1.0으로 나와 `is_statistically_significant=True`가 된다.
+- 근거: 위 한 줄. 이어지는 `period_sr = mean_r / std_r`와 `z_stat = (period_sr - exp_max)/se_sr`.
+- 재현: `returns = [0.001] * 20` → var=0 → std=1e-6 → period_sr=1000, skew=0·kurt=3(std>1e-6이 거짓이라
+  기본값), var_sr=(1+0.5·1e6)/19≈26,316, se≈162, z≈6.2 → probability≈1.0 → 통과.
+  이것이 RL challenger 승격의 유일한 과적합 방어(`min_dsr_probability=0.90`)다.
+- 원인: 분산 0을 "아주 작은 분산"으로 바꿔 계산을 계속한다. 분산 0은 샤프가 정의되지 않는 상태다.
+- 해결: `var_r <= 1e-12`이면 `n < 5`와 같은 취급(확률 0.0·`is_statistically_significant=False`)으로
+  fail-closed하고 사유를 남긴다.
+- 위험: 현재 환경에서 완전 상수 수익률이 나오는 경로를 확인하지 못해 [의심]으로 둔다
+  (전량 현금 정책은 비용 때문에 상수 **음수**가 되어 통과하지 않는다).
+
+### [RR2-20] 사건 `novelty`가 `source_diversity`와 수학적으로 동일한 값이다 — "새로움"을 재는 feature가 없다  [확정] [중간] [정확성]
+- 파일: src/investment_agent/research/features/event_intelligence.py:260,271
+- 증상: 두 값이 같은 식이다.
+    source_diversity = len(providers) / source_count
+    novelty          = min(1.0, 1.0 / max(1.0, source_count / max(1, len(providers))))
+  `providers`는 항상 cluster의 부분집합이라 `source_count / len(providers) >= 1`이고
+  `max(1.0, ·)`는 그 값을 그대로 통과시킨다. 따라서 `novelty == len(providers)/source_count == source_diversity`가
+  **모든 입력에서** 성립한다. `Event.novelty`·`EventFeatureSnapshot.novelty`가 독립 feature로 저장되고
+  학습·프롬프트가 "새로움"으로 읽지만 실제로는 출처 다양성의 사본이다.
+- 근거: 위 두 줄. 반례를 만들 수 없다(`len(providers) >= 1`, `source_count >= len(providers)`).
+- 재현: 3개 기사·2개 provider → source_diversity = 2/3 = 0.667, novelty = 1/max(1, 3/2) = 1/1.5 = 0.667. 동일.
+  1개 기사·1개 provider → 둘 다 1.0.
+- 원인: novelty를 "같은 사건을 몇 번 다시 말했나"로 정의하려 했으나 식이 다양성으로 환원된다.
+  실제 새로움은 **직전 window에 같은 cluster가 있었는가**(과거 사건과의 유사도)로 재야 하며
+  `cluster_contents`가 그 정보를 갖고 있는데 쓰지 않는다.
+- 해결: novelty를 "이 cluster의 토큰 집합이 직전 window의 어느 cluster와도 임계 미만으로 겹친다"로
+  다시 정의하거나, 중복 feature임을 인정해 제거한다(제거는 feature 계약 변경).
+- 위험: `EventFeatureSnapshot.novelty`를 소비하는 학습·요약의 값이 바뀐다. 현재는 두 열이 완전 상관이라
+  선형 모델에서 계수가 임의로 갈리고(다중공선성) 트리에서는 한쪽만 선택된다.
+
+### [RR2-21] cluster 묶기가 후보 cluster마다 대표 원문 전체를 다시 훑는다 — O(n²) 문자열 스캔  [확정] [낮음] [성능]
+- 파일: src/investment_agent/research/features/event_intelligence.py:210-232,182-189
+- 증상: 원문 하나를 배치할 때마다 기존 cluster 전부에 대해 `_event_type(representative)`를 다시 부른다.
+  `_event_type`은 `f"{title} {content}".lower()`를 새로 만들고 14개 키워드 묶음(총 40여 개 부분문자열)을
+  검색한다. 대표 원문의 유형은 변하지 않는데 매번 재계산된다.
+- 근거:
+    for index, cluster in enumerate(clusters):
+        representative = cluster[0]
+        if representative.ticker != item.ticker or _event_type(representative) != item_type: continue
+- 재현: 기사 300개·cluster 120개면 `_event_type` 호출이 약 300×120 = 36,000회이고 매 호출이
+  본문 전체(수 KB)를 lower()로 복사한다. 유형을 item별로 한 번 계산해 캐시하면 300회로 줄어든다.
+- 원인: 순수 함수의 결과를 재사용하지 않는다. 같은 파일의 `_tokens(f"{title} {content}")`도
+  `extract_events` → `cluster_contents`에서 중복 계산된다.
+- 해결: `(item, event_type, tokens)` 3-튜플을 한 번 만들어 루프가 그것을 보게 한다.
+  덧붙여 `selected: list[int]` + `break`는 원소가 항상 0~1개라 `matched: int | None`로 단순화된다(죽은 구조).
+- 위험: 없음(순수 계산 재배치). 결과 동일성 테스트를 붙인다.

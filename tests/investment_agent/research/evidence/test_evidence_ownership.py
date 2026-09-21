@@ -13,7 +13,7 @@ OWNED_CLASSES = frozenset({"EvidenceItem", "EvidenceBundle", "ContextBuilder", "
 PIT_READ_METHODS = frozenset({
     "market_prices", "fundamentals", "fundamentals_pit", "estimates", "macro_snapshot", "macro_histories",
     "segment_snapshot", "guru_snapshot", "econ_snapshot", "technical_snapshot", "current_tracked_tickers",
-    "historical_sp500_membership", "sp500_sector_map", "prepare_historical_replay", "share_class_snapshots_pit",
+    "historical_sp500_membership", "sp500_sector_map", "prepare_historical_replay", "prepare_valuation_inputs", "share_class_snapshots_pit",
     "valuation_observation_rows", "label_price_rows", "forward_prices_for_labels", "rl_historical_membership_rows",
 })
 

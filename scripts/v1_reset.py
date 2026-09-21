@@ -1,7 +1,7 @@
 """투자 앱 소유 객체만 지우고 빈 v1 스키마를 적용한다.
 
-이 도구는 앱 데이터를 복사하지 않는다. ``--confirm-reset``은 의도적으로
-필수다. Supabase 관리 스키마(auth/storage/realtime 등)와 public/graphql 객체는 대상이
+이 도구는 앱 데이터를 복사하지 않는다. ``--confirm-reset``과 대상 project ref(``--confirm <ref>``)는
+의도적으로 필수다 — ref를 연결 URL에서 읽지 못하면 지우지 않는다. Supabase 관리 스키마(auth/storage/realtime 등)와 public/graphql 객체는 대상이
 아니다. PostgREST 노출 목록은 전체 v1 선언이 성공한 뒤 한 번에 교체한다.
 """
 from __future__ import annotations
@@ -19,6 +19,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.postgres_schema_layout import application_schemas, installation_files
+from scripts.project_ref import require_confirmation
 
 # 현재 이 투자 앱이 소유하는 객체만. Supabase 시스템/다른 프로젝트의 스키마를 넓게
 # 지우는 CASCADE는 절대 하지 않는다.
@@ -39,6 +40,7 @@ def sql_files() -> list[Path]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--confirm-reset", action="store_true", help="앱 데이터 삭제를 명시적으로 승인")
+    parser.add_argument("--confirm", required=True, help="대상 project ref")
     args = parser.parse_args(argv)
     if not args.confirm_reset:
         parser.error("--confirm-reset 없이는 DB를 변경하지 않습니다")
@@ -47,6 +49,7 @@ def main(argv: list[str] | None = None) -> int:
     url = os.environ.get("SUPABASE_DB_URL")
     if not url:
         raise SystemExit("SUPABASE_DB_URL 이 필요합니다 (.env 로컬 전용).")
+    require_confirmation(url, args.confirm)
 
     conn = psycopg2.connect(url)
     conn.autocommit = False

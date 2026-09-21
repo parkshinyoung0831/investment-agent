@@ -27,6 +27,9 @@ from investment_agent.operations.harness.state import (
 )
 
 
+CADENCE_MIN_INTERVAL_SECONDS = 60 * 60
+
+
 def _run_id(job_id: str, scheduled_at: str) -> str:
     digest = hashlib.sha256(f"{job_id}|{scheduled_at}".encode()).hexdigest()[:24]
     return f"run_{digest}"
@@ -102,10 +105,13 @@ class HarnessScheduler:
             return True
         if not job.terminal:
             return False
-        anchor = parse_datetime(job.completed_at or job.started_at)
-        return now.astimezone(timezone.utc) >= anchor + timedelta(
-            seconds=definition.interval_at(now)
-        )
+        interval = definition.interval_at(now)
+        # 하루·주 단위 job은 시작 시각에 맞춰 돈다. 완료 시각에 맞추면 실행 시간만큼 매번 밀려
+        # 한 달이면 반나절이 돌아, 시장·공시 적재가 끝난 뒤에 돌리려던 시각을 잃는다.
+        # 분 단위 polling job은 완료 뒤 간격을 지켜, 느린 회차가 곧바로 다시 도는 것을 막는다.
+        cadence = interval >= CADENCE_MIN_INTERVAL_SECONDS
+        anchor = parse_datetime(job.started_at if cadence else (job.completed_at or job.started_at))
+        return now.astimezone(timezone.utc) >= anchor + timedelta(seconds=interval)
 
     @staticmethod
     def _new_job(definition: JobDefinition, now: datetime) -> JobRuntime:

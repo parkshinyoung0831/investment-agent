@@ -1,8 +1,22 @@
 """Data-owner harness stage adapters."""
 from __future__ import annotations
 
+import os
+from datetime import datetime, timezone
+
 from investment_agent.operations.harness.commands import PythonModuleCommand
 from investment_agent.operations.harness.contracts import StageContext, StageOutcome
+
+
+# 미국 지표 24개 중 21개가 ET 08:30·09:15·10:00·10:30에 나오고, 그 넷은 서머타임 양쪽에서 UTC 12~15시 안에 든다
+# (`econ_calendar_watch` 워크플로 머리주석과 같은 근거). 이 창 밖의 발표는 daily ETL이 하루 안에 같은 actual을 잡는다.
+ECON_RELEASE_WATCH_UTC_HOURS = range(12, 16)
+
+
+def in_econ_release_window(now: datetime) -> bool:
+    """평일 UTC 12~15시. 창 밖에는 subprocess를 띄우지 않는다."""
+    utc = now.astimezone(timezone.utc)
+    return utc.weekday() < 5 and utc.hour in ECON_RELEASE_WATCH_UTC_HOURS
 
 
 class DataAdapters:
@@ -24,6 +38,23 @@ class DataAdapters:
             stop_event=context.stop_event,
         )
         return StageOutcome.succeeded({"watched_at": self.now().isoformat()})
+    def watch_releases(self, context: StageContext) -> StageOutcome:
+        """발표 시간대에만 예정 시각이 지난 지표의 첫 actual을 확인하고 속보를 보낸다."""
+        if not in_econ_release_window(context.now):
+            return StageOutcome.succeeded({"skipped": "outside_release_window"})
+        arguments = ["--poll-attempts", "1"]
+        if os.environ.get("DISCORD_BOT_TOKEN"):  # 토큰이 없으면 확인만 하고 보내지 않는다(Actions 워크플로와 같은 규칙)
+            arguments.append("--notify")
+        self.command_runner.run(
+            PythonModuleCommand(
+                "investment_agent.operations.commands.econ_calendar_watch_releases",
+                tuple(arguments),
+                self.timeouts.get("econ_release_watch", 5 * 60),
+            ),
+            stop_event=context.stop_event,
+        )
+        return StageOutcome.succeeded({"watched_at": self.now().isoformat()})
+
     def sync_local_mirror(self, context: StageContext) -> StageOutcome:
         """Supabase 원본을 로컬 사본으로 증분 동기화한다. 7일마다 전체를 다시 받는다."""
         self.command_runner.run(PythonModuleCommand(

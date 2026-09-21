@@ -1,0 +1,433 @@
+# trading 2차 감사 (2026-09-21) — 직전 감사 6절 "확인하지 못한 영역"
+# 대상: trading/portfolio, trading/decision(+agents), trading/performance, trading/evidence,
+#       trading/system, trading/risk, my_portfolio/local_store/repository/supabase_repository
+# 읽기 전용. 코드 수정·git 조작·네트워크·DB 접근 없음.
+
+### [TR2-01] 집중도 HHI 한도(0.15)가 종목 상한(0.10) 때문에 영원히 참이 될 수 없다  [확정] [중간] [하드코딩]
+- 파일:줄 — src/investment_agent/trading/risk/gate.py:32-34(정책), :192-200(종목 상한 적용), :365-372(HHI 검사)
+- 증상: "포트폴리오가 몇 종목에 쏠렸다"를 잡는다는 게이트가 어떤 입력에서도 발동하지 않는다.
+  집중 위험은 `max_symbol_weight`·`max_positions`만 막고 HHI 줄은 장식이다.
+- 근거: HHI 검사(`:365`) 앞에서 모든 위험자산 비중이 이미 `max_symbol_weight`로 깎여 있다
+  (`:197-200` `elif weight > self.policy.max_symbol_weight: ... _move_to_cash(excess)`).
+  따라서 `HHI = Σw² ≤ max(w)·Σw ≤ max_symbol_weight × (1 - min_cash_weight)`.
+  기본 정책은 `max_symbol_weight=0.10`, `min_cash_weight=0.05` → HHI ≤ 0.095.
+  한도는 `max_concentration_hhi=0.15`이므로 부등식 `concentration_hhi > 0.15`는 상한 0.095에
+  절대 닿지 않는다. HHI 0.15는 등비중 약 6.7종목인데 10% 상한에서는 최소 10종목이 강제된다.
+- 재현: 최대 집중 입력 — AAPL~(9종목) 각 0.10 + CASH 0.10 → HHI = 9×0.01 = 0.09 < 0.15 통과.
+  상한을 채우는 어떤 조합도 0.095를 못 넘는다.
+- 원인: 두 한도를 서로 다른 스케일로 골랐다. HHI 상한은 "10% 상한"이라는 더 강한 제약이
+  이미 있다는 사실을 반영하지 않은 별도 매직넘버다.
+- 해결: (a) HHI 한도를 상한과 정합하게 다시 유도한다 — 예: `max_symbol_weight`와
+  목표 유효종목수(`1/HHI`)로 계산하는 property로 두고(예: 유효종목수 하한 12 → 0.0833),
+  값을 하드코딩하지 않는다. 또는 (b) 상한·max_positions가 이미 집중을 지배한다고 판단하면
+  HHI 검사를 지우고 `to_config()`에서도 빼 원장이 없는 한도를 주장하지 않게 한다.
+  어느 쪽이든 "한도를 느슨하게" 하는 방향이 아니라 실제로 발동할 수 있는 값이어야 한다.
+- 위험: (a)는 지금 통과하던 목표가 거절될 수 있다 — 값을 정하기 전에 과거 목표의 HHI 분포를
+  봐야 한다. (b)는 정책 hash가 바뀌어 기존 RiskDecision과 hash 동치가 깨진다.
+
+### [TR2-02] `min_position_weight`가 조정 전 비중에만 걸려, 승인 비중에는 0.5% 미만 dust가 남는다  [확정] [중간] [정확성]
+- 파일:줄 — src/investment_agent/trading/risk/gate.py:192-200(유일한 검사), :226-232(섹터 축소),
+  :248-251(최소현금 축소), :279-286(turnover 축소), :310-314(스트레스 축소), :337-339(꼬리위험 축소)
+- 증상: `approved_weights`에 정책이 금지한 0.5% 미만 종목이 들어간다. 실계좌는 $10 미만 주문을
+  버리므로(`execution/orders/planning.py:172`) System은 그 종목을 들고 있다고 회계하고 실계좌는
+  사지 않아, 원인 없는 tracking error가 쌓인다.
+- 근거: 최소 비중 검사는 `:194` `if 0.0 < weight < self.policy.min_position_weight` 한 번뿐이고
+  그 뒤 **다섯 군데가 비중을 곱으로 줄인다**. 예: `:279-283`
+  `weights = {symbol: base + scale*(weights - base) ...}` — scale<1이므로 base에 없던 신규 종목은
+  `scale × weights`로 줄어든다. 줄인 뒤 최소 비중을 다시 보는 코드가 없다.
+- 재현: 신규 종목 NVDA 목표 0.04, base에 NVDA 없음(신규), 전체 discretionary turnover 2.0 →
+  `scale = 0.25/2.0 = 0.125` → NVDA 최종 0.005 → 다시 스트레스 축소 0.8이 걸리면 0.004.
+  `min_position_weight=0.005` 미만인데 승인된다. 계좌 $3,000이면 목표 금액 $12 → 스트레스 축소
+  뒤 $12×0.8 = $9.6 < $10 → 실계좌는 주문하지 않는다.
+- 원인: 한도 검사와 한도 집행이 파이프라인의 서로 다른 위치에 있다. 곱으로 줄이는 단계가
+  뒤에 추가되면서 앞의 검사가 무의미해졌다.
+- 해결: 축소가 모두 끝난 뒤(꼬리위험 loop 다음, `:365` HHI 앞) 최소 비중 미만 종목을 현금으로
+  옮기는 단계를 한 번 더 두고 그 사실을 `adjustments`에 남긴다. 임계를 낮추지 말고 집행 위치를
+  옮기는 방향. 옮긴 뒤 위험지표가 다시 좋아지므로 재측정은 필요 없다(비중이 줄기만 한다).
+- 위험: 현금 비중이 조금 늘어 turnover·CVaR 값이 달라지고 기존 목표의 hash 재현이 깨진다.
+  dust가 여러 개면 합쳐 수 %가 현금으로 갈 수 있어, 먼저 과거 목표에서 dust 발생 빈도를 봐야 한다.
+
+### [TR2-03] RiskDecision.metrics가 조정 전 `drawdown_fraction`과 조정 후 나머지 지표를 한 묶음으로 저장한다  [확정] [낮음] [정확성]
+- 파일:줄 — src/investment_agent/trading/risk/gate.py:342-348(final 값으로 갱신), :404-406(metrics 조립)
+- 증상: 원장·화면이 같은 metrics dict에서 읽는 다섯 지표 중 넷은 **승인 비중**의 값이고
+  `drawdown_fraction`만 **조정 전 제안**의 값이다. 낙폭만 다른 포트폴리오를 가리킨다.
+- 근거: `:342` `risk_inputs.update({... "drawdown_fraction": final_risk.drawdown_fraction ...})`로
+  final 값을 넣은 직후, `:404-406`이 `metrics={**risk_inputs, "drawdown_fraction": drawdown_fraction, ...}`로
+  인자로 받은 **제안 시점** 값으로 덮어쓴다.
+- 재현: 스트레스·꼬리위험 축소가 걸려 위험자산이 0.95→0.60으로 줄면
+  `final_risk.drawdown_fraction`은 약 0.6배로 줄지만 metrics에는 0.95 기준 낙폭이 남는다.
+- 원인: `**risk_inputs` 다음에 같은 키를 다시 쓴 것이 의도인지 실수인지 코드에 근거가 없다.
+  나머지 넷은 final로 덮는데 이 하나만 되돌린다.
+- 해결: `drawdown_fraction`을 중복 지정하지 않고, 제안 시점 값이 필요하면
+  `proposal_risk_inputs`(`:171`)를 별도 키(`proposal_market_risk`)로 함께 남긴다.
+  두 시점을 같은 이름으로 섞지 않는 것이 요점이다.
+- 위험: 낮음. metrics를 읽는 화면·카드의 표기만 바뀐다. `input_hash`는 영향 없다
+  (`:379-380`이 두 시점을 이미 따로 담는다).
+
+### [TR2-04] 유니버스 한 종목의 가격 공백·짧은 이력이 System 목표 생성을 통째로 멈추고, 하네스는 성공으로 본다  [확정] [높음] [정확성]
+- 파일:줄 — src/investment_agent/trading/portfolio/market_risk.py:121-137(공통 구간 교집합·최소 관측),
+  src/investment_agent/trading/system/target.py:343-345(공분산 호출), 
+  src/investment_agent/trading/system/engine.py:221-224(예외 처리),
+  src/investment_agent/operations/commands/system_portfolio.py:33-35(항상 exit 0),
+  src/investment_agent/operations/adapters/trading.py:144-151(항상 `StageOutcome.succeeded`)
+- 증상: 목표비중이 며칠~무기한 갱신되지 않는다. 화면·원장에는 마지막 목표가 그대로 남아 "정상"으로
+  보이고, 하네스 단계는 성공, 프로세스 종료코드는 0이다. 위험을 줄여야 하는 날에도 목표가 그대로다.
+- 근거: `_aligned_returns`가 유니버스 전체의 **교집합** 구간을 쓴다 —
+  `first = max(min(values) for values in closes_by_symbol.values())`(`:121`),
+  이어서 `reference_dates`에 한 날이라도 빠진 종목이 있으면
+  `raise ContractError(f"unaligned price intervals: {symbol} missing ...")`(`:131`),
+  구간이 짧으면 `insufficient aligned market return history: {n} < {minimum_observations}`(`:135-137`).
+  `calculate_market_covariance`의 `minimum_observations` 기본값은 60이고 target.py는 값을 넘기지 않는다.
+  `alpha_universe`는 factor 상위 40종목 **+ 보유 전체**(`decision/alpha.py:186`)라 한 종목만 문제가 있어도
+  전체가 걸린다. 위 `ContractError`는 `engine.py:221`의 `except ContractError`가 받아
+  `log.warning` 한 줄 + `skipped_reason="target_inputs_unavailable"`로 끝나고, 명령은 그래도 `return 0`,
+  하네스 어댑터는 반환값을 보지 않고 `StageOutcome.succeeded`를 돌려준다.
+- 재현: (a) factor 상위 40에 상장 40일 된 종목이 하나 들어오면 `first`=그 상장일 →
+  공통 관측 39 < 60 → 전체 실패. (b) 보유 종목 하나의 `market.prices`에 하루가 빠지면
+  (yfinance 수집 누락·상장폐지 진행) `unaligned price intervals` → 전체 실패.
+  (b)는 다음 재조정도 같은 이유로 실패하므로 가격이 복구될 때까지 목표가 멈춘다.
+- 원인: 공통 구간 강제(정당한 PIT 규칙)와 "유니버스 전체를 한 행렬로 계산"이 결합됐다.
+  거부 단위가 종목이 아니라 배치다. 그리고 실패가 로그 한 줄로만 남아 관측되지 않는다.
+- 해결: 두 축을 나눈다. (1) **관측**: `skipped_reason`이 `target_inputs_unavailable`인 run을
+  ops 알림/monitoring이 보게 하고, 같은 사유가 N회 연속이면 올린다(지금은 기록되는 곳이 없다).
+  (2) **거부 단위**: 재료가 없는 종목을 신호 집합에서 빼는 경로를 둔다 — 보유가 아니면 후보에서
+  제외하고, 보유라면 `plan.fixed_symbols`처럼 optimizer가 움직이지 않는 고정 보유로 돌리되
+  `metadata`에 사유를 남긴다. 임계(60일)를 낮추거나 결측을 채우는 방향은 아니다.
+- 위험: (2)는 "재료가 없으면 목표를 만들지 않는다"는 target.py 머리 docstring의 원칙을 좁히는
+  변경이라 사용자 결정이 필요하다. 고정 보유로 돌리면 그 종목은 beta·공분산 제약 밖에 놓인다
+  (optimizer는 이미 fixed를 공분산에서 제외한다 — TR2-05 참조). (1)만 먼저 해도 조용함은 사라진다.
+
+### [TR2-05] optimizer의 위험항이 고정 보유(fixed_weights)를 무시해, 고정 보유와 같이 움직이는 종목에 몰 수 있다  [확정] [중간] [정확성]
+- 파일:줄 — src/investment_agent/trading/portfolio/optimizer.py:233-249(cov는 signal 종목만),
+  :286-291(목적함수), :354(estimated_variance), :319-328(섹터는 fixed 포함), :402-426(베타는 fixed 포함)
+- 증상: 판단 근거가 없어 고정한 보유(`AlphaPlan.fixed_symbols`)가 포트폴리오의 큰 몫일 때,
+  optimizer가 그 보유와 상관이 높은 종목을 "분산된 신규 편입"으로 보고 비중을 준다.
+  `metadata.optimizer.estimated_variance`도 실제 포트폴리오 분산보다 작게 기록된다.
+- 근거: `cov`는 `symbols = tuple(sorted(signal.symbol for signal in signals))`(`:202`)에 대해서만
+  만들어지고(`:233-243`), 목적함수의 위험항은 `cp.quad_form(weights, cov)`(`:288`)로 signal 비중만
+  본다. fixed는 `result_weights`에 `**fixed`로 그냥 합쳐진다(`:343-346`).
+  같은 함수에서 **섹터 제약은** `cp.sum(weights[indexes]) + fixed_sector <= max_sector_weight`(`:326-327`)로,
+  **베타 제약은** `budget = max(max_portfolio_beta - fixed_beta, current_signal_beta)`(`:425`)로
+  fixed를 정확히 반영한다. 세 제약 중 위험(공분산)만 빠져 있고 그 이유를 적은 주석이 없다.
+  `FactorExposureLimit` docstring은 "고정 보유는 … 이 제약에서 뺀다"고 명시하는데 공분산에는
+  그런 선언이 없다.
+- 재현: fixed = {XOM: 0.30}(점수 없는 보유), signal 후보에 CVX·COP(XOM과 일별 상관 0.8+)가 있으면
+  목적함수는 CVX·COP 사이 상관만 벌하고 XOM과의 상관은 0으로 본다. 각 0.10까지 채우면
+  실제 에너지 노출 0.50인데 위험항이 본 분산은 0.20 부분의 것뿐이다
+  (`estimated_variance`는 0.30 몫과 그 교차항을 통째로 누락).
+  섹터 제약(0.30)이 이 경우는 막지만, XOM이 다른 섹터의 고베타·고상관 종목이면 막지 못한다.
+- 원인: fixed를 "optimizer가 움직일 수 없으니 계산에서 뺀다"로 일괄 처리했다. 움직일 수 없는
+  것은 **결정 변수**일 뿐이고, 위험 측정에는 상수항으로 들어가야 한다
+  (`(w+f)'Σ(w+f)` = `w'Σ_ss w + 2 f'Σ_fs w + const`).
+- 해결: 공분산을 `signal ∪ fixed`로 만들고(이미 `estimate_betas`가 같은 합집합에 대해 가격을 받는다 —
+  target.py:366-367), 목적함수 위험항을 `quad_form(w, Σ_ss) + 2 * (Σ_fs @ f) @ w`로 둔다.
+  상수항은 최적화에 영향이 없지만 `estimated_variance` 기록에는 더한다. 
+  `available_risky`·hash 입력도 같이 바뀐다.
+- 위험: 최적 비중이 실제로 달라진다(고정 보유와 상관 높은 종목의 비중이 줄어든다) — 성과 재현이
+  깨지고 `OptimizerPolicy.version`을 올려야 한다. 공분산 종목이 늘어 `_aligned_returns` 교집합이
+  더 좁아지므로 TR2-04의 실패 확률이 올라간다. 둘을 같이 고쳐야 한다.
+
+### [TR2-06] OptimizationResult의 `expected_return`이 confidence를 곱한 값이고, `expected_return_component`와 같은 값을 두 이름으로 저장한다  [확정] [낮음] [구조]
+- 파일:줄 — src/investment_agent/trading/portfolio/optimizer.py:258, :353, :388-391,
+  src/investment_agent/trading/system/target.py:419
+- 증상: 원장 `metadata.optimizer.expected_return`을 "이 목표의 기대초과수익"으로 읽으면
+  confidence만큼 축소된 값이다(confidence 0.33이면 실제 기대수익의 1/3). 이름이 그 사실을
+  말하지 않는다. 그리고 `expected_return`·`expected_return_component`가 항상 동일한 값이다.
+- 근거: `:258` `expected = bounded_expected * confidence 배열`, `:353`
+  `expected_return_component = float(expected @ raw)`, `:388-391`이 같은 값을 `expected_return`과
+  `expected_return_component` 두 필드에 넣는다. 원 기대수익(`raw_expected`)이나 상한 적용
+  기대수익(`bounded_expected`)은 `capped` 딕트에 걸린 종목만 남고 합계로는 저장되지 않는다.
+- 재현: 신호 하나 AAPL expected_return=0.01, confidence=0.33, 최종 비중 0.10 →
+  `expected_return = 0.01*0.33*0.10 = 0.00033`. "20일 기대수익 0.033%"로 보이지만 모델이 말한
+  값은 0.1%다.
+- 원인: confidence 곱을 optimizer 내부 축소 장치로 쓰면서 결과 필드 이름을 분리하지 않았다.
+  두 번째 필드는 리팩터 잔재로 보인다(src 참조 0건 — `grep -rn "expected_return_component" src`는
+  optimizer.py 자신뿐).
+- 해결: 필드를 `confidence_weighted_expected_return`처럼 하는 일로 이름 짓고, 필요하면
+  confidence를 곱하지 않은 합계를 별도 필드로 함께 남긴다. 중복 필드
+  `expected_return_component`는 지운다(참조 0건).
+- 위험: 낮음. metadata 키 이름이 바뀌므로 그 키를 읽는 화면·카드·테스트를 같이 고쳐야 한다.
+
+### [TR2-07] 섹터 분류가 없는 종목은 섹터 한도(30%) 밖에 놓이고, 그 사실이 경고도 없이 통과한다  [확정] [중간] [정확성]
+- 파일:줄 — src/investment_agent/trading/risk/gate.py:38(`require_sector_map: bool = False`),
+  :211-233(섹터 한도), src/investment_agent/trading/portfolio/optimizer.py:319-328(같은 구멍),
+  src/investment_agent/data/universe/persistence.py:139-148(출처)
+- 증상: 같은 산업에 몰린 포트폴리오가 섹터 한도를 통과한다. 원장 `adjustments`에는
+  "sector … capped" 줄이 없고 `violations`도 비어 있어, 한도가 검사됐고 통과한 것처럼 보인다.
+- 근거: 출처가 `select_sp500_sector_map`이고 그 구현은 (a) `tracked_only=True`,
+  (b) `if row.get("sic_division")`으로 **분류가 없는 행을 아예 빼서** dict에 키가 없다.
+  게이트는 `missing_sectors`를 계산하지만 `if self.policy.require_sector_map and missing_sectors`
+  (`:214`)이고 기본값이 False라 위반이 되지 않는다. 그리고 `by_sector`는
+  `if sectors.get(symbol)`(`:219`)로 분류 없는 종목을 어떤 섹터에도 넣지 않아 합계에서 빠진다.
+  optimizer도 같다 — `indexes = [... if sectors.get(symbol) == sector]`(`:321`)이므로
+  분류가 None인 종목은 어떤 섹터 제약에도 들어가지 않는다.
+- 재현: 보유 5종목이 tracked에서 빠진 상태(S&P 500 탈락·비추적 종목)라면 sector_map은 `{}`이고
+  `:216 if sectors:`가 False → 섹터 블록 전체를 건너뛴다. 각 0.10씩 같은 산업 5종목 0.50이
+  `max_sector_weight=0.30`을 통과한다. `gate_target`은 `final_symbols`(목표+보유)로 조회하므로
+  이 경우가 실제로 발생한다(target.py:290, :310).
+- 원인: "분류 없음"을 dict에서 지워 표현했고, 소비자는 그것을 "제약 대상 아님"으로 읽는다.
+  결측과 면제가 같은 모양이다.
+- 해결: 분류 없는 종목을 각자 고유한 pseudo-sector(`UNKNOWN:<ticker>`가 아니라 하나의
+  `UNMAPPED` 버킷)로 묶어 한도를 걸거나, `require_sector_map`을 True로 올려 목표가 아예 거절되게
+  한다. 어느 쪽이든 `metrics`에 `missing_sector_symbols`를 남겨 조용하지 않게 한다.
+  임계 완화·예외 삼킴 없음.
+- 위험: `require_sector_map=True`는 비추적 보유가 하나라도 있는 동안 모든 목표를 거절해
+  TR2-04와 같은 정지를 만든다. `UNMAPPED` 버킷 쪽이 안전하지만, 서로 무관한 종목을 한 버킷에
+  묶어 과도하게 조일 수 있다 — sic_division 충전율을 먼저 실측해야 한다(운영 DB 접근 필요).
+
+### [TR2-08] 보유 한 종목의 가격 이력이 모자라면 그 테마 전체의 글로벌 사건 민감도가 경고 한 줄로 사라진다  [확정] [중간] [정확성]
+- 파일:줄 — src/investment_agent/trading/decision/candidates.py:355-362,
+  src/investment_agent/trading/portfolio/market_risk.py:296-318(estimate_betas)
+- 증상: 글로벌 사건(금리·유가·기술주 충격)이 터졌을 때 재분석 우선순위에 아무 종목도 안 올라온다.
+  로그에 `global event sensitivity unavailable proxy=...` 한 줄만 남고 재분석 경로는 정상 종료한다.
+- 근거: `estimate_betas(rows, symbols=held, benchmark_symbol=proxy)`는 **보유 전체를 한 번에** 받고
+  루프 안에서 종목마다 `_aligned_returns`를 호출한다(`market_risk.py:311`). 한 종목이라도
+  `missing market price history` 또는 `insufficient aligned market return history`(60일 미만)를
+  내면 함수 전체가 `ContractError`로 중단되고, 호출부는
+  `except ContractError: log.warning(...)`(`candidates.py:361-362`)로 그 proxy의
+  `sensitivities`를 **아예 채우지 않는다**. 이후 `global_event_priorities`는 민감도 없이 불려
+  그 테마의 보유 종목을 하나도 못 올린다.
+- 재현: 보유 8종목 중 최근 상장한 1종목(거래일 40일)이 있으면 `_aligned_returns`의 최소 관측
+  60을 못 넘겨 ContractError → 나머지 7종목의 유가·금리 민감도까지 전부 버려진다.
+  유가 급등 사건이 있어도 정유 보유가 재분석 큐에 안 들어간다.
+- 원인: 배치 계약(전 종목 성공 또는 전체 실패)을 부분 실패가 정상인 자리에 썼고,
+  호출부가 그 전부/전무를 경고 로그로만 덮었다.
+- 해결: 종목별로 계산·실패를 분리한다 — `estimate_betas`가 실패 종목을 결과에서 빼고 사유를
+  함께 돌려주거나(계약 변경), 호출부가 종목 하나씩 호출해 성공분만 모은다. 어느 쪽이든
+  빠진 종목 목록을 `global_event_priorities` 결과 metadata에 남겨 "민감도를 못 재서 뺐다"가
+  보이게 한다. 예외를 삼키지 않고 값으로 올리는 방향.
+- 위험: 종목별 호출은 `_aligned_returns`가 benchmark(proxy) 가격을 종목마다 다시 파싱하므로
+  현재도 있는 비용(TR2-09)이 그대로 남는다. 계약을 바꾸면 `estimate_betas`의 다른 호출부
+  (`system/target.py:366`)도 같이 봐야 한다 — 거기서는 전부/전무가 맞는 계약일 수 있다.
+
+### [TR2-09] `estimate_betas`가 종목마다 benchmark 전체 가격을 다시 파싱한다 — 재분석 경로에서 몇 분마다 수만 행  [확정] [낮음] [성능]
+- 파일:줄 — src/investment_agent/trading/portfolio/market_risk.py:306-317, :83-99(`_close_by_date`),
+  src/investment_agent/trading/decision/candidates.py:356-360
+- 증상: 재분석 우선순위 계산이 CPU를 쓴다. 오류는 없다.
+- 근거: `estimate_betas`는 종목 루프 안에서 `_aligned_returns(price_rows_by_symbol, (symbol, benchmark), ...)`를
+  부르고(`:311`), `_aligned_returns`는 매번 두 종목 모두 `_close_by_date`로 **처음부터 다시** 파싱한다
+  (`date.fromisoformat` + `float` + 중복/부호 검사, `:83-99`). benchmark 파싱은 N번 반복된다.
+  `candidates.py:356-360`은 이를 proxy 개수만큼 또 반복한다.
+- 재현: 보유 20종목 × proxy 4개 × 각 260행 → benchmark 파싱 80회 × 260행 = 20,800행,
+  종목 파싱 80회 × 260행 = 20,800행. `event_reanalysis_priorities`는 하네스에서 분 단위로 돈다
+  (`candidates.py:330-331` docstring이 "몇 분마다 돈다"고 적는다).
+- 원인: 정렬·파싱 캐시 없이 pairwise 계약을 루프에 넣었다. PitReader의 memo는 **행 리스트**를
+  캐시하지만 파싱 결과는 캐시하지 않는다(`research/evidence/reader.py:294-307`은 `dict(row)` 사본까지 만든다).
+- 해결: `estimate_betas` 안에서 `_close_by_date`를 종목당 한 번만 계산해 재사용하거나,
+  `_aligned_returns`가 이미 파싱된 close 맵을 받을 수 있게 한다. 알고리즘·결과는 그대로다.
+- 위험: 낮음. 순수 계산 리팩터이며 결과 동일성을 테스트로 고정할 수 있다.
+
+### [TR2-10] 배당 수익이 어떤 손익에도 안 들어가고, 계산된 `dividend_income`은 아무도 읽지 않는다  [확정] [중간] [정확성]
+- 파일:줄 — src/investment_agent/trading/performance/ledger.py:41, :60-63, :123-129
+- 증상: 카드·화면의 "기록된 체결 손익"과 "미실현손익" 합계가 실제 계좌 손익보다 배당만큼 작다.
+  배당 금액은 계산되지만 표시되는 곳이 없다.
+- 근거: `account_fills`는 `dividend` 사건을 `dividend += number(row["amount"])`(`:63`)로 **전체 합계
+  하나**에만 넣고, `realized_pnl`(`:126`)은 `realizations`의 `net_pnl` 합이며 그 `net_pnl`은
+  `quantity*price - net_cost - fees`(`:104`)뿐이다. `unrealized_pnl`(`:127`)도 `value - cost`뿐이다.
+  배당은 원가(`lot[1]`·`lot[2]`)도 조정하지 않는다. 출력 키 `dividend_income`(`:128`)의 소비자는
+  0건이다 — `grep -rn "dividend_income" src/investment_agent/reporting src/investment_agent/notifications
+  src/investment_agent/dashboard`가 비었고, 카드는 `realized_pnl`·`unrealized_pnl`·`nav`만 읽는다
+  (`notifications/investment/run_performance.py:61-64`).
+- 재현: AAPL 100주 보유, 배당 $0.25×100 = $25 수령 사건이 원장에 있으면
+  `dividend_income=25.0`이지만 `realized_pnl`·`unrealized_pnl`은 변하지 않는다.
+  카드의 두 숫자 합은 실제 계좌 증가분 $25를 설명하지 못한다. NAV 기반 수익률(`nav_returns`)은
+  equity 스냅샷을 쓰므로 배당을 포함해, **같은 카드 안에서 두 수치가 서로 어긋난다**.
+- 원인: 배당을 종목별로 귀속하지 않고 스칼라로 모아 뒀고, 그 스칼라를 읽는 read model을 만들지 않았다.
+- 해결: (a) `dividend_income`을 카드·화면의 손익 블록에 별도 항목으로 노출해 세 숫자가 계좌 변화를
+  설명하게 한다(가장 작은 변경, 배당 귀속 방식을 정하지 않아도 된다). (b) 종목별 배당이 필요하면
+  `positions`에 `dividend_income`을 더하되 원가에서 빼지는 말아야 한다(세무상 의미가 다르다).
+  (a)를 먼저 하고 (b)는 사용자 결정.
+- 위험: (a)는 카드 필드 추가뿐이라 낮다. (b)는 원가 기준을 바꾸면 과거 realized 보고서의
+  `report_id`(내용 hash)가 전부 달라져 청산 알림이 다시 나갈 수 있다 — 알림 원장 baseline을 봐야 한다.
+
+### [TR2-11] `nav_returns`의 `daily_return`은 하루가 아니라 "마지막 스냅샷 이후"다  [확정] [낮음] [구조]
+- 파일:줄 — src/investment_agent/trading/performance/ledger.py:185
+- 증상: 원장 키 이름이 값의 의미와 다르다. 표시 계층은 우연히 맞게 쓰고 있어 지금은 사용자에게
+  틀린 숫자가 안 보인다.
+- 근거: `periods`는 **연속한 두 계좌 스냅샷 사이**의 sub-period다(`:142`). 스냅샷은 하네스가
+  돌 때 캡처되므로 하루 여러 개일 수도, 며칠에 하나일 수도 있다. `daily_return=periods[-1]["twr"]`는
+  그 마지막 구간 수익률이다. `return_method`는 `"time_weighted_subperiods"`로 정직하다.
+  표시 계층은 이미 "최근 평가 구간 수익률 · 시간가중"으로 적는다
+  (`notifications/investment/run_performance.py:63`) — 즉 이름만 거짓이다.
+- 재현: 하네스가 09:00·13:00·16:00에 스냅샷을 남기면 `daily_return`은 13:00~16:00 수익률이다.
+  주말을 건너뛰면 금요일~월요일 3일 수익률이 `daily_return`으로 저장된다.
+- 원인: CLAUDE.md 규칙 14("이름은 역할을 그대로 말한다") 위반. 다음 소비자가 키 이름을 믿고
+  "일간 수익률"로 쓰면 그때 조용히 틀린다.
+- 해결: 키를 `latest_period_return`으로 바꾸고 `latest_period_start_at`·`end_at`을 함께 남긴다.
+  진짜 일간 수익률이 필요하면 별도 키로 달력일 경계 스냅샷을 골라 계산한다.
+- 위험: 낮음. 키 이름 변경이라 `run_performance.py`·대시보드·테스트를 같이 고치면 된다.
+  저장된 payload는 JSON이라 과거 보고서의 옛 키는 남는다(읽는 쪽에서 둘 다 받아야 한다).
+
+### [TR2-12] 귀속 불가 체결 카운터가 전역이라 무관한 계좌 보고서에도 품질 결함을 찍는다  [확정] [낮음] [정확성]
+- 파일:줄 — src/investment_agent/trading/performance/service.py:91, :100-102, :157-158
+- 증상: A 계좌의 체결 하나가 주문·intent와 연결되지 않으면 B 계좌(paper/live 다른 조합 포함)
+  보고서에도 `unattributed_fills` 품질 결함이 붙는다.
+- 근거: `unattributed = 0`은 함수 스코프 변수 하나이고(`:91`), 귀속 실패마다 증가한다(`:101`).
+  그리고 계좌 루프 안에서 `if unattributed: quality.add("unattributed_fills")`(`:157-158`)로
+  **모든** 그룹에 같은 플래그를 붙인다. 귀속 실패한 행은 계좌를 알 수 없으므로 어느 그룹의
+  문제인지 코드가 알 수 없다 — 그래서 전부에 붙인다.
+- 재현: live 계좌의 체결 하나에 `broker_account_hash`·`account_seq`가 모두 없으면
+  paper 계좌 보고서의 `quality_issues`에도 `unattributed_fills`가 들어간다.
+- 원인: 계좌를 알 수 없는 결함을 계좌별 보고서 필드로 표현했다. 표현 위치가 틀렸다.
+- 해결: 귀속 불가 건수를 계좌별 보고서가 아니라 실행 결과(`update_performance`의 반환값 —
+  이미 `unattributed_fills`로 돌려준다)와 ops 로그/알림으로만 보고하고, 보고서의
+  `quality_issues`에서는 뺀다. 또는 귀속 불가 행에서 알 수 있는 힌트(client_order_id 접두 등)로
+  계좌를 특정할 수 있을 때만 그 계좌에 붙인다.
+- 위험: 낮음. 다만 `quality_issues`는 `report_identity` 내용 hash에 들어가므로 보고서 ID가 바뀌고
+  같은 날 보고서가 새 revision으로 한 번 더 저장된다(알림 원장 dedup 확인 필요).
+
+### [TR2-13] 순 기대수익이 정확히 0인 신호의 confidence를 1.0(최대 확신)으로 기록한다  [확정] [낮음] [정확성]
+- 파일:줄 — src/investment_agent/trading/decision/alpha.py:199-205(`source_agreement`),
+  :244-246·:252-257·:263-266(expected를 0으로 접는 세 경로), :267, :279
+- 증상: 원장 `metadata.alpha_signals[TICKER].confidence`가 가장 불확실한 경우(근거가 서로 반대라
+  순 기대수익이 0)와 만장일치인 경우에 똑같이 1.0이다.
+- 근거: `source_agreement`는 `final = _direction(expected)`가 0이면 곧바로 `return 1.0`이다(`:203-204`).
+  그런데 alpha에는 expected를 정확히 0으로 만드는 경로가 셋이다 —
+  `FACTOR_BREAKDOWN`의 `expected = min(0.0, expected)`(`:245`),
+  `THESIS_VETO`의 `expected = min(expected, 0.0)`(`:255`),
+  `UNVERIFIED_ENTRY_BLOCKED`의 `expected = min(expected, 0.0)`(`:265`).
+  factor prior가 양수였던 종목은 이 세 경로에서 expected가 정확히 0.0이 되고 confidence는 1.0이 된다.
+- 재현: prior=+0.005, 품질 게이트 탈락 → expected=0.0, directions=(+1, 0, 0),
+  stated=[+1], final=0 → `final == 0` → confidence 1.0.
+  `detail["AAPL"] = {"expected_excess_return": 0.0, "confidence": 1.0, "reason": "FACTOR_BREAKDOWN"}`.
+- 원인: "방향을 말한 근거가 없으면 1"이라는 규칙(정당)과 "최종 방향이 없으면 1"을 같은 조건에
+  묶었다. 후자는 근거가 **상쇄**된 경우이므로 의미가 반대다.
+- 해결: 두 경우를 나눈다 — `not stated`면 1.0(판단할 근거가 없으니 축소하지 않는다),
+  `final == 0`이면 0.0 또는 None으로 두고 optimizer의 곱(`expected*confidence`)은 어차피 0이니
+  값은 달라지지 않는다. 지금은 표시·기록만 틀리므로 값 영향은 없다.
+- 위험: 낮음. `optimizer`의 `ExpectedReturnSignal.confidence`는 0도 허용한다(`optimizer.py:93`).
+  단 signal의 `asdict`가 `input_hash`에 들어가므로(optimizer.py:362) 목표 재현 hash가 바뀐다.
+
+### [TR2-14] 스트레스 한도 하나를 충격 크기가 다른 8개 시나리오에 그대로 적용해, 시나리오마다 암묵 베타 상한이 1.5~0.6으로 갈린다  [의심] [중간] [하드코딩]
+- 파일:줄 — src/investment_agent/trading/risk/gate.py:83-92(`stress_loss_limit`),
+  src/investment_agent/trading/risk/stress.py:35-44(시나리오 정의), :80-81(손실 계산),
+  src/investment_agent/trading/risk/gate.py:302-319(한도 적용)
+- 증상: 기술주 비중이 조금 높은 목표가 원인 설명 없이 "risky exposure scaled by 0.79"로 깎인다.
+  `adjustments`에는 시나리오 이름만 남고, 왜 그 시나리오가 다른 시나리오보다 먼저 걸리는지가
+  정책에 적혀 있지 않다.
+- 근거: 한도는 단 하나다 — `stress_loss_limit = max_abs_beta * 0.10 = 1.5 × 0.10 = 0.15`
+  (`gate.py:92`). 손실은 `Σ w·β·shock`(`stress.py:80`)이고 shock은 시나리오마다 다르다:
+  `market_down_10` −0.10, `nasdaq_down_15` −0.15, `tech_down_20` −0.20, `energy_down_25` −0.25 등.
+  같은 손실 한도 0.15를 각 shock으로 나누면 **암묵 베타 상한**이
+  market 1.50 · nasdaq 1.00 · tech 0.75 · small_caps 1.00 · rates 0.94 · commodity 0.75 ·
+  financials 0.75 · energy 0.60이다(위험자산 100% 기준). 이 값들은 코드 어디에도 선언돼 있지 않고,
+  `gate.py:85-88`의 docstring("베타 상한 포트폴리오가 시장 -10%에서 잃는 만큼")은
+  −10% 하나만 언급한다.
+- 재현: 위험자산 0.95, XLK 베타 0.90(기술주 비중 높은 보유)인 목표 →
+  `tech_down_20` 손실 = 0.95 × 0.90 × 0.20 = 0.171 > 0.15 → `scale = 0.15/0.171 = 0.877` →
+  위험자산 0.83으로 강제 축소. 같은 포트폴리오의 SPY 베타가 1.1이어도
+  `market_down_10` 손실은 0.95 × 1.1 × 0.10 = 0.105로 통과한다 — 즉 실제로 구속하는 것은
+  **시장 베타 상한 1.5가 아니라 기술주 베타 상한 0.75**다.
+- 원인: 손실 한도 하나(베타×10%에서 유도)를 충격 크기가 2.5배까지 다른 시나리오에 공통으로 썼다.
+  "새 임의 숫자를 들이지 않으려고" 베타 상한에서 유도한 선택이 오히려 시나리오별로 다른
+  암묵 한도를 만들었다.
+- 해결: 한도를 shock 크기로 정규화한다 — 시나리오별 한도 = `max_abs_beta × |shock|`로 두면
+  모든 시나리오가 같은 "허용 민감도" 기준이 되고, 새 매직넘버가 없다. 시나리오별로 다른
+  민감도를 의도한다면 그 값을 `StressScenario`에 명시 필드로 적어 선언이 되게 한다.
+  `to_config()`에 시나리오별 한도를 남겨 원장에서 보이게 한다.
+- 위험: 정규화하면 tech/energy 시나리오의 한도가 0.30·0.375로 **느슨해진다** — 지금 걸리던 축소가
+  사라진다. 즉 이 항목은 "느슨하게 하기"로 오해될 수 있고, 어느 기준이 맞는지는 사용자 결정이다.
+  현재 동작이 의도라면 코드를 고치지 않고 정책 docstring과 `to_config`를 고쳐 암묵 한도를
+  드러내는 것만으로도 조용함은 사라진다.
+- **의심 근거**: XLK·XLE에 대한 실제 포트폴리오 베타 분포를 운영 원장에서 보지 못했다
+  (읽기 전용 감사이며 DB 접근을 하지 않았다). 위 수치는 코드에서 유도한 것이고,
+  "이 축소가 실제로 자주 걸린다"는 부분은 확인하지 못했다.
+
+### [TR2-15] Evidence Dossier 계층(1,116줄)이 src에서 호출되지 않고, 테스트 544줄이 그것을 살아 있는 것처럼 유지한다  [확정] [중간] [구조]
+- 파일:줄 — src/investment_agent/trading/evidence/builder.py(352줄, `DossierBuilder`),
+  contracts.py(206줄), history.py(319줄), renderer.py(140줄), bundle.py(99줄)
+  — 합 1,116줄. `report.py`(42줄)는 직전 감사가 이미 지적했다(2026-09-20 보고서 :408, :444).
+- 증상: CLAUDE.md(:42 `evidence(dossier)`)와 `trading/README.md`(:240
+  `evidence/ dossier·renderer·history(근거 보관·설명)`)가 살아 있는 역할로 선언하지만
+  실제 판단 경로는 이것을 한 번도 부르지 않는다. 읽는 사람은 LLM이 이 서류철을 본다고 이해한다.
+- 근거: `grep -rn "trading\.evidence" src/investment_agent scripts --include=*.py`의 전부는
+  네 줄이다 — `decision/analysis.py:33`(→ `artifacts.archive_case_evidence`)과
+  evidence 패키지 내부 셋(`builder→contracts`, `builder→history`, `renderer→contracts`).
+  `DossierBuilder`·`InvestmentDossier`·`render_markdown`·`render_prompt_payload`·
+  `bundle.store`·`bundle.load`의 src 참조는 0건이고, import하는 곳은
+  `tests/investment_agent/trading/evidence/test_dossier.py`(204줄),
+  `test_dossier_history.py`(250줄), `tests/investment_agent/trading/test_evidence.py`(90줄)뿐이다.
+  실제 LLM 입력은 `decision/agents/engine.py:69-78`이 만드는 dict이고, 각 분석가의 근거 텍스트는
+  `decision/llm/runtime.py`의 `_verified_market`·`_fundamentals`·`_macro`가 만든다
+  (`agents/runner.py:100-104`) — **같은 일(근거를 LLM용 요약으로 줄이기)의 두 번째 구현**이다.
+  `bundle.py`의 `store`/`load`도 `artifacts.py`(살아 있는 경로)와 같은 일(파일로 내보내고
+  DB에 sha256만 남기기)의 두 번째 구현이다.
+- 재현: `python -m unittest discover -s tests -t .`는 통과한다 — 테스트가 구현을 직접 import하므로
+  호출부가 없다는 사실이 실패로 드러나지 않는다(CLAUDE.md "가드 테스트의 공허한 통과"와 같은 형태).
+- 원인: 서류철 계약을 먼저 만들고 LLM 경로를 별도로 구현했는데, 옛 계약을 지우지도 연결하지도 않았다.
+- 해결: 사용자 결정이 필요한 둘 중 하나다.
+  (a) **연결한다** — `engine.py`가 `DossierBuilder`+`render_prompt_payload`를 거쳐 프롬프트를 만들게
+      하고 `runtime`의 텍스트 빌더를 그 경로로 옮긴다(LLM 입력이 바뀌므로 `engine_version`·
+      `feature_version`을 올려야 하고 판단 재현이 끊긴다).
+  (b) **지운다** — builder·contracts·history·renderer·bundle과 그 테스트를 삭제하고
+      CLAUDE.md·trading/README.md의 `evidence(dossier)` 선언을 `evidence(artifacts)`로 고친다.
+  어느 쪽이든 문서와 코드가 같은 말을 해야 한다. 지금은 문서가 없는 기능을 주장한다.
+- 위험: (b)는 `history.py`의 장기 수익률·재무 추세 계산(다른 데 없는 로직)을 함께 잃는다 —
+  지우기 전에 그 계산을 살릴지 판단해야 한다. (a)는 프롬프트가 바뀌어 과거 판단과 비교할 수 없게 된다.
+
+### [TR2-16] `fundamental_trend`의 연간 합산이 FY 행과 Q1~Q4 행을 함께 더해 매출·이익을 약 2배로 만든다  [확정] [낮음(현재 죽은 코드)] [정확성]
+- 파일:줄 — src/investment_agent/trading/evidence/history.py:226-260(`_annual_points`), :272-308(`fundamental_trend`)
+- 증상: 서류철의 `long_horizon.years[].revenue`·`net_income`과 `revenue_cagr`·`operating_margin_*`이
+  실제의 약 2배(또는 부분 연도에 따라 1.25~2배)로 나온다. 지금은 호출부가 없어(TR2-15) 사용자에게
+  보이지 않지만, 연결하는 순간 LLM이 그 숫자를 근거로 판단한다.
+- 근거: `_annual_points`는 `fiscal_period` 문자열로만 중복을 제거한다 —
+  `bucket["quarters"]`는 set이고 `if period in bucket["quarters"]: continue`(`:233-236`)뿐이다.
+  그런데 `fundamentals.financial_versions.fiscal_period`는
+  `CHECK (fiscal_period IN ('FY','Q1','Q2','Q3','Q4'))`(db/postgres/v1/30_fundamentals.sql:112)이고,
+  같은 `fiscal_year`에 **FY 1행과 Q1~Q4 4행이 함께 존재한다**
+  (스키마 주석 `:194` "FY=연간, Q1~Q4=분기"). 다섯 period가 모두 서로 다른 문자열이므로
+  `_sum(bucket["rows"], "revenue")`(`:239-248`)이 연간 + 4개 분기를 전부 더한다.
+  게다가 `quarters=5 >= 4`라 `complete`(`:286`)로 분류돼 CAGR·마진 계산에도 들어간다.
+- 재현: AAPL FY2024 — Q1 119.6B + Q2 90.8B + Q3 85.8B + Q4 94.9B = 391.0B이고 FY 행도 391.0B다.
+  `_sum`은 782.0B를 낸다(정확히 2배). 한 해만 FY 행이 빠지면 그 해는 391.0B이고 다른 해는 782.0B가
+  되어 `revenue_cagr`이 완전히 엉뚱해진다 — 전부 2배일 때는 CAGR이 우연히 맞아 **오류가 가려진다**.
+  `operating_margin`은 분자·분모가 같이 2배라 맞게 나와, 매출 절대값만 틀린다.
+- 원인: 기간 모델(`data/fundamentals/domain/periods.py`의 `FISCAL_PERIODS`·`is_annual`)을 쓰지 않고
+  period를 불투명한 문자열로 취급했다. 그 도메인에는 `is_annual` property가 이미 있다.
+- 해결: 연도 합산 대상을 명시적으로 고른다 — FY 행이 있으면 그것 하나만 쓰고, 없으면 Q1~Q4 네 개를
+  더한다(그때만 `quarters`가 의미를 갖는다). 판정은 문자열 비교가 아니라
+  `FiscalPeriod(...).is_annual`로 한다. 둘 다 없으면 부분 연도로 남긴다.
+- 위험: TR2-15에서 (b)삭제를 고르면 이 항목은 자동으로 사라진다. (a)연결을 고르면 **먼저** 고쳐야 한다.
+  테스트 픽스처(`tests/investment_agent/trading/evidence/test_dossier_history.py`)가 Q1~Q4만 넣어
+  FY 행이 섞인 실제 리더 결과를 재현하지 않으므로 이 결함을 가린다 — 픽스처에 FY 행을 넣는 것이
+  위반 주입 확인 방법이다.
+
+### [TR2-17] `graph_state.py`가 "대시보드가 읽는 이름과 일치한다"고 단언하지만, 이 저장소의 유일한 reader는 옛 이름(`risky_history`·`safe_history`)을 읽고 그 reader 자체가 죽어 있다  [확정] [중간] [구조]
+- 파일:줄 — src/investment_agent/trading/decision/agents/graph_state.py:1-5·115-117(주석 단언),
+  :148-159(`RiskDebateState` 필드),
+  src/investment_agent/reporting/services/investment/decision_cases.py:103-113(옛 이름 읽기),
+  :313(`"role_summaries": []` 고정), src/investment_agent/dashboard/app_pages/ai_approval.py:213-232
+- 증상: 주석이 사실이 아니다. 누군가 "대시보드가 aggressive/conservative/neutral을 읽는다"를 믿고
+  필드명을 그 계약으로 취급하면, 실제 reader를 연결하는 순간 3개 중 2개가 조용히 빈다.
+- 근거: `RiskDebateState`의 필드는 `aggressive_history`·`conservative_history`·`neutral_history`
+  (`graph_state.py:150-152`)이고 `orchestrator.py:250`이 `asdict(risk_state)`로 그 이름을 그대로 낸다.
+  그런데 저장소에서 `risk_debate_state`를 읽는 코드는 한 곳뿐이며 그것은
+  `decision_cases.py:103-113`의
+  `(("risky_history", "risk_manager_aggressive"), ("safe_history", "risk_manager_conservative"),
+    ("neutral_history", "risk_manager_neutral"), ("judge_decision", "risk_manager"))`다 —
+  **`risky_history`·`safe_history`는 `RiskDebateState`에 없는 이름이다.** 4개 중 2개가 매칭되지 않고,
+  마지막의 알려지지 않은 키 처리 루프(`:115-121`)는 **최상위 키만** 훑으므로
+  `risk_debate_state` 안의 `aggressive_history`·`conservative_history`는 주워지지 않는다.
+  그리고 그 reader는 죽어 있다 — `normalize_role_analyses`(100줄)·`summarize_role_analyses`(32줄)의
+  src 호출부는 0건이고(`dashboard/calculations/__init__.py:75`가 재수출만 한다),
+  read model은 `"role_summaries": []`를 **상수로** 넣는다(`:313`).
+  화면은 그 빈 리스트를 받아 "역할 분석 N개 원문은 … 이 화면에는 전달하지 않아요"를 띄운다
+  (`ai_approval.py:218-222`) — 화면 동작은 정직하지만, 그 정직함이 reader의 이름 드리프트를 가린다.
+  같은 함수는 `macro_report`도 `report_roles` 표에 없어(`decision_cases.py:79-86`) 역할명이
+  `market_analyst` 같은 이름이 아니라 원 키 `macro_report`로 나온다.
+- 재현: `normalize_role_analyses(asdict(risk_state))`를 직접 부르면 결과에
+  `risk_manager_aggressive`·`risk_manager_conservative`가 없다(`neutral_history`와 `judge_decision`만 나온다).
+  테스트(`tests/investment_agent/reporting/test_investment_decision_cases.py:60,76`)는
+  `role_summaries == []`만 확인해 이 불일치를 검증하지 않는다.
+- 원인: 주석이 "지금 왜 이런지"가 아니라 **한 번 확인한 외부 사실**을 단언했고, 그 사실이 반대쪽에서
+  바뀌었다. 그리고 reader가 죽으면서 아무것도 실패하지 않았다.
+- 해결: 두 가지를 함께 한다. (1) 이름의 단일 기준을 한쪽에 둔다 — `RiskDebateState`의 필드명을
+  SSOT로 선언하고 `decision_cases.py`의 매핑을 `aggressive_history`·`conservative_history`로 고치며,
+  두 이름이 어긋나면 실패하는 테스트를 둔다(`asdict(RiskDebateState())`의 키 집합과 매핑 키 집합을 대조).
+  (2) 죽은 reader를 정리한다 — `role_summaries`를 상수 `[]`로 둘 것이라면
+  `normalize_role_analyses`·`summarize_role_analyses`를 지우고, 화면에 연결할 것이라면
+  artifact를 되읽는 경로를 만든다(`EvidenceArtifactStore.read`가 이미 있다).
+  `graph_state.py`의 주석에서 검증할 수 없는 단언을 뺀다.
+- 위험: (2)에서 artifact를 화면에 연결하면 case당 수십 KB 원문이 화면에 실린다 —
+  `evidence/__init__.py`가 명시한 "내용은 DB 밖에" 원칙과 read model 크기 판단이 필요하므로
+  사용자 결정 사항이다. (1)만 하면 위험이 없다.

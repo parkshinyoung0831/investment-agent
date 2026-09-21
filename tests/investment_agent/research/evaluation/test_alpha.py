@@ -20,7 +20,7 @@ class CrossSectionalAlphaTest(unittest.TestCase):
         self.assertLess(score.ic_t_stat, 2.0)
         self.assertEqual(score.hac_lags, 19)
         self.assertEqual(score.horizon_days, 20)
-        self.assertEqual(score.inference_method, "newey_west_bartlett_iid_floor_v1")
+        self.assertEqual(score.inference_method, "newey_west_bartlett_iid_floor_v2")
         # 독립적으로 만든 Bartlett kernel의 이중합과 비교한다.
         values = np.r_[np.ones(60), -np.ones(40)]
         residual = values - values.mean()

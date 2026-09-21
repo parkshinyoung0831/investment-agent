@@ -84,10 +84,6 @@ def shadow_context() -> RunContext:
     return RunContext(stage="shadow", execution_mode="paper", source_kind="live_shadow")
 
 
-def replay_context(stage: str = "backtest") -> RunContext:
-    return RunContext(stage=stage, execution_mode="paper", source_kind="historical_replay")
-
-
 __all__ = [
     "EVALUATION_HORIZONS",
     "EXECUTION_MODES",
@@ -96,6 +92,5 @@ __all__ = [
     "STAGES",
     "ContractViolation",
     "RunContext",
-    "replay_context",
     "shadow_context",
 ]

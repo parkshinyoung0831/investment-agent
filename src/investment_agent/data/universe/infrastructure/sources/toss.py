@@ -26,10 +26,11 @@ from investment_agent.execution.brokers.toss.auth import (
 from investment_agent.execution.brokers.toss.auth import (
     access_token as shared_access_token,
 )
+from investment_agent.platform.endpoints import TOSS_OPENAPI_BASE
 
 log = get_logger(__name__)
 
-_BASE = "https://openapi.tossinvest.com"
+_BASE = TOSS_OPENAPI_BASE
 _STOCKS_URL = f"{_BASE}/api/v1/stocks"
 _BATCH = 50        # 한 번에 조회할 심볼 수 (콤마 구분)
 _SLEEP = 0.25      # STOCK 그룹 5 TPS 준수(여유 포함)

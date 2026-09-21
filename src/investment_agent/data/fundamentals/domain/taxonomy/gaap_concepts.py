@@ -25,7 +25,7 @@ _MIN_CONFIDENCE = 0.20
 #
 # 값을 바꾸면 그 이전 정책으로 만든 행은 낡은 것이 되고 재처리 대상이 된다.
 # 그래서 날짜가 아니라 세대 번호다 — 정책이 실제로 달라질 때만 v2로 올린다.
-SEMANTIC_POLICY_VERSION = "v1"
+SEMANTIC_POLICY_VERSION = "v2"
 
 
 @dataclass(frozen=True)

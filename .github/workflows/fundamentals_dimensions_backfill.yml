@@ -67,9 +67,6 @@ jobs:
           key: secfsds-data-${{ steps.q.outputs.q }}
           restore-keys: secfsds-data-
 
-      - name: Install dependencies
-        run: true # dependency group prepared above
-
       - name: Write secfsdstools config
         run: |
           EMAIL=$(printf '%s' "$EDGAR_USER_AGENT" | grep -oiE '[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}' | head -1)

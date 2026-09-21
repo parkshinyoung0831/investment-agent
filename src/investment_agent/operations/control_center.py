@@ -67,6 +67,18 @@ def control_command(
     raise ValueError(f"지원하지 않는 제어 작업: {action}")
 
 
+def describe_result(returncode: int, stdout: str | None, stderr: str | None) -> str:
+    """하네스 시작·정지 subprocess의 결과를 한 줄로. 종료 코드가 0이 아니면 성공처럼 보이면 안 된다.
+
+    예전에는 종료 코드를 보지 않고 출력의 마지막 줄만 보여줘서, 정지가 실패해도 "완료"처럼 읽혔다.
+    """
+    last = lambda text: next((line.strip() for line in reversed((text or "").splitlines()) if line.strip()), "")
+    if returncode != 0:
+        detail = last(stderr) or last(stdout)
+        return f"실패(종료 코드 {returncode})" + (f" · {detail}" if detail else "")
+    return last(stdout) or last(stderr) or "완료"
+
+
 def dashboard_command(
     *,
     root_dir: Path = ROOT,
@@ -242,8 +254,7 @@ class ControlCenter:
         def worker() -> None:
             try:
                 result = subprocess.run(command, cwd=self.root_dir, capture_output=True, text=True, encoding="utf-8", check=False)
-                output = (result.stdout or result.stderr or "완료").strip().splitlines()
-                message = output[-1] if output else f"종료 코드 {result.returncode}"
+                message = describe_result(result.returncode, result.stdout, result.stderr)
             except OSError as error:
                 message = f"작업을 실행하지 못했어요 · 실행 환경을 확인해 주세요 ({type(error).__name__}: {error})"
             self.window.after(0, lambda: (self.log_var.set(message[:180]), self.refresh()))

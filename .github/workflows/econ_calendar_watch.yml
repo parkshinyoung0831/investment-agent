@@ -1,8 +1,8 @@
 name: econ_calendar_watch
 
-# 발표 직후를 잡는 watcher. wake-up마다 현재 schedule version의 예정시각을 조회하고
-# due event가 없으면 즉시 끝난다. 로컬 harness도 같은 watch_releases entrypoint를 더
-# 짧은 간격으로 부를 수 있다.
+# 발표 직후를 잡는 watcher의 **안전망**. wake-up마다 현재 schedule version의 예정시각을 조회하고
+# due event가 없으면 즉시 끝난다. GitHub schedule은 수 시간 늦게 돌아(실측 한 달 17회) 1차 경로는
+# 로컬 하네스의 `econ_release_watch` job이고, 이것은 노트북이 꺼져 있을 때를 받친다.
 #
 # 창을 UTC 12~15시 평일로 좁힌 이유는 비용이다. `*/5 * * * *`는 한 달에 8,766번
 # 도는데, 이 저장소의 Actions 할당은 2,000분이라 이 워크플로 하나가 할당을 8배

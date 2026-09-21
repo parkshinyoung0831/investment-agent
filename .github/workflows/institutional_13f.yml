@@ -74,10 +74,6 @@ jobs:
         if: steps.pending.outputs.should_notify == 'true' || inputs.force_notify == true
         run: python -m investment_agent.operations.commands.validate_subscriptions --kind institutional
 
-      - name: Install notification dependencies
-        if: steps.pending.outputs.should_notify == 'true' || inputs.force_notify == true
-        run: ":" # dependency group prepared above
-
       - name: Send new 13F notifications
         if: steps.pending.outputs.should_notify == 'true' || inputs.force_notify == true
         run: python -m investment_agent.operations.commands.notify --kind gurus_13f

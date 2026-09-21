@@ -150,6 +150,27 @@ def earnings_watch_job(
         ),
     )
 
+def econ_release_watch_job(
+    *,
+    watch_releases: StageHandler,
+    interval_seconds: float = 60,
+    stale_after_seconds: float = 15 * 60,
+) -> JobDefinition:
+    """경제지표 발표 직후의 첫 actual을 잡아 속보로 보낸다.
+
+    Actions의 `econ_calendar_watch`는 15분마다 돌도록 짰지만 GitHub schedule이 수 시간 늦게 도는 것이 실측이라
+    한 달에 17번만 돌았다(12:30 UTC 발표 속보가 4시간 뒤에 나갔다). 노트북이 켜져 있을 때의 1차 경로이며,
+    발표 시간대 밖에는 stage가 바로 끝난다. Actions는 안전망으로 남고 중복은 알림 원장이 막는다.
+    주문이 아니라 데이터 수집이라 거래 kill switch·모드와 무관하다.
+    """
+    return JobDefinition(
+        job_id="econ_release_watch",
+        interval_seconds=interval_seconds,
+        stale_after_seconds=stale_after_seconds,
+        stages=(StageDefinition("watch", watch_releases, max_attempts=2, retry_delay_seconds=60),),
+    )
+
+
 def feature_store_job(
     *,
     build_valuations: StageHandler,

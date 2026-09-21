@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
 from typing import Mapping
 from investment_agent.platform.storage_paths import repository_root
@@ -79,14 +78,4 @@ def load_config(
     return Config(env=dict(source), dotenv_path=path if path.exists() else None, dotenv_loaded=loaded)
 
 
-@lru_cache(maxsize=1)
-def default_config() -> Config:
-    """진입점이 매번 넘기기 번거로운 자리를 위한 캐시.
-
-    라이브러리 코드에서는 쓰지 않는다 — 쓰면 그 함수는 프로세스 환경에 묶여 테스트에서
-    격리할 수 없게 된다. 인자로 받아라.
-    """
-    return load_config()
-
-
-__all__ = ["Config", "ConfigError", "REQUIRED_ALWAYS", "ROOT", "default_config", "load_config"]
+__all__ = ["Config", "ConfigError", "REQUIRED_ALWAYS", "ROOT", "load_config"]

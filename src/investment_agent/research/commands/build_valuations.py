@@ -93,6 +93,11 @@ def build_valuations(
     phase = time.monotonic()
     if source_kind == "historical_replay" and hasattr(selected, "prepare_historical_replay"):
         selected.prepare_historical_replay(tuple(tickers), as_of_at)
+    elif hasattr(selected, "prepare_valuation_inputs"):
+        try:
+            selected.prepare_valuation_inputs(tuple(tickers), as_of_at)
+        except Exception as exc:  # noqa: BLE001 - 배치는 속도만 위한 것이라 실패하면 종목별 조회로 같은 값을 만든다
+            log.warning("valuation batch prefetch failed, falling back to per-ticker reads: %s", type(exc).__name__)
     prepare_sec = time.monotonic() - phase
 
     phase = time.monotonic()

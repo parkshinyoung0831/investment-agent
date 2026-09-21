@@ -326,10 +326,20 @@ class WorkflowSchedule(unittest.TestCase):
         text = Path(".github/workflows/fundamentals_earnings_watch.yml").read_text(
             encoding="utf-8"
         )
-        # 13:00 UTC = 22:00 KST(장전 마감 후), 21:30 UTC = 06:30 KST(장후 마감 후)
+        # 13:00 UTC = 22:00 KST(장전 마감 후), 22:00 UTC = 07:00 KST(장후 마감 후)
         self.assertIn('cron: "0 13 * * 1-5"', text)
         self.assertIn('cron: "0 22 * * 1-5"', text)
         self.assertIn("investment_agent.operations.commands.watch_earnings", text)
+
+    def test_scheduled_runs_do_not_depend_on_a_wall_clock_window(self):
+        """schedule은 정시보다 수 시간 늦게 돈다 — 창 판정(bmo/amc/auto)을 걸면 대상 0건으로 성공 종료한다."""
+        from pathlib import Path
+
+        text = Path(".github/workflows/fundamentals_earnings_watch.yml").read_text(encoding="utf-8")
+        scheduled = text.split('if [ "${{ github.event_name }}" = "schedule" ]; then', 1)[1].split("else", 1)[0]
+        self.assertIn("session=any", scheduled)
+        self.assertNotIn("bmo", scheduled)
+        self.assertNotIn("amc", scheduled)
 
 
 if __name__ == "__main__":

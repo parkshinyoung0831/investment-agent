@@ -18,10 +18,11 @@ import requests
 
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.retry import retry_on_5xx
+from investment_agent.platform.endpoints import ECOS_STATISTIC_SEARCH_URL, FRED_OBSERVATIONS_URL
 
 log = get_logger(__name__)
-_FRED = "https://api.stlouisfed.org/fred/series/observations"
-_ECOS = "https://ecos.bok.or.kr/api/StatisticSearch"
+_FRED = FRED_OBSERVATIONS_URL
+_ECOS = ECOS_STATISTIC_SEARCH_URL
 _EIA = "https://api.eia.gov/v2/petroleum/stoc/wstk/data/"
 _ECOS_PAGE_SIZE = 1000
 _ECOS_MAX_PAGES = 100

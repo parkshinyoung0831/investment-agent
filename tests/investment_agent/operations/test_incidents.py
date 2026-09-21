@@ -7,12 +7,27 @@ from datetime import datetime, timezone
 from investment_agent.operations.monitoring.incidents import (
     Incident,
     build_incident_embed,
+    classify_incident,
     extract_error_summary,
     failed_job,
     failed_step,
     redact,
 )
 from investment_agent.operations.palette import STATUS_DANGER, STATUS_WARNING
+
+
+class ClassifyIncidentTest(unittest.TestCase):
+    """상태 코드 패턴은 단어 경계에서만 맞는다 — 요약문의 아무 숫자열이 401·403·429로 읽히면 안 된다(OP-09)."""
+
+    def test_status_codes_match_only_as_whole_numbers(self):
+        self.assertEqual(classify_incident("적재 4030행 처리 뒤 종료"), "code")
+        self.assertEqual(classify_incident("processed 14290 rows"), "code")
+        self.assertEqual(classify_incident("HTTP 403 Forbidden"), "configuration")
+        self.assertEqual(classify_incident("status 401"), "configuration")
+        self.assertEqual(classify_incident("status 429 too many"), "provider")
+
+    def test_earlier_rules_keep_precedence(self):
+        self.assertEqual(classify_incident("request timeout after 30s"), "timeout")
 
 
 class IncidentTest(unittest.TestCase):

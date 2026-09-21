@@ -25,6 +25,8 @@ jobs:
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      # 파이썬이 읽는 실제 변수. 계산과 보존이 같은 자리를 본다.
+      INVESTMENT_AGENT_RESEARCH_ROOT: data/local/research
     steps:
       - name: Decide whether to run
         id: gate
@@ -55,7 +57,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: research-strategy
-          path: data/local/research/research.duckdb
+          path: ${{ env.INVESTMENT_AGENT_RESEARCH_ROOT }}/research.duckdb
           if-no-files-found: error
           retention-days: 90
 

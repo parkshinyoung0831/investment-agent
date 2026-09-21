@@ -79,15 +79,7 @@ def delete_allocations_before(cutoff_date: str) -> int:
     return _store().delete_allocations_before(cutoff_date)
 
 
-def latest_allocation_per_strategy() -> list[dict]:
-    rows = _store().allocations()
-    latest: dict[str, dict] = {}
-    for row in sorted(rows, key=lambda value: str(value["apply_date"]), reverse=True):
-        latest.setdefault(str(row["strategy_id"]), row)
-    return [latest[key] for key in sorted(latest)]
-
-
 __all__ = [
-    "allocation_strategy_ids", "delete_allocations_before", "latest_allocation_per_strategy",
+    "allocation_strategy_ids", "delete_allocations_before",
     "mark_allocations_sent", "upsert_allocation",
 ]

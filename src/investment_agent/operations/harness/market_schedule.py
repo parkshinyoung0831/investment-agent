@@ -42,7 +42,7 @@ def is_us_market_holiday(d: date) -> bool:
     """미국 증권거래소(NYSE)의 정기 휴장일 여부를 판정한다.
 
     규칙으로 나오는 정기 휴장만 안다. 1회성 임시 휴장(국장 등)은 알 수 없어 실주문은 브로커 캘린더가
-    따로 거른다. 조기 마감(추수감사절 다음 날 등)도 이 함수의 범위가 아니다.
+    따로 거른다. 조기 마감은 `us_market_close_time`이 안다.
     """
     month = d.month
     day = d.day
@@ -106,6 +106,31 @@ def is_us_market_holiday(d: date) -> bool:
     return False
 
 
+REGULAR_CLOSE = time(16, 0)
+EARLY_CLOSE = time(13, 0)
+
+
+def is_early_close_day(d: date) -> bool:
+    """NYSE 정규 조기 마감(13:00 ET)일: 추수감사절 다음 금요일, 12/24, 7/3(평일이고 7/4 휴장이 다음 날일 때).
+
+    12/24가 금요일이거나 7/3이 금요일이면 각각 크리스마스·독립기념일의 대체 휴장일이라 조기 마감이 아니라 휴장이다.
+    """
+    if d.weekday() >= 5 or is_us_market_holiday(d):
+        return False
+    if d.month == 11 and d.weekday() == 4 and 23 <= d.day <= 29:
+        return True
+    if d.month == 12 and d.day == 24:
+        return True
+    return d.month == 7 and d.day == 3
+
+
+def us_market_close_time(d: date) -> time | None:
+    """그 날짜의 정규장 마감 시각(뉴욕 현지). 휴장·주말이면 None."""
+    if d.weekday() >= 5 or is_us_market_holiday(d):
+        return None
+    return EARLY_CLOSE if is_early_close_day(d) else REGULAR_CLOSE
+
+
 @dataclass(frozen=True)
 class SessionWindow:
     """DST를 포함한 뉴욕 현지 시각 기준의 신규 판단 시작 구간이다."""
@@ -121,9 +146,14 @@ class SessionWindow:
 
     def is_open(self, value: datetime) -> bool:
         local = parse_datetime(value).astimezone(NY_TZ)
-        if local.weekday() >= 5 or is_us_market_holiday(local.date()):
+        close = us_market_close_time(local.date())
+        if close is None:
             return False
-        return self.start <= local.time().replace(tzinfo=None) <= self.end
+        # 창의 끝은 정규 마감(16:00)에 대한 상대 위치다(판단 창은 마감 90분 전, 위험 감시 창은 마감 30분 뒤).
+        # 조기 마감일에는 그 상대 위치를 지켜 끝을 마감이 앞당겨진 만큼 당긴다.
+        early_by = datetime.combine(local.date(), REGULAR_CLOSE) - datetime.combine(local.date(), close)
+        end = (datetime.combine(local.date(), self.end) - early_by).time()
+        return self.start <= local.time().replace(tzinfo=None) <= end
 
     def seconds_until_open(self, value: datetime) -> float:
         current = parse_datetime(value).astimezone(NY_TZ)
@@ -176,8 +206,9 @@ def get_us_market_phase(now: datetime | None = None) -> MarketPhaseInfo:
         )
 
     # 주중 시간대별 판정 (NY Time 기준)
-    if time(9, 30) <= ny_time < time(16, 0):
-        # 본장 거래 시간 (09:30 ~ 16:00)
+    close = us_market_close_time(ny_dt.date()) or REGULAR_CLOSE
+    if time(9, 30) <= ny_time < close:
+        # 본장 거래 시간 (09:30 ~ 마감, 조기 마감일은 13:00)
         return MarketPhaseInfo(
             phase=USMarketPhase.REGULAR_TRADING,
             is_weekend=False,
@@ -187,8 +218,8 @@ def get_us_market_phase(now: datetime | None = None) -> MarketPhaseInfo:
             suggested_interval_seconds=RECONCILIATION_INTERVAL_OPEN_SECONDS,
             description="미국 정규장 진행 중: 실시간 체결 감시 및 리스크 모니터링",
         )
-    elif time(16, 0) <= ny_time < time(19, 0):
-        # 장마감 직후 공시 및 분석 시간 (16:00 ~ 19:00)
+    elif close <= ny_time < time(19, 0):
+        # 장마감 직후 공시 및 분석 시간 (마감 ~ 19:00)
         return MarketPhaseInfo(
             phase=USMarketPhase.POST_CLOSE_ANALYSIS,
             is_weekend=False,
@@ -226,6 +257,7 @@ __all__ = [
     "APPROVAL_POLL_SECONDS",
     "DEFAULT_ANALYSIS_INTERVAL_SECONDS",
     "HEARTBEAT_POLL_SECONDS",
+    "EARLY_CLOSE",
     "MarketPhaseInfo",
     "NY_TZ",
     "RECONCILIATION_INTERVAL_OPEN_SECONDS",
@@ -234,5 +266,7 @@ __all__ = [
     "SessionWindow",
     "USMarketPhase",
     "get_us_market_phase",
+    "is_early_close_day",
     "is_us_market_holiday",
+    "us_market_close_time",
 ]

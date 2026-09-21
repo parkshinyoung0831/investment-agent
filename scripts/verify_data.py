@@ -217,6 +217,8 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("SUPABASE_DB_URL이 필요하다 (.env). 로컬 전용이며 CI에 주입하지 않는다.")
 
     conn = psycopg2.connect(url)
+    # 이 도구는 읽기만 한다 — 검사 SQL이 잘못 바뀌어도 쓰기가 통하지 않게 세션에서 막는다.
+    conn.set_session(readonly=True, autocommit=True)
     results = []
     try:
         with conn.cursor() as cur:
@@ -229,8 +231,6 @@ def main(argv: list[str] | None = None) -> int:
                     status = "ok" if actual == expected else "fail"
                     detail = None
                 except Exception as exc:  # noqa: BLE001 - 검사 하나가 나머지를 막지 않는다
-                    conn.rollback()
-                    cur.execute("set statement_timeout to 180000")
                     actual, status, detail = None, "error", f"{type(exc).__name__}: {exc}"
                 results.append({
                     "check": name, "expected": expected,

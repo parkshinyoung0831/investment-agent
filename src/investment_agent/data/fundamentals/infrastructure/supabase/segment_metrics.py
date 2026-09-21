@@ -9,7 +9,7 @@ from collections.abc import Iterable, Sequence
 from investment_agent.data.universe.watchlists import db as alerts_db
 from investment_agent.platform.cli.runtime import utc_now_iso
 from investment_agent.platform.logging import get_logger
-from investment_agent.platform.db.postgres import chunk_filter_values, sb, select_all_paged, select_paged_in_chunks
+from investment_agent.platform.db.postgres import chunk_values, sb, select_all_paged, select_paged_in_chunks
 from investment_agent.data.fundamentals.domain.services.assess_segment_quality import assess_rows
 from investment_agent.data.fundamentals.domain.taxonomy.segment_axes import SEGMENT_MAPPING_VERSION
 from investment_agent.data.fundamentals.infrastructure.supabase import company_financials
@@ -237,7 +237,7 @@ def delete_history_before(cutoff: str) -> dict[str, int]:
     )
     accession_values = [str(row["accession_no"]) for row in accessions]
     processing_deleted = 0
-    for chunk in chunk_filter_values(accession_values, _DELETE_ACCESSION_BATCH):
+    for chunk in chunk_values(accession_values, _DELETE_ACCESSION_BATCH):
         response = (
             sb.schema(_SCHEMA).table(_PROCESSING_TABLE)
             .delete(count="exact", returning="minimal")

@@ -30,7 +30,8 @@ _ARTIFACT_PATHS = {
 }
 
 _PATH_LINE = re.compile(r"^\s+path:\s*(.+?)\s*$", re.M)
-_ENV_REF = re.compile(r"^\$\{\{\s*env\.([A-Z0-9_]+)\s*\}\}$")
+# `${{ env.NAME }}` 또는 `${{ env.NAME }}/파일명` — 앞의 루트만 job env에서 풀고 뒤의 파일명은 그대로 붙인다.
+_ENV_REF = re.compile(r"^\$\{\{\s*env\.([A-Z0-9_]+)\s*\}\}(.*)$")
 
 
 def _job_env(document: dict) -> dict[str, str]:
@@ -51,7 +52,7 @@ def _resolved_research_paths(name: str) -> list[str]:
     out = []
     for value in _PATH_LINE.findall(text):
         reference = _ENV_REF.match(value)
-        resolved = env.get(reference.group(1), value) if reference else value
+        resolved = (env.get(reference.group(1), value) + reference.group(2)) if reference else value
         if "research" in resolved:
             out.append(resolved)
     return out

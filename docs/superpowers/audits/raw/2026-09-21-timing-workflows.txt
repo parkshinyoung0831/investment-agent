@@ -1,0 +1,150 @@
+# 2026-09-21 실측: 워크플로 시각·실패율 · 그 밖의 저자 직접 분석
+
+## 측정 방법
+- `gh run list --limit 1000 --json name,event,status,conclusion,createdAt,startedAt,updatedAt,workflowName,databaseId`
+- 관측 구간 2026-08-21 21:49 ~ 2026-09-21 05:33 (UTC), schedule 이벤트만 지연 계산.
+- 명목 슬롯은 `.github/workflows/*.yml`의 cron을 요일까지 펼쳐 만들고, 실행을 6시간 이내의
+  가장 가까운 이전 슬롯에 1:1 매칭했다(매칭되지 않은 슬롯 = 드롭).
+- HEAD과 작업 트리의 cron 선언은 **동일**하다(diff 0건) — 따라서 이력이 현재 선언의 실측이다.
+
+## 표 1. 워크플로별 지연·드롭 (분)
+workflow                                  cron(UTC)  명목 실행 드롭%  중앙  p90  p95  최대
+econ_calendar_daily                       40 1 * * *    30   27   17   296  316  321  357
+econ_calendar_ics                         10 5 * * *    30   27   30   270  303  303  325
+econ_calendar_revision_audit              25 2 * * 0     3    3    0   307  323  323  323
+econ_calendar_watch               */15 12-15 * * 1-5   240   17   93    26  174  187  201
+fundamentals_daily                      30 3 * * 2-6    21   18   19   284  321  322  324
+fundamentals_dimensions                 10 4 * * 2-6    19   17   16   284  313  313  314
+fundamentals_earnings_watch  0 13 * * 1-5;0 22 * * 1-5  36   32   17   158  261  309  314
+fundamentals_integrity                     0 9 * * *    24   21   25   266  309  312  352
+fundamentals_watchlist_fast            30 21 * * 1-5    21   19   14   118  145  193  205
+institutional_13f                       40 4 * * 2-6    10   10    0   269  295  299  299
+macro_etl                               25 0 * * 2-6    21   19   19   267  275  277  297
+macro_etl_monday                          25 0 * * 1     5    5    0   282  325  325  325
+market_daily                           30 23 * * 1-5    21   19   14   108  129  149  306
+notify_econ_calendar_release    20 3/9/15/21 * * *     121   86   31   207  305  321  346
+notify_fundamentals                     20 5 * * 2-6    21   19   14   270  284  289  293
+notify_fundamentals_calendar             10 23 * * 0     5    5    0   112  131  131  131
+notify_macro_core                       20 3 * * 1-6    25   22   20   288  326  328  345
+notify_macro_watch                      50 0 * * 1-6    25   39   16   270  283  294  327
+ops_heartbeat                             40 6 * * *    30   27   23   301  324  327  335
+strategy_monthly                      0 22 28-31 * *     2    2    0   156  179  179  179
+universe_membership_check            40 22 * * 1,3,5    11    9   18   120  163  292  292
+universe_monthly                          20 0 1 * *     1    1    0   299  299  299  299
+
+## 표 2. 명목 UTC "시"별 지연 (워크플로 무관, 표본 전체)
+명목 UTC시  KST  표본  중앙  p90  최대
+   0        9    64   271  471  687
+   1       10    27   297  321  700
+   2       11     3   307  323  323
+   3       12    63   286  326  658
+   4       13    27   281  312  661
+   5       14    42   270  303  678
+   6       15    27   306  379  672
+   9       18    41   264  346  625
+  13       22    15   247  314  387
+  15        0    39   170  225  331
+  21        6    40   119  153  480
+  22        7    28   118  179  473
+  23        8    24   110  149  449
+
+→ **21:00~23:59 UTC 명목은 중앙 110~119분, 00:00~09:00 UTC 명목은 264~307분.** 2.4배 차이다.
+
+## 표 3. 분 정렬 효과 — 시(hour)를 통제하면 사라진다
+00~09 UTC 구간만 놓고 명목 "분"별 지연 중앙(분):
+  :00  표본 21  269 | :10 표본 40  280 | :20 표본 42  281 | :25 표본 27  270
+  :30  표본 18  285 | :40 표본 64  297 | :50 표본 39  272
+→ **분을 비정렬로 옮기는 변경은 근거가 없다.** 시를 통제하지 않은 집계(+0분 147 vs +5분 266)는
+   21~23시 워크플로가 :30·:00에 몰려 있어 생긴 교란이다. 직전 감사 11.3의 판단("분 이동 안 함")이 맞다.
+
+## 표 4. workflow_run 체인 지연 (상류 종료 → 하류 생성, 분)
+  econ_calendar_ics        <- econ_calendar_daily        표본 29 중앙 0.0 최대  0.1
+  fundamentals_dimensions  <- fundamentals_daily         표본 15 중앙 0.0 최대  0.1
+  fundamentals_expectations<- market_daily               표본 18 중앙 0.0 최대  0.2
+  notify_fundamentals      <- fundamentals_daily 외      표본 70 중앙 0.0 최대 47.8
+  notify_macro_core        <- macro_etl 외               표본 26 중앙 0.0 최대  0.1
+  notify_macro_watch       <- macro_etl 외               표본 26 중앙 0.0 최대  0.1
+  tech_indicators          <- market_daily               표본 19 중앙 0.0 최대  0.1
+  macro_etl                <- market_daily               (매칭 0건 — WF-10 수정이 아직 배포되지 않음)
+→ **체인은 중앙 0.0분.** cron은 110~307분. 순서 의존은 전부 체인으로, 시각 의존은 21~23시 UTC 또는 하네스로.
+
+## 표 5. 실패율 (schedule+workflow_run, 관측 구간)
+workflow                       총  실패  실패%  최근 실패일
+econ_calendar_ics              56   26    46   09-17,09-18,09-19,09-20
+fundamentals_integrity         21   14    67   09-17,09-18,09-19,09-20
+notify_investment               3    3   100   09-08,09-09,09-10 (워크플로 파일이 이후 삭제됨 — 해소)
+market_daily                   19    6    32   08-27,08-28,09-01,09-09
+institutional_13f              10    3    30   09-08,09-09,09-10
+fundamentals_expectations      18    5    28   09-02,09-03,09-04,09-08
+notify_fundamentals            89   24    27   09-01,09-08,09-09,09-10
+notify_econ_calendar_release   93   21    23   09-08,09-09,09-10,09-13
+econ_calendar_daily            27    6    22   08-27,09-06,09-07,09-20
+fundamentals_daily             18    4    22   08-25,09-08,09-09,09-10
+gurus_13f                       9    2    22   (이름이 사라진 옛 워크플로 — 이력만)
+
+## 저자 직접 분석 — 항목
+
+### [AU-01] 신규 추적 CIK의 기존 공시가 세그먼트 처리에서 영구 누락 → 정합성 점검이 매일 실패  [확정] [중간] [정확성]
+- 파일: src/investment_agent/data/fundamentals/commands/sync_filings.py:101
+  (`FUNDAMENTALS_SEGMENT_LOOKBACK_DAYS` 기본 7), 판정은
+  src/investment_agent/data/fundamentals/infrastructure/supabase/integrity.py:230
+- 증상: `fundamentals_integrity`가 21회 중 14회(67%) 실패, 09-17~09-20 연속. 운영 로그:
+  `integrity segment_tracked_coverage [error] 세그먼트 처리 상태가 없는 추적 ticker 3개
+   detail={'missing': ['FDXF','HONA','XOM']}`. 실패마다 Discord 실패 보고가 나간다.
+- 운영 수치(읽기 전용 PostgREST 조회):
+  - FDXF = cik 0002082247 "FedEx Freight Holding Company, Inc." / 10-K 2026-08-05
+  - HONA = cik 0002089271 "Honeywell Aerospace Inc." / 10-Q 2026-08-05
+  - XOM  = cik 0002115436 "ExxonMobil Holdings Corp" / 10-Q 2026-08-03 (accession 0000034088-26-000093)
+  - 세 CIK 모두 `filing_processing`에 `content_type='company'` (v1·v2, status=parsed)는 있고
+    **`content_type='segments'` 행이 0개**다. `segment_metrics`도 0행.
+  - 이 종목들은 2026-09-13에 universe에 들어왔다(`entities.sec_metadata_updated_at`).
+- 원인: company 경로는 CIK별 companyfacts를 읽어 과거 기간까지 채우지만, segments 경로는
+  **SEC 일별 색인 + 7일 lookback**으로 대상을 고른다. 2026-09-13에 새로 tracked가 된 종목의
+  08-03·08-05 공시는 그 창 밖이라 증분이 영원히 안 본다. 정합성 점검은 (정당하게) 계속 ERROR다.
+- 해결(하드코딩·완화 없이): ① 오류 메시지가 처방을 말하게 한다 — "segments 처리 행이 **아예 없는**
+  신규 추적 CIK"와 "행은 있는데 terminal이 아닌 실패"를 구분해 각각 다른 check로 올린다(둘 다 ERROR 유지).
+  ② 추적 집합이 바뀐 뒤 `backfill_history --content segments --scope missing`이 돌게 잇는다
+  (`--scope missing` = "신규 종목"으로 이미 구현돼 있고 지금은 workflow_dispatch 전용).
+- 위험: ②는 새 실행 경로다. 배치 크기·예산을 함께 봐야 한다.
+
+### [AU-02] econ_calendar_ics가 46% 실패하며 매일 실패 알림을 낸다 (버킷 없음) + cron·체인 이중 실행  [확정] [낮음] [구조]
+- 파일: .github/workflows/econ_calendar_ics.yml:8(workflow_run) / :12(cron "10 5 * * *")
+- 증상: 56회 중 26회 실패(46%), 09-17~09-20 연속. 운영 로그:
+  `RuntimeError: Supabase Storage에 공개 버킷 'econ-calendar'이 없습니다`.
+- 근거: 상류 체인(29회, 지연 0.0분)과 자체 cron(27회, 지연 270분·드롭 30%)이 같은 일을 두 번 한다.
+  버킷이 없으므로 둘 다 실패하고, 실패마다 ops 채널로 보고가 간다.
+- 원인: WF-02(버킷 생성)가 사용자 조치로 남아 있는 동안 워크플로가 fail-closed로 매일 두 번 운다.
+- 해결: 버킷 생성은 사용자 조치다(직전 감사 10.3에 이미 있음). 코드 쪽은 **cron 안전망을 뺀다** —
+  상류 체인이 29/29 발화했고 지연 0.0분이라 안전망이 얻는 것이 없는데 드롭 30%·지연 270분짜리
+  중복 실행과 알림만 만든다. 오류를 삼키지는 않는다(버킷 없음은 그대로 실패).
+- 위험: econ_calendar_daily가 아예 안 도는 날에는 ics도 안 나간다. 그 날은 상류가 실패한 것이므로
+  상류 알림이 이미 울린다.
+
+### [AU-03] 대시보드 13F 화면이 매니저 성향을 이름 부분문자열로 고른다 (카탈로그에 이미 있는 값)  [확정] [낮음] [하드코딩]
+- 파일: src/investment_agent/dashboard/app_pages/gurus.py:46-100
+- 근거: `MANAGER_PRESENTATION`(institutional domain catalog, CIK 키)에 이미 `strategy_group`이
+  있다(value·concentrated_quality·quality_growth·innovation_growth·macro_momentum·macro_policy·
+  contrarian_value). 화면은 그것을 안 쓰고 `name`/`name_ko`/`fund_name`을 이어 붙인 문자열에
+  14개 needle을 부분 일치시킨다.
+- 직전 감사 HC-13은 "한글 needle '클라만'이 카탈로그 '클라먼'과 달라 죽어 있다"고 적었는데
+  **부분만 맞다**: `active_managers()`가 `name`(영문 "Seth Klarman")도 주므로 영문 needle
+  "klarman"이 걸려 라벨은 나온다. 죽은 것은 한글 needle 7개다.
+- 진짜 결함: ① 거장을 한 명 추가하면(카탈로그 한 줄) 성향·요약이 **조용히 빈다** — needle을
+  또 추가해야 한다. ② `thesis_ko` fallback은 `MANAGER_PRESENTATION`에 없는 키라 항상 None이다
+  (`institutional/domain/analysis.py:547`이 만드는 다른 payload의 키다). ③ 같은 성씨가 둘이면 오매칭.
+- 해결: `strategy_group` → 한국어 라벨·요약 표를 institutional domain catalog에 두고 CIK로 찾는다.
+  화면은 `reporting` 경계로 그 값을 받는다(대시보드는 domain을 직접 import하지 않는다).
+
+### [AU-04] RR2-06 재검증 — 운영 가격이 실제로 분할 조정돼 있음을 확인  [확정]
+서브에이전트 주장("`prices_daily.close`는 이미 분할 조정")을 운영 DB 읽기 전용 조회로 직접 확인했다.
+`market.actions_daily`에서 최근 분할 4건을 골라 분할일 전후 종가를 봤다 — **어느 것도 분할 비율만큼
+떨어지지 않는다**(즉 과거까지 back-adjust된 연속 시계열이다):
+
+  APH  2026-09-03 ratio=2     : 09-02 80.04 → 09-03 82.07 → 09-04 82.78
+  CRWD 2026-07-02 ratio=4     : 07-01 193.18 → 07-02 193.98 → 07-06 199.38
+  KLAC 2026-06-12 ratio=10    : 06-11 241.16 → 06-12 254.54 → 06-15 256.42
+  CVNA 2026-05-08 ratio=5     : 05-07 80.00 → 05-08 77.94 → 05-11 76.23
+
+→ `research/evaluation/returns.py`의 `shares *= ratio`는 분할을 **두 번** 반영한다.
+   RR2-06·RR2-06a·RR2-07은 이 관측으로 확정이다. 반대로
+   `research/features/layer.py`·`research/valuation/inputs.py`의 주석(조정돼 있다)이 맞다.

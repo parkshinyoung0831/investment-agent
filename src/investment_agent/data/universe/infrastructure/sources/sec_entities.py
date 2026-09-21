@@ -7,6 +7,7 @@ from functools import partial
 from typing import Any
 
 from investment_agent.data.universe.infrastructure.sources.nasdaq_trader import fetch_security_metadata
+from investment_agent.platform.endpoints import SEC_DATA_BASE
 from investment_agent.data.universe.domain.normalization import (
     classify_security_type,
     norm_ticker,
@@ -104,7 +105,7 @@ def fetch_fund_listings(
     return rows
 
 
-_SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
+_SUBMISSIONS_URL = SEC_DATA_BASE + "/submissions/CIK{cik}.json"
 _ENTITY_WORKERS = 8
 
 

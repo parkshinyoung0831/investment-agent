@@ -1,0 +1,494 @@
+
+# operations 2차 감사 (2026-09-21) — 읽기 전용
+# 직전 감사(2026-09-20-code-quality-overhaul.md 6절·10.2·11.2·11.4)에서 수정된
+# OP-04~11 / OPS-1~11 / WF-* / SC-*는 다시 세지 않는다. 회귀 확인만 별도 절에 적는다.
+
+### [OP2-01] waiting으로 폴링하는 stage가 attempts를 태워, 첫 실제 오류가 곧바로 terminal 실패가 된다  [확정] [높음] [정확성]
+- 파일: src/investment_agent/operations/harness/runtime.py:246-247, 284-288 / harness/background.py:20-21 /
+  adapters/execution.py:97-100
+- 증상: `max_attempts=2~3`으로 선언한 stage가 실제로는 재시도를 한 번도 하지 않는다. 오류 하나로 job이
+  `failed`로 굳고 `retry_delay_seconds`(10분·30초)는 영원히 쓰이지 않는다.
+- 근거: `_advance`는 stage에 진입할 때마다 무조건 카운터를 올린다.
+  ```python
+  runtime.status = "running"
+  runtime.attempts += 1
+  ```
+  `waiting`으로 돌아온 stage도 `resume_at`이 지나면 같은 자리로 다시 들어오므로 attempts가 계속 오른다.
+  실패 판정은 오직 예외 경로에서만 비교한다.
+  ```python
+  if runtime.attempts >= stage_def.max_attempts:
+      runtime.status = "failed"
+  ```
+  attempts를 초기화하는 곳은 코드 전체에 없다(`grep -n "attempts" runtime.py state.py` → 증가·검증뿐).
+- 재현(구체):
+  1) `approval_worker`(max_attempts=3, pipeline.py:73-79)는 승인이 `pending`인 동안 15초마다
+     `StageOutcome.waiting`을 돌려준다(adapters/execution.py:93-100). TTL 15분이면 약 60회 → attempts≈60.
+  2) 사람이 승인을 누르면 같은 stage가 `execute_toss_live` subprocess를 부른다. 이때 일시적 오류
+     (토스 401·타임아웃) 하나가 나면 `60 >= 3`이라 **즉시 terminal**. 30초 뒤 재시도는 없고 job이 failed.
+  3) background로 감싼 stage(`build_features` 등 13개)는 5초마다 waiting을 돌려준다
+     (background.py:21 `resume_after_seconds=5`) → 2시간 실행이면 attempts≈1440. 그 뒤 실패는 무조건 terminal.
+- 원인: attempts가 "handler를 실제로 실행한 횟수"가 아니라 "stage에 진입한 횟수"를 센다. waiting은
+  실행이 아니라 대기인데 같은 카운터를 공유한다.
+- 해결: waiting 복귀에서는 attempts를 올리지 않는다(예: `waiting`→`pending` 전이 때 플래그를 남기고
+  handler가 예외로 끝난 회차만 센다). 또는 `StageRuntime.failures`를 따로 두고 max_attempts와 비교한다.
+  가드: waiting을 N회 반복한 뒤 예외를 1회 내는 handler로 "재시도가 남아 있어야 한다"를 검증.
+- 위험: 낮음(카운터 의미만 좁힌다). 다만 실주문 경로 코드라 정비 보류 하에서만.
+
+### [OP2-02] background 단계가 6개 worker를 13개 stage와 공유하고 대기에 시간 상한이 없다  [확정] [중간] [정확성]
+- 파일: src/investment_agent/operations/harness/background.py:10-23, harness_adapters.py:162-168
+- 증상: 동시에 대기 중인 background stage가 6개를 넘으면 7번째는 **submit만 되고 시작되지 않는다**.
+  그 stage는 5초마다 `waiting(reason=background_work_running)`을 영구히 돌려주고, heartbeat는 계속
+  갱신되므로(`update_process_heartbeat`가 active job 전부를 갱신) health는 `healthy=True`다.
+- 근거:
+  ```python
+  self.executor=ThreadPoolExecutor(max_workers=6,thread_name_prefix='investment-analysis')
+  ...
+  if not future.done():
+      return StageOutcome.waiting(resume_after_seconds=5,metadata={'reason':'background_work_running'})
+  ```
+  감싸는 이름은 13개(harness_adapters.py:165-167). subprocess 타임아웃은 `command_runner.run` 안에서만
+  동작하므로 **큐에 갇혀 시작되지 않은 future에는 어떤 타임아웃도 적용되지 않는다.**
+- 재현: feature_store(6 stage는 순차라 1개)·investment_analysis·investment_reporting(2)·system_portfolio·
+  decision_experience·continuous_learning이 겹치는 자정 전후에 6칸이 차면, 마지막에 깨어난 job은
+  아무 로그 없이 `waiting`만 반복한다. 상태창에는 `waiting (stage=...)`로 보인다.
+- 원인: pool 크기가 감싼 stage 수보다 작고, wrapper에 제출 시각·경과 시간 상한이 없다.
+- 해결: (a) `max_workers`를 감싼 stage 수 이상으로, 또는 job별 전용 슬롯으로 두고 (b) wrapper가 제출
+  시각을 기억해 stage 타임아웃을 넘기면 예외로 올려 stage를 실패시킨다. `pending`이 job 교체·run 변경
+  뒤에도 남는 누수(키가 `(run_id, stage_id)`라 옛 run의 future가 회수되지 않음)도 같이 정리한다.
+- 위험: 낮음~중간. worker를 늘리면 동시 subprocess가 늘어 로컬 자원 경쟁이 커진다.
+
+### [OP2-03] 가장 긴 stage 셋이 background에서 빠져 tick 루프를 최대 3시간 막는다  [확정] [중간] [정확성]
+- 파일: harness_adapters.py:165-167 (감싸는 목록) / adapters/research.py:68-75 (`run_ml_challengers`,
+  timeout 3h) / adapters/data.py:58-65 (`sync_local_mirror`, 1h) / adapters/data.py:23-40 (`watch`, 12분)
+- 증상: `ml_challengers` job이 도는 동안 `HarnessScheduler.tick`이 반환하지 않아 1분 주기 job
+  (earnings_watch·econ_release_watch·toss_reconciliation)과 승인 처리(approval_worker)가 함께 멈춘다.
+  발표 속보·승인 소비가 최대 3시간 늦는다.
+- 근거: `background.wrap` 대상 13개에 `run_ml_challengers`·`sync_local_mirror`·`watch`·`watch_releases`·
+  `reconcile`·`risk_snapshot`이 없다. `tick`은 job을 순차로 돌고(`for definition in self.registry.definitions()`)
+  `_advance`는 handler를 동기로 부른다(runtime.py:277 `outcome = stage_def.handler(context)`).
+  `background.py` 첫 줄의 목적("긴 읽기·분석 단계가 가격 감시와 승인 처리를 막지 않도록")과 어긋난다.
+- 재현: `ml_challengers`는 주 1회(pipeline.py:353)이고 job_id 사전순으로 `earnings_watch` 뒤·
+  `econ_release_watch` 뒤에 오지만 `investment_reporting`·`my_portfolio_follow`·`toss_reconciliation`
+  앞이다 → 그 셋이 학습이 끝날 때까지 한 tick도 못 돈다.
+- 원인: 감싸는 목록이 손으로 나열돼 있어 새 stage·긴 stage가 자동으로 포함되지 않는다.
+- 해결: 감싸는 기준을 이름 나열이 아니라 "timeout이 polling 주기보다 큰 stage"로 뒤집는다. 최소한
+  `run_ml_challengers`·`sync_local_mirror`를 목록에 더한다.
+- 위험: 낮음. 다만 OP2-02(worker 6칸)와 함께 고쳐야 큐 대기로 문제가 옮겨가지 않는다.
+
+### [OP2-04] 정비 보류가 진입점 자체를 막지 않는다 — OS 서비스·직접 실행은 그대로 뜬다  [확정] [높음] [정확성]
+- 파일: src/investment_agent/operations/commands/investment_harness.py:153-255 (검사 없음) /
+  harness/switch.py:229-242 (여기만 검사) / harness/service_install.py:57-58, 105-107, 133-134, 161
+- 증상: `harness_switch --maintenance on`을 걸어도 등록된 Windows Task/launchd 서비스는 로그온·재부팅 때
+  하네스를 띄우고 계속 tick을 돈다. 명령이 출력하는 문구는 "정비 보류를 걸었습니다. 하네스는 기동하지
+  않습니다"이고 `switch.py`의 주석은 "어떤 경로로 불려도 뜨지 않는다"라고 적혀 있다 — 둘 다 사실이 아니다.
+- 근거: 보류 sentinel을 읽는 곳은 `switch.get_harness_status`·`start_harness_service`와
+  `harness_switch`뿐이다(`grep -rn "is_maintenance_held" src` → 3파일). 서비스 descriptor는 스위치를
+  거치지 않고 모듈을 직접 부른다.
+  ```python
+  entry_arguments: Sequence[str] = ("--serve", "--mode", "analysis_only")
+  ...
+  ("MultipleInstancesPolicy", "IgnoreNew"), ... RestartOnFailure Interval=PT1M Count=999
+  ```
+  launchd 쪽은 `"KeepAlive": {"SuccessfulExit": False}`, `RunAtLoad: True`다.
+- 재현: ① `--maintenance on` ② 로그오프/재로그온(LogonTrigger) 또는 `schtasks /Run /TN
+  com.local.investment-ai-harness` ③ `state.json`의 `process_heartbeat_at`이 갱신되고 stage가 진행된다.
+  코드를 고치는 중이라면 편집 중인 모듈이 그대로 subprocess로 실행된다.
+- 원인: 보류 판정이 "기동 경로"가 아니라 "스위치 함수"에 걸려 있다. 진입점은 sentinel을 모른다.
+- 해결: `investment_harness.main()`이 `--serve`·`--run-once` 직전에 `is_maintenance_held(state_dir)`를
+  확인해 거부하고(종료 코드 3 등 재시작 루프와 구분되는 값), 같은 검사를
+  `approval_listener_service`에도 둔다. 가드: sentinel을 만든 상태에서 `main(["--run-once"])`가
+  0을 돌려주면 실패하는 테스트.
+- 위험: 낮음. 단 서비스가 1분마다 재시작을 시도하므로(Count=999) 거부 종료 코드가 로그를 채우지 않게
+  해야 한다.
+
+### [OP2-05] 정비 보류를 걸어도 이미 돌고 있는 하네스는 멈추지 않는데 성공 메시지는 멈춘다고 읽힌다  [확정] [중간] [정확성]
+- 파일: src/investment_agent/operations/commands/harness_switch.py:228-250, harness/maintenance.py:51-70
+- 증상: `--maintenance on`이 `success: True`와 "하네스는 기동하지 않습니다"를 돌려주지만, 실행 중인
+  프로세스에는 아무 영향이 없다. CLAUDE.md는 "코드를 고치는 동안에는 정비 보류를 겁니다"라고만 하므로
+  운영자는 이 한 줄로 안전해졌다고 믿는다.
+- 근거: `set_maintenance_hold`는 파일만 쓴다. `main`의 maintenance 분기는 `stop_harness_service`를
+  부르지 않고 실행 상태(`get_harness_status`)도 보지 않는다.
+- 재현: 하네스 `--serve` 기동 → `--maintenance on` → `harness_switch --status`가
+  `is_running: True`와 `정비 보류: 걸림`을 동시에 표시한다.
+- 원인: sentinel의 의미가 "기동 금지"인데 명령의 문구는 "정지"로 읽힌다.
+- 해결: maintenance on일 때 실행 중이면 ① 경고와 함께 `stop_harness_service`를 함께 실행하거나
+  ② 최소한 `running: True`를 결과에 담고 "지금 돌고 있는 프로세스는 --off로 따로 정지하세요"를 출력한다.
+- 위험: 낮음(문구·부가 정보). 자동 정지를 붙이면 의도치 않은 종료가 생길 수 있어 ②가 안전하다.
+
+### [OP2-06] 실주문 플래그와 킬스위치가 확인 문구 없이 한 글자로 바뀐다  [확정] [높음] [구조]
+- 파일: src/investment_agent/operations/commands/harness_switch.py:195-199, 260-266, 131-136 /
+  harness/switch.py:416-435
+- 증상: `--live-enabled true` 한 줄, 또는 대화형 메뉴에서 `5` + Enter 두 번으로 `.env`의
+  `TOSS_LIVE_ENABLED`가 true가 된다. 확인 문구·되돌림 안내·기록이 없다. CLAUDE.md "하지 말 것"의 첫
+  항목은 "`LIVE_ENABLED`·`TOSS_LIVE_ENABLED`를 코드가 자동으로 바꾸기 — 사람이 명시적으로 켠다"이고,
+  같은 저장소의 파괴적 도구들은 확인 문구를 요구한다(`service_install.apply_install_plan`의
+  `REGISTER_INVESTMENT_SERVICES`, SC-03에서 조인 project-ref 확인).
+- 근거:
+  ```python
+  if args.live_enabled:
+      res = set_live_enabled(args.live_enabled == "true", root_dir=root_dir)
+  ```
+  `set_live_enabled`는 값만 쓴다. 메뉴 [5]는 현재 값을 읽어 **토글**하므로 화면을 잘못 읽으면 끄려다 켠다.
+- 재현: `python -m investment_agent.operations.commands.harness_switch --live-enabled true` → `.env`에
+  `TOSS_LIVE_ENABLED=true`가 기록된다(실행하지 않고 코드 경로만 확인).
+- 원인: 실주문 게이트 변경이 다른 설정 변경과 같은 취급을 받는다.
+- 해결: `--live-enabled true`에만 `--confirm ENABLE_TOSS_LIVE` 같은 정확한 문구를 요구하고(끄는 쪽은
+  그대로 허용 — 안전 방향), 대화형 메뉴 [5]는 토글이 아니라 목표 상태를 입력받는다. 변경은
+  `#로컬-실패`가 아닌 운영 채널에 기록을 남긴다.
+- 위험: 낮음(끄는 방향은 그대로 두므로 안전 방향으로만 조인다).
+
+### [OP2-07] 상태창의 `mode`가 실제 프로세스 모드가 아니라 .env에서 다시 계산된다  [확정] [중간] [구조]
+- 파일: src/investment_agent/operations/harness/switch.py:194-207 / harness/state.py:86-96 (mode 필드 없음)
+- 증상: `harness_switch --status`가 `mode: approval_workflow`라고 표시하는데 실제 프로세스는
+  `--mode analysis_only`로 떠 있어 승인 단계를 `analysis_only_mode`로 계속 건너뛴다(runtime.py:220-231).
+  반대 방향도 가능하다.
+- 근거:
+  ```python
+  mode="approval_workflow" if not trading_kill.startswith("on") and toss_live else "analysis_only",
+  ```
+  실제 모드는 `HarnessScheduler.mode`(기동 인자)가 갖고 `HarnessState`에는 저장되지 않는다. 즉 같은
+  질문("지금 승인 흐름이 도는가")에 두 곳이 서로 다른 근거로 답한다.
+- 재현: `--on --mode analysis_only`로 기동 → `.env`에서 `TRADING_KILL_SWITCH=off`,
+  `TOSS_LIVE_ENABLED=true` → `--status`는 `approval_workflow`, 프로세스는 analysis_only.
+  (`.env` 변경이 실행 중 프로세스에 반영되지 않는 것은 별개 문제이며 이 불일치를 더 오래 지속시킨다.)
+- 원인: 기동 모드를 checkpoint에 적지 않아 상태 조회가 추정할 수밖에 없다.
+- 해결: `HarnessState`에 `mode`를 적고(`scheduler.start`에서), 상태창은 그것을 그대로 보여준다.
+  env 기반 값은 `mode_would_be`처럼 별도 이름으로만 둔다.
+- 위험: 낮음. state 스키마에 필드를 더하면 `STATE_VERSION`·`from_dict` 하위호환을 함께 봐야 한다.
+
+### [OP2-08] `emergency_stop --lockdown-env`만 쓰면 잠금이 성공해도 종료 코드 1·"종합 성공 False"  [확정] [중간] [정확성]
+- 파일: src/investment_agent/operations/harness/emergency.py:129-139, 161 /
+  commands/emergency_stop.py:124-145
+- 증상: 프로세스를 죽이지 않고 잠금만 걸 때(`--lockdown-env`, `--kill` 없이) 잠금·상태 전이·.env 기록이
+  모두 성공해도 결과가 `success: False`, 종료 코드 1이다. 반대로 하네스가 이미 죽은 상태의 `--kill`은
+  `success: True`다. 즉 성공/실패 신호가 실제 결과와 어긋난다.
+- 근거:
+  ```python
+  process_killed = False
+  if kill_process and pid is not None:
+      ...
+  elif pid is None:
+      process_killed = True
+  ...
+  overall_success = lockdown_file.exists() and process_killed
+  ```
+  `kill_process=False`이고 `pid`가 남아 있으면 어느 분기에도 들어가지 않아 `process_killed`가 False로 남는다.
+- 재현: state.json에 `process_id`가 있는 상태에서
+  `python -m investment_agent.operations.commands.emergency_stop --lockdown-env --json` →
+  `{"success": false, "process_killed": false, "env_locked": true, ...}`, 종료 코드 1.
+  (코드 경로만 확인했고 실행하지 않았다.)
+- 원인: "죽였는가"와 "요청한 일을 다 했는가"를 한 변수로 합쳤다.
+- 해결: `process_killed`를 `None`(요청 안 함)/True/False 3값으로 두고
+  `overall_success = lockdown_file.exists() and process_killed is not False`로 바꾼다. `state_updated`·
+  `durable_lockdown_set`도 리터럴 `True`가 아니라 실제 결과를 담는다.
+- 위험: 낮음. 긴급 정지 경로라 정비 보류 하에서.
+
+### [OP2-09] `.env` 킬스위치 잠금이 파일이 없으면 조용히 아무 일도 하지 않고, 경로를 디렉터리 깊이로 추측한다  [확정] [중간] [정확성·하드코딩]
+- 파일: src/investment_agent/operations/harness/emergency.py:141-159
+- 증상: `--lockdown-env`가 `.env`를 못 찾으면 `env_locked=False`로 끝난다. 화면에는 ".env 킬스위치 잠금:
+  False" 한 줄만 나오고 오류·경고가 없어, 운영자는 킬스위치가 잠겼다고 오해할 수 있다.
+- 근거:
+  ```python
+  root = repository_root or state_dir.parents[2]
+  env_path = root / ".env"
+  if env_path.exists():
+      ...
+      env_locked = True
+  ```
+  `state_dir.parents[2]`는 state 디렉터리가 정확히 `<root>/artifacts/ops/investment_harness`라는 가정이다.
+  `--state-dir`을 다른 깊이로 주면 엉뚱한 곳을 보거나 `IndexError`가 난다(경로 하드코딩).
+- 재현: `--state-dir C:\tmp\ops --lockdown-env` → `parents[2]`가 `C:\`가 되고 `.env`가 없어
+  `env_locked=False`로 성공처럼 끝난다.
+- 원인: 실패를 값으로 접었고, 루트를 경로 깊이로 역산했다.
+- 해결: `.env`가 없으면 만들어 쓰거나 명시적으로 실패시킨다. root는 `operations/paths.REPOSITORY_ROOT`만
+  쓰고 `state_dir.parents[n]` 역산을 없앤다(호출부 emergency_stop.py:129는 이미 `_ROOT`를 넘긴다 —
+  기본값 경로가 죽은 분기이면서 위험하다).
+- 위험: 낮음.
+
+### [OP2-10] 긴급 정지가 state.json에 적힌 PID 하나만 노려, 승인 리스너와 여분 하네스는 살아남는다  [확정] [중간] [정확성]
+- 파일: src/investment_agent/operations/harness/emergency.py:128-139 (vs harness/switch.py:366-379)
+- 증상: `emergency_stop --kill`이 끝난 뒤에도 `approval_listener_service`는 계속 돌아 Discord 승인
+  interaction을 원장에 기록한다. `stop_harness_service`는 발견된 하네스·리스너 PID 전부를 끄는데,
+  긴급 정지는 `state.process_id` 하나만 본다.
+- 근거: `emergency_stop`은 `pid = state.process_id`만 대상으로 하고 `_find_running_harness_pids()`는
+  "그 PID가 하네스인지" 확인용으로만 쓴다. `switch.stop_harness_service`는 `target_pids = set(harness_pids)`로
+  전부 끈다. 같은 "정지" 의도에 두 가지 대상 집합이 있다.
+- 재현: 하네스와 승인 리스너를 함께 띄운 뒤 `--kill` → 리스너 PID는 `killed_pids`에 없다(코드 경로 확인).
+- 원인: 두 정지 경로가 대상 선정을 각자 구현한다.
+- 해결: 대상 선정을 한 함수(`_find_running_harness_pids`)로 통일하고 긴급 정지도 발견된 전부를 끈다.
+  실주문 차단 자체는 lockdown sentinel이 하므로 주문이 나가지는 않지만, "긴급 정지했다"는 상태는
+  프로세스가 남아 있으면 참이 아니다.
+- 위험: 중간 — 대상을 넓히면 무관한 python 프로세스를 끌 위험이 생기므로 명령줄 확인을 유지해야 한다.
+  (OPS-5의 POSIX 탐색 공백이 먼저 고쳐져야 실제로 동작한다.)
+
+### [OP2-11] 보안 사전점검이 잘못된 한도 값을 검사하지 않고 넘겨 "healthy"를 준다  [확정] [중간] [정확성]
+- 파일: src/investment_agent/operations/harness/security_audit.py:371-451
+- 증상: `TOSS_MAX_ORDER_NOTIONAL_USD=abc`처럼 숫자가 아닌 한도를 넣으면 점검 결과에 **어떤 항목도
+  나오지 않고** FAIL이 0이라 `healthy: True`다. 정작 주문 직전
+  `LiveTradingControls.from_config`는 `ExecutionSafetyError`를 던져 그 회차 주문이 통째로 막힌다 —
+  사전점검이 잡아야 했던 바로 그 상황이다.
+- 근거:
+  ```python
+  def _parse_float(key, default):
+      ...
+      except ValueError:
+          return None
+  ...
+  if order_max is not None and daily_max is not None:   # None이면 조용히 통과
+  if daily_loss is not None:
+  if drawdown is not None:
+  ```
+  `daily_max`만 `None`일 때 FAIL을 내고 나머지 셋은 `None`이면 검사를 건너뛴다.
+- 재현: `run_security_audit(environ={"TOSS_MAX_DAILY_LOSS_USD": "500달러"})` →
+  결과에 `DAILY_LOSS_LIMIT_*` 항목이 없고 `healthy=True`.
+- 원인: 파싱 실패를 `None`이라는 "값"으로 바꾼 뒤 그 값을 "검사 대상 아님"으로 재해석했다.
+- 해결: `_parse_float`가 실패를 구분해 돌려주고(예: sentinel) 실패는 곧바로 FAIL로 기록한다.
+  가드: 각 한도에 비숫자를 넣은 4개 케이스가 모두 FAIL이 되는지.
+- 위험: 낮음(점검 도구 한 곳).
+
+### [OP2-12] 보안 사전점검이 `TOSS_MAX_DAILY_ORDERS`를 아예 보지 않는다  [확정] [낮음] [정확성]
+- 파일: security_audit.py:378-381 vs execution/safety/control.py:118 (`TOSS_MAX_DAILY_ORDERS`, 기본 20)
+- 증상: 실주문 한도 5개 중 4개만 점검한다. `TOSS_MAX_DAILY_ORDERS=10000`은 PASS 목록에 영향을 주지 않고
+  경고도 없다.
+- 근거: `_check_trading_limits`가 읽는 키는 notional 2개·loss·drawdown뿐이다. `from_config`는
+  `max_daily_orders=_positive_int(config, "TOSS_MAX_DAILY_ORDERS", 20)`로 실제 게이트에 쓴다.
+- 해결: 같은 함수에 정수 한도 점검을 더한다. 더 나은 해법은 점검 대상 목록을
+  `LiveTradingControls.from_config`가 읽는 키 집합에서 끌어오는 것이다 — 손으로 나열하면 한도가 늘 때
+  다시 벌어진다(킬스위치 배선 테스트 OPS-3과 같은 종류의 공백).
+- 위험: 낮음.
+
+### [OP2-13] `.gitignore` 비밀 보호 점검이 부분 문자열이라 공허하게 통과할 수 있다  [확정] [낮음] [정확성]
+- 파일: security_audit.py:321-345
+- 증상: `.gitignore`에 `.env`를 무시하는 줄이 없어도 `!.env.example` 한 줄만 있으면
+  `GITIGNORE_SECRETS_PROTECTED` PASS가 나온다.
+- 근거:
+  ```python
+  has_env = ".env" in content
+  has_artifacts = "artifacts/" in content or all(...)
+  ```
+  부정 패턴(`!`)·주석·다른 경로의 일부(`data/local/artifacts/...`)도 모두 참으로 만든다. 현재
+  `.gitignore`는 2행 `.env`·7행 `artifacts/`가 있어 실제로는 보호되지만, 보호가 사라져도 점검은
+  계속 PASS다.
+- 해결: 줄 단위로 파싱해 `!`로 시작하는 부정 패턴을 빼고 `.env`·`artifacts/`가 무시 규칙으로
+  존재하는지 본다. 위반 주입(2행 삭제)으로 FAIL을 확인한다.
+- 위험: 없음(점검 강화).
+
+### [OP2-14] 봇 토큰 분리 점검이 `DISCORD_BOT_TOKEN`이 없으면 결과를 하나도 내지 않는다  [확정] [낮음] [구조]
+- 파일: security_audit.py:173-196
+- 증상: 승인 봇 토큰만 설정된 흔한 구성에서 `DISCORD_BOT_TOKENS_*` 항목이 보고서에서 사라진다.
+  점검표를 읽는 사람은 "분리 점검을 통과했다"와 "점검하지 않았다"를 구분할 수 없다.
+- 근거: `if general_token and approval_token:` / `elif mode == APPROVAL_WORKFLOW and not approval_token:`
+  — 두 조건 모두 거짓인 경로(일반 토큰 없음 + 승인 토큰 있음)에 `else`가 없다.
+- 해결: 검사 불가를 `WARN`/`SKIP` 항목으로 명시한다("일반 봇 토큰이 없어 분리 여부를 확인하지 못함").
+- 위험: 없음.
+
+### [OP2-15] 1분 주기 job이 영구 실패하면 운영 webhook으로 분당 1건씩 쏟아져 채널이 무용지물이 된다  [확정] [높음] [정확성]
+- 파일: harness/runtime.py:296-304 (`reporter.error("stage_failed", ...)`) /
+  harness/reporting.py:17-42, 64-67 / platform/cli/runtime.py:83-102 (`notify_ops`) /
+  commands/watch_earnings.py:294-315 (실패가 남으면 종료 코드 1)
+- 증상: `earnings_watch`·`econ_release_watch`·`toss_reconciliation`·`my_portfolio_follow`은 주기가 60초다.
+  이 job의 stage가 영구 원인으로 실패하면 stage 실패마다 `#로컬-실패`로 webhook POST가 나간다 →
+  하루 약 1,400건. Discord webhook 한도(채널 분당 30건 수준)에 걸리면 429가 나고 그 429는
+  `except Exception: return False`로 삼켜진다. 즉 **진짜 다른 실패 알림이 이 홍수에 묻힌다.**
+- 근거: `DiscordOpsAlert.send`가 억제하는 이벤트는 `duplicate_process` 계열 3개뿐이고
+  (`_SUPPRESSED_WEBHOOK_EVENTS`), 동일 사건 dedup·최소 간격·일일 상한이 없다. `notify_ops`도
+  매 호출 POST한다. 알림 원장(`notifications.engine`)의 선점·revision 계약을 이 경로는 쓰지 않는다.
+- 재현(구체): 관심종목 하나에 CIK가 없으면 `watch_earnings.main`이 `static_failures` 때문에 항상 1을
+  돌려준다(watch_earnings.py:214-221, 315). 하네스 stage는 `CommandExecutionError`로 실패하고
+  60초 뒤 job이 다시 생성된다(`_is_due`가 1시간 미만 주기에서는 `completed_at + 60s`). 이 상태는
+  사람이 CIK를 채울 때까지 유지된다.
+- 원인: 운영 경보에 "같은 사건은 한동안 다시 보내지 않는다"는 계약이 없다. 알림 본류에는 원장이
+  있는데 ops 경보만 없다.
+- 해결: `HarnessReporter`에 (event, job_id, stage_id, error) 기준 억제 창(예: 30분)과 억제 건수 요약을
+  둔다. 억제된 동안에도 로그는 매번 남긴다. 가드: 같은 오류를 60회 보고할 때 send 호출이 1~2회인지.
+- 위험: 낮음~중간 — 억제 창이 너무 길면 새 원인의 첫 보고가 늦어질 수 있어 원인 키를 정확히 잡아야 한다.
+
+### [OP2-16] 일일 점검 카드의 대기 상태 줄이 "전부 조회 실패"와 "전부 0"을 구분하지 않는다  [확정] [중간] [정확성]
+- 파일: commands/heartbeat.py:128 / monitoring/counters.py:72-90 / monitoring/digest.py:295-297
+- 증상: Supabase 자격증명이 없거나 카운터 4개가 모두 실패하면 `counter_lines`가 빈 리스트가 되고
+  카드에서 `🔢 대기 상태` 줄이 **그냥 사라진다**. 카드 색은 초록일 수 있다. counters.py 머리주석이
+  "게이트가 정상적으로 0건을 내는 날이 제일 위험하다"라고 적은 바로 그 감시가 조용히 꺼진다.
+- 근거:
+  ```python
+  counter_lines = counters.collect()          # heartbeat.py:128 — failed 인자를 주지 않는다
+  ...
+  if counters:                                # digest.py:295 — 빈 리스트면 절 전체가 빠진다
+  ```
+  `counters.collect(failed)`는 SC-03/SC-02 때 실패 이름을 돌려주도록 확장됐는데 heartbeat는 그 인자를
+  쓰지 않는다(`grep -n "collect(" src/investment_agent` → `verify_integration`만 사용).
+- 재현: `SUPABASE_URL`을 비우고 `heartbeat --dry-run` → 본문에 `🔢 대기 상태` 줄이 없다.
+- 원인: 부재(줄 없음)와 0(값 0)을 같은 표현으로 접었다.
+- 해결: heartbeat가 `failed` 리스트를 받아 비어 있지 않으면 `🔢 대기 상태 — 조회 실패: fundamentals,
+  gurus`처럼 적고 심각도를 WARN으로 올린다.
+- 위험: 없음.
+
+### [OP2-17] embed 본문이 1,900자로 잘려, 4,096자를 쓰려고 만든 embed에서 채널 도착 표가 먼저 사라진다  [확정] [중간] [정확성]
+- 파일: monitoring/digest.py:235-249(`build_embed`), 252-318(`render`, 마지막 줄 `[:1900]`)
+- 증상: 사고가 많은 날(실패·중단·미실행 목록이 길 때) embed 맨 뒤의 `📡 채널 도착` 표가 통째로
+  잘려 나간다. 카드에는 아무 표시도 남지 않는다.
+- 근거: `build_embed`는 `render(...)`를 그대로 쓰고 다시 `body[:4000]`을 한다. 그런데 `render`가
+  이미 `"\n".join(lines)[:1900]`으로 자른다 — 둘째 자르기는 아무 일도 하지 않는다. `render` docstring은
+  "평문으로 보낼 때는 2000자, embed 설명으로 쓸 때는 4096자가 한도다"라고 적어 두 한도를 구분하겠다고
+  말하지만 코드는 하나만 쓴다.
+- 재현: 실패 6건 + 중단 6건 + 미실행 6건 + 채널 16줄의 verdict로 `build_embed`를 부르면
+  description 길이가 정확히 1900이고 표가 잘린다(순수 함수라 픽스처로 바로 확인 가능).
+- 원인: 자르기 책임이 목적지가 아니라 렌더러에 박혀 있다.
+- 해결: `render(..., limit: int)`로 한도를 받아 평문 1,900 / embed 4,000으로 나누고, 잘렸으면
+  마지막 줄에 `…(N자 생략)`을 남긴다.
+- 위험: 없음(순수 변환, 테스트 가능).
+
+### [OP2-18] 채널 ID가 숫자가 아니면 채널 도착 점검 전체가 사라진다  [확정] [중간] [정확성]
+- 파일: monitoring/discord.py:53-74 / commands/heartbeat.py:120-126
+- 증상: `DISCORD_CHANNEL_*` 중 하나에 숫자가 아닌 값(채널 이름·URL·따옴표 포함 값)이 들어가면
+  16개 채널 점검이 통째로 빠지고 카드에는 `📡 채널 도착` 절이 없다.
+- 근거: 방어 목적의 `try`는 HTTP 호출만 감싸는데, 그보다 먼저 실행되는 줄이 예외를 낸다.
+  ```python
+  out: dict[str, Any] = {
+      "last_at": None, "count": None, "error": None,
+      "created_at": snowflake_time(channel_id),   # int(channel_id) → ValueError
+  }
+  try:
+      ...
+  ```
+  `collect`는 `bool(channel_id)`만 보고 넘기며, heartbeat는 `collect` 전체를 하나의 try로 감싸
+  "채널 도착 확인 실패" 경고만 남기고 계속한다. 모듈 머리주석의 "채널 하나를 못 읽었다고 일일 점검
+  전체가 사라지면 점검이 없는 것보다 나쁘다"와 반대로 동작한다.
+- 재현: `DISCORD_CHANNEL_MACRO_DAILY="오늘의-시장"` → `discord.collect(WATCHED, since)`가
+  `ValueError: invalid literal for int()`를 올린다.
+- 원인: 실패 격리 경계가 채널 단위가 아니라 호출 단위다.
+- 해결: `activity`의 `created_at` 계산을 try 안으로 넣고, `collect`가 채널 하나의 예외를
+  `{"error": ...}` 행으로 바꿔 나머지를 계속 읽는다(`judge_channels`는 이미 `error`를 경보로 처리한다).
+- 위험: 없음.
+
+### [OP2-19] 대사(reconcile)가 "찾은 것이 있다"를 "명령이 실패했다"로 돌려줘, 수동 주문 하나로 job이 영구 실패한다  [확정] [높음] [정확성]
+- 파일: commands/reconcile_toss.py:76 / harness/pipeline.py:271-292(`toss_reconciliation`, 60초·max_attempts=1) /
+  adapters/execution.py:150-164
+- 증상: 토스 앱에서 사람이 직접 낸 미체결 주문이 하나 있으면 `external_open_order_ids`가 비지 않아
+  이 명령이 항상 1을 돌려준다. 하네스 stage는 그것을 실패로 읽고 `toss_reconciliation` job이
+  60초마다 실패하며, 실패마다 `#로컬-실패`로 경보가 나간다(OP2-15). 상태창의 `failed_jobs`에
+  영구히 남아 `healthy=False`가 되고, 진짜 대사 장애와 구분되지 않는다.
+- 근거:
+  ```python
+  return 1 if result.unresolved_unknown or result.external_open_order_ids or result.position_mismatches else 0
+  ```
+  이 셋은 "사람이 확인할 사실"이고, 실제 실행 실패는 위쪽 `except`가 이미 1로 처리한다.
+  포지션 불일치도 사람이 정리할 때까지 유지되는 상태다.
+- 재현: `result.external_open_order_ids`가 비지 않는 픽스처로 `main()`을 부르면 1이 나온다.
+  운영에서는 토스 앱에서 지정가 주문 하나를 걸어 두면 같은 상태가 된다.
+- 원인: 종료 코드가 "재실행하면 달라지는가"가 아니라 "관측된 것이 있는가"를 뜻하게 됐다.
+- 해결: 실행 실패(예외·API 오류)만 1로 두고, 발견 사항은 `reporter.error`(또는 상태 원장)로 한 번만
+  올린다. 재실행이 해결하지 못하는 상태를 재실행 가능 실패로 표현하지 않는다.
+- 위험: 중간 — 발견 사항이 조용해지지 않도록 경보 경로를 반드시 함께 둬야 한다.
+
+### [OP2-20] 발표 감시가 1분마다 macro 참조 master 전체를 다시 upsert한다  [확정] [중간] [성능]
+- 파일: commands/econ_calendar_watch_releases.py:30-31 / data/macro/releases/db.py:42-54
+- 증상: 하네스 `econ_release_watch` job은 평일 UTC 12~15시에 60초마다 이 진입점을 부른다(하루 약 180회).
+  매 실행이 `db.seed_catalog()`로 series·measure 카탈로그 **전체를 두 번 upsert**한다 — 바뀌지 않는
+  참조 데이터에 하루 약 360회의 쓰기다. 프로세스도 매번 새로 떠서 표를 열 때마다 SSL 컨텍스트가
+  새로 생긴다(약 0.4초, 기존 실측).
+- 근거:
+  ```python
+  db.configure(Database.from_config(load_config()))
+  db.seed_catalog()      # repository.upsert_series(...) + repository.upsert_measures(...)
+  ```
+  주석은 "ETL 진입점에서만 작은 master를 등록한다"인데, 이 진입점은 ETL이 아니라 1분 주기 watcher다.
+- 재현: 코드 경로 그대로. 운영 확인은 `macro` series 표의 `updated_at`이 발표 시간대 동안 분 단위로
+  갱신되는지 보면 된다(이번에 DB는 조회하지 않았다).
+- 원인: 카탈로그 보장이 진입점 공통 초기화에 들어가 폴링 주기와 결합됐다.
+- 해결: watcher는 카탈로그를 읽기만 하고(없으면 실패), 등록은 daily ETL 진입점에만 둔다. 또는
+  카탈로그 지문을 비교해 변경이 있을 때만 upsert한다.
+- 위험: 낮음 — watcher가 카탈로그를 만들어 주는 것에 의존하는 첫 실행 경로가 있는지 확인이 필요하다.
+
+### [OP2-21] 취약·기본 HMAC 키 판정이 도달 불가능한 분기이고, 반복 숫자 32자가 "강함"으로 통과한다  [확정] [중간] [정확성]
+- 파일: harness/security_audit.py:22-25(`_WEAK_SECRETS`), 199-221 /
+  tests/investment_agent/operations/harness/test_security_audit.py:60-77
+- 증상: `HMAC_SECRET_WEAK_OR_DEFAULT`는 **어떤 입력으로도 나오지 않는다.** `_WEAK_SECRETS`의 가장 긴
+  항목이 `hmac_secret`(11자)이라 모두 앞의 `len < 32` 분기에 걸린다. 그리고
+  `"12345678901234567890123456789012"`처럼 자명하게 추측 가능한 32자는 `HMAC_SECRET_STRONG` PASS다.
+- 근거:
+  ```python
+  if len(hmac_secret) < 32: ... FAIL
+  elif hmac_secret.lower() in _WEAK_SECRETS: ... FAIL   # 도달 불가
+  else: ... PASS(f"충분한 길이({len(hmac_secret)}자)")
+  ```
+  테스트 이름은 `test_discord_hmac_secret_weak_or_short_fail`인데 실제 단정은 ① 짧은 키 FAIL
+  ② 32자 반복 숫자 **PASS** ③ `"secret"`이 `TOO_SHORT` FAIL이다 — 취약 목록이 실제로 발동하는지는
+  아무 테스트도 묻지 않는다(가드의 공허한 통과).
+- 재현: `run_security_audit(environ={"DISCORD_APPROVAL_HMAC_SECRET": "password"*4})`(32자) → STRONG PASS.
+- 원인: 길이 검사와 내용 검사를 배타 분기로 묶었고, 취약 판정이 완전 일치 목록뿐이다.
+- 해결: 두 검사를 독립으로 하고, 취약 판정을 부분 문자열·문자 종류 수·반복 패턴(예: 서로 다른 문자
+  10종 미만이면 WARN)으로 바꾼다. 실제 운영 키는 hex 64자라 영향이 없어야 한다.
+- 위험: 낮음.
+
+### [OP2-22] `--generate-hmac`은 새 키를 만들지 않는다 — 이름과 도움말이 동작과 다르고, 실제 생성 함수는 테스트만 붙잡고 있는 죽은 코드다  [확정] [낮음] [구조]
+- 파일: commands/security_audit.py:88-112 / harness/security_audit.py:70-72
+- 증상: 도움말은 "새로운 암호학적 256비트 HMAC 서명 키를 생성하여 출력"인데, 키 파일이 이미 있으면
+  기존 키를 읽고 지문만 찍는다(출력도 키가 아니라 fingerprint다). 운영자는 키가 새로 생겼는지
+  그대로인지 구분할 수 없다 — 키가 바뀌면 이미 나간 승인 카드의 버튼 서명이 전부 무효가 되므로
+  이 구분이 중요하다.
+- 근거: CLI는 `load_or_create_approval_secret()`만 부르고 상태를 `"created_or_loaded"`로 한 값에 합친다.
+  모듈의 `generate_hmac_secret()`는 `src` 어디에서도 호출되지 않고 `__init__` 재수출과 자기 테스트만
+  참조한다(`grep -rn generate_hmac_secret src` → 정의·재수출뿐).
+- 해결: 플래그를 `--ensure-hmac`로 고치고 결과에 `created: true|false`를 담는다. `generate_hmac_secret`은
+  `load_or_create_approval_secret`이 실제로 쓰는 생성기와 하나로 합치거나 삭제한다.
+- 위험: 없음.
+
+### [OP2-23] 로컬 판단 원장 재작성 명령이 하네스 실행 여부·정비 보류를 확인하지 않는다  [확정] [중간] [정확성]
+- 파일: commands/remap_runtime_securities.py:55-94
+- 증상: `--apply`는 확인 문구 없이 `security_decisions`·`signals`의 `security_id`를 일괄 UPDATE한다.
+  하네스가 돌고 있으면 같은 SQLite 파일을 동시에 쓰고, 백업 사본은 UPDATE **직전** 상태라 그 사이
+  하네스가 쓴 행은 백업에도 없고 잠금 경합으로 실패할 수 있다. CLAUDE.md는 실행·원장 코드를 만질 때
+  정비 보류를 먼저 걸라고 요구하는데 이 명령은 그것을 강제하지 않는다.
+- 근거: `apply_remap`은 `sqlite3.connect(database)`로 바로 쓰기 연결을 열고,
+  `ProcessFileLock`·`is_maintenance_held`·실행 중 PID 확인이 전혀 없다. `--apply`에 `--confirm`도 없다
+  (같은 저장소의 파괴적 도구들은 SC-03 이후 확인 문구를 요구한다).
+- 재현: 하네스 `--serve` 중 `--apply` 실행 → 두 프로세스가 같은 파일을 쓴다(코드 경로 확인. 실제
+  실행은 하지 않았다).
+- 해결: `--apply`에 ① 정비 보류 확인 ② 하네스 미실행 확인 ③ `--confirm` 문구를 요구한다. 최소한
+  런타임 원장의 쓰기 잠금(`PF-1`에서 정리한 경계)을 통해 열어 경합을 드러낸다.
+- 위험: 낮음(게이트 추가).
+
+### [OP2-24] 한 job의 파일 저장 실패가 하네스 프로세스 전체를 끝내고, 진행 중이던 background 작업이 버려진다  [확정] [중간] [정확성]
+- 파일: harness/service.py:95-102 / harness/runtime.py:136-173, 253, 295, 328 / harness/background.py:10-19
+- 증상: tick 안의 `store.save`가 실패하면(Windows 파일 잠금이 6회 재시도를 넘김, 디스크 가득,
+  state 검증 실패) `run_forever`가 루프를 벗어나 종료 코드 1로 끝난다. Task Scheduler는 1분 뒤
+  재시작하고(`RestartOnFailure` PT1M·999), 재시작하면 `BackgroundStages`가 새로 만들어져
+  **진행 중이던 `build_features`(실측 약 75분)·`build_valuations`가 처음부터 다시** 시작된다.
+- 근거: tick은 job 단위 예외 격리가 없다 — `_advance`는 **handler** 예외만 잡고
+  (`runtime.py:280`), 그 밖의 `self.store.save(self.state)`·`definition.interval_at(now)`·
+  `KillSwitches` 호출은 try 밖이다. `run_forever`는 tick 한 번의 예외로 while을 빠져나간다.
+  background future는 프로세스 메모리에만 있으므로 재시작하면 사라진다(상태 파일에는 `waiting`으로만 남는다).
+- 재현: `JsonStateStore.save`가 예외를 내도록 주입한 scheduler로 `run_forever`를 돌리면 1을 돌려준다.
+- 원인: 프로세스 수준 오류와 job 수준 오류를 구분하지 않는다.
+- 해결: tick을 job 단위로 감싸 한 job의 실패가 나머지 job과 프로세스를 끌어내리지 않게 하고
+  (`reporter.error("job_tick_failed", ...)` 후 다음 job으로), 연속 N회 실패에서만 프로세스를 종료한다.
+- 위험: 낮음~중간 — 상태 저장이 계속 실패하는 동안 무한히 도는 것을 막을 상한이 필요하다.
+- 곁가지: 같은 루프의 `gc.collect()`(service.py:97)는 이유가 적혀 있지 않고 tick마다(기본 15초) 전체
+  수집을 강제한다. background 스레드가 큰 DataFrame을 들고 있을 때 tick 지연을 만든다 — 근거가
+  없으면 지운다.
+
+### [OP2-25] 연속 실패 일수가 이력 100건 상한에 잘려 고빈도 워크플로에서 과소 집계된다  [확정] [낮음] [정확성]
+- 파일: commands/heartbeat.py:101-114 / monitoring/github_actions.py:244-262
+- 증상: `failure_streak`에 넘기는 이력은 `runs_since(entry["id"], 7일 전, limit=100)`인데
+  `runs_since`는 `per_page=limit`으로 한 페이지만 받고 페이지네이션이 없다. 15분 cron 워크플로는
+  7일에 최대 672회 실행되므로 오래된 실패일이 잘려 "3일째"가 "1일째"로 보일 수 있다.
+- 근거: `params={"per_page": limit}` 뒤 `for run in res.json().get("workflow_runs", [])` — 다음 페이지를
+  읽지 않는다. GitHub API의 `per_page` 상한은 100이라 limit을 키워도 해결되지 않는다.
+- 해결: `runs_since`가 `page`를 돌려 `since` 이전 항목이 나올 때까지 받거나, streak 조회를
+  `created` 기준으로 잘라 페이지를 이어 받는다.
+- 위험: 없음(조회 횟수만 늘어난다).
+
+### [OP2-26] cron 판정이 1분마다 표현식을 다시 파싱한다  [확정] [낮음] [성능]
+- 파일: monitoring/cron.py:164-186
+- 증상: `fires_between`이 구간을 1분씩 훑으며 매번 `matches()`를 부르고, `matches`는 그 안에서
+  `parse(expr)`로 5필드를 다시 집합으로 편다. 24시간 구간이면 표현식 하나당 1,440회 파싱이고,
+  워크플로 36개 × cron 1~2개면 약 7~10만 회다.
+- 근거:
+  ```python
+  def matches(expr: str, moment: datetime) -> bool:
+      minute, hour, dom, month, dow = parse(expr)   # 루프 안에서 매번
+  ```
+  머리주석은 "판정 구간이 하루라 분 단위로 훑어도 1440회면 끝난다"라고 파싱 비용은 고려하지 않는다.
+- 해결: `fires_between`이 `parse`를 한 번 하고 편 집합을 `matches`에 넘긴다(또는 `parse`에 캐시).
+  hour/minute 집합을 먼저 검사해 날짜 순회를 줄일 수도 있다.
+- 위험: 없음. heartbeat는 하루 한 번이라 체감 이득은 작다 — 함께 고칠 때만 한다.

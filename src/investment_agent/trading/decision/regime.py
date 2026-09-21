@@ -19,7 +19,7 @@ from investment_agent.trading.decision.contracts import MarketRegime
 class RegimeThresholds:
     """regime 판정 경계. 값을 바꾸면 버전도 바꾼다 — 원장의 판단이 어떤 경계로 나왔는지 재현하기 위해서다."""
 
-    version: str = "native-regime-v1"
+    version: str = "native-regime-v2"
     trend_up: float = 0.02
     trend_down: float = -0.02
     volatility_crisis: float = 0.50
@@ -30,12 +30,22 @@ class RegimeThresholds:
     breadth_risk_off: float = 0.35
     breadth_risk_on: float = 0.55
     event_risk_off: float = 0.85
+    # 유동성 점수(0~1)와 macro 점수(-1~1)의 경계. 예전에는 함수 안에 인라인이라 기록되는 thresholds·version에 안 실렸다.
+    liquidity_stressed: float = 0.20
+    liquidity_thin: float = 0.45
+    liquidity_deep: float = 0.75
+    macro_supportive: float = 0.25
+    macro_adverse: float = -0.25
 
     def __post_init__(self) -> None:
         if not 0 < self.drawdown_risk_off < self.drawdown_crisis < 1:
             raise ValueError("drawdown thresholds must satisfy 0 < risk_off < crisis < 1")
         if not 0 < self.volatility_low < self.volatility_high < self.volatility_crisis:
             raise ValueError("volatility thresholds must satisfy 0 < low < high < crisis")
+        if not 0 < self.liquidity_stressed < self.liquidity_thin < self.liquidity_deep < 1:
+            raise ValueError("liquidity thresholds must satisfy 0 < stressed < thin < deep < 1")
+        if not self.macro_adverse < 0 < self.macro_supportive:
+            raise ValueError("macro thresholds must satisfy adverse < 0 < supportive")
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -117,15 +127,15 @@ def build_market_regime(
     )
     liquidity_value = values["liquidity"]
     liquidity_state = (
-        "stressed" if liquidity_value is not None and liquidity_value < 0.20
-        else "thin" if liquidity_value is not None and liquidity_value < 0.45
-        else "deep" if liquidity_value is not None and liquidity_value >= 0.75
+        "stressed" if liquidity_value is not None and liquidity_value < limits.liquidity_stressed
+        else "thin" if liquidity_value is not None and liquidity_value < limits.liquidity_thin
+        else "deep" if liquidity_value is not None and liquidity_value >= limits.liquidity_deep
         else "normal"
     )
     macro_value = values["macro_score"]
     macro_state = (
-        "supportive" if macro_value is not None and macro_value >= 0.25
-        else "adverse" if macro_value is not None and macro_value <= -0.25
+        "supportive" if macro_value is not None and macro_value >= limits.macro_supportive
+        else "adverse" if macro_value is not None and macro_value <= limits.macro_adverse
         else "neutral" if macro_value is not None else "unknown"
     )
     breadth_value = values["breadth"]
@@ -152,14 +162,13 @@ def build_market_regime(
     )
     risk_state = "CRISIS" if crisis else "RISK_OFF" if risk_off else "RISK_ON" if risk_on else "NORMAL"
     present = sum(value is not None for value in values.values())
+    # dispersion은 입력으로만 기록한다. 예전의 "0.75 넘으면 신뢰도 0.9배"는 입력이 종목 일수익률의 표준편차(보통
+    # 0.01~0.03)라 영원히 거짓인 분기였다. 의미 있는 경계는 과거 분포로 보정해야 하므로 값을 지어내지 않는다.
     confidence = _clamp(0.35 + 0.65 * present / len(values))
-    if values["dispersion"] is not None and values["dispersion"] > 0.75:
-        confidence *= 0.9
     metadata = {
         "inputs": values,
         "calculation": limits.version,
         "thresholds": limits.to_dict(),
-        "dispersion_warning": bool(values["dispersion"] is not None and values["dispersion"] > 0.75),
     }
     return MarketRegime(
         as_of_at=as_of.isoformat(),
@@ -176,13 +185,4 @@ def build_market_regime(
     )
 
 
-class MarketRegimeCalculator:
-    """동일한 계산 계약을 반복 실행할 수 있게 하는 얇은 호출 객체."""
-
-    version = "native-regime-v1"
-
-    def calculate(self, as_of_at: str | datetime, **inputs: Any) -> MarketRegime:
-        return build_market_regime(as_of_at, **inputs)
-
-
-__all__ = ["DEFAULT_THRESHOLDS", "MarketRegimeCalculator", "RegimeThresholds", "build_market_regime"]
+__all__ = ["DEFAULT_THRESHOLDS","RegimeThresholds", "build_market_regime"]

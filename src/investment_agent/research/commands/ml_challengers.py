@@ -94,7 +94,7 @@ def evaluate_candidates(
             rows.append({"model_kind": kind, "status": "unavailable", "reason": str(exc)})
             continue
         document = artifact_document(result, dataset)
-        check = check_adoptable(document)
+        check = check_adoptable(document, comparisons=len(kinds))
         icir = _icir(document)
         beats = bool(check.is_adoptable and icir is not None and (champion_icir is None or icir > champion_icir))
         documents.append(document)
@@ -107,6 +107,7 @@ def evaluate_candidates(
             "icir": icir,
             "mean_ic": (document.get("out_of_sample_alpha") or {}).get("mean_ic"),
             "beats_champion": beats,
+            "constant_features": list(getattr(result, "constant_features", ()) or ()),
         })
     return documents, rows
 
@@ -155,6 +156,8 @@ def run_ml_challengers(
         "champion_artifact_id": ((champion or {}).get("artifact") or {}).get("artifact_id"),
         "champion_icir": _icir(champion),
         "candidates": rows,
+        # 학습 구간에서 변하지 않은 열. split이 같아 종류마다 같으므로 첫 학습 결과의 것을 올린다.
+        "constant_features": next((row["constant_features"] for row in rows if row.get("status") == "trained"), []),
         "recommended_artifact_id": best["artifact_id"] if best else None,
         "adoption": "manual: python -m investment_agent.research.commands.adopt_ml_model --artifact <candidate>",
     }

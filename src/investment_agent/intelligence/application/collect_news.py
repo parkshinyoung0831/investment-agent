@@ -58,13 +58,13 @@ def rotate_from(tickers: Sequence[str], resume_from: str | None) -> list[str]:
     return ordered
 
 
-def _mention(record: NewsArticleRecord, ticker: str) -> EntityMention:
-    """조회해서 받은 기사의 언급. 등급은 결정론적이다."""
-    identity = f"news|{record.article_id}|{ticker}|queried"
+def _mention(record: NewsArticleRecord, ticker: str, article_id: str) -> EntityMention:
+    """조회해서 받은 기사의 언급. 등급은 결정론적이다. `article_id`는 저장소에 실제로 남은 기사의 id다."""
+    identity = f"news|{article_id}|{ticker}|queried"
     return EntityMention(
         mention_id=hashlib.sha256(identity.encode("utf-8")).hexdigest(),
         source_kind="news",
-        source_id=record.article_id,
+        source_id=article_id,
         ticker=ticker,
         match_kind="queried",
         confidence=1.0,
@@ -138,7 +138,11 @@ def collect_news(
         result = repository.store_news(records)
         run.stored_count += result.stored
         run.duplicate_count += result.duplicates
-        repository.store_mentions([_mention(record, symbol) for record in records])
+        # 다른 URL·같은 내용이라 버려진 기사는 먼저 저장된 기사에 이어 붙인다. 원래 id로 저장하면 가리킬 기사가 없다.
+        repository.store_mentions([
+            _mention(record, symbol, result.ids[record.article_id])
+            for record in records if record.article_id in result.ids
+        ])
 
     run.finished_at = ensure_aware(utc_now() if now is None else now)
     if capped:

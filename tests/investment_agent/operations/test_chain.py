@@ -158,6 +158,40 @@ class CountersTest(unittest.TestCase):
         finally:
             counters._SOURCES = original
 
+    def test_failed_source_names_are_reported_to_the_caller(self):
+        """점검 도구가 "전부 실패"를 "0건 OK"로 세지 않게 실패한 이름을 돌려준다."""
+        def boom() -> str:
+            raise RuntimeError("supabase down")
+
+        original = counters._SOURCES
+        try:
+            counters._SOURCES = [("ok", lambda: "관심종목 50"), ("bad", boom), ("worse", boom)]
+            failed: list[str] = []
+            self.assertEqual(counters.collect(failed), ["관심종목 50"])
+            self.assertEqual(failed, ["bad", "worse"])
+        finally:
+            counters._SOURCES = original
+
+    def test_one_collect_builds_the_ledger_once(self):
+        """카운터마다 원장을 새로 만들면 표를 열 때마다 SSL 컨텍스트가 생긴다(OP-10)."""
+        built = []
+        ledger = SimpleNamespace(stuck_sending=lambda: [])
+        context = SimpleNamespace(ledger=ledger)
+        with (
+            patch("investment_agent.config.load_config", return_value=object()),
+            patch("investment_agent.notifications.context.default_context",
+                  side_effect=lambda config: built.append(1) or context),
+            patch("investment_agent.notifications.earnings_report.candidates.pending_state",
+                  return_value={"watchlist_count": 1, "pending_filings": 0}),
+            patch("investment_agent.notifications.earnings_calendar.candidates.pending_state",
+                  return_value={"upcoming_releases": 0}),
+            patch("investment_agent.notifications.institutional.state.pending_state",
+                  return_value={"pending_filings": 0, "period": "x"}),
+        ):
+            counters.collect()
+            counters.collect()
+        self.assertEqual(len(built), 2)  # collect마다 한 번, 카운터마다가 아니다
+
     def test_ping_without_url_does_nothing(self):
         self.assertFalse(counters.ping(""))
 

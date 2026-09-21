@@ -10,9 +10,10 @@ import requests
 from investment_agent.data.macro.infrastructure.fetch import safe_fetch
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.retry import transient_retry
+from investment_agent.platform.endpoints import ECOS_STATISTIC_SEARCH_URL
 
 log = get_logger(__name__)
-_BASE = "https://ecos.bok.or.kr/api/StatisticSearch"
+_BASE = ECOS_STATISTIC_SEARCH_URL
 _PAGE_SIZE = 1000
 
 

@@ -35,8 +35,9 @@ from investment_agent.execution.safety.control import (
     assert_live_order_allowed,
 )
 from investment_agent.execution.brokers.toss.client import access_token, to_toss_symbol
+from investment_agent.platform.endpoints import TOSS_OPENAPI_BASE
 
-_BASE = "https://openapi.tossinvest.com"
+_BASE = TOSS_OPENAPI_BASE
 _ORDERS_URL = f"{_BASE}/api/v1/orders"
 _BUYING_POWER_URL = f"{_BASE}/api/v1/buying-power"
 _SELLABLE_URL = f"{_BASE}/api/v1/sellable-quantity"

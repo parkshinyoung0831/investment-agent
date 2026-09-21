@@ -23,6 +23,8 @@ ALLOWED_IMPORTS = {
     "investment_agent.intelligence.infrastructure.sources.news.provider",
     "investment_agent.intelligence.infrastructure.sources.news",
     "investment_agent.data.institutional.domain.managers",
+    # 13F 정정 결합: 유효 신고의 규칙은 데이터 owner의 `holdings.select_effective` 하나다.
+    "investment_agent.data.institutional.domain.holdings", "investment_agent.reporting.services.guru_quarters",
     "investment_agent.reporting.readers.financial", "investment_agent.reporting.readers.runtime",
     "investment_agent.reporting.services.economic_releases", "investment_agent.reporting.services.macro.constants", "investment_agent.reporting.readers.research",
     "investment_agent.intelligence.infrastructure.db", "investment_agent.intelligence.repository",
@@ -185,6 +187,7 @@ class ReportingGuardsTest(unittest.TestCase):
                 "readers/research.py", "readers/runtime.py", "readers/select_only.py",
                 "services/__init__.py", "services/economic_releases.py",
                 "services/financial_row.py", "services/fundamental_segments.py", "services/strategy_labels.py",
+                "services/guru_quarters.py",
             },
             set(sources),
         )

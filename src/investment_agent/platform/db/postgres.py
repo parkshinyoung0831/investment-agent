@@ -32,11 +32,13 @@ httpx client와 SSL context가 따라 생긴다 — 호출 하나가 0.4초다. 
 from __future__ import annotations
 
 import os
+import threading
 import time
 from collections.abc import Callable, Iterable, Sequence
 from functools import lru_cache
 from typing import Any
 
+import httpx
 from httpx import RemoteProtocolError
 from supabase import Client, create_client
 
@@ -58,13 +60,37 @@ WRITE_CHUNK = 500
 @lru_cache(maxsize=1)
 def service_client() -> Client:
     """service-role client를 실제 첫 호출 시 한 번 만든다."""
-    return create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_KEY"])
+    client = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_KEY"])
+    use_http1_session(client.postgrest)
+    return client
 
 
-@lru_cache(maxsize=1)
-def anon_client() -> Client:
-    """공개 읽기용 anon client를 실제 첫 호출 시 한 번 만든다."""
-    return create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_ANON_KEY"])
+_SESSION_SWAP_LOCK = threading.Lock()
+
+
+def use_http1_session(client: Any) -> Any:
+    """PostgREST client의 HTTP 세션을 HTTP/1.1로 바꾼다(스레드 안전).
+
+    postgrest-py는 스키마마다 HTTP/2 연결 하나를 만들어 쓰는데, httpcore의 HTTP/2 연결은 여러 스레드가 함께 쓰면
+    스트림 표가 깨져 `KeyError: 3`·`deque mutated during iteration`이 새 나온다. 재현 재구성이 재무·주식수·세그먼트를
+    스레드로 병렬 읽는 경로에서 실제로 났고, 예외마다 재시도로 막는 것은 끝이 없다. HTTP/1.1 연결 풀은 스레드 안전이다.
+    시험용 가짜 client처럼 httpx 세션이 없으면 그대로 둔다.
+    """
+    with _SESSION_SWAP_LOCK:
+        # 두 스레드가 같은 client를 동시에 넘기면 두 번째가 첫 번째의 새 세션을 "옛 세션"으로 알고 닫아, 첫 스레드가
+        # 쓰는 중에 "client has been closed"가 난다. 이미 바꾼 client는 다시 건드리지 않는다.
+        if getattr(client, "_http1_session", False):
+            return client
+        session = getattr(client, "session", None)
+        if not isinstance(session, httpx.Client) or session.is_closed:
+            return client
+        client.session = httpx.Client(
+            base_url=session.base_url, headers=session.headers, timeout=session.timeout,
+            verify=getattr(client, "verify", True), follow_redirects=True, http2=False,
+        )
+        client._http1_session = True
+        session.close()
+    return client
 
 
 class SchemaClients:
@@ -81,7 +107,7 @@ class SchemaClients:
     def get(self, schema: str) -> Any:
         cached = self._by_schema.get(schema)
         if cached is None:
-            cached = self._by_schema[schema] = self._client.schema(schema)
+            cached = self._by_schema[schema] = use_http1_session(self._client.schema(schema))
         return cached
 
 
@@ -271,7 +297,7 @@ def select_paged_in_chunks(
 ) -> list[dict[str, Any]]:
     """긴 membership 필터를 나눠 각 묶음을 안정적으로 페이지 조회한다."""
     rows: list[dict[str, Any]] = []
-    for chunk in chunk_filter_values(values, chunk_size):
+    for chunk in chunk_values(values, chunk_size):
         rows.extend(
             paged_reader(
                 lambda chunk=chunk: builder_factory(chunk),
@@ -279,11 +305,6 @@ def select_paged_in_chunks(
             )
         )
     return rows
-
-
-def chunk_filter_values(values: Sequence[Any], size: int = IN_FILTER_CHUNK) -> list[list[str]]:
-    """긴 PostgREST `in` 목록을 결정적으로 나눈다."""
-    return chunk_values(values, size)
 
 
 def select_in_chunks(
@@ -315,9 +336,8 @@ __all__ = [
     "IN_FILTER_CHUNK",
     "READ_PAGE_SIZE",
     "WRITE_CHUNK",
-    "anon_client",
+
     "chunk_values",
-    "chunk_filter_values",
     "sb",
     "select_all_paged",
     "select_paged_in_chunks",

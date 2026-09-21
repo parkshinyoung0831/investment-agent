@@ -18,8 +18,9 @@ from investment_agent.execution.brokers.toss.auth import (
     access_token as shared_access_token,
     authorized_request,
 )
+from investment_agent.platform.endpoints import TOSS_OPENAPI_BASE
 
-_BASE = "https://openapi.tossinvest.com"
+_BASE = TOSS_OPENAPI_BASE
 _ACCOUNTS_URL = f"{_BASE}/api/v1/accounts"
 _HOLDINGS_URL = f"{_BASE}/api/v1/holdings"
 _PRICES_URL = f"{_BASE}/api/v1/prices"

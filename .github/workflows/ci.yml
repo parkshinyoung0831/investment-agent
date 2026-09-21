@@ -24,8 +24,6 @@ jobs:
           python -m pip install uv==0.12.10
           uv sync --locked --group dev
           echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
-      - name: Install offline test dependencies
-        run: true # dev group prepared above
       - name: Compile Python modules
         run: uv run python -m compileall -q src tests
       - name: Run offline unit tests

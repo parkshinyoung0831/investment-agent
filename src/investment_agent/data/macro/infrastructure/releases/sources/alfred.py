@@ -13,8 +13,9 @@ from investment_agent.platform.clock import us_market_today
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.retry import retry_on_5xx
 from investment_agent.data.macro.infrastructure.releases.sources.actuals import _fred_slot
+from investment_agent.platform.endpoints import FRED_OBSERVATIONS_URL
 
-_BASE = "https://api.stlouisfed.org/fred/series/observations"
+_BASE = FRED_OBSERVATIONS_URL
 # output_type=3/4는 한 요청에서 vintage 날짜 2,000개를 넘길 수 없다. 일별
 # 정책금리처럼 vintage가 많은 family는 안전한 chunk replay가 필요하다.
 _MAX_VINTAGE_WINDOW_DAYS = 1800

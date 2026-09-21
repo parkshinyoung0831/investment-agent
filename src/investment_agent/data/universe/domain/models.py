@@ -24,44 +24,6 @@ class UniverseDataError(ValueError):
 
 
 @dataclass(frozen=True)
-class Entity:
-    """발행사. 회사 사실은 CIK에 한 번만 있다."""
-
-    cik: str
-    company_name: str
-    company_name_ko: str | None = None
-    sic_code: str | None = None
-    # SIC는 GICS 섹터가 아니다. 이름이 그것을 말하게 둔다.
-    sic_industry_name: str | None = None
-    sic_division_name: str | None = None
-    fiscal_year_end: str | None = None
-    entity_type: str | None = None
-    state_of_incorporation: str | None = None
-    former_names: tuple[dict[str, Any], ...] = field(default_factory=tuple)
-
-    @classmethod
-    def from_row(cls, row: Mapping[str, Any]) -> "Entity":
-        cik = normalize_cik(row.get("cik"))
-        if cik is None:
-            raise UniverseDataError(f"unreadable cik: {row.get('cik')!r}")
-        name = str(row.get("company_name") or "").strip()
-        if not name:
-            raise UniverseDataError(f"entity {cik} has no company_name")
-        return cls(
-            cik=cik,
-            company_name=name,
-            company_name_ko=row.get("company_name_ko"),
-            sic_code=row.get("sic_code"),
-            sic_industry_name=row.get("sic_industry_name"),
-            sic_division_name=row.get("sic_division_name"),
-            fiscal_year_end=row.get("fiscal_year_end"),
-            entity_type=row.get("entity_type"),
-            state_of_incorporation=row.get("state_of_incorporation"),
-            former_names=tuple(row.get("former_names") or ()),
-        )
-
-
-@dataclass(frozen=True)
 class Security:
     """상장 종목. identity는 `security_id`이고 `ticker`는 현재 표기다."""
 
@@ -173,7 +135,6 @@ class WatchlistMember:
 
 
 __all__ = [
-    "Entity",
     "MembershipSnapshot",
     "Security",
     "UniverseDataError",

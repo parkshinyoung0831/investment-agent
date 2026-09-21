@@ -1,0 +1,384 @@
+# 실주문 안전 경계 감사 (execution/*) — 2026-09-21
+# 읽기 전용 감사. 직전 보고서(2026-09-20-code-quality-overhaul.md)의 TE-*·PF-1은 세지 않음.
+# 대상: brokers/toss/{orders,client,auth}.py, brokers/repository.py, orders/*, approval/*,
+#       reconciliation/*, safety/*, db.py
+
+### [EX2-01] 승인 시점 planner와 실행 시점 planner가 다른 한도를 써서, 재검증이 영구히 "재승인 필요"로 막힌다  [확정] [높음] [정확성·구조]
+- 파일:
+  - src/investment_agent/operations/commands/request_toss_approval.py:474-488 (`_whole_share_planner`)
+  - src/investment_agent/execution/orders/live_worker.py:337-342 (worker 기본 planner)
+  - src/investment_agent/operations/commands/execute_toss_live.py:65-70 (`planner=` 를 넘기지 않음)
+  - src/investment_agent/execution/orders/planning.py:172-198 (min/total 한도가 계획 결과를 바꾼다)
+- 증상: 승인 카드를 정상적으로 받아 눌러도 `execute_toss_live`가 항상
+  `Toss holdings, cash, or prices changed the approved order quantities; reapproval required`
+  (또는 `total order notional ... exceeds ...`)로 멈춘다. 계좌도 시세도 안 바뀌었는데 그렇다.
+- 근거: 승인 경로의 planner는
+    `min_order_notional=TOSS_MIN_ORDER_NOTIONAL_USD`, `max_total_notional=TOSS_MAX_TOTAL_NOTIONAL_USD`
+  를 읽고, worker의 기본 planner는
+    `min_order_notional=10.0`(하드코딩), `max_total_notional=controls.max_daily_notional_usd`(=`TOSS_MAX_DAILY_NOTIONAL_USD`)
+  를 쓴다. `execute_toss_live.main`은 `worker_factory(repository=..., api=..., controls=..., durable_control=...)`
+  로만 부르므로 worker가 자기 기본 planner를 만든다 — 두 경로가 같은 planner를 공유하는 코드가 없다.
+  `revalidate_live_handoff`(live_worker.py:276-290)는 worker planner로 다시 계획해
+  `(client_order_id, symbol, side, quantity)` 튜플을 승인 주문표와 **완전 일치**로 비교한다.
+- 재현(구체 숫자): `.env.example`에 있는 `TOSS_MIN_ORDER_NOTIONAL_USD`를 10 → 50으로 올린다.
+  $20짜리 리밸런싱 주문 1건 + $600 주문 2건인 계획이면 승인 카드에는 2건이 실리고(planning.py:172 `continue`),
+  worker 재검증은 min=10.0이라 3건을 만든다 → `fresh_identity`(3튜플) != `approved_identity`(2튜플) → 예외.
+  같은 방식으로 `TOSS_MAX_TOTAL_NOTIONAL_USD=30000`, `TOSS_MAX_DAILY_NOTIONAL_USD=20000`이면
+  합계 $25,000 계획이 승인은 통과하고 재검증에서 `total order notional 25000.00 exceeds 20000.00`으로 죽는다.
+- 원인: 같은 "계획 규칙"을 두 진입점이 각자 조립한다. 한쪽은 env 3개, 한쪽은 하드코딩 1개 + controls 2개.
+  `docs/ENV.md:88`은 `TOSS_MAX_DAILY_NOTIONAL_USD`만 문서화하고 `TOSS_MIN_ORDER_NOTIONAL_USD`·
+  `TOSS_MAX_TOTAL_NOTIONAL_USD`는 `.env.example:84,86`에만 있어, 운영자가 어느 쪽을 바꿔야 하는지 알 수 없다.
+- 해결: planner 조립을 함수 하나(예: `planning.whole_share_planner(config)`)로 모으고 승인·실행이 그것을 쓴다.
+  `TOSS_MAX_TOTAL_NOTIONAL_USD`와 `TOSS_MAX_DAILY_NOTIONAL_USD`가 같은 것을 주장하므로 하나로 줄인다.
+  가드: 두 진입점의 `ExecutionLimits`가 같은 값을 내는지 비교하는 테스트(현재 없음 — 각 경로만 따로 검증한다).
+- 위험: fail-closed(승인 소비 전에 멈춘다)라 돈은 새지 않는다. 대신 실주문 경로가 조용히 **영구 불능**이 되고
+  오류 문구가 "계좌·시세가 바뀌었다"로 원인을 가린다.
+
+### [EX2-02] 30초 risk state 창이 준비 단계(네트워크 8~10회)에 소진돼, 승인을 소비한 뒤 배치가 첫·둘째 주문에서 잘린다  [확정] [높음] [정확성] [사용자결정]
+- 파일:
+  - src/investment_agent/execution/orders/live_worker.py:425 (`current = parse_datetime(now or self.clock())`)
+  - src/investment_agent/execution/orders/live_worker.py:471-476 (`runtime_risk_state(..., captured_at=current)`)
+  - src/investment_agent/execution/safety/control.py:40,285-288 (`MAX_STATE_AGE_SECONDS = 30`, `state_age > max` → 예외)
+- 증상: 승인은 소비되고(`consumed`) 첫 주문 몇 건만 나간 뒤
+  `runtime risk state is stale`로 intent가 `failed`가 된다. 이미 나간 주문은 브로커에 살아 있고,
+  나머지는 `failed`로 닫힌다. 같은 승인을 다시 쓸 수 없어 부분 실행 상태에서 사람이 개입해야 한다.
+- 근거: `captured_at`이 `execute()` **시작 시각**이다. 그 시각 이후 제출 전까지 아래가 순서대로 일어난다.
+  1. `assert_official_us_session` → `toss_read.fetch_us_regular_session` (HTTP)
+  2. `unresolved_orders` (sqlite), `current_tracked_tickers` → Supabase `universe.securities` 전체 페이징
+  3. `snapshot_provider` = `toss_manual.build_snapshot` → `fetch_open_orders`·`fetch_holdings`·`fetch_prices`·
+     `fetch_buying_power` (HTTP 4회, toss_manual.py:328-376)
+  4. `_preflight_broker` → 매도 종목당 `sellable_quantity` + `commissions` + `buying_power` (HTTP 3회 이상)
+  5. 주문마다 `create_planned_order` → `db.py:249-260 _with_security_identity`가 **주문 1건당 Supabase
+     `universe.securities` 조회 1회**(메모리 기록: `sb.schema()` 왕복 약 0.4초)
+  즉 주문 N건이면 Supabase 왕복 N+1회 + 토스 HTTP 8회 이상이 30초 예산 안에서 먼저 소비된다.
+  제출 루프는 `submit_time = parse_datetime(self.clock())`로 실제 시각을 다시 읽으므로(live_worker.py:579)
+  준비 시간이 그대로 `state_age`에 들어간다.
+- 재현(구체 숫자): 주문 8건, Supabase 왕복 0.4초 × 9 = 3.6초, 토스 HTTP 8회 × 0.3초 = 2.4초,
+  세션·스냅샷 검증 포함 준비에 8~15초. 남는 것이 15~22초이고 POST 1건당 0.3~1초 + `load_intent`·
+  `load_control_state`(sqlite) 2회가 붙는다. 앞 주문 하나가 느리거나 토스가 3초 걸리면 뒤쪽이 창을 넘는다.
+- 원인: 창의 **시작점**이 잘못됐다. `MAX_STATE_AGE_SECONDS`는 "위험 상태가 얼마나 낡았나"를 재는 값인데,
+  지금은 "실행 시작부터 얼마나 지났나"를 잰다. 직전 보고서 TE-9는 `captured_at`을 주문마다
+  갱신하지 않도록 고쳤고(그 자체는 옳다), 그 결과 창이 준비 단계까지 덮게 됐다.
+- 테스트가 결함을 가린다: `tests/investment_agent/execution/test_live_worker.py`는 23곳에서 `now=NOW`를
+  넘긴다. `now is not None`이면 `submit_time = current`로 고정되어 `state_age`가 항상 0이다.
+  가짜 시계를 쓰는 두 테스트(:501, :521)도 준비 단계에 시간을 **흐르게 하지 않는다** —
+  `clock()` 호출은 시작 1회 + 제출 N회뿐이라 준비 비용이 0으로 모델링된다.
+- 해결(사용자 결정): risk state를 제출 루프 **직전에** 캡처하고(준비가 끝난 시점의 시계로) 30초를
+  제출 구간에만 적용한다. 또는 `create_planned_order`의 종목 identity 조회를 배치 1회로 바꿔
+  준비 비용을 줄인다(정확성 변경 없음, 이쪽은 결정 불필요). 창 길이를 늘리는 것은 위험 판정이
+  낡은 상태로 열리는 쪽이라 값 변경은 사용자 결정.
+- 위험: 승인 소비 후 부분 실행. 목표 비중이 중간 상태로 남고, `unresolved_orders`가 남아 다음 실행도 막힌다.
+
+### [EX2-03] 브로커가 REPLACED를 주면 대사 전체가 예외로 끊기고, 남은 주문은 영구히 미해결로 남는다  [확정] [높음] [정확성]
+- 파일:
+  - src/investment_agent/execution/reconciliation/worker.py:75-76 (`classify_remote_order` → `"replaced"`)
+  - src/investment_agent/execution/orders/repository.py:227-241 (`update_order_execution`의 전이표)
+  - src/investment_agent/execution/orders/repository.py:261 (`reconcilable_orders`는 `'replaced'`를 안다)
+  - src/investment_agent/execution/reconciliation/worker.py:336 (intent 판정도 `'replaced'`를 안다)
+- 증상: 토스 주문 상태 문자열에 `REPLAC`가 들어오면(정정 주문의 원 주문 등)
+  `ExecutionSafetyError: invalid order execution transition`이 `run_once` 밖으로 튀어
+  **그 패스의 나머지 주문 전부가 대사되지 않는다**. `unresolved_orders`가 비지 않으므로
+  `live_worker.execute`는 이후 모든 실주문을 `... await reconciliation; new orders are blocked`로 막는다.
+- 근거: 전이표에 `replaced`가 **목표로도, 출발 상태로도 없다**.
+  `transitions = {"planned": {...}, "submitted": {"partially_filled","filled","cancelled","rejected","outcome_unknown","reconciling"}, ...}`
+  이고 `terminal = {"filled","cancelled","rejected","failed"}`다. 그런데 같은 저장소의
+  `reconcilable_orders`는 `status IN ('filled','cancelled','rejected','replaced')`로 `replaced`를 다루고,
+  대사 worker의 intent 판정은 `statuses & {"cancelled","rejected","failed","replaced"}`를 본다.
+  즉 세 곳이 `replaced`를 아는데 **쓰는 곳 하나만 모른다**.
+- 재현: `TossOrderSnapshot.status = "REPLACED"`, `filled_quantity=0`, 로컬 상태 `submitted`
+  → `classify_remote_order` = `"replaced"` → `update_order_execution(status="replaced")`
+  → `"replaced" not in transitions["submitted"]` → raise. `run_once`의 `for row in local` 안이라
+  예외가 그대로 올라간다(주문별 격리 없음).
+- 원인: 상태 enum이 한 모듈(전이표)에 선언되지 않고 세 곳에 흩어져 있다. `orders.status`에는
+  DB CHECK도 없어(`db/sqlite/runtime/v1/30_execution.sql`의 `status TEXT NOT NULL`) 오타·누락이 DB에서도 안 드러난다.
+- 해결: 주문 상태 enum과 전이표를 한 모듈 상수로 두고(`replaced`는 종결 상태로 추가),
+  `classify_remote_order`의 반환 집합과 전이표의 목표 집합이 같은지 검증하는 테스트를 둔다.
+  더불어 `run_once`의 주문 루프를 주문별로 격리해 한 건의 실패가 나머지 대사를 막지 않게 한다.
+- 위험: 실주문 경로가 통째로 정지한다. 브로커에는 주문이 살아 있는데 원장이 상태를 못 옮긴다.
+
+### [EX2-04] `order_attempts.state`가 한 번도 갱신되지 않아, System 목표 재실행 가드의 SQL 조건이 공허하다  [확정] [중간] [정확성·구조]
+- 파일:
+  - src/investment_agent/execution/orders/repository.py:132 (`INSERT ... state` = `"reserved"` 고정)
+  - src/investment_agent/execution/orders/repository.py:35 (`o.state != 'failed'`)
+  - db/sqlite/runtime/v1/30_execution.sql:59 (`CHECK (state IN ('reserved','submitted','unknown','failed'))`)
+- 증상: 한 System 목표로 낸 배치가 **전부 실패**한 뒤에도 같은 목표로 새 intent를 저장할 수 없다
+  (`ExecutionSafetyError: System target already has an active execution`). 자금 확보 매도
+  예외(`funding_followup_allowed`)에 해당하지 않으면 그 목표는 영구히 막힌다.
+- 근거: `state` 컬럼에 UPDATE가 저장소 전체에 **0건**이다(`grep "SET state"`·`"order_attempts SET"` 무결과).
+  attempt의 실제 진행은 `order_events`가 갖고, `state`는 삽입 시각의 `'reserved'`로 굳는다.
+  그래서 `EXISTS(SELECT 1 FROM order_attempts o WHERE o.intent_id=i.intent_id AND o.state != 'failed')`는
+  "attempt 행이 하나라도 있으면 참"과 같다 — `!= 'failed'` 조건이 아무것도 걸러내지 않는다.
+- 재현: 실패한 실행의 intent에 attempt 2건(둘 다 event가 `failed`)이 있는 상태에서
+  같은 `system_target_id`로 `save_intent`를 부르면 `previous[3]`이 True → 예외.
+  `state` 컬럼을 `'failed'`로 갱신하는 코드가 없어 어떤 경로로도 풀리지 않는다.
+- 원인: attempt 상태가 두 곳(컬럼 + 이벤트 원장)에 있고, 실제로는 이벤트 원장만 갱신된다.
+  검사 대상을 옮기면 검사가 조용히 통과/차단하는 패턴(직전 보고서의 "가드의 공허한 통과"와 같은 종류).
+- 해결: 둘 중 하나로 통일한다 — (a) `state` 컬럼을 지우고 가드를 `order_events`의 마지막
+  event_type으로 판정, 또는 (b) terminal 이벤트를 쓸 때 `state`도 같이 갱신. (a)가 진실을 하나로 만든다.
+  가드 테스트는 "모든 attempt가 실패한 intent는 재실행을 막지 않는다"를 직접 물어야 한다.
+- 위험: fail-closed(막는 쪽)이므로 중복 주문은 나지 않는다. 대신 실패 뒤 복구가 코드 수정 없이는 불가능하다.
+
+### [EX2-05] 전일 기준점 보관이 2일인데 조회는 5일을 본다 — 연휴 뒤 기준점이 비어 실주문이 막힌다  [확정] [중간] [정확성]
+- 파일:
+  - src/investment_agent/execution/brokers/repository.py:384-390 (`DELETE ... record_type='account_snapshot' AND captured_at < moment-2일`)
+  - src/investment_agent/execution/safety/repository.py:17,66-73 (`PRIOR_BASELINE_MAX_AGE = timedelta(days=5)`)
+- 증상: 오늘 장전 스냅샷이 없는 날(캡처 job 실패·연휴 뒤 첫 장) 실주문이
+  `live risk baseline is missing; capture a Toss snapshot before US market open`으로 전부 막힌다.
+  직전 보고서 TE-8이 "연휴 주말 4일을 덮는다"고 적어 둔 5일 창이 실제로는 **2일**이다.
+- 근거: `capture_and_store_risk_snapshot`(→ `save_account_snapshot`)이 하네스에서
+  5분마다 돌고(`operations/harness/pipeline.py:248` `account_risk_snapshot_job`,
+  `investment_harness.py:54` `risk_snapshot_interval_seconds = 5*60`), 그 호출마다
+  `runtime_records`의 `record_type='account_snapshot'` 중 2일보다 오래된 행을 지운다.
+  `runtime_risk_state`의 fallback은 `day_start - 5일 <= captured_at < day_start`를 찾는데,
+  그 구간의 [2일, 5일) 부분에는 행이 남을 수 없다.
+- 재현(구체 숫자): 금요일 마감 후 → 월요일 휴장 → 화요일 개장(3일 간격). 화요일 장전 캡처가
+  실패하면 화요일 09:35 ET 주문 시 fallback이 `2026-09-17 00:00Z ~ 2026-09-22 00:00Z` 구간을 찾지만
+  금요일(09-18) 행은 화요일 첫 5분 job이 `moment-2일` 컷오프로 이미 지웠다 → `baseline_rows`가 비어 예외.
+- 원인: 같은 record_type에 대해 보관 규칙(2일)과 조회 규칙(5일)이 서로 다른 모듈에서 각자 선언돼 있다.
+  같은 payload가 `record_type='performance_snapshot'`으로도 저장되고 그쪽은 **지워지지 않는다** —
+  즉 데이터는 남아 있는데 baseline 조회가 보는 record_type만 잘려 있다.
+- 해결: 보관 창과 조회 창을 한 상수로 묶는다(`PRIOR_BASELINE_MAX_AGE`를 삭제 컷오프가 쓰게 하거나,
+  baseline 조회가 `performance_snapshot`도 함께 읽게 한다). 가드: 컷오프보다 오래된 fallback을
+  요구하는 테스트(현재 없음 — 삭제 쪽과 조회 쪽 테스트가 서로를 모른다).
+- 위험: fail-closed. 다만 실주문이 "왜 막혔는지" 메시지가 "장전 스냅샷을 찍어라"라서 원인(보관 삭제)을 가린다.
+
+### [EX2-06] 주문 직전 위험 계산이 `cash: 0` 가짜 계좌 스냅샷을 원장에 남겨 성과 읽기 경로를 오염시킨다  [확정] [중간] [정확성]
+- 파일: src/investment_agent/execution/safety/repository.py:78-79
+- 증상: 성과·대시보드가 읽는 계좌 스냅샷 시계열에 현금 0, 매수가능액 null인 행이 섞인다.
+- 근거: `runtime_risk_state`가 주문 직전마다
+  `{"execution_mode":"live", "broker_account_hash":…, "equity":current_equity, "cash":0, "buying_power":None, …}`
+  를 `record_type='account_snapshot'`으로 저장한다. 같은 record_type을
+  `RuntimeLedgerRepository.performance_sources`(db.py:166-174)가
+  `('account_snapshot','performance_snapshot')` 둘 다 읽어 `result['account_snapshots']`로 넘긴다.
+  진짜 캡처(`save_account_snapshot`)는 실제 `cash`를 넣지만, 이 경로의 행은 `cash`를 **상수 0으로 지어낸다**.
+- 재현: 실주문 1회에 주문 N건이면 `runtime_risk_state` 1회 호출로 1행. 하루 여러 배치면
+  `account_snapshots` 시계열에 `cash=0`·`market_value` 없음 행이 그 수만큼 끼어
+  현금 비중·현금 변화 기반 계산이 계좌를 "현금 0"으로 읽는다.
+- 원인: 위험 판정용 임시값과 성과용 사실이 같은 record_type을 공유한다. 위험 판정은 `cash`가 필요 없어
+  0을 넣었지만, 그 record_type의 다른 독자가 있다.
+- 해결: 위험 판정용 행을 별도 record_type(예: `risk_state_probe`)으로 분리하거나 `cash`를 저장하지 않는다
+  (누락은 결측으로 읽히고 0은 사실로 읽힌다). 직전 보고서 TE-8이 지적한 "읽기 메서드가 매 호출 스냅샷을
+  저장"의 부작용 중 아직 안 본 쪽이다.
+- 위험: 돈이 새지는 않는다. 성과·현금 관련 화면과 attribution이 조용히 틀린다.
+
+### [EX2-07] 제출 시점 인증 실패가 live_worker의 except 3개를 모두 빠져나가 고아 `planned` 주문을 만든다 (TE-3과 같은 계열의 다른 경로)  [확정] [높음] [정확성]
+- 파일:
+  - src/investment_agent/execution/brokers/toss/orders.py:344-346 (`token = self._token_provider()`)
+  - src/investment_agent/execution/brokers/toss/orders.py:356-359 (`raise TossOrderApiError("Toss authentication refresh failed")`)
+  - src/investment_agent/execution/orders/live_worker.py:614,641,674 (except는 `TossOrderOutcomeUnknown`·`TossOrderRejected`·`ExecutionSafetyError` 세 개뿐)
+- 증상: 실주문 배치 도중 토큰이 만료·403(IP 미등록)·네트워크 오류로 발급되지 않으면
+  예외가 worker 밖으로 튀어 나가고 원장은 주문 행 `planned` / attempt 마지막 이벤트 `submitting` /
+  뒤 주문 `reserved` / intent `executing`으로 굳는다. 그 뒤 모든 실주문이
+  `... await reconciliation; new orders are blocked`로 막히고, 대사는 그 행을 **보지 않는다**
+  (`reconcilable_orders`는 `planned`를 제외한다).
+- 근거: 두 갈래가 셋 중 아무 except에도 걸리지 않는다.
+  1. `_request`가 POST 전에 `self._token_provider()`(=`access_token`)를 부르는데 이것은
+     `TossAuthError`(RuntimeError)를 던진다 — `create_order`의 `except requests.RequestException`
+     밖이다(`orders.py:432-437`).
+  2. 첫 POST가 401이면 `_token_refresher`를 부르고, 실패 시 **`TossOrderApiError`**를 던진다.
+     `TossOrderApiError`는 `TossOrderOutcomeUnknown`·`TossOrderRejected`의 부모이지만
+     그 자체를 잡는 곳이 worker에 없다.
+- 재현: `TossOrderApi(token_provider=lambda: (_ for _ in ()).throw(TossAuthError("IP 미등록")))`
+  로 `execute()`를 돌리면 `TossAuthError`가 그대로 올라오고, 원장에는 `planned` 주문 N건과
+  `executing` intent가 남는다. 두 번째 갈래는 세션 mock이 첫 POST에 401, `token_refresher`가
+  `TossAuthError`를 던지게 하면 재현된다.
+- 원인: 예외 계층이 "결과 불명 / 명시적 거절 / 사전 안전 차단" 세 종류만 상정하는데,
+  브로커 어댑터는 그 셋에 속하지 않는 네 번째(`TossOrderApiError`)를 던진다.
+  직전 보고서 TE-3은 `_mutation_json`(2xx인데 본문 파싱 실패) 한 곳만 `TossOrderOutcomeUnknown`으로
+  승격해 닫았고, `_request`의 인증 경로는 그대로다.
+- 해결: (a) 401 재전송 전이라면 사전 차단(`ExecutionSafetyError`), POST를 이미 보낸 뒤라면
+  결과 불명(`TossOrderOutcomeUnknown`)으로 승격하고, (b) worker에 `except TossOrderApiError`
+  안전망을 두어 어떤 어댑터 예외도 원장을 열린 상태로 남기지 않게 한다.
+  가드: "어댑터가 던질 수 있는 예외 타입 집합 ⊆ worker가 잡는 집합"을 검사하는 테스트.
+- 위험: 브로커에 주문이 살아 있을 수 있는데 원장은 `planned`다. 그리고 실주문 경로가 사람 손 없이는 안 풀린다.
+
+### [EX2-08] 어댑터 문서는 "주문 자동 재시도 없음"인데 `_request`가 401에서 POST를 다시 보낸다  [의심] [중간] [정확성]
+- 파일: src/investment_agent/execution/brokers/toss/orders.py:1-6(머리주석), 336-362(`_request`), 411-470(`create_order`)
+- 증상: 주문 POST가 한 번의 `create_order` 호출에서 **최대 두 번** 전송될 수 있는데,
+  attempt 원장에는 `submitting` 이벤트가 하나만 남는다. 원장이 "1회 전송"이라고 말하는 동안 2회 전송됐다.
+- 근거: 모듈 docstring은 "공식 Open API v1 주문 규격을 따르며 **자동 재시도를 하지 않는다**"고 적혀 있다.
+  그런데 `_request`는 method를 가리지 않고 401이면 토큰을 갱신해 `sender(url, ...)`를 그대로 다시 부른다.
+  `create_order`·`modify_order`·`cancel_order`가 모두 이 `_request`를 쓴다.
+- 확인해야 할 것(저장소에 토스 명세가 없다): 토스가 401을 **요청 처리 전에만** 반환하는가.
+  처리 후(주문 접수 후) 401이 가능하다면 같은 `clientOrderId` 재전송이 실제 중복 주문이 될 수 있고,
+  그때 방어는 토스의 `clientOrderId` 멱등성뿐이다 — 그 멱등성의 보장 범위·보존 기간도 명세 확인 대상이다.
+- 부수 결함(확정): 두 번째 요청도 401이면 `create_order`는 `status_code >= 400` 분기로 가
+  `TossOrderRejected(status_code=401, code=...)`를 던진다. 즉 **인증 실패가 "브로커가 주문을 거절했다"로
+  원장에 기록**되고 intent가 `failed`, 뒤 주문이 `prior_order_rejected`로 닫힌다. 원인 진단이 틀린 방향으로 굳는다.
+- 해결: mutation 경로에서는 401 재전송을 하지 않고(읽기 경로만 허용) 사전 차단으로 올린다.
+  최소한 401은 `_raise_rejection` 대상에서 빼고 별도 인증 오류로 분류한다.
+- 위험: 명세가 확인되기 전에는 중복 주문 가능성을 배제할 수 없다. **실주문 의미를 바꾸는 변경이므로 사용자 결정.**
+
+### [EX2-09] 매수 현금 여유가 세 숫자(band 25bp·수수료 10bp·계획 버퍼 50bp)로 흩어져 있고 서로 모순되는지 아무도 검사하지 않는다  [확정] [중간] [정확성·하드코딩]
+- 파일:
+  - src/investment_agent/execution/orders/planning.py:205-208 (`BUY_CASH_BUFFER_BPS = 50`과 그 근거 주석)
+  - src/investment_agent/execution/orders/live_worker.py:107-109 (`limit_band_bps=25`, `commission_buffer_bps=10`)
+  - src/investment_agent/execution/orders/live_worker.py:398-418 (`_preflight_broker`의 `required_cash`)
+- 증상: 승인 카드는 "매수 전액 가능(funding_phase=full)"으로 나가는데 실행 직전
+  `current USD buying power cannot fund every approved buy without sale proceeds`로 막힌다.
+  현금은 실제로 충분한데도 그렇다.
+- 근거(정확한 부등식): 계획은 `cash >= notional × (1 + 50/10000)` = `1.0050 × notional`을 요구하고,
+  실행 preflight는 `cash >= Σ qty × limit_price × (1 + r)`에서 `limit_price = ref × (1 + 25/10000)`,
+  `r = max(10/10000, 토스가 준 commissionRate)`이므로 `1.0025 × (1 + r) × notional`을 요구한다.
+  두 값이 같아지는 지점은 `1 + r = 1.0050 / 1.0025 = 1.0024938` → **r = 24.94bp**다.
+  즉 토스 미국주식 수수료율이 24.94bp를 넘거나 `commission_buffer_bps`를 25 이상으로 올리면
+  **승인은 통과하고 실행은 항상 막힌다**. `commission_buffer_bps`는 0~100을 허용한다(`__post_init__`).
+- 재현(구체 숫자): `commission_buffer_bps=60`, 매수 $10,000, 현금 $10,070.
+  계획: 필요액 $10,050 ≤ $10,070 → `full`로 승인. preflight: $10,000 × 1.0025 × 1.0060 = $10,085.15 > $10,070 → 차단.
+- 원인: 같은 제약(“이 매수를 현금으로 댈 수 있나”)을 두 계층이 서로 다른 수식·다른 상수로 쓴다.
+  planning.py의 주석은 "band+수수료 여유보다 넉넉하다"고 주장하지만 그 관계를 코드가 검증하지 않는다.
+- 해결: 계획 버퍼를 상수로 두지 말고 실행 쪽 수식에서 유도한다
+  (`buy_cash_buffer >= (1+band)(1+commission_buffer) - 1`), 또는 그 부등식을 검사하는 테스트를 둔다.
+  `LiveExecutionPolicy.__post_init__`에서 `(1+band)(1+commission)` ≤ `1+BUY_CASH_BUFFER_BPS`를 강제하는 것이 가장 짧다.
+- 위험: fail-closed(승인 소비 전 차단)지만 실주문 경로가 조용히 불능이 되고 원인이 세 상수 사이에 숨는다.
+
+### [EX2-10] `commissionRate` 단위에 상·하한 검증이 없어, 퍼센트 단위라면 필요 현금이 조용히 100배 커진다  [의심] [중간] [정확성]
+- 파일:
+  - src/investment_agent/execution/brokers/toss/orders.py:611-623 (`commissions()`의 검증: 유한·`rate >= 0`만)
+  - src/investment_agent/execution/orders/live_worker.py:410-418 (`required_cash`에 `(1 + commission_rate)`로 곱)
+- 증상: 매수가 있는 배치가 늘 preflight에서 막히거나(퍼센트 단위인 경우), 반대로 수수료를 거의
+  반영하지 않고 통과한다(단위가 맞는 경우와 구분이 안 된다).
+- 근거: `commissions()`는 `Decimal(str(row.get("commissionRate")))`를 `rate < 0`만 걸러 그대로 돌려주고,
+  `_preflight_broker`는 그 값을 **소수(fraction)로 가정해** `1 + rate`를 곱한다. 상한 검증이 없어
+  `0.1`(=0.1%를 의도한 값)이 들어오면 10%로, `7`(=7bp를 의도한 값)이 들어오면 700%로 읽힌다.
+- 확인해야 할 것: 토스 Open API `GET /api/v1/commissions`의 `commissionRate`가 소수(0.001)인지
+  퍼센트(0.1)인지 베이시스포인트(10)인지. 저장소에 명세가 없다.
+  테스트 픽스처(`tests/investment_agent/execution/test_live_worker.py`의 `FakeApi`)가 어떤 값을 쓰는지도
+  실제 응답을 대신하지 못한다 — 픽스처가 맞춘 단위가 곧 실제 단위라는 근거는 없다.
+- 해결: `commissions()`에서 상한을 건다(예: `rate > 0.05`면 단위 오해로 보고 거절하며 원값을 로그에 남긴다).
+  방향이 애매하면 "소수로 읽었을 때 5%를 넘는 수수료"는 계약 위반으로 드러내는 것이 조용히 막히는 것보다 낫다.
+- 위험: fail-closed(필요 현금 과대 산정)라 돈은 새지 않는다. 다만 실주문 경로가 영구 불능이 될 수 있고
+  직전 보고서 6절이 "확인 불가"로만 남겨 둔 채 검증 코드가 없다. **단위 결론과 상한값은 사용자 결정.**
+
+### [EX2-11] 체결 원장 `fills`를 쓰는 코드가 하나도 없다 — 성과·체결 카드·화면이 영구히 "체결 0건"  [확정] [높음] [정확성·구조]
+- 파일:
+  - src/investment_agent/execution/brokers/repository.py:50-64 (`save_fill` — src 참조 0건)
+  - src/investment_agent/execution/reconciliation/worker.py:285-313 (체결량·평균단가·수수료를 읽고 `fills`로는 안 쓴다)
+  - db/sqlite/runtime/v1/30_execution.sql:87-94 (`CREATE TABLE fills`)
+- 증상: 실주문이 체결돼도 다음이 모두 0건이다.
+  - `investment_trades` 알림 카드(CLAUDE.md가 "실제 주문·체결"이라고 선언한 것)
+    — `reporting/notifications/investment/db.py:101`이 `read_runtime_rows("fills")`를 읽는다.
+  - `trading/performance/service.py:135-141`의 실현손익·수수료·attribution
+    — `execution/db.py:163-183 performance_sources`가 `SELECT payload_json FROM fills`를 읽는다.
+  - 대시보드 "체결 이벤트 N건"(`dashboard/app_pages/execution.py:69,92,244-283`), alpha_lab, intelligence 추적.
+- 근거: `save_fill`을 부르는 코드가 src 전체에 없다(`grep -rn "save_fill" src` → 정의 1건뿐).
+  대사 worker는 `remote.filled_quantity`·`average_filled_price`·`commission`·`tax`를 실제로 읽어
+  `_snapshot_row`로 `broker_order_snapshot` runtime_record에 넣지만, 그 값을 `fills` 행으로
+  바꾸는 단계가 없다. 즉 **데이터는 들어오는데 소비자가 보는 표에는 도달하지 않는다.**
+- 재현: 체결된 주문 1건으로 `reconcile_toss`를 돌린 뒤 `read_runtime_rows("fills")`는 `[]`,
+  `runtime_records`의 `broker_order_snapshot`에는 `filled_quantity`·`average_fill_price`가 들어 있다.
+- 원인: 대사가 "주문 상태"만 원장에 반영하고 "체결 사실"은 immutable snapshot에만 남긴다.
+  두 표의 owner가 갈라져 있고, 아래쪽(소비자) 전부가 `fills`를 본다.
+- 해결: 대사에서 broker snapshot이 바뀔 때 `save_fill`을 호출해 체결을 원장에 남긴다
+  (부분 체결 누적을 다루므로 `fill_id`는 `(broker_order_id, 누적체결량, 평균단가)` 지문이 안전하다 —
+  토스가 개별 체결 id를 주는지는 명세 확인 필요). 수수료·세금은 주문 단위 누적값이라 체결별 배분 규칙을 정해야 한다.
+  가드: "체결된 주문을 대사하면 `fills`에 행이 생긴다"를 직접 묻는 테스트(현재 없음 — 대사 테스트는 주문 상태만 본다).
+- 위험: 돈이 새지는 않지만 **성과·수수료·실현손익이 전부 없는 것으로 읽힌다.** 카드가 "체결 0건"을
+  사실처럼 보고하고, 그것이 판단 근거(performance attribution)로 다시 들어간다.
+
+### [EX2-12] `reconciliation_runs` 표에 쓰는 코드가 없어 실행 화면의 "대사 실행" 패널이 항상 비어 있다  [확정] [중간] [구조]
+- 파일:
+  - db/sqlite/runtime/v1/30_execution.sql:96-104 (`CREATE TABLE reconciliation_runs`)
+  - src/investment_agent/reporting/readers/runtime.py:100,123-127 (읽기)
+  - src/investment_agent/reporting/readers/dashboard.py:280,286 (화면 배선)
+  - src/investment_agent/operations/commands/reconcile_toss.py:37-57 (`run_once` 결과를 로그·Discord로만 보낸다)
+- 근거: `grep -rn "reconciliation_runs" src`에 INSERT/저장 호출이 없다. `ReconciliationSummary`는
+  반환값으로만 존재하고 `reporter.event`로 로그에 나간 뒤 사라진다.
+- 직전 보고서 DB-03("실행 화면이 주문 이벤트·대사 실행을 한 번도 채우지 않는다 — 수정됨")은
+  **읽기 배선**을 고친 것이고, 쓰기는 여전히 없다. 그래서 화면 문구는 "기록 없음"으로 정상 렌더되지만
+  대사가 돌았는지 화면으로는 끝까지 알 수 없다.
+- 해결: `run_once`가 시작·종료 시각과 `position_check`·불일치 수를 `reconciliation_runs`에 남기게 한다.
+  쓰지 않을 표라면 선언과 reader를 함께 지운다 — 지금은 "있는데 비어 있는" 상태라 운영자가
+  "대사가 안 돌았다"와 "기록만 없다"를 구분할 수 없다.
+- 위험: 감시 공백. 대사가 며칠 실패해도 화면은 처음부터 비어 있어 차이가 보이지 않는다.
+
+### [EX2-13] 만료된 승인을 `expired`로 옮기는 코드를 아무도 부르지 않는다  [확정] [낮음~중간] [구조]
+- 파일: src/investment_agent/execution/approval/repository.py:65-73 (`expire_due_approvals` — src 참조 0건)
+- 근거: `grep -rn "expire_due_approvals" src`에 정의 1건뿐. `approvals` 표에는 만료 시각이 지난
+  `pending`·`approved` 행이 계속 쌓인다.
+- 영향: 판정 자체는 fail-closed다(`decide_approval`·`consume_approval`이 `expires_at <= now`를 본다).
+  드러나는 곳은 두 군데다.
+  1. 화면·원장이 지난 승인을 계속 `pending`으로 보여 "대기 중인 승인"이 실제와 다르다.
+  2. `request_toss_approval:352`의 `approval_for_intent`는 **상태를 보지 않고** 행이 있으면
+     `_published_existing`로 되돌려 주므로, 만료된 승인 하나가 그 intent의 재요청을 영구히 막는다
+     (설계된 "같은 목표는 한 번만 묻는다"와 구분되지 않는다).
+- 해결: 하네스 tick 또는 승인 조회 경로에서 `expire_due_approvals`를 부르고,
+  `approval_for_intent`가 상태를 근거로 판단하게 한다. 부를 곳이 없다면 함수를 지운다.
+
+### [EX2-14] src 참조 0건인 실행 경계 정의 4개 추가 (TE-14 목록 밖)  [확정] [낮음] [구조]
+- `OrderRepository.claim_intent` (orders/repository.py:166-178) — `intents.status='claimed'`의 **유일한 생산자**.
+  부르는 곳이 없어 `claimed`는 발생하지 않는 상태다. 그런데 `intents.EXECUTABLE_STATUSES`,
+  `save_intent`의 SQL(`previous[0] in ('approved','claimed')`), SQL CHECK, 대시보드 라벨
+  (`dashboard/app_pages/execution.py:40`)이 모두 그 상태를 다룬다.
+  **연결하면 깨진다**: `assert_executable`은 `claimed`를 실행 가능으로 보지만
+  `issue_live_execution_permit`(approval/ledger.py:497)은 `intent_status != "approved"`를 거절하므로,
+  claim한 intent는 재검증을 통과한 뒤 permit 발급에서 막힌다.
+- `ApprovalWorkflow.consume_once` (approval/service.py:215-228) — docstring도 "향후 worker용"이라 적는다.
+  실제 worker는 `repository.consume_approval`을 직접 부른다.
+- `OrderRepository.update_order_status` (orders/repository.py:222-223) — 참조 0건.
+  게다가 `update_order_execution`에 `raw_broker_status`를 넘기지 않아, 호출되면 기존에 기록된
+  broker 상태를 `None`으로 덮는다(payload.update가 무조건 대입한다).
+- `OrderAttemptEvent.needs_reconciliation` (orders/ledger.py:195-202) — 참조 0건.
+- 해결: 지우거나 연결한다. `claimed`는 "지운다"가 안전하다 — 남겨 두면 두 계층이 서로 모순되는 상태다.
+
+### [EX2-15] `LifecyclePromotionGate`의 최대낙폭 비교가 부호를 거꾸로 봐서 어떤 낙폭도 위반이 되지 않는다  [확정] [낮음(현재 죽은 코드)] [정확성]
+- 파일: src/investment_agent/execution/orders/lifecycle.py:302
+- 근거: `if evidence.max_drawdown < -self.criteria.max_drawdown:` 이고 `AutonomyCriteria.max_drawdown = 0.15`다.
+  이 저장소의 낙폭 관례는 **양수**다 — `RuntimeRiskState.drawdown_fraction`은
+  `max(0.0, (peak-equity)/peak)`(safety/repository.py:92)이고 `LiveTradingControls.max_drawdown_fraction`도
+  양수 0.05다. 양수 관례로 20% 낙폭(0.20)을 넣으면 `0.20 < -0.15`가 거짓이라 **위반으로 잡히지 않는다.**
+  `AutonomyEvidence`에는 `__post_init__` 검증이 아예 없어(다른 execution dataclass와 달리) 부호도 강제되지 않는다.
+- 재현: `AutonomyEvidence(..., max_drawdown=0.40, ...)`에 나머지 기준을 만족시키면
+  `LIVE_AUTONOMOUS` 승격이 `is_approved=True`로 통과한다. `-0.40`을 넣으면 위반으로 잡힌다 —
+  즉 같은 사실을 어떤 부호로 넣는지에 판정이 달렸다.
+- 현재 위험: 이 클래스는 src 참조 0건(직전 보고서 TE-14)이라 지금 열리는 게이트는 아니다.
+  다만 TE-14의 결정이 "연결한다"로 가면 **자율 실행 승격 게이트의 낙폭 조건이 없는 상태로 연결된다.**
+- 해결: 관례를 양수로 통일해 `evidence.max_drawdown > self.criteria.max_drawdown`으로 바꾸고
+  `AutonomyEvidence`에 `0 <= max_drawdown <= 1` 검증을 넣는다. 지우는 쪽으로 결정되면 함께 지운다.
+  **연결/삭제 선택은 사용자 결정**(TE-14와 같은 항목).
+
+### [EX2-16] 거절·결과불명 주문이 당일 주문 수·금액 한도를 소진한다  [확정] [낮음] [정확성]
+- 파일:
+  - src/investment_agent/execution/safety/repository.py:81,87,92 (`WHERE submitted_at IS NOT NULL`, 상태 필터 없음)
+  - src/investment_agent/execution/orders/live_worker.py:628,660 (`outcome_unknown`·`rejected` 분기가 `submitted_at=submit_time`을 쓴다)
+- 근거: `runtime_risk_state`는 `submitted_at`이 있는 당일 주문을 **상태와 무관하게** 세어
+  `submitted_order_count`·`submitted_notional_usd`를 만든다. 거절된 주문도 `submitted_at`이 채워지므로
+  `max_daily_orders`(기본 20)·`max_daily_notional_usd`(기본 20,000)를 소진한다.
+  반면 `_fail_unsubmitted_attempts`는 `submitted_at`을 넘기지 않아 그쪽은 세지 않는다 — 규칙이 두 갈래다.
+- 재현: 브로커가 같은 이유로 20건을 연속 거절하면 그날은 주문을 한 건도 더 낼 수 없다
+  (`daily order count limit reached`). 실제 시장 노출은 0인데 한도가 다 찼다.
+- 판단: 조이는 방향이라 안전하지만 "제출 한도"의 의미가 "전송 시도 한도"로 바뀐 것이 문서·이름에 없다.
+  의도라면 이름을 `attempted_*`로 바꾸고, 아니라면 종결 상태(`rejected`/`failed`)를 제외한다.
+  **한도 의미 변경이므로 사용자 결정.**
+
+### [EX2-17] 낮음 묶음 — 같은 계열의 작은 것들  [확정] [낮음]
+- **(a) `_require_event` 적용이 분기마다 다르다** — live_worker.py:614-640(`outcome_unknown`)과 641-673(`rejected`)은
+  `append_order_attempt_event`의 반환값을 확인하지 않는다. `submitting`(:581-587)·`submitted`(:709-716)·
+  `failed`(:679-686)·`_fail_unsubmitted_attempts`(:368-375)는 `_require_event`로 확인한다.
+  가장 위험한 두 분기(브로커에 주문이 살아 있을 수 있는 쪽)가 확인이 없는 쪽이다.
+  원장 쓰기가 조용히 거절되면 attempt 이벤트 사슬이 `submitting`에서 끊긴 채 남는다.
+- **(b) attempt 이벤트 전이표와 주문 행 전이표가 다르다** — `append_order_attempt_event`의
+  `"submitted"`에서 갈 수 있는 곳에 `outcome_unknown`·`reconciling`이 없는데
+  `update_order_execution`의 `"submitted"`에는 둘 다 있다(orders/repository.py:137-145 vs 227-233).
+  EX2-03(`replaced`)이 이 비대칭이 실제로 터지는 지점이고, 나머지는 현재 호출 경로가 닿지 않는다.
+- **(c) 이벤트 순서를 두 곳이 다르게 읽는다** — 쓰기는 `ORDER BY event_id DESC`로 마지막 상태를 정하고
+  (orders/repository.py:149) 읽기는 `ORDER BY occurred_at,event_id`로 정렬한다(:160).
+  같은 `occurred_at`을 가진 이벤트가 여러 개면 `_event_status`의 `events[-1]`과 쓰기 쪽 `current`가 갈릴 수 있다.
+- **(d) 만료 비교가 ISO 문자열 사전순이다** — approval/repository.py:154,157의
+  `expires_at > ?`(양쪽 `datetime.now(timezone.utc).isoformat()`)와 :68의 `expires_at <= ?`.
+  현재는 `parse_datetime`이 전부 UTC(`+00:00`)로 정규화해 우연히 맞지만, 마이크로초 유무가 다르면
+  `'+'(0x2B) < '.'(0x2E)`라 같은 초에서 1초 일찍 만료로 읽힌다(닫히는 방향).
+  알림 쪽은 NT-10에서 시각 비교로 이미 고쳤고 승인 원장만 문자열로 남아 있다.
+- **(e) `_approval_by`가 컬럼명을 f-string으로 SQL에 넣는다** — approval/repository.py:22.
+  현재 호출자는 내부 리터럴 둘뿐이라 주입 경로는 없지만, CLAUDE.md 규칙 16(DB 이름은 모듈 상수)과
+  다른 저장소 파일들의 `T_*` 관례에서 벗어난다.
+- **(f) `_restrict_file_permissions`가 읽을 때마다 `icacls` 프로세스를 띄운다** —
+  brokers/toss/auth.py:307(캐시 읽기)·457(잠금 파일)·approval/secret.py:66(비밀 읽기).
+  Windows에서 호출당 수십~수백 ms이고, 짧게 뜨는 CLI마다 최소 1회 발생한다. EX2-02의 30초 예산에도 더해진다.
+- **(g) `market_state.to_snapshot_row`의 `source_kind`가 규칙 14와 다른 어휘를 쓴다** —
+  `{"backtest","live_shadow","paper","live"}`로 `source_kind`와 `execution_mode`를 한 필드에 섞는다
+  (CLAUDE.md 규칙 14는 `source_kind`를 `live_shadow`/`historical_replay`로 선언).
+  `MarketState`·`save_quote_snapshot`은 TE-14의 죽은 코드라 지금 쓰이지 않는다.
+- **(h) endpoint 경로 상수가 두 모듈에 중복 선언돼 있다** — `_ORDERS_URL`·`_BUYING_POWER_URL`이
+  `brokers/toss/client.py:27-28`과 `brokers/toss/orders.py:41-42`에 각각 있다.
+  HC-9는 기준 주소(`TOSS_OPENAPI_BASE`)만 모았고 경로는 남았다(직전 보고서 10.2의 "HC-9 endpoint 상수 중복").

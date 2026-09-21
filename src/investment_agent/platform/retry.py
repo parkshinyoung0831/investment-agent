@@ -44,6 +44,21 @@ TRANSPORT_ERRORS: tuple[type[BaseException], ...] = (
     httpx.TransportError,
 )
 
+# `OSError`는 파일 오류도 포함한다. 없는 파일·권한 오류는 다시 해도 같은데, 그것을 네 번 재시도하면 고장을
+# 늦게 알아채고 백오프만 길어진다. 연결·타임아웃 계열만 남기고 파일 계열은 뺀다.
+_NEVER_TRANSIENT_OS_ERRORS: tuple[type[BaseException], ...] = (
+    FileNotFoundError,
+    FileExistsError,
+    PermissionError,
+    IsADirectoryError,
+    NotADirectoryError,
+)
+
+
+def _is_transport_error(exc: BaseException) -> bool:
+    return isinstance(exc, TRANSPORT_ERRORS) and not isinstance(exc, _NEVER_TRANSIENT_OS_ERRORS)
+
+
 # PostgREST/Postgres의 일시적 상태. 08=연결 예외, 53=자원 부족.
 _TRANSIENT_SQLSTATE_PREFIX = ("08", "53")
 _TRANSIENT_SQLSTATE = frozenset({
@@ -62,8 +77,28 @@ def _status_is_transient(status: int) -> bool:
     return status == 429 or 500 <= status < 600
 
 
+def _is_http2_internal_error(exc: BaseException) -> bool:
+    """HTTP/2 연결의 내부 상태 오류(`KeyError: 3` 같은 스트림 번호 조회 실패)인가.
+
+    여러 스레드가 한 HTTP/2 연결을 함께 쓰면 httpcore/h2가 스트림 표를 잘못 읽어 예외 종류가 `KeyError`로 새 나온다.
+    요청은 이미 실패한 것이라 같은 읽기를 다시 보내면 새 스트림으로 성공한다. 예외 종류만으로는 고를 수 없으므로
+    예외가 난 자리가 httpcore의 http2 모듈·h2 안일 때만 그렇다고 본다.
+    """
+    if not isinstance(exc, KeyError):
+        return False
+    frame = exc.__traceback__
+    while frame is not None:
+        filename = frame.tb_frame.f_code.co_filename.replace("\\", "/")
+        if "/httpcore/" in filename and filename.endswith("http2.py") or "/h2/" in filename:
+            return True
+        frame = frame.tb_next
+    return False
+
+
 def is_transient(exc: BaseException) -> bool:
     """다시 해볼 값어치가 있는 실패인가."""
+    if _is_http2_internal_error(exc):
+        return True
     response = getattr(exc, "response", None)
     if isinstance(exc, (requests.HTTPError, httpx.HTTPStatusError)) and response is not None:
         return _status_is_transient(response.status_code)
@@ -83,7 +118,7 @@ def is_transient(exc: BaseException) -> bool:
             or code in _TRANSIENT_PGRST
             or cloudflare_html
         )
-    return isinstance(exc, TRANSPORT_ERRORS)
+    return _is_transport_error(exc)
 
 
 def _policy(predicate: Callable[[BaseException], bool], label: str, attempts: int, max_wait: float) -> Any:
@@ -106,7 +141,7 @@ def _policy(predicate: Callable[[BaseException], bool], label: str, attempts: in
 
 def network_retry(attempts: int = 4, max_wait: float = 30.0) -> Any:
     """연결·타임아웃만 재시도. 상태 코드는 보지 않는다."""
-    return _policy(lambda exc: isinstance(exc, TRANSPORT_ERRORS), "network_retry", attempts, max_wait)
+    return _policy(_is_transport_error, "network_retry", attempts, max_wait)
 
 
 def transient_retry(attempts: int = 4, max_wait: float = 30.0) -> Any:

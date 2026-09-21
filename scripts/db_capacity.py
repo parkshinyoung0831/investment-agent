@@ -43,6 +43,7 @@ load_dotenv(ROOT / ".env")
 import psycopg2
 
 from scripts.postgres_schema_layout import application_schemas
+from scripts.project_ref import require_confirmation
 
 # Supabase Free: database size 500MB 초과 시 read-only.
 FREE_PLAN_LIMIT_BYTES = 500 * 1000 * 1000
@@ -53,7 +54,6 @@ APP_SCHEMAS = application_schemas()
 
 
 TABLE_RE = re.compile(r"^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$")
-PROJECT_REF_RE = re.compile(r"(?<![a-z0-9])([a-z]{20})(?![a-z0-9])")
 
 # 재작성 비용이 회수량에 못 미치는 표는 건드리지 않는다.
 RECLAIM_MIN_WASTE_BYTES = 4 * 1024 * 1024
@@ -66,12 +66,6 @@ def connect():
     conn = psycopg2.connect(url)
     conn.autocommit = True
     return conn
-
-
-def project_ref(conn) -> str:
-    url = os.getenv("SUPABASE_DB_URL", "")
-    found = PROJECT_REF_RE.findall(url)
-    return found[0] if found else ""
 
 
 def database_size(cur) -> int:
@@ -239,12 +233,10 @@ def cmd_report(args) -> int:
 
 
 def cmd_reclaim(args) -> int:
+    # 연결하기 전에 거절한다. 예전 정규식은 URL의 첫 소문자 20자 토큰(비밀번호일 수 있다)을 ref로 오인했다.
+    require_confirmation(os.getenv("SUPABASE_DB_URL", ""), args.confirm)
     conn = connect()
     cur = conn.cursor()
-    ref = project_ref(conn)
-    if ref and args.confirm != ref:
-        conn.close()
-        raise SystemExit(f"--confirm 값이 프로젝트와 다르다. 이 연결의 project ref는 {ref!r}이다.")
 
     try:
         before_db = database_size(cur)

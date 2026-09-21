@@ -14,9 +14,10 @@ import requests
 
 from investment_agent.platform.env import env_float
 from investment_agent.platform.retry import transient_retry
+from investment_agent.platform.endpoints import SEC_ARCHIVES_BASE, SEC_DATA_BASE
 
-DATA_BASE = "https://data.sec.gov"
-ARCHIVE_BASE = "https://www.sec.gov/Archives"
+DATA_BASE = SEC_DATA_BASE
+ARCHIVE_BASE = SEC_ARCHIVES_BASE
 _REQUEST_GAP_SEC = env_float("SEC_REQUEST_GAP_SEC", 0.12)
 
 _RATE_LOCK = threading.Lock()

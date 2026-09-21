@@ -21,11 +21,18 @@ from investment_agent.platform.logging import get_logger
 log = get_logger(__name__)
 
 
-def _ledger() -> Any:
-    from investment_agent.config import load_config
-    from investment_agent.notifications.context import default_context
+# 한 번의 `collect()` 안에서 카운터 넷이 같은 원장 연결을 쓴다. 카운터마다 설정·연결을 새로 만들면 표를 열 때마다
+# SSL 컨텍스트가 새로 생겨(약 0.4초) 조용히 느려진다.
+_shared_ledger: list[Any] = []
 
-    return default_context(load_config()).ledger
+
+def _ledger() -> Any:
+    if not _shared_ledger:
+        from investment_agent.config import load_config
+        from investment_agent.notifications.context import default_context
+
+        _shared_ledger.append(default_context(load_config()).ledger)
+    return _shared_ledger[0]
 
 
 def _fundamentals() -> str:
@@ -62,14 +69,24 @@ _SOURCES: list[tuple[str, Callable[[], str]]] = [
 ]
 
 
-def collect() -> list[str]:
-    """카드에 실을 한 줄짜리 카운터들. 실패한 것은 조용히 빠진다."""
+def collect(failed: list[str] | None = None) -> list[str]:
+    """카드에 실을 한 줄짜리 카운터들. 실패한 것은 카드에서 빠지고, 이름은 `failed`에 담긴다.
+
+    카드는 일부가 빠져도 나가야 하지만, 점검 도구(`verify_integration`)가 전부 실패한 것을 "0건 OK"로 세지
+    않도록 실패한 이름을 밖으로 돌려준다.
+    """
     out: list[str] = []
-    for name, source in _SOURCES:
-        try:
-            out.append(source())
-        except Exception as exc:  # noqa: BLE001 - 카운터가 점검을 죽이면 안 된다
-            log.warning("counters: %s 조회 실패 — 건너뛴다 (%s)", name, exc)
+    _shared_ledger.clear()
+    try:
+        for name, source in _SOURCES:
+            try:
+                out.append(source())
+            except Exception as exc:  # noqa: BLE001 - 카운터가 점검을 죽이면 안 된다
+                log.warning("counters: %s 조회 실패 — 건너뛴다 (%s)", name, exc)
+                if failed is not None:
+                    failed.append(name)
+    finally:
+        _shared_ledger.clear()
     return out
 
 

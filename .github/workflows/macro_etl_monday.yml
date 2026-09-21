@@ -24,6 +24,7 @@ concurrency:
 jobs:
   run:
     name: fetch + merge + upsert (Monday gap fill)
+    if: ${{ vars.MACRO_KILL != 'on' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:

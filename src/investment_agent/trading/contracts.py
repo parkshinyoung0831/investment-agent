@@ -51,47 +51,6 @@ class Claim:
 
 
 @dataclass(frozen=True)
-class RoleAnalysis:
-    role: str
-    summary: str
-    stance: str
-    confidence: float
-    claims: tuple[Claim, ...]
-    risks: tuple[str, ...]
-    missing_data: tuple[str, ...]
-
-    @classmethod
-    def from_dict(
-        cls,
-        role: str,
-        data: Mapping[str, Any],
-        allowed_ids: set[str],
-    ) -> "RoleAnalysis":
-        required = {"summary", "stance", "confidence", "claims", "risks", "missing_data"}
-        missing = required - set(data)
-        if missing:
-            raise ContractError(f"{role} output missing fields: {sorted(missing)}")
-        stance = str(data["stance"])
-        if stance not in _STANCES:
-            raise ContractError(f"invalid stance: {stance}")
-        raw_claims = data["claims"]
-        if not isinstance(raw_claims, list):
-            raise ContractError("claims must be a list")
-        return cls(
-            role=role,
-            summary=str(data["summary"]).strip(),
-            stance=stance,
-            confidence=_number(data["confidence"], "confidence", 0.0, 1.0),
-            claims=tuple(Claim.from_dict(item, allowed_ids) for item in raw_claims),
-            risks=tuple(_text_list(data["risks"], "risks")),
-            missing_data=tuple(_text_list(data["missing_data"], "missing_data")),
-        )
-
-    def to_dict(self) -> dict[str, Any]:
-        return json_value(asdict(self))
-
-
-@dataclass(frozen=True)
 class InvestmentDecision:
     ticker: str
     as_of_at: str

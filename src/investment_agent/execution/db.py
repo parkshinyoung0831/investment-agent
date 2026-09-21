@@ -10,7 +10,7 @@ from investment_agent.platform.db.postgres import sb, select_all_paged
 from investment_agent.platform.serialization import parse_datetime
 from investment_agent.execution.approval.ledger import ApprovalRequest
 from investment_agent.execution.contracts import ExecutionSafetyError
-from investment_agent.execution.orders.ledger import OrderAttempt, OrderAttemptEvent
+from investment_agent.execution.orders.ledger import OrderAttempt
 from investment_agent.platform.db.sqlite import runtime_connection
 
 # --- DB 식별자 (SSOT) ---------------------------------------------------
@@ -103,19 +103,6 @@ def _order_attempt(row: dict) -> OrderAttempt:
             if row.get("replaces_client_order_id") is not None else None
         ),
         reserved_at=parse_datetime(str(row["reserved_at"])),
-    )
-
-def _attempt_event(row: dict) -> OrderAttemptEvent:
-    return OrderAttemptEvent(
-        event_id=int(row["event_id"]),
-        attempt_id=str(row["attempt_id"]),
-        status=str(row["status"]),
-        broker_order_id=(
-            str(row["broker_order_id"]) if row.get("broker_order_id") is not None else None
-        ),
-        raw_status=str(row["raw_status"]) if row.get("raw_status") is not None else None,
-        raw_response=dict(row.get("raw_response") or {}),
-        occurred_at=parse_datetime(str(row["occurred_at"])),
     )
 
 # 자금 확보(매도만) 주문표 뒤에 같은 System 목표로 허용하는 후속 실행 수. 1을 넘기면

@@ -5,7 +5,24 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from investment_agent.operations.control_center import control_command, dashboard_command, dashboard_url
+from investment_agent.operations.control_center import control_command, dashboard_command, dashboard_url, describe_result
+
+
+class DescribeResultTests(unittest.TestCase):
+    """비정상 종료가 마지막 출력 줄 때문에 성공처럼 보이면 안 된다(OP-11)."""
+
+    def test_nonzero_exit_is_shown_as_a_failure_with_the_error_line(self) -> None:
+        text = describe_result(1, "하네스 정지 요청 완료\n", "Traceback...\nPermissionError: denied\n")
+        self.assertIn("실패", text)
+        self.assertIn("1", text)
+        self.assertIn("PermissionError: denied", text)
+
+    def test_nonzero_exit_without_output_still_says_failure(self) -> None:
+        self.assertEqual(describe_result(2, "", ""), "실패(종료 코드 2)")
+
+    def test_success_shows_the_last_stdout_line(self) -> None:
+        self.assertEqual(describe_result(0, "시작 중\n하네스가 시작됐어요\n", ""), "하네스가 시작됐어요")
+        self.assertEqual(describe_result(0, "", ""), "완료")
 
 
 class ControlCenterTests(unittest.TestCase):

@@ -4,6 +4,8 @@ from __future__ import annotations
 import re
 from typing import Mapping
 
+from investment_agent.platform.trading_switch import KILL_SWITCH_FLAG, kill_switch_on
+
 _ON = {"1", "on", "true", "yes"}
 _OFF = {"0", "off", "false", "no"}
 
@@ -32,7 +34,7 @@ class KillSwitches:
 
     @property
     def trading_blocked(self) -> bool:
-        return _switch(self.environ.get("TRADING_KILL_SWITCH"), default_on=True)
+        return kill_switch_on(self.environ.get(KILL_SWITCH_FLAG))
 
     def job_blocked(self, job_id: str, explicit_env: str | None = None) -> bool:
         name = explicit_env or default_job_kill_env(job_id)

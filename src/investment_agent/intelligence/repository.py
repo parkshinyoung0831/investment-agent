@@ -21,6 +21,7 @@ from investment_agent.intelligence.domain.models import (
     SocialPostRecord, StoreResult,
 )
 from investment_agent.platform.db import duckdb as duckdb_store
+from investment_agent.platform.serialization import parse_datetime
 from investment_agent.platform.storage_paths import repository_root
 from investment_agent.platform.db.sqlite import runtime_connection, default_runtime_database_path, RUNTIME_DB_PATH_ENV
 
@@ -174,6 +175,20 @@ class IntelligenceRepository:
         return found
 
     # ── 쓰기 ────────────────────────────────────────────────────────────
+    @staticmethod
+    def _existing_ids(connection: Any, column: str, values: Iterable[str]) -> dict[str, str]:
+        """`column` 값 → 그 값을 가진 저장된 content_id."""
+        unique = sorted({value for value in values if value})
+        found: dict[str, str] = {}
+        for start in range(0, len(unique), 500):
+            batch = unique[start:start + 500]
+            placeholders = ", ".join("?" for _ in batch)
+            rows = connection.execute(
+                f"SELECT {column}, content_id FROM {db.T_CONTENT} WHERE {column} IN ({placeholders})", batch,
+            ).fetchall()
+            found.update((str(row[0]), str(row[1])) for row in rows)
+        return found
+
     def store_news(self, records: Sequence[NewsArticleRecord]) -> StoreResult:
         self._guard_write()
         if not records:
@@ -182,10 +197,22 @@ class IntelligenceRepository:
             seen_ids = self._existing(connection, db.T_CONTENT, "content_id", (row.article_id for row in records))
             seen_urls = self._existing(connection, db.T_CONTENT, "url_hash", (row.url_hash for row in records))
             seen_content = self._existing(connection, db.T_CONTENT, "content_hash", (row.content_hash for row in records))
+            stored_ids = set(seen_ids)
+            id_by_url = self._existing_ids(connection, "url_hash", (row.url_hash for row in records))
+            id_by_content = self._existing_ids(connection, "content_hash", (row.content_hash for row in records))
+            resolved: dict[str, str] = {}
             accepted: list[dict[str, Any]] = []
             for row in records:
+                if row.article_id in stored_ids:
+                    resolved[row.article_id] = row.article_id
+                elif row.url_hash in seen_urls or row.content_hash in seen_content:
+                    kept = id_by_url.get(row.url_hash) or id_by_content.get(row.content_hash)
+                    if kept:
+                        resolved[row.article_id] = kept
                 if row.article_id in seen_ids or row.url_hash in seen_urls or row.content_hash in seen_content:
                     continue
+                resolved[row.article_id] = row.article_id
+                id_by_url[row.url_hash] = id_by_content[row.content_hash] = row.article_id
                 observed = self._observed_at(row.published_at, row.first_seen_at)
                 accepted.append({
                     "article_id": row.article_id, "provider": row.provider, "source_name": row.source_name,
@@ -203,7 +230,7 @@ class IntelligenceRepository:
                     [[row["article_id"], row["url_hash"], row["content_hash"], row["_observed_at"], row["first_seen_at"], row["collected_at"], row["_partition_date"]] for row in accepted],
                 )
                 self._refresh_content_views(connection)
-        return StoreResult(stored=len(accepted), duplicates=len(records) - len(accepted))
+        return StoreResult(stored=len(accepted), duplicates=len(records) - len(accepted), ids=resolved)
 
     def store_social(self, records: Sequence[SocialPostRecord]) -> StoreResult:
         self._guard_write()
@@ -344,6 +371,43 @@ class IntelligenceRepository:
         with self._connect() as connection:
             connection.execute(f"SELECT * FROM {db.V_FRESHNESS} ORDER BY domain")
             return self._rows(connection)
+
+    def event_contents(self, *, since: str, until: str) -> tuple[dict[str, Any], ...]:
+        """사건 추출이 읽는 모양(근거 캐시 행과 같은 열)의 뉴스·소셜 행. 종목 언급마다 한 행이다.
+
+        스케줄 수집(90일 archive)이 쌓은 기사를 학습 feature로 연결하는 다리다. 한 기사가 여러 종목을 언급하면
+        종목마다 행이 나온다 — 근거 캐시는 기사를 처음 조회한 종목 하나에만 귀속했다. 시각은 `first_seen_at`(우리가
+        처음 본 시각)이 기준이라 판단 시각 이후에 들어온 기사는 읽히지 않는다.
+        """
+        since_at, until_at = parse_datetime(since), parse_datetime(until)
+        with self._connect() as connection:
+            connection.execute(
+                f"SELECT n.article_id AS item_id, n.provider, 'news' AS content_type, m.ticker AS symbol, "
+                f"n.published_at, n.first_seen_at AS fetched_at, n.first_seen_at, n.canonical_url AS url, "
+                f"n.canonical_url, n.title, coalesce(nullif(n.summary, ''), n.title) AS content, "
+                f"CAST(NULL AS VARCHAR) AS author, n.source_name AS source "
+                f"FROM {db.V_NEWS} n JOIN {db.T_MENTIONS} m ON m.source_kind = 'news' AND m.source_id = n.article_id "
+                f"WHERE n.first_seen_at >= ? AND n.first_seen_at <= ? ORDER BY n.first_seen_at, n.article_id, m.ticker",
+                [since_at, until_at],
+            )
+            rows = self._rows(connection)
+            connection.execute(
+                f"SELECT s.post_id AS item_id, s.platform AS provider, 'social' AS content_type, m.ticker AS symbol, "
+                f"s.posted_at AS published_at, s.first_seen_at AS fetched_at, s.first_seen_at, s.permalink AS url, "
+                f"s.permalink AS canonical_url, s.title, coalesce(nullif(s.body, ''), s.title) AS content, "
+                f"CAST(NULL AS VARCHAR) AS author, s.channel AS source "
+                f"FROM {db.V_SOCIAL} s JOIN {db.T_MENTIONS} m ON m.source_kind = 'social' AND m.source_id = s.post_id "
+                f"WHERE s.first_seen_at >= ? AND s.first_seen_at <= ? ORDER BY s.first_seen_at, s.post_id, m.ticker",
+                [since_at, until_at],
+            )
+            rows += self._rows(connection)
+        for row in rows:
+            for key in ("published_at", "fetched_at", "first_seen_at"):
+                if isinstance(row.get(key), datetime):
+                    row[key] = row[key].astimezone(timezone.utc).isoformat()
+            # 이 행의 item_id는 기사 하나가 종목마다 갈라져도 서로 달라야 한다.
+            row["item_id"] = f"{row['item_id']}|{row['symbol']}"
+        return tuple(rows)
 
     def recent_news(self, *, limit: int = 50) -> list[dict[str, Any]]:
         with self._connect() as connection:

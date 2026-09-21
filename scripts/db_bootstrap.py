@@ -34,6 +34,7 @@ load_dotenv(ROOT / ".env")
 
 import psycopg2
 
+from scripts.project_ref import require_confirmation
 from scripts.postgres_schema_layout import (
     POSTGRES_V1_DIR,
     application_schemas,
@@ -46,24 +47,11 @@ INSTALLATION_SQL_FILES = tuple(path.name for path in installation_files())
 SCHEMAS = application_schemas()
 
 
-def _project_ref(url: str) -> str:
-    from urllib.parse import urlparse
-
-    parsed = urlparse(url)
-    user = parsed.username or ""
-    if user.startswith("postgres.") and len(user) > len("postgres."):
-        return user.split(".", 1)[1]
-    host = parsed.hostname or ""
-    if host.startswith("db.") and host.endswith(".supabase.co"):
-        return host[len("db.") : -len(".supabase.co")]
-    return ""
-
-
-def _connect():
+def _db_url() -> str:
     url = os.getenv("SUPABASE_DB_URL")
     if not url:
         raise SystemExit("SUPABASE_DB_URL이 필요하다 (.env). 로컬 전용이며 CI에 주입하지 않는다.")
-    return psycopg2.connect(url), _project_ref(url)
+    return url
 
 
 def cmd_plan(_args) -> int:
@@ -89,10 +77,9 @@ def _exposed_schemas(cur) -> list[str]:
 
 
 def cmd_apply(args) -> int:
-    conn, ref = _connect()
-    if ref and args.confirm != ref:
-        conn.close()
-        raise SystemExit(f"--confirm {ref} 가 필요하다 (이 연결의 project ref).")
+    url = _db_url()
+    require_confirmation(url, args.confirm)  # 연결하기 전에 거절한다 — ref를 못 읽는 URL도 거절
+    conn = psycopg2.connect(url)
     conn.autocommit = False
     started = time.time()
     try:

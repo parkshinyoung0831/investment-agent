@@ -18,6 +18,7 @@ from typing import Any, Mapping
 from investment_agent.operations.harness.emergency import is_execution_locked_down
 from investment_agent.operations.harness.maintenance import is_maintenance_held, read_maintenance_hold
 from investment_agent.operations.harness.state import JsonStateStore, utc_iso
+from investment_agent.platform.trading_switch import KILL_SWITCH_FLAG, LIVE_FLAG, kill_switch_on, live_enabled
 
 from investment_agent.operations.paths import (
     HARNESS_STATE_DIR as _DEFAULT_STATE_DIR,
@@ -190,8 +191,8 @@ def get_harness_status(
         if job.active:
             active_count += 1
 
-    trading_kill = env_map.get("TRADING_KILL_SWITCH", "on").strip().lower()
-    toss_live = env_map.get("TOSS_LIVE_ENABLED", "false").strip().lower() == "true"
+    trading_kill = "on" if kill_switch_on(env_map.get(KILL_SWITCH_FLAG)) else "off"
+    toss_live = live_enabled(env_map.get(LIVE_FLAG))
     ai_mode = env_map.get("AI_INVESTOR_MODE", "shadow").strip()
 
     return HarnessStatusInfo(

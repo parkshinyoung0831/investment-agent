@@ -49,14 +49,10 @@ jobs:
         with:
           group: notifications
 
-
       - name: Validate Supabase secrets
         run: |
           test -n "$SUPABASE_URL"
           test -n "$SUPABASE_SERVICE_KEY"
-
-      - name: Install preflight dependencies
-        run: true # dependency group prepared above
 
       - name: Check upcoming reports
         id: pending
@@ -76,10 +72,6 @@ jobs:
         run: >-
           python -m investment_agent.operations.commands.validate_subscriptions
           --kind fundamentals_calendar --kind fundamentals_schedule
-
-      - name: Install notification dependencies
-        if: steps.pending.outputs.should_notify == 'true'
-        run: true # dependency group prepared above
 
       - uses: ./.github/actions/card-render
         if: steps.pending.outputs.should_notify == 'true'

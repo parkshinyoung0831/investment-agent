@@ -16,7 +16,7 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 
 from investment_agent.platform.serialization import ContractError
-from investment_agent.research.evaluation.alpha import IC_INFERENCE_METHOD
+from investment_agent.research.evaluation.alpha import IC_INFERENCE_METHOD, overlap_lags
 
 # artifact 상태만으로 같은 예측을 다시 만들 수 있는 모델. 부스팅은 booster 원문을 저장한다.
 RELOADABLE_KINDS = ("naive", "ridge", "lightgbm", "xgboost")
@@ -74,7 +74,10 @@ class LoadedModel:
             return (
                 alpha.get("inference_method") == IC_INFERENCE_METHOD
                 and alpha.get("horizon_days") == self.horizon_days
-                and alpha.get("hac_lags") == self.horizon_days - 1
+                and alpha.get("hac_lags") == min(
+                    overlap_lags(self.horizon_days, alpha.get("sample_spacing_days")),
+                    int(alpha.get("date_count") or 0) - 1,
+                )
                 and int(alpha.get("date_count") or 0) > self.horizon_days
             )
         except (TypeError, ValueError, OverflowError):

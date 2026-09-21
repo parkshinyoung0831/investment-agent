@@ -63,9 +63,6 @@ jobs:
           test -n "$SUPABASE_URL"
           test -n "$SUPABASE_SERVICE_KEY"
 
-      - name: Install preflight dependencies
-        run: true # dependency group prepared above
-
       # "지금이 실적 시즌인가"를 먼저 묻는다. 판단 근거가 없거나 비어 있으면 fail-open이다.
       # 발표 예정일 스냅샷 표는 흡수 과정에서 사라졌고 대체 원천이 아직 없어, 현재 이 게이트는
       # 항상 fail-open으로 통과한다 — 원천이 생기기 전까지 비용 절감 효과는 없다.

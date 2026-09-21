@@ -4,7 +4,6 @@ Research 내부의 feature 계산·저장소·모델 serving 구현은 이 경�
 """
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
 
 from investment_agent.research.datasets.contracts import TrainingSample
@@ -55,11 +54,6 @@ def technical_features_since(since: str) -> list[dict[str, Any]]:
     return features_db.features_since(since)
 
 
-def latest_technical_signals_as_of(as_of_at: datetime) -> dict[str, dict[str, Any]]:
-    """판단 시점에 확정된 종목별 최신 기술지표를 반환한다."""
-    return features_db.latest_signals_as_of(as_of_at)
-
-
 __all__ = [
     "ContextBuilder",
     "EVALUATION_HORIZONS",
@@ -84,7 +78,6 @@ __all__ = [
     "has_approved_chain",
     "fundamental_statistics",
     "latest_cross_section",
-    "latest_technical_signals_as_of",
     "normalize_symbols",
     "open_research_store",
     "percentile_ranks",

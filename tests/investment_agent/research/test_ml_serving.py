@@ -25,7 +25,7 @@ def _artifact(*, mean_ic: float, t_stat: float, coefficient: float = 0.01, horiz
         "model_state": {"coefficients": [coefficient], "intercept": 0.0},
         "feature_names": ["evidence_domain_count"],
         "out_of_sample_alpha": {"mean_ic": mean_ic, "ic_t_stat": t_stat, "date_count": 60,
-                                "inference_method": "newey_west_bartlett_iid_floor_v1",
+                                "inference_method": "newey_west_bartlett_iid_floor_v2",
                                 "horizon_days": horizon, "hac_lags": horizon - 1},
         "dataset_manifest": {"label_definition": label},
     }
