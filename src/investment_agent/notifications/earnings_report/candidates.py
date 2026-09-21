@@ -7,9 +7,10 @@ reporting/notifications/earnings_report.py의 조회 결과만 받아 쓰고 Sup
 """
 from __future__ import annotations
 
-import os
 from datetime import date, timedelta
 
+from investment_agent.platform.clock import kst_today
+from investment_agent.platform.env import env_int
 from investment_agent.notifications.engine import Notice, fact_time, unsettled
 from investment_agent.notifications.topics import topic
 from investment_agent.platform.logging import get_logger
@@ -27,21 +28,15 @@ _DEFAULT_SEGMENT_WAIT_DAYS = 3
 
 
 def _lookback_days() -> int:
-    try:
-        return int(os.environ.get("FUNDAMENTALS_NOTIFY_LOOKBACK_DAYS", _DEFAULT_LOOKBACK_DAYS))
-    except ValueError:
-        return _DEFAULT_LOOKBACK_DAYS
+    return env_int("FUNDAMENTALS_NOTIFY_LOOKBACK_DAYS", _DEFAULT_LOOKBACK_DAYS, minimum=1, maximum=365)
 
 
 def _segment_wait_days() -> int:
-    try:
-        return int(os.environ.get("FUNDAMENTALS_SEGMENT_WAIT_DAYS", _DEFAULT_SEGMENT_WAIT_DAYS))
-    except ValueError:
-        return _DEFAULT_SEGMENT_WAIT_DAYS
+    return env_int("FUNDAMENTALS_SEGMENT_WAIT_DAYS", _DEFAULT_SEGMENT_WAIT_DAYS, minimum=0, maximum=90)
 
 
 def _cutoff() -> str:
-    return (date.today() - timedelta(days=_lookback_days())).isoformat()
+    return (kst_today() - timedelta(days=_lookback_days())).isoformat()
 
 
 def row_accession_no(row: dict) -> str:
@@ -120,7 +115,7 @@ def is_report_ready(
         return True
     if not filed_at:
         return False
-    deadline = (today or date.today()) - timedelta(days=_segment_wait_days())
+    deadline = (today or kst_today()) - timedelta(days=_segment_wait_days())
     return str(filed_at)[:10] <= deadline.isoformat()
 
 
@@ -183,21 +178,21 @@ def load_ready_filings(tickers: set[str] | None = None) -> list[dict]:
     if not filings:
         return []
 
-    # 차트 보강 데이터는 발송 대상이 있을 때만 조회.
-    by_key = {(r["ticker"], r["fiscal_year"], r["fiscal_period"]): r for r in rows}
-    anomalies = db.anomaly_keys(tickers)
-    health = db.load_health(tickers)
-    valuation = db.load_valuation(tickers)
-    names = db.load_names(tickers)
-    sector_rows = db.load_sector_rows(tickers)
-    sector_by_key = {
-        (r["ticker"], r["fiscal_year"], r["fiscal_period"]): r for r in sector_rows
-    }
-
-    # 축(사업·제품·지역) 카드의 근거. 대상 공시가 정해진 뒤에만 조회한다.
     headlines = [pick_headline(cand) for cand in filings.values()]
     for row in headlines:
         row["accession_no"] = row_accession_no(row)
+
+    # 차트 보강 데이터는 **발송 대상 종목만** 조회한다. 관심종목 전체(50개)로 부르면 후보가 1건이어도
+    # 재무·가격 이력을 전 종목만큼 읽는다(실측 재무 2.8초, 7년 가격 9.4초). 각 로더는 종목별로
+    # 독립 계산이라 좁혀도 값은 같다.
+    target_tickers = sorted({str(row["ticker"]) for row in headlines})
+    by_key = {(r["ticker"], r["fiscal_year"], r["fiscal_period"]): r for r in rows}
+    anomalies = db.anomaly_keys(target_tickers)
+    health = db.load_health(target_tickers)
+    valuation = db.load_valuation(target_tickers)
+    names = db.load_names(target_tickers)
+
+    # 축(사업·제품·지역) 카드의 근거. 대상 공시가 정해진 뒤에만 조회한다.
     segment_targets = {
         (str(r["ticker"]), str(r["accession_no"]), int(r["fiscal_year"]), str(r["fiscal_period"]))
         for r in headlines
@@ -234,9 +229,6 @@ def load_ready_filings(tickers: set[str] | None = None) -> list[dict]:
             "row": row,
             "prev": by_key.get((ticker, row["fiscal_year"] - 1, row["fiscal_period"])),
             "history": _quarter_history(rows, ticker, period_end),
-            "sector_row": sector_by_key.get((ticker, row["fiscal_year"], row["fiscal_period"])),
-            "sector_prev": sector_by_key.get((ticker, row["fiscal_year"] - 1, row["fiscal_period"])),
-            "sector_history": _quarter_history(sector_rows, ticker, period_end),
             "health": health.get(ticker),
             "valuation": valuation.get(ticker),
             "names": names.get(ticker),

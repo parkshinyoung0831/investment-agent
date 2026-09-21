@@ -222,7 +222,7 @@ def chunk_values(values: Iterable[Any], size: int = IN_FILTER_CHUNK) -> list[lis
     정렬하는 이유는 재현성이다. 묶음 경계가 호출마다 달라지면 실패를 재현할 수 없고,
     캐시도 매번 빗나간다.
     """
-    ordered = sorted({str(value) for value in values if str(value or "").strip()})
+    ordered = sorted({str(value) for value in values if value is not None and str(value).strip()})
     return [ordered[index:index + size] for index in range(0, len(ordered), size)]
 
 

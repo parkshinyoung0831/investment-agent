@@ -18,15 +18,6 @@ class EdgartoolsUnavailable(RuntimeError):
     """edgartools가 설치되어 있지 않을 때 발생한다."""
 
 
-def edgartools_version() -> str | None:
-    try:
-        from importlib.metadata import version
-
-        return version("edgartools")
-    except Exception:  # noqa: BLE001 - 버전 조회 실패가 대조를 막지 않게 한다.
-        return None
-
-
 def _text(value: object) -> str:
     return ("" if value is None else str(value)).strip()
 

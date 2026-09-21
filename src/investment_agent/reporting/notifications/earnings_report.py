@@ -16,6 +16,7 @@ from typing import Any
 from investment_agent.config import load_config
 from investment_agent.platform.db.postgres import Database
 from investment_agent.platform.logging import get_logger
+from investment_agent.data.fundamentals.domain.periods import are_consecutive_quarters
 from investment_agent.data.market.domain.actions import merge_corporate_actions
 from investment_agent.data.market.repository import MarketRepository
 from investment_agent.data.universe.repository import UniverseRepository
@@ -196,11 +197,6 @@ def load_headline_rows(tickers: list[str]) -> list[dict]:
     return [row for row in _financial_rows(tickers) if row.get("fiscal_period") in HEADLINE_PERIODS]
 
 
-def load_sector_rows(tickers: list[str]) -> list[dict]:
-    """v1에 별도 업종 wide 표가 없으므로 보조 업종 행은 만들지 않는다."""
-    return []
-
-
 def load_pending_keys(tickers: list[str]) -> list[dict]:
     """발송 여부 판정에만 필요한 최소 컬럼 — 렌더 의존성 설치 전 preflight용."""
     return [
@@ -237,11 +233,6 @@ def load_earnings_estimates(tickers: list[str]) -> list[dict]:
         order_by="security_id,target_fiscal_year,target_fiscal_period,snapshot_date",
     )
     return [{**row, "ticker": by_id.get(int(row["security_id"]))} for row in rows]
-
-
-def load_price_targets(tickers: list[str]) -> list[dict]:
-    """목표주가는 저장하지 않는다 — 흡수된 스냅샷 표에 해당 컬럼이 없다."""
-    return []
 
 
 def load_surprise_history(tickers: list[str]) -> dict[str, list[dict]]:
@@ -461,9 +452,9 @@ def _quarterly_by_ticker(tickers: list[str]) -> dict[str, list[dict]]:
 
 
 def _ttm(rows: list[dict], column: str) -> float | None:
-    """직전 4분기 합. 한 분기라도 비면 TTM을 만들지 않는다 — 부분 합은 틀린 값이다."""
+    """직전 4분기 합. 한 분기라도 비거나 이어지지 않으면 TTM을 만들지 않는다 — 부분 합은 틀린 값이다."""
     window = rows[-4:]
-    if len(window) < 4:
+    if len(window) < 4 or not are_consecutive_quarters(row["period_end"] for row in window):
         return None
     values = [f(row.get(column)) for row in window]
     return None if any(value is None for value in values) else float(sum(values))

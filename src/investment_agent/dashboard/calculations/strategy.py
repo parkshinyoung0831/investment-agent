@@ -5,11 +5,11 @@ import math
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import date, datetime, timedelta
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
 
+from investment_agent.platform.clock import kst_today
 from investment_agent.dashboard.calculations._common import (
     _records,
     finite_number,
@@ -433,7 +433,7 @@ def monthly_close_from_daily(
     frame = frame.apply(pd.to_numeric, errors="coerce")
     frame = frame.replace([np.inf, -np.inf], np.nan).dropna(how="all").sort_index()
     if as_of is None:
-        as_of_date = datetime.now(ZoneInfo("Asia/Seoul")).date()
+        as_of_date = kst_today()
     elif isinstance(as_of, datetime):
         as_of_date = as_of.date()
     else:

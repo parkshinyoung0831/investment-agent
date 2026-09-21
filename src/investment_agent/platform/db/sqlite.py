@@ -19,7 +19,6 @@ from investment_agent.platform.storage_paths import (
 )
 
 RUNTIME_DB_PATH_ENV = RUNTIME_DATABASE_PATH_ENV
-DEFAULT_RUNTIME_DB_PATH = Path("data/local/runtime/runtime.sqlite3")
 DDL_DIR = Path("db/sqlite/runtime/v1")
 _PROJECT_ROOT = repository_root()
 
@@ -136,6 +135,6 @@ def runtime_connection(
 
 
 __all__ = [
-    "DDL_DIR", "DEFAULT_RUNTIME_DB_PATH", "RUNTIME_DB_PATH_ENV",
+    "DDL_DIR", "RUNTIME_DB_PATH_ENV",
     "RuntimeMigrationRequired", "default_runtime_database_path", "runtime_connection",
 ]

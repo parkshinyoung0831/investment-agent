@@ -1,9 +1,9 @@
 """경제발표 결과를 survey/nowcast/own_model과 혼동 없이 Discord에 표시한다."""
 from __future__ import annotations
 
-from datetime import date
 from typing import Any
 
+from investment_agent.platform.clock import kst_today
 from investment_agent.notifications.renderers.text import table
 
 _ACCENT = int("4B5563", 16)
@@ -62,5 +62,5 @@ def build(rows: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "color": _ACCENT,
         "fields": fields[:25],
-        "footer": {"text": date.today().isoformat()},
+        "footer": {"text": kst_today().isoformat()},
     }

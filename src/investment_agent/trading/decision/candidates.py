@@ -422,13 +422,13 @@ class CandidateSelection(LedgerAccess):
         return snapshot_as_of, score_cross_section(features, groups=self.sp500_sector_map(list(features)))
 
     def _candidate_held_tickers(self) -> list[str]:
-        """System Portfolio가 지금 보유한 종목. 실계좌 보유는 분석 대상 선정에 들어오지 않는다."""
+        """System Portfolio가 지금 보유한 종목. 실계좌 보유는 분석 대상 선정에 들어오지 않는다.
+
+        보유가 없는 것(빈 목록)과 원장을 못 읽은 것은 다르다. 후자를 빈 목록으로 접으면 보유 종목의 재분석
+        우선순위가 조용히 사라지므로 읽기 실패는 그대로 올린다.
+        """
         from investment_agent.trading.system.store import SystemPortfolioStore
-        try:
-            return SystemPortfolioStore().held_tickers()
-        except Exception as exc:  # noqa: BLE001 - 원장이 없어도 정기 분석은 계속한다
-            log.warning("system holdings unavailable for candidate priority: %s", type(exc).__name__)
-            return []
+        return SystemPortfolioStore().held_tickers()
 
     def thesis_views(self, tickers: Sequence[str], *, as_of_at: datetime, valid_days: int) -> dict[str, Any]:
         """종목별 최신 TradingAgents 논지(채택된 ML 보정 반영). 판단 시점 이전에 기록된 것만 읽는다."""

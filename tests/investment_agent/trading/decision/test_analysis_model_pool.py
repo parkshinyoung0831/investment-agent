@@ -313,5 +313,25 @@ class BudgetExhaustionTest(unittest.TestCase):
         self.assertEqual(outcome.metadata["reason"], "no_signal_batch")
 
 
+class FailureModelTest(unittest.TestCase):
+    def test_a_failure_after_the_model_answered_names_that_model(self):
+        from investment_agent.trading.decision.analysis import failure_model
+
+        self.assertEqual(("openai_compatible", "m1"), failure_model(_candidate("m1", api_key_env="K")))
+
+    def test_no_candidate_means_the_pool_was_exhausted(self):
+        from investment_agent.trading.decision.analysis import failure_model
+
+        self.assertEqual(("model_pool", "exhausted"), failure_model(None))
+
+    def test_main_records_failures_through_failure_model(self):
+        import inspect
+        from investment_agent.trading.decision import analysis
+
+        source = inspect.getsource(analysis.main)
+        self.assertIn("failure_model(candidate)", source)
+        self.assertNotIn('"exhausted"', source)
+
+
 if __name__ == "__main__":
     unittest.main()

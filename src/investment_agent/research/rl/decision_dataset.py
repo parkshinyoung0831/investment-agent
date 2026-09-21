@@ -23,11 +23,24 @@ def decision_features(proposal):
     features.update({f"decision_action_{name}": float(action == name) for name in ACTIONS})
     return features
 
+def _most_observed_tickers(rows, max_symbols):
+    """판단 경험이 가장 많은 종목 `max_symbols`개(동률은 이름순). 축 순서는 이름순으로 고정한다.
+
+    이름순으로 앞에서 자르면 알파벳이 앞선 종목군만 학습에 남고 나머지 경험은 조용히 버려진다.
+    경험 수는 수익률과 무관해 생존 편향을 넣지 않는다.
+    """
+    counts = {}
+    for row in rows:
+        counts[row["ticker"]] = counts.get(row["ticker"], 0) + 1
+    ranked = sorted(counts, key=lambda ticker: (-counts[ticker], ticker))
+    return tuple(sorted(ranked[:max_symbols]))
+
+
 def decision_training_set(rows, *, as_of_at, max_symbols):
     cutoff = parse_datetime(as_of_at)
     rows = [row for row in rows if parse_datetime(row["available_at"]) <= cutoff]
     if not rows: raise RLDataNotReadyError("no mature original decision experience")
-    symbols = tuple(sorted({row["ticker"] for row in rows})[:max_symbols])
+    symbols = _most_observed_tickers(rows, max_symbols)
     groups = {}
     for row in rows:
         if row["ticker"] not in symbols: continue

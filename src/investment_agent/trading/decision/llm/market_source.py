@@ -35,24 +35,6 @@ def _domain_payload(bundle: EvidenceBundle, *domains: str) -> str:
     })
 
 
-def fetch_stock_data(symbol: str, start_date: str, end_date: str, get_bundle: Callable[[], EvidenceBundle]) -> str:
-    """과거 일별 OHLCV 시세 데이터를 시점 일치 번들에서 읽는다."""
-    bundle = get_bundle()
-    if not _symbol_ok(symbol, bundle) or not _date_ok(end_date, bundle):
-        return "NO_DATA_AVAILABLE: ticker/date is outside the active point-in-time bundle."
-    return _domain_payload(bundle, "market")
-
-
-def fetch_indicator_data(
-    symbol: str, indicator: str, curr_date: str, look_back_days: int = 30, *, get_bundle: Callable[[], EvidenceBundle]
-) -> str:
-    """RSI, MACD 등 기술적 지표 데이터를 시점 일치 번들에서 읽는다."""
-    bundle = get_bundle()
-    if not _symbol_ok(symbol, bundle) or not _date_ok(curr_date, bundle):
-        return "NO_DATA_AVAILABLE: ticker/date is outside the active point-in-time bundle."
-    return _domain_payload(bundle, "technical", "market")
-
-
 def fetch_verified_market_snapshot(
     symbol: str, curr_date: str, look_back_days: int = 30, *, get_bundle: Callable[[], EvidenceBundle]
 ) -> str:

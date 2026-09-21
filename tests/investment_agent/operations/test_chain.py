@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from investment_agent.operations.monitoring import counters, digest
@@ -130,7 +131,7 @@ class EmbedTest(unittest.TestCase):
 class CountersTest(unittest.TestCase):
     def test_hosted_heartbeat_reads_the_shared_ledger(self):
         """원장이 Supabase에 있으므로 GitHub runner도 로컬과 같은 대기 수를 읽는다."""
-        ledger = object()
+        ledger = SimpleNamespace(stuck_sending=lambda: [("earnings.report", "AAPL", "0001")])
         with patch.object(counters, "_ledger", return_value=ledger), \
              patch("investment_agent.notifications.earnings_report.candidates.pending_state",
                    return_value={"watchlist_count": 50, "pending_filings": 2}) as report, \
@@ -140,7 +141,8 @@ class CountersTest(unittest.TestCase):
                    return_value={"pending_filings": 1, "period": "2026-06-30"}):
             self.assertEqual(
                 counters.collect(),
-                ["관심종목 50 · 미발송 공시 2", "이번 주 발표 예정 3", "13F 미발송 1(2026-06-30)"],
+                ["관심종목 50 · 미발송 공시 2", "이번 주 발표 예정 3", "13F 미발송 1(2026-06-30)",
+                 "전송 미확정 알림 1건"],
             )
         report.assert_called_once_with(ledger)
 

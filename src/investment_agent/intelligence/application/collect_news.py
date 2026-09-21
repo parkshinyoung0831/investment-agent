@@ -48,6 +48,16 @@ def watchlist_tickers() -> list[str]:
     return [str(row["ticker"]).upper() for row in active_members() if row.get("ticker")]
 
 
+def rotate_from(tickers: Sequence[str], resume_from: str | None) -> list[str]:
+    """`resume_from`부터 시작하도록 목록을 돌린다. 목록에 없으면(종목이 빠졌으면) 그대로 앞에서부터."""
+    ordered = [str(ticker) for ticker in tickers]
+    wanted = str(resume_from or "").strip().upper()
+    for index, ticker in enumerate(ordered):
+        if ticker.strip().upper() == wanted:
+            return ordered[index:] + ordered[:index]
+    return ordered
+
+
 def _mention(record: NewsArticleRecord, ticker: str) -> EntityMention:
     """조회해서 받은 기사의 언급. 등급은 결정론적이다."""
     identity = f"news|{record.article_id}|{ticker}|queried"
@@ -70,9 +80,15 @@ def collect_news(
     tickers: Sequence[str],
     now: datetime | None = None,
     retention_days: int = RETENTION_DAYS,
+    resume_from: str | None = None,
 ) -> CollectionRun:
-    """관심종목별로 뉴스를 가져와 저장하고 실행 기록을 남긴다."""
+    """관심종목별로 뉴스를 가져와 저장하고 실행 기록을 남긴다.
+
+    `resume_from`은 직전 실행이 호출 한도로 멈춘 종목이다. 그 종목부터 한 바퀴 돌아 처음으로 이어 받는다 —
+    항상 앞에서부터 돌면 한도가 종목 수보다 작을 때 뒤쪽 종목이 영영 수집되지 않는다.
+    """
     moment = ensure_aware(now or utc_now())
+    tickers = rotate_from(tickers, resume_from)
     run = CollectionRun(
         run_id=f"news-{uuid.uuid4().hex}",
         kind="collect",
@@ -82,6 +98,8 @@ def collect_news(
     )
     failures = 0
     capped = False
+    queried = 0    # 응답을 받은 종목 수
+    received = 0   # 받은 기사 수(파싱 성공·실패 모두)
     for ticker in tickers:
         symbol = str(ticker).strip().upper()
         if not symbol:
@@ -92,6 +110,7 @@ def collect_news(
             # cap 소진은 provider 오류가 아니다 — 남은 종목을 마저 돌면 전부 같은
             # 이유로 재실패하며 예약을 반복 소모한다. 다음 실행에서 재개한다.
             capped = True
+            run.resume_from = symbol
             break
         except Exception as error:  # provider는 종목 하나에서 자주 실패한다
             failures += 1
@@ -101,6 +120,8 @@ def collect_news(
             )
             continue
 
+        queried += 1
+        received += len(payloads)
         records: list[NewsArticleRecord] = []
         for payload in payloads:
             record = normalize.to_record(payload, provider=PROVIDER, now=moment)
@@ -124,10 +145,20 @@ def collect_news(
         run.status = "capped"
         run.error_kind = "quota_exhausted"
         run.message = "yfinance daily cap reached; resuming next run"
+    elif received and run.unparsed_count == received:
+        # 받은 기사가 전부 기록으로 못 바뀌었다 — provider 응답 형식이 바뀐 것이지 뉴스가 없는 것이 아니다.
+        run.status = "error"
+        run.error_kind = "parse_failed"
+        run.message = f"all {received} article(s) failed to parse; the provider format may have changed"
     elif failures:
         run.status = "partial"
         run.error_kind = "provider_error"
         run.message = f"{failures} ticker(s) failed"
+    elif queried and not received:
+        # 종목이 있는데 전부 빈 응답이면 "뉴스가 없다"와 "수집이 죽었다"를 기록만으로는 가를 수 없다.
+        run.status = "partial"
+        run.error_kind = "no_articles"
+        run.message = f"{queried} ticker(s) returned no articles"
     repository.record_run(run)
     log.info(
         "news collection finished",
@@ -141,4 +172,4 @@ def collect_news(
     return run
 
 
-__all__ = ["DOMAIN", "PROVIDER", "collect_news", "watchlist_tickers"]
+__all__ = ["DOMAIN", "PROVIDER", "collect_news", "rotate_from", "watchlist_tickers"]

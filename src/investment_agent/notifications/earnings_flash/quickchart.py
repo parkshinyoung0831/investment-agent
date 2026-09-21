@@ -3,7 +3,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from investment_agent.notifications.earnings_flash.surprise import compute_surprise
+from investment_agent.notifications.earnings_flash.surprise import (
+    compute_surprise,
+    eps_decides_verdict,
+    eps_surprise,
+)
 from investment_agent.notifications.quickchart import build_quickchart_url
 
 COLOR_BEAT = "#00C087"
@@ -45,13 +49,16 @@ def flash_performance_chart_url(
     bar_colors: list[str] = []
 
     # 1. EPS 달성률
-    eps_surprise = compute_surprise(eps_act, eps_est)
-    if eps_surprise is not None:
-        rate = round(100.0 + eps_surprise, 1)
+    eps_result = eps_surprise(flash)
+    if eps_result is not None:
+        rate = round(100.0 + eps_result, 1)
         label_text = f"EPS ({format_eps_short(eps_act)} / 예상 {format_eps_short(eps_est)})"
         labels.append(label_text)
         achieved_rates.append(rate)
-        bar_colors.append(COLOR_BEAT if rate >= 100.0 else COLOR_MISS)
+        # 정의를 확인하지 못한 EPS는 값은 그리되 상회/하회 색을 정하지 않는다.
+        bar_colors.append(
+            (COLOR_BEAT if rate >= 100.0 else COLOR_MISS) if eps_decides_verdict(flash) else COLOR_INLINE
+        )
 
     # 2. 매출 달성률
     rev_surprise = compute_surprise(rev_act, rev_est) if rev_est is not None and rev_est > 0 else None

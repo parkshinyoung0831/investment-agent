@@ -700,22 +700,3 @@ class TossOrderApi:
         return str(result["orderId"])
 
 
-def parse_personal_order_event(
-    payload: Mapping[str, Any], *, expected_account_seq: int
-) -> tuple[str, TossOrderSnapshot]:
-    """AsyncAPI personal:order 프레임을 계좌 혼선 없이 검증한다."""
-    if payload.get("type") != "message":
-        raise TossOrderApiError("not a Toss message frame")
-    expected_topic = f"personal:order:{expected_account_seq}"
-    if payload.get("topic") != expected_topic:
-        raise TossOrderApiError("personal order topic does not match the configured account")
-    data = payload.get("data")
-    if not isinstance(data, Mapping):
-        raise TossOrderApiError("personal order data must be an object")
-    if str(data.get("accountSeq")) != str(expected_account_seq):
-        raise TossOrderApiError("personal order accountSeq mismatch")
-    event = data.get("event")
-    order = data.get("order")
-    if not isinstance(event, str) or not isinstance(order, Mapping):
-        raise TossOrderApiError("personal order event is invalid")
-    return event, TossOrderSnapshot.from_api(order)

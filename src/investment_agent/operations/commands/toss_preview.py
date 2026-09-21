@@ -5,6 +5,7 @@ import argparse
 import os
 from pathlib import Path
 
+from investment_agent.platform.storage_paths import repository_artifact_root
 from investment_agent.platform.logging import get_logger
 from investment_agent.execution.brokers.toss import client as toss
 from investment_agent.execution.db import ExecutionRepository
@@ -44,7 +45,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("artifacts/execution/toss"),
+        default=repository_artifact_root() / "execution" / "toss",
     )
     args = parser.parse_args(argv)
 

@@ -6,25 +6,11 @@ from unittest.mock import patch
 
 from investment_agent.execution.brokers.toss.client import (
     TossExecutionError,
-    fetch_exchange_rate,
     fetch_us_regular_session,
 )
 
 
 class TossMarketCalendarTest(unittest.TestCase):
-    @patch("investment_agent.execution.brokers.toss.client._get")
-    def test_exchange_rate_uses_official_currency_query(self, get):
-        get.return_value = {"result": {
-            "baseCurrency": "USD",
-            "quoteCurrency": "KRW",
-            "rate": "1401.25",
-            "midRate": "1400.90",
-            "validFrom": "2026-08-21T20:00:00Z",
-            "validUntil": "2026-08-21T20:01:00Z",
-        }}
-        value = fetch_exchange_rate(base_currency="USD", quote_currency="KRW")
-        self.assertEqual(value["rate"], 1401.25)
-        self.assertEqual(get.call_args.kwargs["params"], {"baseCurrency": "USD", "quoteCurrency": "KRW"})
 
     @patch("investment_agent.execution.brokers.toss.client._get")
     def test_parses_official_early_close_session(self, get):

@@ -8,9 +8,7 @@
 """
 from __future__ import annotations
 import argparse
-import asyncio
 import importlib
-import inspect
 import os
 import sys
 
@@ -41,11 +39,7 @@ KINDS: dict[str, str] = {
 def _dispatch(target: str) -> None:
     """위치 문자열("모듈경로:함수명")을 찾아 알림 함수를 실행한다."""
     mod_path, fn_name = target.split(":")
-    fn = getattr(importlib.import_module(mod_path), fn_name)
-    if inspect.iscoroutinefunction(fn):                      # async(기다림 필요) 함수면 asyncio로 실행
-        asyncio.run(fn())
-    else:
-        fn()
+    getattr(importlib.import_module(mod_path), fn_name)()
 
 
 def main() -> int:

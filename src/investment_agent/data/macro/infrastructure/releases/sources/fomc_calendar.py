@@ -18,7 +18,6 @@ from investment_agent.platform.retry import retry_on_5xx
 _CURRENT_URL = "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
 _HISTORICAL_URL = "https://www.federalreserve.gov/monetarypolicy/fomchistorical{year}.htm"
 _CURRENT_FIRST_YEAR = 2021
-_CURRENT_LAST_YEAR = 2027
 _MONTHS = {
     "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
     "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7,
@@ -54,7 +53,9 @@ def fetch_dates(*, start: date, end: date) -> list[date]:
     for year in range(start.year, min(end.year, _CURRENT_FIRST_YEAR - 1) + 1):
         rows = _historical_dates(_fetch(_HISTORICAL_URL.format(year=year)), expected_year=year)
         parsed.extend(rows)
-    if start.year <= _CURRENT_LAST_YEAR and end.year >= _CURRENT_FIRST_YEAR:
+    if end.year >= _CURRENT_FIRST_YEAR:
+        # 페이지가 다루는 마지막 연도를 코드에 박지 않는다 — 박아 두면 그 해가 지난 뒤의 창은 페이지를 읽지도 않고
+        # 오류 없이 빈 일정이 된다. 페이지에 없는 미래는 빈 결과일 뿐 조용히 건너뛴 것이 아니다.
         parsed.extend(_current_dates(_fetch(_CURRENT_URL)))
     return sorted({day for day in parsed if start <= day <= end})
 

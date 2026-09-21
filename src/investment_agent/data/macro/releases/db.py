@@ -212,6 +212,16 @@ def release_index(series_ids: list[str] | None = None) -> dict[tuple[str, str], 
     return output
 
 
+def _schedule_fields(row: dict[str, Any]) -> tuple[str, str, str, bool]:
+    """일정 버전이 같은지 가르는 값(수집 시각은 제외)."""
+    return (
+        _utc_iso(row["scheduled_at"]),
+        str(row.get("schedule_precision") or row.get("schedule_confidence") or ""),
+        str(row.get("source_code") or row.get("source") or ""),
+        bool(row.get("is_cancelled")),
+    )
+
+
 def upsert_releases(rows: list[dict[str, Any]]) -> dict[tuple[str, str], dict[str, Any]]:
     if not rows:
         return {}
@@ -234,14 +244,19 @@ def upsert_releases(rows: list[dict[str, Any]]) -> dict[tuple[str, str], dict[st
             continue
         if not source:
             raise ValueError("macro release has no schedule source")
-        payloads.append({
+        payload = {
             "series_key": _series_key(sid), "ref_period": period, "scheduled_at": _utc_iso(raw["scheduled_at"]),
             "schedule_precision": str(raw.get("schedule_precision") or raw["schedule_confidence"]),
             "source_code": source,
             "is_cancelled": bool(raw.get("is_cancelled") or raw.get("status") == "cancelled"),
             "collected_at": _times(raw, now)["collected_at"],
-        })
-    _db().upsert(schema=SCHEMA_MACRO, table=T_SCHEDULE_VERSIONS, rows=payloads, on_conflict="series_key,ref_period,collected_at")
+        }
+        # 일정은 바뀔 때만 새 버전을 쌓는다 — 매 동기화마다 같은 미래 일정을 다시 쌓으면 버전 표가 날마다 부푼다.
+        if before and _schedule_fields(before) == _schedule_fields(payload):
+            continue
+        payloads.append(payload)
+    if payloads:
+        _db().upsert(schema=SCHEMA_MACRO, table=T_SCHEDULE_VERSIONS, rows=payloads, on_conflict="series_key,ref_period,collected_at")
     return release_index(sorted({str(row["series_id"]) for row in rows}))
 
 
@@ -278,7 +293,45 @@ def append_forecasts(rows: list[dict[str, Any]]) -> int:
         times = _times(raw, now)
         payloads.append({"series_key": _series_key(sid), "ref_period": period, "measure_id": measure, "forecast_kind": raw["forecast_kind"], "source_code": source, "value": None if raw["value"] is None else _finite(raw["value"]), "time_precision": _precision(raw), **times})
     payloads.sort(key=lambda row: (row["series_key"], row["ref_period"], row["measure_id"], row["forecast_kind"], row["source_code"], row["effective_at"], row["collected_at"]))
+    payloads = _forecast_changes(payloads)
+    if not payloads:
+        return 0
     return _db().upsert(schema=SCHEMA_MACRO, table=T_FORECAST_VERSIONS, rows=payloads, on_conflict="series_key,ref_period,measure_id,forecast_kind,source_code,effective_at,collected_at")
+
+
+_FORECAST_IDENTITY = ("series_key", "ref_period", "measure_id", "forecast_kind", "source_code")
+
+
+def _same_value(left: Any, right: Any) -> bool:
+    return (left is None and right is None) or (left is not None and right is not None and float(left) == float(right))
+
+
+def _forecast_changes(payloads: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """직전 예상과 값이 같은 행은 새 버전으로 쌓지 않는다(정렬된 payload 기준).
+
+    같은 값을 매일 다시 쌓으면 예상 표가 날마다 부풀고 읽는 쪽이 매번 더 많이 읽는다. 값이 바뀌거나 철회(None)될 때만
+    새 버전이라 "그 시점에 알려진 예상"의 조회 결과는 그대로다.
+    """
+    if not payloads:
+        return []
+    keys = sorted({row["series_key"] for row in payloads})
+    existing = _select(
+        lambda: _table(T_FORECAST_VERSIONS)
+        .select("series_key,ref_period,measure_id,forecast_kind,source_code,value,effective_at,collected_at")
+        .in_("series_key", keys),
+        order_by="series_key,ref_period,measure_id,forecast_kind,source_code,effective_at,collected_at",
+    )
+    latest: dict[tuple, Any] = {}
+    for row in existing:  # 정렬되어 있으므로 뒤의 행이 최신이다
+        latest[tuple(row[name] for name in _FORECAST_IDENTITY)] = row.get("value")
+    kept = []
+    for row in payloads:
+        identity = tuple(row[name] for name in _FORECAST_IDENTITY)
+        if identity in latest and _same_value(latest[identity], row["value"]):
+            continue
+        latest[identity] = row["value"]
+        kept.append(row)
+    return kept
 
 
 #: `_summary_rows` 한 행이 담는 것. 소비자(evidence·reporting)가 읽는 키가 실제로
@@ -355,20 +408,32 @@ def _summary_rows(
     """
     series = {str(row["series_id"]): row for row in _series_rows() if row["domain"] == "economic_release"}
     primary = primary_measures()
-    schedules = _latest_by(_select(lambda: _table(T_SCHEDULE_VERSIONS).select("*"), order_by="series_key,ref_period,collected_at"), ("series_id", "ref_period"), as_of=as_of)
+    known_keys = _series_maps()[1]
     if event_keys is not None:
+        # 이미 아는 발표만 다룬다 — 관련 지표의 일정·관측·예상만 읽는다(호출마다 표 전체를 읽지 않는다).
         events = [{"series_id": series_id, "ref_period": ref_period} for series_id, ref_period in sorted(event_keys)]
+        scope = sorted({known_keys[sid] for sid, _ in event_keys if sid in known_keys})
+        if not scope:
+            return []
+        schedules = _latest_by(
+            _select(lambda: _table(T_SCHEDULE_VERSIONS).select("*").in_("series_key", scope), order_by="series_key,ref_period,collected_at"),
+            ("series_id", "ref_period"), as_of=as_of,
+        )
     else:
         if start is None or end is None:
             raise ValueError("a release window needs both start and end")
+        schedules = _latest_by(_select(lambda: _table(T_SCHEDULE_VERSIONS).select("*"), order_by="series_key,ref_period,collected_at"), ("series_id", "ref_period"), as_of=as_of)
         all_events = _select(lambda: _table(T_RELEASE_EVENTS).select("series_key,ref_period"), order_by="series_key,ref_period")
         events = _events_scheduled_within(all_events, schedules, start=start, end=end)
-    observations = _select(lambda: _table(T_OBSERVATIONS).select("*"), order_by="series_key,observation_date,vintage_at,available_at")
+        scope = sorted({known_keys[str(event["series_id"])] for event in events if str(event["series_id"]) in known_keys})
+        if not scope:
+            return []
+    observations = _select(lambda: _table(T_OBSERVATIONS).select("*").in_("series_key", scope), order_by="series_key,observation_date,vintage_at,available_at")
     obs_by_series: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in observations:
         if _moment(row["collected_at"]) <= as_of:
             obs_by_series[str(row["series_id"])].append(row)
-    forecasts = _select(lambda: _table(T_FORECAST_VERSIONS).select("*"), order_by="series_key,ref_period,measure_id,forecast_kind,effective_at,collected_at")
+    forecasts = _select(lambda: _table(T_FORECAST_VERSIONS).select("*").in_("series_key", scope), order_by="series_key,ref_period,measure_id,forecast_kind,effective_at,collected_at")
     forecast_by_event: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in forecasts:
         if _moment(row["collected_at"]) <= as_of:

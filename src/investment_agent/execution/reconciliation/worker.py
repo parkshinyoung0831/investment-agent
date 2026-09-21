@@ -65,6 +65,9 @@ def classify_remote_order(order: TossOrderSnapshot) -> str:
     status = order.status.upper()
     if order.quantity > 0 and order.filled_quantity >= order.quantity:
         return "filled"
+    if "CANCEL" in status and "REJECT" in status:
+        # 취소 요청이 거절된 상태일 수 있다 — 주문은 여전히 살아 있으므로 종결로 접지 않고 계속 대사한다.
+        return "partially_filled" if order.filled_quantity > 0 else "submitted"
     if "CANCEL" in status:
         return "cancelled"
     if "REJECT" in status:

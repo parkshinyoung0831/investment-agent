@@ -49,10 +49,16 @@ def _gurus() -> str:
     return f"13F 미발송 {state['pending_filings']}({state['period']})"
 
 
+def _stuck_notices() -> str:
+    """`sending`에서 멈춘 알림. 보냈는지 알 수 없는 상태라 사람이 확인해야 하고, 조용히 두면 카드가 영영 안 나간다."""
+    return f"전송 미확정 알림 {len(_ledger().stuck_sending())}건"
+
+
 _SOURCES: list[tuple[str, Callable[[], str]]] = [
     ("fundamentals", _fundamentals),
     ("calendar", _calendar),
     ("gurus", _gurus),
+    ("stuck_notices", _stuck_notices),
 ]
 
 

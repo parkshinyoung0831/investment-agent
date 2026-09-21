@@ -100,6 +100,23 @@ def derive_fourth_quarter(
     return annual - sum(float(value) for value in quarters)  # type: ignore[arg-type]
 
 
+# 분기 하나의 길이(일). 52/53주 결산사의 분기는 12~14주(84~98일)이고 달력 결산사는 89~92일이라
+# 둘 다 이 안이다. 인접 분기말 간격의 압도적 다수(99% 이상)가 이 범위이고, 밖의 간격은 분기가 빠졌거나
+# 회계연도가 바뀐 구간이다.
+QUARTER_LENGTH_DAYS = (84, 98)
+
+
+def are_consecutive_quarters(period_ends: Iterable[date | str]) -> bool:
+    """분기말들이 중간 분기 없이 이어지는가. 순서와 무관하고, 둘 미만이면 빠진 것이 없다.
+
+    TTM처럼 "직전 4분기"를 합하는 곳은 최근 4행을 자르기 전에 이것을 물어야 한다. 중간 분기가 비면
+    4행이어도 5분기에 걸친 합이라 예외 없이 틀린 TTM이 나간다.
+    """
+    ends = sorted(value if isinstance(value, date) else date.fromisoformat(str(value)[:10]) for value in period_ends)
+    shortest, longest = QUARTER_LENGTH_DAYS
+    return all(shortest <= (later - earlier).days <= longest for earlier, later in zip(ends, ends[1:]))
+
+
 def period_end_is_plausible(period_end: date, filing_date: date) -> bool:
     """회계기간말이 공시일보다 뒤면 그 행은 미래를 보고한 것이다.
 

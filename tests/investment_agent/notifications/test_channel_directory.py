@@ -89,6 +89,22 @@ class GuildDirectoryCacheTest(unittest.TestCase):
         directory.guild_directory(_config(), fetch=fetch, refresh=True)
         self.assertEqual(2, len(calls))
 
+    def test_a_long_lived_process_reads_the_guild_again_after_the_ttl(self) -> None:
+        """하네스처럼 오래 사는 프로세스가 그 사이 생긴 채널·포럼 태그를 못 보면 태그가 조용히 안 붙는다."""
+        from unittest import mock
+
+        calls = []
+
+        def fetch(config):
+            calls.append(config)
+            return _rows()
+
+        with mock.patch.object(directory.time, "monotonic", side_effect=[0.0, 10.0, 10.0 + directory._CACHE_TTL_SECONDS + 1, 10.0 + directory._CACHE_TTL_SECONDS + 1]):
+            directory.guild_directory(_config(), fetch=fetch)                    # 받아 저장(0.0)
+            directory.guild_directory(_config(), fetch=fetch)                    # 10초 뒤: 캐시
+            directory.guild_directory(_config(), fetch=fetch)                    # TTL 뒤: 다시 받는다
+        self.assertEqual(2, len(calls))
+
 
 class GuruRoutingTest(unittest.TestCase):
     """거장은 포럼 하나에 사람마다 스레드 하나다.

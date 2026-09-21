@@ -17,6 +17,25 @@ class MlRlLabDashboardTests(unittest.TestCase):
             self.assertIn("dsr_probability", policy["score"])
             self.assertNotIn("dsr_pvalue", policy["score"])
 
+    def test_a_corrupt_policy_file_is_not_reported_as_no_champion(self) -> None:
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+        from investment_agent.dashboard.app_pages import ml_rl_lab
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "active_policy.json"
+            with mock.patch.object(ml_rl_lab, "ACTIVE_POLICY_PATH", path):
+                self.assertIsNone(_load_real_active_policy(), "파일이 없으면 아직 챔피언이 없는 것")
+                path.write_text("{not json", encoding="utf-8")
+                with self.assertRaises(ml_rl_lab.ActivePolicyUnreadable):
+                    _load_real_active_policy()
+                path.write_text("[1, 2]", encoding="utf-8")
+                with self.assertRaises(ml_rl_lab.ActivePolicyUnreadable):
+                    _load_real_active_policy()
+                path.write_text('{"score": {"dsr_probability": 0.5}}', encoding="utf-8")
+                self.assertEqual(0.5, _load_real_active_policy()["score"]["dsr_probability"])
+
     def test_plotly_chart_builders(self) -> None:
         fig_dsr = render_dsr_gauge(0.96)
         self.assertIsNotNone(fig_dsr)

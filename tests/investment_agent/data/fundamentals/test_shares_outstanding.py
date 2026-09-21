@@ -6,7 +6,6 @@ from unittest import mock
 
 from investment_agent.data.fundamentals.domain.services.parse_shares import (
     _match_class_ticker,
-    aggregate_company_share_history,
     parse_common_shares_from_companyfacts,
     validate_shares_outstanding,
 )
@@ -121,46 +120,6 @@ class ShareSchemaContractTest(unittest.TestCase):
             _match_class_ticker("Common Class B", "CommonClassBMember", tickers),
             (None, "unmapped_unlisted"),
         )
-
-    def test_company_history_includes_unlisted_class_and_latest_vintage(self) -> None:
-        rows = [
-            {
-                **_share_row(
-                    share_class_key="class_a",
-                    mapped_ticker="GOOGL",
-                    ticker_mapping_status="mapped_by_symbol",
-                    shares_outstanding=5_800_000_000,
-                ),
-                "ticker": "GOOGL",
-            },
-            {
-                **_share_row(
-                    share_class_key="class_b",
-                    mapped_ticker=None,
-                    ticker_mapping_status="unmapped_unlisted",
-                    shares_outstanding=800_000_000,
-                ),
-                "ticker": "GOOGL",
-            },
-            {
-                **_share_row(
-                    share_class_key="class_a",
-                    mapped_ticker="GOOGL",
-                    ticker_mapping_status="mapped_by_symbol",
-                    shares_outstanding=5_900_000_000,
-                    accession_no="0000000001-26-000002",
-                    filed_at="2026-08-01",
-                    accepted_at="2026-08-01T20:00:00Z",
-                ),
-                "ticker": "GOOGL",
-            },
-        ]
-
-        history = aggregate_company_share_history(rows)
-
-        self.assertEqual(history[0]["shares"], 6_700_000_000)
-        self.assertTrue(history[0]["uses_unlisted_class"])
-
 
 class ShareEntrypointContractTest(unittest.TestCase):
     def test_any_cik_failure_makes_the_process_fail(self) -> None:

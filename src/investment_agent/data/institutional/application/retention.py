@@ -8,9 +8,8 @@ from __future__ import annotations
 
 from datetime import date
 
-from datetime import datetime
-from zoneinfo import ZoneInfo
 
+from investment_agent.platform.clock import us_market_today
 from investment_agent.platform.logging import get_logger
 from investment_agent.data.institutional import persistence as db
 
@@ -28,7 +27,7 @@ def _years_ago(value: date, years: int) -> date:
 
 def prune_history(*, today: date | None = None) -> int:
     """5년보다 오래된 13F 공시(및 연쇄 삭제되는 보유내역)를 제거한다."""
-    anchor = today or datetime.now(ZoneInfo("America/New_York")).date()
+    anchor = today or us_market_today()
     cutoff = _years_ago(anchor, RETENTION_YEARS).isoformat()
     deleted = db.delete_filings_before(cutoff)
     log.info("institutional retention cutoff=%s deleted=%d", cutoff, deleted)

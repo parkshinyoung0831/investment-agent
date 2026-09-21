@@ -15,11 +15,15 @@ import pandas as pd
 
 from investment_agent.platform.cache import cache_data
 from investment_agent.platform.db.postgres import service_client
+from investment_agent.platform.logging import get_logger
 from investment_agent.reporting.models import DataResult, normalize_observed_at, public_exception_message
 from investment_agent.reporting.readers.financial import ReportingQueries
 from investment_agent.reporting.readers.research import load_local_research_records
 from investment_agent.reporting.readers.runtime import read_local_rows, read_runtime_rows
+from investment_agent.reporting.services.guru_quarters import effective_quarters
 from investment_agent.reporting.services.investment import build_system_portfolio_read_model
+
+log = get_logger(__name__)
 
 SOURCE = "DB 저장 데이터 · v1 Supabase"
 MACRO_LOOKBACK_DAYS = 400
@@ -76,6 +80,24 @@ def load_econ_recent_results(days: int = 45) -> DataResult:
         return result
     rows = sorted((row for row in result.rows if row.get("status") == "released"), key=lambda row: str(row.get("scheduled_at") or row.get("first_actual_at") or ""), reverse=True)
     return DataResult.empty(source=result.source, message="최근 경제발표 결과가 없습니다.") if not rows else DataResult.ok(rows=rows, source=result.source)
+
+
+@cache_data(ttl="5m", max_entries=4)
+def load_econ_past_due(days: int = 14) -> DataResult:
+    """예정 시각이 지났는데 실제값이 아직 없는 발표.
+
+    예정 목록은 미래만, 결과 목록은 값이 나온 것만 담으므로 이 구간은 두 목록 어디에도 안 잡힌다 —
+    수집이 밀렸거나 원천이 값을 주지 않은 발표가 화면에서 조용히 사라진다.
+    """
+    now = datetime.now(timezone.utc)
+    result = _window(now - timedelta(days=max(1, min(int(days), 90))), now)
+    if result.status not in {"ok", "empty"}:
+        return result
+    rows = sorted(
+        (row for row in result.rows if row.get("status") == "not_available_yet"),
+        key=lambda row: str(row.get("scheduled_at") or ""), reverse=True,
+    )
+    return DataResult.empty(source=result.source, message="예정 시각이 지났는데 값이 없는 발표가 없습니다.") if not rows else DataResult.ok(rows=rows, source=result.source)
 
 
 @cache_data(ttl="5m", max_entries=16)
@@ -199,9 +221,11 @@ def load_guru_data() -> DataResult:
     positions = _read("institutional_positions", in_values={"accession_no": accessions}) if accessions else DataResult.empty(source="reporting.institutional_positions")
     if positions.status not in {"ok", "empty"}:
         return positions
-    cusip_map = [{"cusip": row.get("cusip"), "ticker": row.get("ticker"), "updated_at": None} for row in positions.rows if row.get("cusip")]
-    payload = {"managers": manager_rows, "filings": filings.rows, "positions": positions.rows, "cusip_map": cusip_map, "smart_changes": []}
-    return DataResult.empty(value=payload, source="reporting institutional", message="활성 13F 매니저 또는 공시 데이터가 없습니다.") if not manager_rows and not filings.rows else DataResult.ok(value=payload, source="reporting institutional")
+    # 정정 공시를 분기 단위로 결합한다 — 안 하면 "최신/직전"이 같은 분기의 원본·정정이 되어 추가분 몇 줄이 장부로 읽힌다.
+    quarter_filings, quarter_positions = effective_quarters(filings.rows, positions.rows)
+    cusip_map = [{"cusip": row.get("cusip"), "ticker": row.get("ticker"), "updated_at": None} for row in quarter_positions if row.get("cusip")]
+    payload = {"managers": manager_rows, "filings": quarter_filings, "positions": quarter_positions, "cusip_map": cusip_map, "smart_changes": []}
+    return DataResult.empty(value=payload, source="reporting institutional", message="활성 13F 매니저 또는 공시 데이터가 없습니다.") if not manager_rows and not quarter_filings else DataResult.ok(value=payload, source="reporting institutional")
 
 
 @cache_data(ttl="30m", max_entries=2)
@@ -315,8 +339,9 @@ def load_latest_target() -> DataResult:
     source = "로컬 Runtime · risk_decisions/portfolio_proposals"
     payload: dict[str, dict[str, Any] | None] = {"risk_decision": None, "proposal": None}
     try:
+        all_proposals = read_runtime_rows("portfolio_proposals")
         system_proposals = {
-            str(row.get("proposal_id")) for row in read_runtime_rows("portfolio_proposals")
+            str(row.get("proposal_id")) for row in all_proposals
             if (row.get("metadata") or {}).get("system_policy")
         }
         decisions = [row for row in read_runtime_rows("risk_decisions")
@@ -325,7 +350,7 @@ def load_latest_target() -> DataResult:
         decisions = decisions[:1]
         risk_decision = decisions[0] if decisions else None
         proposals = [
-            row for row in read_runtime_rows("portfolio_proposals")
+            row for row in all_proposals
             if risk_decision and row.get("proposal_id") == risk_decision.get("proposal_id")
         ]
         proposals.sort(key=lambda row: str(row.get("as_of_at") or ""), reverse=True)
@@ -425,10 +450,9 @@ def load_alpha_lab_data() -> DataResult:
     }
     for key, (dataset, order_column, limit) in queries.items():
         try:
-            rows = read_runtime_rows(dataset)
-            rows.sort(key=lambda row: str(row.get(order_column) or ""), reverse=True)
-            payload[key] = rows[:limit]
+            payload[key] = read_runtime_rows(dataset, order_by=order_column, limit=limit)
         except Exception:
+            log.warning("alpha lab dataset failed: %s", key, exc_info=True)
             failures.append(key)
 
     try:
@@ -485,7 +509,7 @@ def load_alpha_lab_data() -> DataResult:
 
 
 __all__ = [
-    "load_econ_calendar_window", "load_econ_detail", "load_econ_recent_results",
+    "load_econ_calendar_window", "load_econ_detail", "load_econ_past_due", "load_econ_recent_results",
     "load_econ_series", "load_econ_series_history", "load_econ_upcoming",
     "load_alpha_lab_data", "load_execution_data", "load_guru_data", "load_macro_window", "load_price_history", "load_strategy_data", "load_tickers",
 ]

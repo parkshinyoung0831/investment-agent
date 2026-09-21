@@ -29,15 +29,15 @@ class ViewSpec:
 
 
 VIEWS: Mapping[str, ViewSpec] = MappingProxyType({
-    "execution_control_state": ViewSpec("scope,kill_switch_on,durable_lockdown_on,live_enabled,live_autonomy_enabled,version,reason,updated_at", "updated_at"),
-    "execution_intents": ViewSpec("intent_id,risk_decision_id,proposal_id,execution_mode,target_weights,not_before,expires_at,status,claimed_at,completed_at,failure_reason,created_at", "created_at"),
-    "execution_approvals": ViewSpec("approval_id,intent_id,proposal_id,risk_decision_id,execution_mode,status,decision,requested_at,expires_at,decided_at,consumed_at,updated_at", "requested_at"),
-    "execution_orders": ViewSpec("client_order_id,attempt_id,intent_id,approval_id,broker_order_id,ticker,side,quantity,reference_price,notional,status,raw_broker_status,submitted_at,updated_at", "updated_at"),
-    "execution_fills": ViewSpec("broker_fill_id,client_order_id,broker_order_id,ticker,side,quantity,price,commission,filled_at,created_at", "filled_at"),
+    "execution_control_state": ViewSpec("scope,kill_switch_on,durable_lockdown_on,live_enabled,live_autonomy_enabled,version,reason,updated_at", "updated_at,scope"),
+    "execution_intents": ViewSpec("intent_id,risk_decision_id,proposal_id,execution_mode,target_weights,not_before,expires_at,status,claimed_at,completed_at,failure_reason,created_at", "created_at,intent_id"),
+    "execution_approvals": ViewSpec("approval_id,intent_id,proposal_id,risk_decision_id,execution_mode,status,decision,requested_at,expires_at,decided_at,consumed_at,updated_at", "requested_at,approval_id"),
+    "execution_orders": ViewSpec("client_order_id,attempt_id,intent_id,approval_id,broker_order_id,ticker,side,quantity,reference_price,notional,status,raw_broker_status,submitted_at,updated_at", "updated_at,client_order_id"),
+    "execution_fills": ViewSpec("broker_fill_id,client_order_id,broker_order_id,ticker,side,quantity,price,commission,filled_at,created_at", "filled_at,broker_fill_id"),
     "current_model_stage": ViewSpec(
         "artifact_id,algorithm,feature_version,train_start,train_end,seed,artifact_uri,sha256,params,code_commit,created_at,stage,current_promotion_id,stage_changed_at", "artifact_id"),
     "institutional_filings": ViewSpec(
-        "accession_no,manager_cik,period_end,form_type,report_type,filing_date,accepted_at,amendment_type,amendment_no,reported_value_usd,reported_line_count,confidential_omitted,source_url,content_sha256", "manager_cik,period_end", "period_end", "manager_cik"),
+        "accession_no,manager_cik,period_end,form_type,report_type,filing_date,accepted_at,amendment_type,amendment_no,reported_value_usd,reported_line_count,confidential_omitted,source_url,content_sha256", "manager_cik,period_end,accession_no", "period_end", "manager_cik"),
     "institutional_positions": ViewSpec(
         "accession_no,source_row_no,issuer_name,cusip,identifier_type,value_usd,quantity,quantity_type,position_kind,security_id,ticker", "accession_no,source_row_no", None, "accession_no"),
     "securities": ViewSpec(
@@ -62,13 +62,13 @@ VIEWS: Mapping[str, ViewSpec] = MappingProxyType({
         "series_id,obs_date", "obs_date", "series_id"),
     "macro_release_summary": ViewSpec(
         "event_key,series_id,series_name_ko,country,category,frequency,timezone,ref_period,scheduled_at,schedule_source,schedule_confidence,status,first_actual_at,first_actual_precision,measure_id,measure_code,measure_name_ko,unit,decimal_places,is_surprise_eligible,first_actual_value,latest_actual_value,latest_actual_effective_at,survey_value,nowcast_value,own_model_value,closing_survey_value,closing_nowcast_value,closing_own_model_value,market_surprise,nowcast_error,model_error,revision",
-        "scheduled_at,series_id,ref_period", "scheduled_at", "series_id"),
+        "scheduled_at,series_id,ref_period,measure_id", "scheduled_at", "series_id"),
     "macro_release_forecasts": ViewSpec(
         "series_id,ref_period,measure_id,forecast_kind,source,value,as_of,collected_at,previous_value,change_amount",
         "series_id,ref_period,measure_id,forecast_kind,as_of,collected_at", "collected_at", "series_id"),
     "macro_release_actuals": ViewSpec(
         "series_id,ref_period,measure_id,value,raw_value,effective_at,collected_at,time_precision,source",
-        "series_id,ref_period,effective_at,collected_at", "collected_at", "series_id"),
+        "series_id,ref_period,measure_id,effective_at,collected_at", "collected_at", "series_id"),
     # measure master는 이력이 아니다 — time_column이 없어 scope를 걸면 범위로 풀 길이
     # 없고, 전체를 읽는 것이 유일한 용법이다(화면도 read model도 그렇게 부른다).
     "macro_measures": ViewSpec(

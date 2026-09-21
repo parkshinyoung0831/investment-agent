@@ -14,6 +14,7 @@ from investment_agent.platform.storage_paths import (
     local_artifact_root,
     local_data_root,
     market_change_manifest_path,
+    repository_root,
     research_root,
     runtime_database_path,
 )
@@ -32,26 +33,41 @@ PATH_ENVIRON = {
 
 class StoragePathsTest(unittest.TestCase):
     def test_default_paths_are_grouped_by_store(self) -> None:
+        root = repository_root()
         with patch.dict(os.environ, PATH_ENVIRON):
-            self.assertEqual(Path("data/local"), local_data_root())
+            self.assertEqual(root / "data/local", local_data_root())
             self.assertEqual(
-                Path("data/local/intelligence/intelligence.duckdb"),
+                root / "data/local/intelligence/intelligence.duckdb",
                 intelligence_database_path(),
             )
             self.assertEqual(
-                Path("data/local/intelligence/parquet"),
+                root / "data/local/intelligence/parquet",
                 intelligence_parquet_root(),
             )
-            self.assertEqual(Path("data/local/research"), research_root())
+            self.assertEqual(root / "data/local/research", research_root())
             self.assertEqual(
-                Path("data/local/runtime/runtime.sqlite3"),
+                root / "data/local/runtime/runtime.sqlite3",
                 runtime_database_path(),
             )
-            self.assertEqual(Path("data/local/artifacts"), local_artifact_root())
+            self.assertEqual(root / "data/local/artifacts", local_artifact_root())
             self.assertEqual(
-                Path("data/local/artifacts/market_change_manifest.json"),
+                root / "data/local/artifacts/market_change_manifest.json",
                 market_change_manifest_path(),
             )
+
+    def test_default_paths_do_not_depend_on_the_working_directory(self) -> None:
+        """다른 폴더에서 CLI를 돌려도 같은 저장소를 열어야 한다 — 상대 경로면 그 폴더에 빈 DB가 새로 생긴다."""
+        import tempfile
+
+        original = Path.cwd()
+        with patch.dict(os.environ, PATH_ENVIRON), tempfile.TemporaryDirectory() as elsewhere:
+            expected = (runtime_database_path(), research_root(), intelligence_database_path())
+            os.chdir(elsewhere)
+            try:
+                self.assertEqual(expected, (runtime_database_path(), research_root(), intelligence_database_path()))
+                self.assertTrue(runtime_database_path().is_absolute())
+            finally:
+                os.chdir(original)
 
     def test_store_specific_path_wins_over_local_root(self) -> None:
         configured = {
@@ -78,16 +94,17 @@ class StoragePathsTest(unittest.TestCase):
             )
 
     def test_legacy_candidates_preserve_previous_defaults(self) -> None:
+        root = repository_root()
         self.assertEqual(
-            (Path("data/local/intelligence.duckdb"),),
+            (root / "data/local/intelligence.duckdb",),
             legacy_candidates("intelligence"),
         )
         self.assertEqual(
-            (Path("artifacts/research/research.duckdb"),),
+            (root / "artifacts/research/research.duckdb",),
             legacy_candidates("research"),
         )
         self.assertEqual(
-            (Path("data/local/runtime.sqlite3"),),
+            (root / "data/local/runtime.sqlite3",),
             legacy_candidates("runtime"),
         )
         with self.assertRaisesRegex(ValueError, "unknown local store"):

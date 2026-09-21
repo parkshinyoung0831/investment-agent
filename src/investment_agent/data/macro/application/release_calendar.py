@@ -142,7 +142,14 @@ def sync_schedules(*, today: date, horizon_days: int, series_ids: set[str] | Non
 
     deduplicated_rows = list(unique_rows.values())
     before = db.release_index()
-    db.upsert_releases(deduplicated_rows)
+    # 이번 동기화가 성공적으로 읽은 지표 중, 소스가 더는 주지 않는 미래 일정은 취소로 남긴다(옮겨졌거나 사라진 발표).
+    failed = {str(item["series_id"]) for item in failures if item.get("series_id")}
+    synced = {
+        str(setting["series_id"]) for setting in settings
+        if setting["collection_status"] != "unsupported" and str(setting.get("schedule_provider") or "") != "unsupported"
+    } - failed
+    cancellations = stale_future_events(before, set(unique_rows), synced_series=synced, today=today, end=end)
+    db.upsert_releases(deduplicated_rows + cancellations)
     return {
         "series_tracked": len(settings),
         "series_scheduled": len({row["series_id"] for row in deduplicated_rows}),
@@ -151,7 +158,49 @@ def sync_schedules(*, today: date, horizon_days: int, series_ids: set[str] | Non
         "new_release_candidates": sum(
             (row["series_id"], row["ref_period"]) not in before for row in deduplicated_rows
         ),
+        "cancelled_stale_events": len(cancellations),
     }, failures
+
+
+# 동기화가 "지금 이 날짜들이 발표다"라고 말해 주는 일정 출처. 발표 실제값에서 온 일정(alfred_first_print)은 제외한다.
+_SYNCED_SCHEDULE_SOURCES = frozenset({"official_rule", "official_calendar", "fred_release_calendar", "fomc_official_calendar"})
+
+
+def stale_future_events(
+    index: dict[tuple[str, str], dict[str, Any]],
+    fresh: set[tuple[str, str]],
+    *,
+    synced_series: set[str],
+    today: date,
+    end: date,
+) -> list[dict[str, Any]]:
+    """소스가 더는 주지 않는 창 안의 미래 일정을 취소 버전 행으로 만든다.
+
+    발표가 다른 날로 옮겨지면 참조 기간이 바뀌어 새 이벤트가 생기고, 옛 이벤트는 "예정"으로 영영 남는다.
+    이번 동기화가 읽은 창(`today`~`end`) 안이고, 이 동기화가 관리하는 출처의 일정이며, 읽기에 성공한 지표에 한해서만
+    취소한다 — 소스가 실패한 지표나 창 밖의 일정은 이번 조회가 말해 주는 것이 없으므로 건드리지 않는다.
+    """
+    stale = []
+    for (series_id, ref_period), version in sorted(index.items()):
+        if series_id not in synced_series or (series_id, ref_period) in fresh or version.get("is_cancelled"):
+            continue
+        source = str(version.get("source") or version.get("source_code") or "")
+        if source not in _SYNCED_SCHEDULE_SOURCES:
+            continue
+        scheduled = _schedule_sort_key(version["scheduled_at"])
+        if not today <= scheduled.date() <= end:
+            continue
+        stale.append({
+            "series_id": series_id,
+            "ref_period": ref_period,
+            "scheduled_at": scheduled.isoformat(),
+            "schedule_source": source,
+            "schedule_confidence": str(version.get("schedule_precision") or version.get("schedule_confidence") or ""),
+            "status": "cancelled",
+            "is_cancelled": True,
+            "provenance": {"schedule": {"source": source, "cancelled_reason": "source_no_longer_lists"}},
+        })
+    return stale
 
 
 def _schedule_sort_key(value: Any) -> datetime:

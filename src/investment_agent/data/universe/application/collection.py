@@ -1,7 +1,6 @@
 """SEC·S&P500·Toss 수집 흐름을 조율한다."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 
 from investment_agent.platform.logging import get_logger
 from collections.abc import Callable
@@ -165,25 +164,21 @@ def reconcile_membership(*, audit_history: bool = True) -> dict[str, object]:
     }
 
 
-def refresh_korean_names(*, retry_after_days: int = 90) -> dict[str, int]:
+def refresh_korean_names() -> dict[str, int]:
     """추적 종목의 누락 한글명을 토스증권으로 보강한다.
 
     토스 IP 허용목록에 등록된 로컬 환경에서만 별도 실행한다. 기존 ``company_name_ko``는
-    조회 대상에서 제외해 수동 교정값을 덮어쓰지 않는다. 정상 조회 뒤 이름을 받지
-    못한 종목은 ``retry_after_days``가 지난 후 다시 시도한다.
+    조회 대상에서 제외해 수동 교정값을 덮어쓰지 않는다. 이름을 받지 못한 종목의 조회 시각은
+    저장하지 않으므로 이름이 빈 추적 종목은 **실행할 때마다** 다시 조회한다(재시도 간격 없음).
     """
-    retry_before = (
-        datetime.now(timezone.utc) - timedelta(days=retry_after_days)
-    ).strftime("%Y-%m-%dT%H:%M:%SZ")
-    pending = db.select_name_ko_pending(retry_before)
+    pending = db.select_name_ko_pending()
     names, attempted = fetch_toss_korean_names(pending)
     db.apply_toss_names(names, attempted)
     log.info(
-        "한글명 보강(토스): pending=%d attempted=%d updated=%d retry_after_days=%d",
+        "한글명 보강(토스): pending=%d attempted=%d updated=%d",
         len(pending),
         len(attempted),
         len(names),
-        retry_after_days,
     )
     return {
         "pending": len(pending),

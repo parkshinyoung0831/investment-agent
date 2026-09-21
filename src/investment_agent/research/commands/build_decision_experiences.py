@@ -9,12 +9,12 @@ from datetime import datetime, timedelta
 from investment_agent.forecasting import SIGNAL_HORIZON_DAYS
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.serialization import parse_datetime, canonical_json
+from investment_agent.research.rl.decision_dataset import ACTIONS, decision_features
 from investment_agent.research.storage.repository import ResearchStore
 from investment_agent.research.evaluation.returns import total_return
 
 log = get_logger(__name__)
 DATASET_VERSION = "decision_experience_v1"
-ACTIONS = ("open", "increase", "hold", "reduce", "exit", "watch", "avoid")
 
 
 def build_experience(repository, case: dict, *, as_of_at: datetime, horizon_days: int = SIGNAL_HORIZON_DAYS,
@@ -58,8 +58,7 @@ def build_experience(repository, case: dict, *, as_of_at: datetime, horizon_days
         return None
     exposure = float(action in ("open", "increase", "hold"))
     cost = round_trip_cost_bps / 10000 if action in ("open", "increase") else 0.0
-    features = {f"decision_{key}": value for key, value in scalars.items()}
-    features.update({f"decision_action_{name}": float(action == name) for name in ACTIONS})
+    features = decision_features({**scalars, "signal": action})
     identity = {"version": DATASET_VERSION, "case_key": str(case["case_key"]),
                 "horizon_days": horizon_days, "round_trip_cost_bps": round_trip_cost_bps}
     return {

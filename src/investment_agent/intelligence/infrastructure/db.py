@@ -14,8 +14,6 @@ from investment_agent.platform.storage_paths import (
 )
 
 DATABASE_PATH_ENV = INTELLIGENCE_DATABASE_PATH_ENV
-DEFAULT_DATABASE_PATH = Path("data/local/intelligence/intelligence.duckdb")
-DEFAULT_PARQUET_ROOT = Path("data/local/intelligence/parquet")
 DDL_DIR = Path("db/duckdb/intelligence/v1")
 
 # 본문은 Parquet view로만 읽는다. 아래 두 table은 고유성·retention·mention 연결에
@@ -47,9 +45,7 @@ def parquet_root(database_path: Path | str | None = None) -> Path:
 
 __all__ = [
     "DATABASE_PATH_ENV",
-    "DEFAULT_PARQUET_ROOT",
     "DDL_DIR",
-    "DEFAULT_DATABASE_PATH",
     "T_MENTIONS",
     "T_CONTENT",
     "V_NEWS",

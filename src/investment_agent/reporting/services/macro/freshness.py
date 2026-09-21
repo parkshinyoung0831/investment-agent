@@ -1,8 +1,9 @@
 """매크로 관측값의 기준일과 지연 상태를 일관되게 계산한다."""
 from __future__ import annotations
 
-from datetime import date, datetime
-from zoneinfo import ZoneInfo
+from datetime import date
+
+from investment_agent.platform.clock import kst_today
 
 # 달력 기준 허용 지연일. 주말과 공휴일을 감안해 일간은 금요일 관측값이
 # 월요일 아침까지는 정상으로 보이도록 3일을 허용한다.
@@ -12,11 +13,6 @@ MAX_AGE_DAYS = {
     "monthly": 45,
     "quarterly": 135,
 }
-
-
-def kst_today() -> date:
-    """실행 위치와 관계없이 한국 시간의 오늘을 반환한다."""
-    return datetime.now(ZoneInfo("Asia/Seoul")).date()
 
 
 def freshness_for(

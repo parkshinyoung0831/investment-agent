@@ -199,6 +199,15 @@ class ReconciliationWorkerTest(unittest.TestCase):
     def test_unknown_broker_enum_remains_submitted(self):
         self.assertEqual(classify_remote_order(remote(status="FUTURE_STATE")), "submitted")
 
+    def test_a_rejected_cancel_request_does_not_close_a_live_order(self):
+        """취소가 거절된 주문은 브로커에 살아 있다 — 종결로 접으면 이후 체결이 대사되지 않는다."""
+        self.assertEqual(classify_remote_order(remote(status="CANCEL_REJECTED")), "submitted")
+        self.assertEqual(classify_remote_order(remote(status="cancel_rejected", filled="1")), "partially_filled")
+
+    def test_plain_cancel_and_reject_remain_terminal(self):
+        self.assertEqual(classify_remote_order(remote(status="CANCELED")), "cancelled")
+        self.assertEqual(classify_remote_order(remote(status="REJECTED")), "rejected")
+
 
 if __name__ == "__main__":
     unittest.main()

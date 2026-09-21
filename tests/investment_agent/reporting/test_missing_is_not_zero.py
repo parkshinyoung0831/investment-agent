@@ -20,9 +20,11 @@ class MissingIsNotZeroTest(unittest.TestCase):
         self.assertIsNone(er._net_debt({"cash_and_cash_equivalents": 100}))
 
     def test_ebitda_needs_depreciation(self) -> None:
-        rows = [{"operating_income_loss": 10, "depreciation_amortization_cf": None} for _ in range(4)]
+        # 리더가 넘기는 분기 행은 항상 period_end를 갖고, TTM은 이어진 4분기여야 한다.
+        ends = ("2025-06-30", "2025-09-30", "2025-12-31", "2026-03-31")
+        rows = [{"period_end": end, "operating_income_loss": 10, "depreciation_amortization_cf": None} for end in ends]
         self.assertIsNone(er._ebitda_ttm(rows))
-        rows = [{"operating_income_loss": 10, "depreciation_amortization_cf": 2} for _ in range(4)]
+        rows = [{"period_end": end, "operating_income_loss": 10, "depreciation_amortization_cf": 2} for end in ends]
         self.assertEqual(er._ebitda_ttm(rows), 48.0)
 
 

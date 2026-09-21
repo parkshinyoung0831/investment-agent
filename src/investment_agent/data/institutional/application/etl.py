@@ -1,13 +1,10 @@
 """Gurus 13F 증분·백필 ETL 오케스트레이션."""
 from __future__ import annotations
 
-import argparse
-import sys
 import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from investment_agent.platform.cli.backfill import add_backfill_from_arg
 from investment_agent.platform.cli.runtime import elapsed_sec
 from investment_agent.platform.logging import get_logger
 from investment_agent.data.institutional import POLL_WINDOW_DAYS, persistence as db
@@ -436,38 +433,3 @@ def run(
     metrics["duration_sec"] = elapsed_sec(t0)
     log.info("institutional ETL done: %s", metrics)
     return metrics
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="investment_agent.data.institutional.application.etl")
-    add_backfill_from_arg(parser)
-    parser.add_argument(
-        "--include-existing",
-        action="store_true",
-        help=(
-            "Reparse filings already stored in the selected window. "
-            "The ingest RPC replaces each filing atomically."
-        ),
-    )
-    parser.add_argument(
-        "--reparse-since",
-        metavar="YYYY-MM-DD",
-        help=(
-            "Reparse all discovered filings, including existing ones, "
-            "from this date."
-        ),
-    )
-    args = parser.parse_args(argv)
-    if args.reparse_since and args.backfill_from:
-        parser.error("--reparse-since cannot be used with --backfill-from")
-
-    parser.error(
-        "use investment_agent.data.institutional.commands.institutional_daily or "
-        "investment_agent.data.institutional.commands.institutional_backfill"
-    )
-
-
-if __name__ == "__main__":
-    from investment_agent.bootstrap import start_cli
-    start_cli()
-    sys.exit(main())

@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence, TypeVar
 
 from investment_agent.platform.clock import as_date
 from investment_agent.platform.serialization import finite_float
@@ -35,6 +35,9 @@ AMENDMENT_NEW_HOLDINGS = "NEW HOLDINGS"
 
 POSITION_KINDS = ("SHARES", "PUT", "CALL")
 SHARE_KIND = "SHARES"
+
+
+T = TypeVar("T")
 
 
 class HoldingsError(ValueError):
@@ -120,10 +123,35 @@ class Position:
         )
 
 
-def effective_filings(filings: Iterable[Filing13F]) -> list[Filing13F]:
-    """한 매니저·한 분기에서 **실제로 유효한** 신고들.
+def select_effective(
+    items: Sequence[T],
+    *,
+    order: Callable[[T], Any],
+    is_base: Callable[[T], bool],
+    is_addition: Callable[[T], bool],
+) -> list[T]:
+    """한 분기 신고들 중 **실제로 유효한** 것: 가장 늦은 기준 신고 + 그 뒤에 낸 덧붙임.
 
-    `RESTATEMENT`가 있으면 그것 하나만, 없으면 원본과 `NEW HOLDINGS` 정정을 함께 쓴다.
+    기준 신고는 원본(13F-HR)이거나 전체를 다시 낸 `RESTATEMENT`다. 기준 신고가 여럿이면 마지막 것만 유효하다.
+    덧붙임(`NEW HOLDINGS`)은 기준 신고와 같은 시점이거나 그 뒤에 낸 것만 더한다 — 기준이 재작성본이면
+    그보다 먼저 낸 덧붙임은 이미 재작성본 안에 들어 있다. 기준 신고가 없으면 덧붙임만으로는 포트폴리오가
+    아니므로 빈 결과다. 규칙이 두 곳에서 다르면 같은 분기를 한쪽은 두 배로, 다른 쪽은 일부만 센다.
+    """
+    bases = [item for item in items if is_base(item)]
+    if not bases:
+        return []
+    base = max(bases, key=order)
+    additions = [item for item in items if is_addition(item) and order(item) >= order(base)]
+    return [base, *sorted(additions, key=order)]
+
+
+def _filing_order(filing: Filing13F) -> tuple[date, str]:
+    return filing.filing_date, filing.accession_no
+
+
+def effective_filings(filings: Iterable[Filing13F]) -> list[Filing13F]:
+    """한 매니저·한 분기에서 **실제로 유효한** 신고들(`select_effective` 규칙).
+
     이 구분을 놓치면 보유가 두 배로 세지거나 절반이 사라진다.
     """
     by_quarter: dict[tuple[str, date], list[Filing13F]] = {}
@@ -132,13 +160,13 @@ def effective_filings(filings: Iterable[Filing13F]) -> list[Filing13F]:
 
     effective: list[Filing13F] = []
     for group in by_quarter.values():
-        restatements = [item for item in group if item.replaces_original]
-        if restatements:
-            # 여러 번 다시 낸 경우 마지막 것만 유효하다.
-            effective.append(max(restatements, key=lambda item: (item.filing_date, item.accession_no)))
-            continue
-        effective.extend(sorted(group, key=lambda item: (item.filing_date, item.accession_no)))
-    return sorted(effective, key=lambda item: (item.manager_cik, item.period_end, item.filing_date))
+        effective.extend(select_effective(
+            group,
+            order=_filing_order,
+            is_base=lambda item: item.form_type == "13F-HR" or item.replaces_original,
+            is_addition=lambda item: item.amendment_type == AMENDMENT_NEW_HOLDINGS,
+        ))
+    return sorted(effective, key=lambda item: (item.manager_cik, item.period_end, item.filing_date, item.accession_no))
 
 
 def share_positions(positions: Iterable[Position]) -> list[Position]:
@@ -172,6 +200,7 @@ __all__ = [
     "Position",
     "SHARE_KIND",
     "effective_filings",
+    "select_effective",
     "portfolio_weights",
     "share_positions",
 ]

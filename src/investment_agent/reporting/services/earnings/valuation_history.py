@@ -14,6 +14,8 @@ from __future__ import annotations
 import bisect
 import statistics
 from datetime import date, timedelta
+
+from investment_agent.platform.clock import kst_today
 from typing import Any
 
 METRICS = ("pe", "pb", "ps", "ev_ebitda", "fcf_yield")
@@ -156,7 +158,7 @@ def compute(
     """한 종목의 역사 밸류에이션 전체: 지표별 윈도 통계 + PER 스파크라인."""
     if not prices or not shares or not snaps:
         return None
-    today = today or date.today()
+    today = today or kst_today()
     dates, series = daily_series(prices, shares, snaps, splits)
     if not dates:
         return None

@@ -13,6 +13,7 @@ from datetime import date, datetime, timedelta
 import pandas as pd
 from dateutil.relativedelta import relativedelta
 
+from investment_agent.platform.clock import us_market_today
 from investment_agent.platform.db.postgres import sb
 from investment_agent.data.market.domain.actions import merge_corporate_actions
 from investment_agent.data.market.domain.models import DailyBar, PriceTarget
@@ -308,7 +309,7 @@ def close_history_as_of(ticker: str, as_of_at: datetime, *, max_bars: int = 2100
 
 
 def forward_closes_after(ticker: str, *, after_date: str, limit: int = 40) -> list[dict]:
-    rows = _price_rows(ticker, start=date.fromisoformat(after_date), end=date.today())
+    rows = _price_rows(ticker, start=date.fromisoformat(after_date), end=us_market_today())
     return [
         {"ticker": ticker.upper(), "trade_date": row["trade_date"], "close": row["close"]}
         for row in rows
@@ -331,7 +332,7 @@ def close_window_for_labels(tickers: Sequence[str], *, start: date, end: date) -
 
 
 def price_path_from(ticker: str, start_date: date, *, limit: int = 80) -> list[dict]:
-    rows = _price_rows(ticker, start=start_date, end=date.today())[:limit]
+    rows = _price_rows(ticker, start=start_date, end=us_market_today())[:limit]
     if not rows:
         return []
     last = date.fromisoformat(str(rows[-1]["trade_date"]))
@@ -361,14 +362,14 @@ def monthly_close_history(tickers: list[str], *, period: str = "2y") -> pd.DataF
     if period == "max":
         start = date(1900, 1, 1)
     elif period.endswith("y") and period[:-1].isdigit() and int(period[:-1]) > 0:
-        start = date.today() - relativedelta(years=int(period[:-1]))
+        start = us_market_today() - relativedelta(years=int(period[:-1]))
     else:
         raise ValueError(f"unsupported market monthly history period: {period}")
     ids = _ids(requested)
     missing = sorted(set(requested) - set(ids))
     if missing:
         raise RuntimeError(f"market has unknown strategy securities: {missing}")
-    bars = MarketRepository(_db()).bars(list(ids.values()), start=start, end=date.today())
+    bars = MarketRepository(_db()).bars(list(ids.values()), start=start, end=us_market_today())
     rows = [
         {"ticker": ticker, "trade_date": bar.trade_date, "close": bar.close}
         for ticker, security_id in ids.items()

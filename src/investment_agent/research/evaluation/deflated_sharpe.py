@@ -58,11 +58,20 @@ class DeflatedSharpeRatio:
         returns: Sequence[float],
         num_trials: int = 10,
         benchmark_sr: float = 0.0,
-        variance_trials: float = 0.5,
+        variance_trials: float | None = None,
         annualize: bool = True,
         periods_per_year: int = 252,
     ) -> DeflatedSharpeResult:
-        """수익률 시계열과 시도 횟수를 바탕으로 DSR 확률을 계산한다."""
+        """수익률 시계열과 시도 횟수를 바탕으로 DSR 확률을 계산한다.
+
+        **검정은 전부 기간(수익률 한 개의 주기) 단위 샤프로 한다.** Mertens 표준오차와 시도 간 샤프 분산은 기간
+        단위에서만 성립하므로, `annualize`는 결과 표시(observed_sr·expected_max_sr)에만 √주기수를 곱하고 확률에는
+        영향을 주지 않는다. 연환산 샤프를 표준오차 식에 넣으면 표준오차가 √주기수배 작아져 확률이 0/1로 쏠린다.
+
+        `variance_trials`는 시도들의 (기간 단위) 샤프 추정치 분산이다. 시도별 샤프를 모르면 표본 길이 n에서
+        귀무가설 하의 샤프 추정 분산 1/(n-1)을 쓴다 — 고정 상수를 쓰면 기대 최대 샤프가 표본과 무관하게 정해져
+        (예: 상수 0.5 → 1.11) 기간 샤프 0.34의 좋은 전략도 확률 0이 되고 비현실적인 값만 통과한다.
+        """
         clean_returns = [finite_float(r) for r in returns if finite_float(r) is not None]
         n = len(clean_returns)
         if n < 5:
@@ -76,7 +85,7 @@ class DeflatedSharpeRatio:
         var_r = sum((r - mean_r) ** 2 for r in clean_returns) / (n - 1)
         std_r = math.sqrt(var_r) if var_r > 1e-12 else 1e-6
         ann_factor = math.sqrt(float(periods_per_year)) if annualize else 1.0
-        observed_sr = (mean_r / std_r) * ann_factor
+        period_sr = mean_r / std_r  # 검정에 쓰는 기간 단위 샤프
 
         # 왜도(Skewness) 및 첨도(Kurtosis) 계산
         m3 = sum((r - mean_r) ** 3 for r in clean_returns) / n
@@ -87,19 +96,22 @@ class DeflatedSharpeRatio:
         # 다중 가설 검정 하의 기대 최대 샤프비율 E[max_K {SR_k}]
         k = max(1, int(num_trials))
         if k > 1:
+            trial_variance = 1.0 / (n - 1) if variance_trials is None else float(variance_trials)
             z1 = _norm_ppf(1.0 - (1.0 / k))
             z2 = _norm_ppf(1.0 - (1.0 / (k * math.e)))
-            exp_max_sr = math.sqrt(variance_trials) * ((1.0 - _EULER_MASCHERONI) * z1 + _EULER_MASCHERONI * z2)
+            exp_max_period_sr = math.sqrt(trial_variance) * ((1.0 - _EULER_MASCHERONI) * z1 + _EULER_MASCHERONI * z2)
         else:
-            exp_max_sr = benchmark_sr
+            exp_max_period_sr = benchmark_sr
 
-        # 샤프비율의 표준오차 (Mertens 2002 기반)
-        var_sr = (1.0 - skew * observed_sr + ((kurt - 1.0) / 4.0) * (observed_sr ** 2)) / (n - 1)
+        # 샤프비율의 표준오차 (Mertens 2002 기반, 기간 단위)
+        var_sr = (1.0 - skew * period_sr + ((kurt - 1.0) / 4.0) * (period_sr ** 2)) / (n - 1)
         se_sr = math.sqrt(max(1e-12, var_sr))
 
         # DSR 통계량 Z와 관측 샤프가 기대 최대 샤프를 넘을 누적확률
-        z_stat = (observed_sr - exp_max_sr) / se_sr
+        z_stat = (period_sr - exp_max_period_sr) / se_sr
         probability = _norm_cdf(z_stat)
+        observed_sr = period_sr * ann_factor
+        exp_max_sr = exp_max_period_sr * ann_factor
 
         # 95% 신뢰수준(probability >= 0.95) 통과 여부
         is_sig = probability >= 0.95

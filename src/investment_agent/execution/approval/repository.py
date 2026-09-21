@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 
 from investment_agent.execution.db import _approval
 from investment_agent.execution.approval.ledger import ApprovalRequest
-from investment_agent.execution.contracts import ExecutionSafetyError
 from investment_agent.platform.db.sqlite import runtime_connection
 
 

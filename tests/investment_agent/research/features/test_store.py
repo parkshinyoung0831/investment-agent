@@ -248,13 +248,45 @@ class BuildFeaturesEntryTest(unittest.TestCase):
             repository=repository,
             store=store,
         )
-        self.assertEqual(payload["status"], "success")
         self.assertEqual(payload["rows_upserted"], 2)
         self.assertEqual(len(store.saved), 2)
         column_sets = {frozenset(row["features"]) for row in store.saved}
         self.assertEqual(len(column_sets), 1)
         self.assertEqual(column_sets.pop(), frozenset(FEATURE_COLUMNS))
         self.assertEqual(set(payload["detail"]["timings_sec"]), {"prepare", "valuations", "compute", "write"})
+
+    def _valuation_rows(self, tickers):
+        return lambda *_a, **_k: [
+            {"ticker": ticker, "as_of_at": _AS_OF, "available_at": _AS_OF, "market_cap": 1e9, "pe_ttm": 20.0}
+            for ticker in tickers
+        ]
+
+    def test_status_is_success_only_when_valuations_are_present_and_nothing_failed(self):
+        repository = _FeatureRepository(["AAA", "BBB"])
+        repository.valuation_observation_rows = self._valuation_rows(["AAA", "BBB"])
+        payload = build_features(
+            as_of_at=parse_datetime(_AS_OF), tickers=["AAA", "BBB"], repository=repository, store=_FeatureStore(),
+        )
+        self.assertEqual("success", payload["status"])
+        self.assertEqual(2, payload["detail"]["with_valuation"])
+
+    def test_missing_valuations_for_every_ticker_is_partial_not_success(self):
+        """밸류에이션 조회가 통째로 비어도 적재는 하지만 success라고 말하지 않는다(RS-4)."""
+        payload = build_features(
+            as_of_at=parse_datetime(_AS_OF), tickers=["AAA", "BBB"],
+            repository=_FeatureRepository(["AAA", "BBB"]), store=_FeatureStore(),
+        )
+        self.assertEqual("partial", payload["status"])
+        self.assertEqual(0, payload["detail"]["with_valuation"])
+        self.assertEqual(2, payload["rows_upserted"])
+
+    def test_no_feature_at_all_for_a_non_empty_universe_is_a_failure(self):
+        repository = _FeatureRepository(["AAA"])
+        repository.market_prices = lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("upstream unavailable"))
+        payload = build_features(
+            as_of_at=parse_datetime(_AS_OF), tickers=["AAA"], repository=repository, store=_FeatureStore(),
+        )
+        self.assertEqual("failed", payload["status"])
 
     def test_dry_run_writes_nothing(self):
         repository = _FeatureRepository(["AAA"])

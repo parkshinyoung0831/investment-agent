@@ -4,9 +4,9 @@ from __future__ import annotations
 import traceback
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
+from datetime import timedelta
 
+from investment_agent.platform.clock import us_market_today
 from investment_agent.platform.env import env_int
 from investment_agent.platform.cli.backfill import resolve_backfill_window
 from investment_agent.platform.logging import get_logger
@@ -65,7 +65,7 @@ def sync_company_filings(
     last_by_cik = repository.last_filed_map()
     processed_by_cik = repository.processed_filing_accessions()
     updates: list[tuple[int, list, list]] = []
-    index_end = datetime.now(ZoneInfo("America/New_York")).date()
+    index_end = us_market_today()
 
     requested_tickers = {str(ticker) for ticker in (target_tickers or set()) if ticker}
     if requested_tickers:
@@ -253,7 +253,7 @@ def sync_segment_filings(
 
     tracked_ciks = repository.tracked_ciks()
     forms = segment_forms(period_kind)
-    end = datetime.now(ZoneInfo("America/New_York")).date()
+    end = us_market_today()
     filed_cutoff = end - timedelta(days=lookback_days - 1)
     requested_tickers = {
         str(ticker).strip().upper()

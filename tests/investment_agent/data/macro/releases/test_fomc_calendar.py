@@ -26,6 +26,22 @@ class FomcCalendarTest(unittest.TestCase):
         document = "<h5>Jan/Feb 31-1 Meeting - 2017</h5><h5>March 14-15 Meeting - 2017</h5>"
         self.assertEqual(_historical_dates(document, expected_year=2017), [date(2017, 2, 1), date(2017, 3, 15)])
 
+    def test_a_window_in_a_later_year_still_reads_the_current_page(self) -> None:
+        """페이지가 다루는 마지막 연도를 코드에 박아 두면 그 해가 지난 뒤의 창은 페이지를 읽지도 않고 빈 일정이 된다."""
+        from unittest import mock
+
+        from investment_agent.data.macro.infrastructure.releases.sources import fomc_calendar
+
+        document = """
+        <div class='panel'><h4>2029 FOMC Meetings</h4>
+          <div class='row fomc-meeting'><div class='fomc-meeting__month'>January</div>
+            <div class='fomc-meeting__date'>30-31</div></div></div>
+        """
+        with mock.patch.object(fomc_calendar, "_fetch", return_value=document) as fetch:
+            found = fomc_calendar.fetch_dates(start=date(2029, 1, 1), end=date(2029, 12, 31))
+        self.assertEqual([date(2029, 1, 31)], found)
+        fetch.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

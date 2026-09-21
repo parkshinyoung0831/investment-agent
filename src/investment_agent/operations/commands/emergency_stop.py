@@ -82,6 +82,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     state_dir = Path(args.state_dir).expanduser().resolve()
+    if state_dir != _DEFAULT_STATE_DIR.resolve():
+        _safe_print(
+            "⚠️ --state-dir가 기본 위치와 다릅니다. 실주문 게이트는 기본 위치의 EXECUTION_LOCKDOWN만 읽으므로, "
+            f"이 폴더의 잠금은 주문을 막지 못합니다({_DEFAULT_STATE_DIR})."
+        )
 
     if args.rearm:
         if args.confirm != REARM_CONFIRMATION_PHRASE:

@@ -157,7 +157,6 @@ def build(item: dict, extras: dict | None = None) -> tuple[dict, str]:
         row,
         list(ex.get("earnings_estimates") or []),
         list(ex.get("surprise_history") or []),
-        list(ex.get("price_targets") or []),
     )
 
     # 표시 이름: 한글명 우선, 없으면 영문명, 둘 다 없으면 티커. 영문명은 메인과 다를 때만 별도 표기.

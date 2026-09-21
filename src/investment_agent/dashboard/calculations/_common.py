@@ -5,12 +5,9 @@ import math
 from collections.abc import Mapping
 from datetime import date, datetime, timezone
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
-
-_DISPLAY_TZ = ZoneInfo("Asia/Seoul")
 
 def today_kst() -> date:
     """화면이 말하는 '오늘'. 보는 사람이 한국에 있으므로 KST 기준이다.
@@ -19,9 +16,10 @@ def today_kst() -> date:
     하루가 밀린다. 그 구간이 주 경계에 걸리면 조회 창이 통째로 바뀌므로, 오늘을 쓰는
     쪽은 화면이든 테스트든 전부 이 함수를 지난다.
     """
-    return datetime.now(_DISPLAY_TZ).date()
+    return kst_today()
 
 
+from investment_agent.platform.clock import kst_today
 from investment_agent.platform.serialization import finite_float
 
 

@@ -63,6 +63,48 @@ class EffectiveFilingsTest(unittest.TestCase):
                         amendment=AMENDMENT_NEW_HOLDINGS, filed=25)
         self.assertEqual([original, added], effective_filings([original, added]))
 
+    def test_a_new_holdings_filed_after_a_restatement_still_counts(self) -> None:
+        """재작성본 뒤에 낸 덧붙임까지 버리면 그 종목이 통째로 사라진다."""
+        original = _filing("0001067983-26-000001")
+        restated = _filing("0001067983-26-000009", form="13F-HR/A",
+                           amendment=AMENDMENT_RESTATEMENT, filed=20)
+        added = _filing("0001067983-26-000012", form="13F-HR/A",
+                        amendment=AMENDMENT_NEW_HOLDINGS, filed=28)
+        self.assertEqual([restated, added], effective_filings([original, restated, added]))
+
+    def test_a_new_holdings_filed_before_a_restatement_is_already_inside_it(self) -> None:
+        original = _filing("0001067983-26-000001")
+        added = _filing("0001067983-26-000005", form="13F-HR/A",
+                        amendment=AMENDMENT_NEW_HOLDINGS, filed=18)
+        restated = _filing("0001067983-26-000009", form="13F-HR/A",
+                           amendment=AMENDMENT_RESTATEMENT, filed=25)
+        self.assertEqual([restated], effective_filings([original, added, restated]))
+
+    def test_additions_alone_are_not_a_portfolio(self) -> None:
+        added = _filing("0001067983-26-000010", form="13F-HR/A", amendment=AMENDMENT_NEW_HOLDINGS, filed=25)
+        self.assertEqual([], effective_filings([added]))
+
+    def test_the_dashboard_rule_and_the_pit_rule_agree(self) -> None:
+        """같은 정정 규칙이 두 곳에서 다르면 한쪽 화면은 두 배로, 다른 쪽은 일부만 센다."""
+        from investment_agent.data.institutional.domain.analysis import _authoritative_filings
+
+        rows = [
+            {"accession_no": "A1", "form_type": "13F-HR", "filing_date": "2026-08-15", "accepted_at": "2026-08-15T10:00:00+00:00"},
+            {"accession_no": "A2", "form_type": "13F-HR/A", "amendment_type": AMENDMENT_RESTATEMENT,
+             "filing_date": "2026-08-20", "accepted_at": "2026-08-20T10:00:00+00:00"},
+            {"accession_no": "A3", "form_type": "13F-HR/A", "amendment_type": AMENDMENT_NEW_HOLDINGS,
+             "filing_date": "2026-08-28", "accepted_at": "2026-08-28T10:00:00+00:00"},
+        ]
+        filings = [
+            _filing("A1"),
+            _filing("A2", form="13F-HR/A", amendment=AMENDMENT_RESTATEMENT, filed=20),
+            _filing("A3", form="13F-HR/A", amendment=AMENDMENT_NEW_HOLDINGS, filed=28),
+        ]
+        self.assertEqual(
+            [row["accession_no"] for row in _authoritative_filings(rows)],
+            [item.accession_no for item in effective_filings(filings)],
+        )
+
     def test_the_last_restatement_wins(self) -> None:
         first = _filing("0001067983-26-000009", form="13F-HR/A",
                         amendment=AMENDMENT_RESTATEMENT, filed=20)

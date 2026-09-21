@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import math
 from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -12,6 +11,10 @@ from investment_agent.execution.safety.control import RuntimeRiskState
 from investment_agent.execution.safety.control_state import DurableControlState
 from investment_agent.platform.db.sqlite import runtime_connection
 from investment_agent.platform.serialization import parse_datetime
+
+# 오늘 장전 스냅샷이 없을 때 전일 마감 기준점으로 삼을 수 있는 가장 오래된 스냅샷. 연휴 주말(금요일 마감 →
+# 화요일 개장, 4일)을 덮는 범위이고, 이보다 오래된 자산은 손실 판정의 기준이 아니라 입출금·평가 변동이 섞인 값이다.
+PRIOR_BASELINE_MAX_AGE = timedelta(days=5)
 
 
 class SafetyRepository:
@@ -62,7 +65,10 @@ class SafetyRepository:
             matching = [row for row in snapshots if row.get("execution_mode") == "live" and row.get("broker_account_hash") == account_ref]
             baseline_rows = [row for row in matching if day_start <= parse_datetime(str(row["captured_at"])) <= min(session_open, current)]
             if not baseline_rows:
-                baseline_rows = [row for row in matching if parse_datetime(str(row["captured_at"])) < day_start]
+                baseline_rows = [
+                    row for row in matching
+                    if day_start - PRIOR_BASELINE_MAX_AGE <= parse_datetime(str(row["captured_at"])) < day_start
+                ]
             if not baseline_rows:
                 raise ExecutionSafetyError("live risk baseline is missing; capture a Toss snapshot before US market open")
             baseline = max(baseline_rows, key=lambda row: str(row["captured_at"]))
@@ -81,4 +87,6 @@ class SafetyRepository:
         submitted = [row for row in orders if day_start <= parse_datetime(str(row["submitted_at"])) <= current]
         if any(not math.isfinite(float(row.get("notional", 0))) or float(row.get("notional", 0)) < 0 for row in submitted):
             raise ExecutionSafetyError("daily order notional is invalid")
+        # realized_pnl_usd는 실현손익이 아니라 당일 손실 한도용 값이다 — 기준 자산 대비 변화와 브로커 일간 손익 중
+        # 나쁜 쪽을 쓰므로 입출금은 손실로 읽힌다(조이는 방향으로만 틀린다).
         return RuntimeRiskState(submitted_order_count=len({str(row["client_order_id"]) for row in submitted}), submitted_notional_usd=sum(float(row.get("notional") or 0) for row in submitted), realized_pnl_usd=min(current_equity - baseline_equity, broker_daily_pnl_usd), drawdown_fraction=max(0.0, (peak-current_equity)/peak), captured_at=current.isoformat())

@@ -100,8 +100,11 @@ def _training_set(
     tracked = [str(value).upper() for value in repository.current_tracked_tickers()]
     if not tracked:
         raise RuntimeError("no tracked ticker is available for RL training")
-    # 수익률과 무관한 기준(사전순)으로 자른다. 성과로 고르면 생존 편향이 학습에 들어간다.
-    symbols = tuple(sorted(tracked)[:max_symbols])
+    if len(tracked) > max_symbols:
+        # 이름순으로 자르면 A~C로 시작하는 종목군만 남아 섹터·규모가 치우치고, 성과로 고르면 생존 편향이 들어간다.
+        # 어느 쪽으로도 조용히 자르지 않고 상한을 올리게 한다(운영 경로는 판단 경험 수 기준 `decision_training_set`).
+        raise RuntimeError(f"tracked universe ({len(tracked)}) exceeds max_symbols ({max_symbols})")
+    symbols = tuple(sorted(tracked))
     return load_training_set(
         repository,
         store=store,

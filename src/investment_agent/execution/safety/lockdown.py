@@ -9,16 +9,16 @@ from typing import Any, Mapping
 
 from investment_agent.platform.clock import to_utc_iso, utc_now
 from investment_agent.platform.serialization import canonical_json
-from investment_agent.platform.storage_paths import repository_root
+from investment_agent.platform.storage_paths import harness_state_dir
 
 
 LOCKDOWN_SENTINEL_FILENAME = "EXECUTION_LOCKDOWN"
 REARM_CONFIRMATION_PHRASE = "I_CONFIRM_REARM_TRADING"
-_DEFAULT_STATE_DIR = repository_root() / "artifacts" / "ops" / "investment_harness"
 
 
 def get_lockdown_path(state_dir: Path | str | None = None) -> Path:
-    base = Path(state_dir).expanduser().resolve() if state_dir is not None else _DEFAULT_STATE_DIR
+    """sentinel 위치. 실주문 게이트는 인자 없이(정본 위치) 읽으므로 다른 폴더에 만든 sentinel은 게이트가 보지 못한다."""
+    base = Path(state_dir).expanduser().resolve() if state_dir is not None else harness_state_dir()
     return base / LOCKDOWN_SENTINEL_FILENAME
 
 

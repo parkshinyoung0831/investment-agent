@@ -45,5 +45,23 @@ class CandidateSelectionPathTest(unittest.TestCase):
         self.assertEqual(sorted(selected), ["AAA", "BBB", "CCC", "EVT"])
 
 
+class HeldTickersReadTest(unittest.TestCase):
+    """보유 원장을 못 읽은 것을 '보유 없음'으로 접으면 재분석 우선순위가 조용히 사라진다."""
+
+    def test_an_unreadable_ledger_is_raised_not_treated_as_no_holdings(self):
+        repository = object.__new__(SupabaseRepository)
+        with mock.patch(
+            "investment_agent.trading.system.store.SystemPortfolioStore.held_tickers",
+            side_effect=RuntimeError("ledger corrupted"),
+        ):
+            with self.assertRaises(RuntimeError):
+                repository._candidate_held_tickers()
+
+    def test_an_empty_ledger_means_no_holdings(self):
+        repository = object.__new__(SupabaseRepository)
+        with mock.patch("investment_agent.trading.system.store.SystemPortfolioStore.held_tickers", return_value=[]):
+            self.assertEqual([], repository._candidate_held_tickers())
+
+
 if __name__ == "__main__":
     unittest.main()

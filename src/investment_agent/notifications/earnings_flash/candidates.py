@@ -1,9 +1,10 @@
 """8-K 실적 속보 알림 대상 후보 선정."""
 from __future__ import annotations
 
-import os
-from datetime import date, timedelta
+from datetime import timedelta
 
+from investment_agent.platform.clock import kst_today
+from investment_agent.platform.env import env_int
 from investment_agent.reporting.notifications.earnings_flash import EarningsFlashStore
 from investment_agent.platform.logging import get_logger
 
@@ -12,14 +13,11 @@ _DEFAULT_LOOKBACK_DAYS = 7
 
 
 def _lookback_days() -> int:
-    try:
-        return int(os.environ.get("FLASH_NOTIFY_LOOKBACK_DAYS", _DEFAULT_LOOKBACK_DAYS))
-    except ValueError:
-        return _DEFAULT_LOOKBACK_DAYS
+    return env_int("FLASH_NOTIFY_LOOKBACK_DAYS", _DEFAULT_LOOKBACK_DAYS, minimum=1, maximum=365)
 
 
 def _cutoff() -> str:
-    return (date.today() - timedelta(days=_lookback_days())).isoformat()
+    return (kst_today() - timedelta(days=_lookback_days())).isoformat()
 
 
 def load_flash_candidates(

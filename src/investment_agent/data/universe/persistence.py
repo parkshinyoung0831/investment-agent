@@ -20,8 +20,8 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 from collections import defaultdict
-from zoneinfo import ZoneInfo
 
+from investment_agent.platform.clock import us_market_today
 from investment_agent.platform.db.postgres import sb
 from investment_agent.platform.logging import get_logger
 from investment_agent.data.universe.repository import (
@@ -163,8 +163,7 @@ def select_common_stock_tickers_by_cik(ciks: list[str] | None = None) -> dict[st
     return {key: value for key, value in mapping.items() if key in wanted}
 
 
-def select_name_ko_pending(retry_before: str) -> list[str]:
-    del retry_before  # v1은 실패 ledger가 아니라 entity 사실만 저장한다.
+def select_name_ko_pending() -> list[str]:
     rows = _security_rows(tracked_only=True)
     ciks = sorted({str(row["cik"]) for row in rows if row.get("cik")})
     if not ciks:
@@ -213,10 +212,6 @@ def select_entity_pending(*, tracked_only: bool = False, now: datetime | None = 
         return refreshed + timedelta(days=90 if complete else 180) <= cutoff
 
     return [row for row in candidates if due(str(row["cik"]))]
-
-
-def _us_market_today() -> date:
-    return datetime.now(ZoneInfo("America/New_York")).date()
 
 
 def _listing_payload(row: dict, *, security_id: int | None = None) -> dict:
@@ -316,7 +311,7 @@ def _sync_ticker_history(repository: UniverseRepository, listed: dict[str, dict]
     시작일은 우리가 그 표기를 처음 확인한 날이다. 실제 거래 시작일이 아니라 "적어도
     이날부터 이 표기였다"는 보수적 사실이다. 개명은 옛 연결을 오늘로 닫고 새로 연다.
     """
-    today = _us_market_today()
+    today = us_market_today()
     current = {str(row["identifier"]): row for row in repository.current_identifiers("TICKER")
                if row.get("mapping_status") == "verified"}
     for old, _row in renames:
@@ -344,7 +339,7 @@ def _sync_ticker_history(repository: UniverseRepository, listed: dict[str, dict]
 def set_membership(rows: list[dict]) -> int:
     """멤버십 계산 결과를 securities에 반영한다.
 
-    두 가지 의도를 받는다.
+    반환값은 **실제로 바뀐 행 수**다(이미 그 값인 종목은 쓰지 않는다). 두 가지 의도를 받는다.
 
     * ``is_tracked``가 있는 행 — 수집 게이트를 그 값으로 정한다.
     * ``is_tracked``가 없는 행(과거 멤버) — **게이트를 건드리지 않는다.** 없으면
@@ -379,6 +374,8 @@ def set_membership(rows: list[dict]) -> int:
         if is_tracked and not (security.is_active_listing and security.is_identity_verified):
             log.warning("  현재 멤버인데 상장·신원 확인된 종목이 없음: %s", ticker)
             continue
+        if bool(security.is_tracked) == bool(is_tracked):
+            continue  # 이미 그 값이다 — 쓰지 않고, 반환값은 실제로 바꾼 수다.
         db.table(SCHEMA, T_SECURITIES).update(
             {"is_tracked": bool(is_tracked)}
         ).eq("security_id", security.security_id).execute()

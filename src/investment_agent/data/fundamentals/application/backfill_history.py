@@ -6,9 +6,9 @@ companyfacts에 없어 SEC FSDS 분기 파일을 쓴다.
 from __future__ import annotations
 
 import traceback
-from datetime import date, datetime
-from zoneinfo import ZoneInfo
+from datetime import date
 
+from investment_agent.platform.clock import us_market_today
 from investment_agent.platform.cli.backfill import resolve_backfill_window, select_accessions
 from investment_agent.platform.logging import get_logger
 from investment_agent.data.fundamentals.application.segment_metrics import build_segment_metrics
@@ -297,7 +297,7 @@ def _completed_segment_accessions(
 
 
 def _segment_retention_cutoff(*, today: date | None = None) -> date:
-    market_today = today or datetime.now(ZoneInfo("America/New_York")).date()
+    market_today = today or us_market_today()
     return resolve_backfill_window(
         None,
         default_years=_SEGMENT_BACKFILL_YEARS,

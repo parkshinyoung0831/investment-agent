@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from typing import Any
 
+from investment_agent.platform.clock import us_market_today
 from investment_agent.data.universe.domain.identifiers import normalize_ticker as _normalize_ticker
 from investment_agent.data.universe.repository import UniverseRepository
 from investment_agent.platform.db.postgres import Database, sb
@@ -75,7 +76,7 @@ def add_member(ticker: str, *, watch_from: date | None = None) -> str:
     sources.add("manual")
     _upsert_member(
         cik=cik, sources=sorted(sources), removed_at=None,
-        watch_from=watch_from.isoformat() if watch_from else str((current or {}).get("watch_from") or date.today().isoformat()),
+        watch_from=watch_from.isoformat() if watch_from else str((current or {}).get("watch_from") or us_market_today().isoformat()),
     )
     return cik
 
@@ -86,7 +87,7 @@ def remove_member(ticker: str) -> bool:
     if current is None:
         return False
     sources = [source for source in current.get("sources") or [] if source != "manual"]
-    _upsert_member(cik=cik, sources=sources, watch_from=str(current.get("watch_from") or date.today().isoformat()), removed_at=None if sources else datetime.now(timezone.utc).isoformat())
+    _upsert_member(cik=cik, sources=sources, watch_from=str(current.get("watch_from") or us_market_today().isoformat()), removed_at=None if sources else datetime.now(timezone.utc).isoformat())
     return True
 
 
@@ -143,11 +144,11 @@ def sync_toss_members(tickers: list[str]) -> dict[str, Any]:
         _upsert_member(
             cik=row["cik"],
             sources=new_sources,
-            watch_from=str(row.get("watch_from") or date.today().isoformat()),
+            watch_from=str(row.get("watch_from") or us_market_today().isoformat()),
             removed_at=removed_at,
         )
     for cik in sorted(target_ciks - present_ciks):
-        _upsert_member(cik=cik, sources=["toss"], watch_from=date.today().isoformat(), removed_at=None)
+        _upsert_member(cik=cik, sources=["toss"], watch_from=us_market_today().isoformat(), removed_at=None)
         added += 1
     return {"source": "toss", "requested": len(requested), "active": len(target_ciks), "added": added, "removed": removed, "unchanged": unchanged, "skipped_tickers": sorted(set(requested) - set(tracked))}
 

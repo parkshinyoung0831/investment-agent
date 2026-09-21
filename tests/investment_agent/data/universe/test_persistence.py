@@ -154,6 +154,17 @@ class SetMembershipTest(unittest.TestCase):
         db.set_membership([{"ticker": "DROPPED", "is_tracked": False}])
         self.assertEqual([((SCHEMA, T_SECURITIES), {"is_tracked": False})], self.fake.updates)
 
+    def test_a_gate_that_already_has_the_value_is_not_rewritten(self) -> None:
+        """월간 점검마다 503개를 전부 UPDATE하고 '현재 멤버: 503'을 변경 수처럼 세지 않는다."""
+        written = db.set_membership([{"ticker": "KEEP", "is_tracked": True}, {"ticker": "DROPPED", "is_tracked": True}])
+        self.assertEqual(0, written)
+        self.assertEqual([], self.fake.updates)
+
+    def test_only_the_rows_that_change_are_written_and_counted(self) -> None:
+        written = db.set_membership([{"ticker": "KEEP", "is_tracked": True}, {"ticker": "DROPPED", "is_tracked": False}])
+        self.assertEqual(1, written)
+        self.assertEqual([((SCHEMA, T_SECURITIES), {"is_tracked": False})], self.fake.updates)
+
     def test_a_past_member_row_never_touches_the_gate(self) -> None:
         """`is_tracked` 키가 없는 행은 게이트에 대해 아무 말도 하지 않는다."""
         db.set_membership([{"ticker": "DROPPED"}])

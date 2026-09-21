@@ -21,7 +21,6 @@ from investment_agent.platform.serialization import ContractError, parse_datetim
 from investment_agent.research.features.layer import (
     FEATURE_COLUMNS,
     FEATURE_VERSION,
-    HORIZONS,
     impute_cross_section,
 )
 from investment_agent.research.rl.contracts import FeatureSnapshot
@@ -46,7 +45,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="이 시각까지 확정된 label만 사용한다. 기본 --end와 동일",
     )
     parser.add_argument(
-        "--horizon", type=int, default=SIGNAL_HORIZON_DAYS, choices=HORIZONS,
+        "--horizon", type=int, default=SIGNAL_HORIZON_DAYS, choices=(SIGNAL_HORIZON_DAYS,),
         help="label_definition에 기록할 horizon. 원장에 저장된 구간과 일치해야 한다",
     )
     parser.add_argument("--feature-version", default=FEATURE_VERSION)

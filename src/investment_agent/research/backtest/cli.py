@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
+from investment_agent.platform.storage_paths import repository_artifact_root
 from investment_agent.research.backtest import (
     BacktestConfig,
     BacktestRequest,
@@ -74,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     request, costs = load_backtest_input(args.input)
     result = run_backtest(request, costs=costs)
-    output = args.output or Path("artifacts/ai_investor/backtests") / f"{result.artifact_hash}.json"
+    output = args.output or repository_artifact_root() / "ai_investor" / "backtests" / f"{result.artifact_hash}.json"
     _atomic_json(output, {
         "schema_version": _SCHEMA_VERSION,
         "result": result.to_dict(),

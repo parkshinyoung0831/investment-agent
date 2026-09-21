@@ -151,68 +151,6 @@ def validate_shares_outstanding(rows: list[dict[str, Any]]) -> None:
             )
 
 
-def aggregate_company_share_history(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """클래스별 최신 vintage를 합쳐 ticker별 회사 전체 보통주 이력을 만든다.
-
-    상장되지 않은 보통주 클래스도 합산한다. 반면 CompanyFacts aggregate가 복수
-    클래스 중 무엇을 뜻하는지 모르는 ``unresolved_multiclass`` 날짜는 제외한다.
-    """
-    latest: dict[tuple[str, str, str], dict[str, Any]] = {}
-    for row in rows:
-        ticker = str(row.get("ticker") or "")
-        as_of_date = str(row.get("as_of_date") or "")
-        share_class_key = str(row.get("share_class_key") or "")
-        if not ticker or not as_of_date or not share_class_key:
-            continue
-        key = (ticker, as_of_date, share_class_key)
-        vintage = (
-            str(row.get("accepted_at") or ""),
-            str(row.get("filed_at") or ""),
-            str(row.get("accession_no") or ""),
-        )
-        current = latest.get(key)
-        current_vintage = (
-            str(current.get("accepted_at") or ""),
-            str(current.get("filed_at") or ""),
-            str(current.get("accession_no") or ""),
-        ) if current else ("", "", "")
-        if current is None or vintage > current_vintage:
-            latest[key] = row
-
-    by_date: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
-    for (ticker, as_of_date, _), row in latest.items():
-        by_date[(ticker, as_of_date)].append(row)
-
-    aggregated: list[dict[str, Any]] = []
-    for (ticker, as_of_date), class_rows in sorted(by_date.items()):
-        if any(
-            row.get("ticker_mapping_status") == "unresolved_multiclass"
-            for row in class_rows
-        ):
-            continue
-        counts = [
-            _positive_share_count(row.get("shares_outstanding"))
-            for row in class_rows
-        ]
-        if any(value is None for value in counts):
-            continue
-        aggregated.append({
-            "ticker": ticker,
-            "as_of_date": as_of_date,
-            "shares": sum(int(value) for value in counts if value is not None),
-            "source": "sec_reported_common_classes",
-            "uses_unlisted_class": any(
-                row.get("ticker_mapping_status") == "unmapped_unlisted"
-                for row in class_rows
-            ),
-            "ingested_at": max(
-                (str(row.get("ingested_at") or "") for row in class_rows),
-                default="",
-            ) or None,
-        })
-    return aggregated
-
-
 def _is_preferred_or_derivative(member: str, axis: str) -> bool:
     """우선주, 워런트, 신주인수권 등 보통주가 아닌 클래스를 배제한다."""
     lower_axis = axis.lower()

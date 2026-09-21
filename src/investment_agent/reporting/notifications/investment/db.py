@@ -1,10 +1,12 @@
 """자동매매 보고서의 로컬 판단·실행 원장 조회 경계."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from investment_agent.platform.db.postgres import sb, select_paged_in_chunks
 from investment_agent.platform.logging import get_logger
+from investment_agent.platform.serialization import ContractError, parse_datetime
 from investment_agent.reporting.services.investment import build_decision_case_read_model
 from investment_agent.reporting.readers.runtime import read_runtime_rows
 
@@ -75,10 +77,23 @@ def top_candidates(run_id: str, *, limit: int) -> list[dict[str, Any]]:
     return candidates[:limit]
 
 
+def _updated_since(row: dict[str, Any], since: datetime) -> bool:
+    """`updated_at`을 시각으로 읽어 비교한다. 문자열 사전순 비교는 'Z'·공백 구분 등 표기가 다르면 창 경계에서 어긋난다.
+
+    읽을 수 없는 시각은 창 밖으로 버리지 않고 포함한다 — 주문 알림이 조용히 빠지는 쪽이 더 나쁘고,
+    중복 발송은 알림 원장이 막는다.
+    """
+    try:
+        return parse_datetime(str(row.get("updated_at") or "")) >= since
+    except (ValueError, ContractError):
+        log.warning("order updated_at is not a timestamp: client_order_id=%s", row.get("client_order_id"))
+        return True
+
+
 def recent_orders(*, since_at: str) -> list[dict[str, Any]]:
     """지정 시각 이후 갱신된 로컬 주문과 체결·실행 대상을 모은다."""
-    orders = [row for row in read_runtime_rows("orders")
-              if str(row.get("updated_at") or "") >= since_at]
+    since = parse_datetime(since_at)
+    orders = [row for row in read_runtime_rows("orders") if _updated_since(row, since)]
     if not orders:
         return []
     order_ids = {str(row["client_order_id"]) for row in orders}

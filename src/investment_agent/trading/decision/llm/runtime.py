@@ -13,6 +13,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 
+from investment_agent.platform.storage_paths import ai_investor_artifact_dir
 from investment_agent.platform.env import env_float, env_int
 from investment_agent.trading.contracts import parse_datetime
 from investment_agent.research.adapters.trading import EvidenceBundle
@@ -23,16 +24,6 @@ from investment_agent.platform.external_usage import (
     reserve_provider_call,
 )
 from investment_agent.trading.decision.llm.external_parsing import parse_external_payload
-from investment_agent.trading.decision.llm.vendor.yfinance_news import get_news_yfinance
-from investment_agent.trading.decision.llm.vendor.alpha_vantage_news import (
-    get_news as _get_news_alpha_vantage,
-)
-from investment_agent.trading.decision.llm.vendor.stocktwits import (
-    fetch_stocktwits_messages as _vendor_fetch_stocktwits,
-)
-from investment_agent.trading.decision.llm.vendor.reddit import (
-    fetch_reddit_posts as _vendor_fetch_reddit,
-)
 from investment_agent.intelligence.evidence_cache import (
     LocalEvidenceCache,
     LocalEvidenceCacheError,
@@ -60,19 +51,10 @@ from investment_agent.trading.decision.llm.fundamentals_source import (
     fetch_fundamentals,
     fetch_macro_indicators,
 )
-from investment_agent.trading.decision.llm.market_source import (
-    fetch_indicator_data,
-    fetch_stock_data,
-    fetch_verified_market_snapshot,
-)
+from investment_agent.trading.decision.llm.market_source import fetch_verified_market_snapshot
 from investment_agent.trading.decision.llm.news_source import (
     fetch_external_news,
     validate_news_vendor_config,
-)
-from investment_agent.trading.decision.llm.social_source import (
-    fetch_finnhub_sentiment,
-    fetch_reddit_posts,
-    fetch_stocktwits_messages as _social_fetch_stocktwits,
 )
 
 _URL_RE = re.compile(r"https?://[^\s<>\]\)\"']+")
@@ -127,13 +109,6 @@ def _date_ok(value: str | None) -> bool:
         return False
 
 
-def _no_external_data(label: str) -> str:
-    return (
-        f"DATA_UNAVAILABLE: {label} is not stored in Supabase with published_at and collected_at. "
-        "Internet fallback is disabled; report the missing evidence."
-    )
-
-
 def _external_block_reason(bundle: EvidenceBundle | None = None) -> str | None:
     active = bundle or _bundle()
     if os.environ.get("AI_INVESTOR_EXTERNAL_NEWS_SOCIAL", "true").lower() != "true":
@@ -156,13 +131,17 @@ def _external_block_reason(bundle: EvidenceBundle | None = None) -> str | None:
     return None
 
 
+# provider가 "가져오지 못했다"를 알리는 응답은 본문 전체가 그 문구다. 정상 기사 본문 중간에
+# 같은 단어가 나오는 경우("services unavailable: ...")를 실패로 읽지 않도록 시작만 본다.
+_EXTERNAL_UNAVAILABLE_PREFIXES = (
+    "error fetching", "no news found", "no global news found", "data_unavailable",
+    "unavailable", "no reddit", "no stocktwits", "stocktwits unavailable",
+)
+
+
 def _external_status(value: str) -> str:
-    lowered = value.lstrip().lower()
-    markers = (
-        "error fetching", "no news found", "no global news found", "data_unavailable",
-        "<unavailable", "unavailable:", "no reddit", "no stocktwits",
-    )
-    return "unavailable" if any(marker in lowered for marker in markers) else "available"
+    opening = value.lstrip().lstrip("<").lstrip().lower()
+    return "unavailable" if opening.startswith(_EXTERNAL_UNAVAILABLE_PREFIXES) else "available"
 
 
 def _external_call_limit() -> int:
@@ -247,48 +226,10 @@ def _sanitize_external_text(raw: str) -> tuple[str, int, bool]:
     return warning + cleaned, redactions, truncated
 
 
-_DOWNSTREAM_API_KEY_ENV = {
-    "openai": "OPENAI_API_KEY",
-    "anthropic": "ANTHROPIC_API_KEY",
-    "google": "GEMINI_API_KEY",
-}
-
-
-def apply_downstream_api_key(provider: str, api_key: str) -> str | None:
-    """지금 고른 후보의 키를 provider SDK가 읽는 환경변수에 **덮어쓴다**.
-
-    setdefault를 쓰면 안 된다. 모델 풀이 후보를 갈아탈 때 앞 후보의 키가 남아 다음
-    후보가 그 키로 호출된다(실측 2026-09-03: Azure 키로 Gemini를 불러 400
-    "Please pass a valid API key"). 덮어쓴 환경변수 이름을 돌려준다.
-    """
-    if not str(api_key).strip():
-        return None
-    name = _DOWNSTREAM_API_KEY_ENV.get(str(provider).strip().lower())
-    if name:
-        os.environ[name] = str(api_key)
-    return name
-
-
-def _llm_max_retries() -> int:
-    """429를 견딜 SDK 재시도 횟수. 대기 시간은 provider가 준 Retry-After를 따른다."""
-    # Azure 배포의 한도 창은 60초이고 SDK의 지수 backoff는 8초 근처에서 상한에 걸린다.
-    # 8회로는 총 대기가 30초도 안 돼 창을 못 넘긴다 — 창 하나를 덮을 만큼 준다.
-    raw = os.environ.get("AI_INVESTOR_LLM_MAX_RETRIES", "").strip()
-    if not raw:
-        return 15
-    value = int(raw)
-    if not 0 <= value <= 20:
-        raise RuntimeError("AI_INVESTOR_LLM_MAX_RETRIES must be between 0 and 20")
-    return value
 
 
 def _artifact_root() -> Path:
-    configured = os.environ.get(
-        "AI_INVESTOR_ARTIFACT_DIR", "artifacts/ai_investor/tradingagents"
-    ).strip()
-    if not configured:
-        raise RuntimeError("AI_INVESTOR_ARTIFACT_DIR must not be empty")
-    return Path(configured).expanduser()
+    return ai_investor_artifact_dir()
 
 
 def _external_usage_ledger_path() -> Path:
@@ -611,14 +552,6 @@ def _external_fetch(
             "status": result_status,
         }
     return result
-
-
-def _stock(symbol: str, start_date: str, end_date: str) -> str:
-    return fetch_stock_data(symbol, start_date, end_date, get_bundle=_bundle)
-
-
-def _indicator(symbol: str, indicator: str, curr_date: str, look_back_days: int = 30) -> str:
-    return fetch_indicator_data(symbol, indicator, curr_date, look_back_days, get_bundle=_bundle)
 
 
 def _fundamentals(ticker: str, curr_date: str) -> str:

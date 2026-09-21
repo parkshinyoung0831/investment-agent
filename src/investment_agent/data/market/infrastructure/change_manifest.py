@@ -17,7 +17,6 @@ from investment_agent.platform.storage_paths import (
 )
 
 MANIFEST_PATH_ENV = MARKET_CHANGE_MANIFEST_PATH_ENV
-DEFAULT_MANIFEST_PATH = Path("data/local/artifacts/market_change_manifest.json")
 
 
 def manifest_path() -> Path:
@@ -62,4 +61,4 @@ def record_change_dates(trade_dates: list[str]) -> None:
         temporary.unlink(missing_ok=True)
 
 
-__all__ = ["DEFAULT_MANIFEST_PATH", "MANIFEST_PATH_ENV", "earliest_change_since", "manifest_path", "record_change_dates"]
+__all__ = ["MANIFEST_PATH_ENV", "earliest_change_since", "manifest_path", "record_change_dates"]

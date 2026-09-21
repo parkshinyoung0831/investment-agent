@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from investment_agent.platform.storage_paths import ai_investor_artifact_dir
+
 
 _PROVIDER_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 _DEFAULT_DAILY_CAPS = {
@@ -19,8 +21,6 @@ _MAX_DAILY_CAP = 1_000_000
 _RETENTION_DAYS = 90
 
 USAGE_LEDGER_PATH_ENV = "AI_INVESTOR_EXTERNAL_USAGE_LEDGER_PATH"
-_DEFAULT_ARTIFACT_DIR_ENV = "AI_INVESTOR_ARTIFACT_DIR"
-_DEFAULT_ARTIFACT_DIR = "artifacts/ai_investor/tradingagents"
 
 
 class ExternalUsageError(RuntimeError):
@@ -36,10 +36,7 @@ def default_ledger_path() -> Path:
     configured = os.environ.get(USAGE_LEDGER_PATH_ENV, "").strip()
     if configured:
         return Path(configured).expanduser()
-    artifact_root = os.environ.get(_DEFAULT_ARTIFACT_DIR_ENV, _DEFAULT_ARTIFACT_DIR).strip()
-    if not artifact_root:
-        raise ExternalUsageError(f"{_DEFAULT_ARTIFACT_DIR_ENV} must not be empty")
-    return Path(artifact_root).expanduser() / "metadata" / "external-usage.sqlite3"
+    return ai_investor_artifact_dir() / "metadata" / "external-usage.sqlite3"
 
 
 @dataclass(frozen=True)

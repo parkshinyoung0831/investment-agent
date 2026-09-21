@@ -89,5 +89,28 @@ class RuntimeRiskRepositoryTest(unittest.TestCase):
         self.assertEqual(3, len(rows), "베이스라인 2개 + 이번 호출이 남긴 새 스냅샷 1개")
 
 
+    def test_a_stale_prior_snapshot_is_not_a_baseline(self):
+        """오늘 장전 스냅샷이 없을 때 몇 주 전 자산을 기준으로 삼으면 입출금·평가 변동이 손실 판정에 섞인다."""
+        self.repo.save_account_snapshot({
+            "execution_mode": "live", "broker_account_hash": _ACCOUNT_HASH,
+            "equity": 1000.0, "cash": 0.0, "captured_at": "2026-08-01T20:00:00+00:00",
+        })
+        with self.assertRaisesRegex(ExecutionSafetyError, "baseline is missing"):
+            self.repo.runtime_risk_state(
+                account_seq=_ACCOUNT_SEQ, current_equity=900.0, broker_daily_pnl_usd=0.0,
+                captured_at=datetime(2026, 8, 21, 14, tzinfo=timezone.utc),
+            )
+
+    def test_the_previous_close_snapshot_over_a_long_weekend_is_still_a_baseline(self):
+        self.repo.save_account_snapshot({
+            "execution_mode": "live", "broker_account_hash": _ACCOUNT_HASH,
+            "equity": 1000.0, "cash": 0.0, "captured_at": "2026-08-17T20:00:00+00:00",
+        })
+        state = self.repo.runtime_risk_state(
+            account_seq=_ACCOUNT_SEQ, current_equity=950.0, broker_daily_pnl_usd=0.0,
+            captured_at=datetime(2026, 8, 21, 14, tzinfo=timezone.utc),
+        )
+        self.assertEqual(-50.0, state.realized_pnl_usd)
+
 if __name__ == "__main__":
     unittest.main()

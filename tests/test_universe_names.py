@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -27,7 +26,7 @@ class KoreanNameSelectionTest(unittest.TestCase):
             ]),
             mock.patch.object(db, "_db", return_value=fake_db),
         ):
-            rows = db.select_name_ko_pending("2026-05-15T00:00:00Z")
+            rows = db.select_name_ko_pending()
 
         self.assertEqual(rows, ["AAPL"])
 
@@ -47,33 +46,33 @@ class KoreanNameRefreshTest(unittest.TestCase):
             ),
             mock.patch.object(etl.db, "apply_toss_names") as apply_names,
         ):
-            updated = etl.refresh_korean_names(retry_after_days=90)
+            updated = etl.refresh_korean_names()
 
         self.assertEqual(
             updated,
             {"pending": 2, "attempted": 2, "updated": 1},
         )
-        retry_before = select_pending.call_args.args[0]
-        parsed = datetime.strptime(retry_before, "%Y-%m-%dT%H:%M:%SZ").replace(
-            tzinfo=timezone.utc
-        )
-        age_days = (datetime.now(timezone.utc) - parsed).days
-        self.assertIn(age_days, (89, 90))
+        select_pending.assert_called_once_with()
         apply_names.assert_called_once_with(
             {"AAPL": "애플"},
             ["AAPL", "MSFT"],
         )
 
-    def test_local_entrypoint_forwards_retry_policy(self):
+    def test_local_entrypoint_offers_no_retry_interval_it_cannot_honor(self):
+        """시도 시각을 저장하지 않으므로 재시도 간격 옵션은 동작하지 않는 약속이다 — 받지 않는다."""
+        with self.assertRaises(SystemExit):
+            names.main(["--retry-after-days", "30"])
+
+    def test_local_entrypoint_runs_the_refresh(self):
         with mock.patch.object(
             etl,
             "refresh_korean_names",
             return_value={"pending": 0, "attempted": 0, "updated": 0},
         ) as refresh:
-            result = names.main(["--retry-after-days", "30"])
+            result = names.main([])
 
         self.assertEqual(result, 0)
-        refresh.assert_called_once_with(retry_after_days=30)
+        refresh.assert_called_once_with()
 
     def test_local_entrypoint_fails_when_toss_cannot_query_pending_rows(self):
         with mock.patch.object(

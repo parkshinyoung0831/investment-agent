@@ -205,7 +205,6 @@ class SegmentHighlightsTest(unittest.TestCase):
             "load_health": Mock(return_value={}),
             "load_valuation": Mock(return_value={}),
             "load_names": Mock(return_value={}),
-            "load_sector_rows": Mock(return_value=[]),
         }
         for status in ("processing", "failed"):
             with self.subTest(status=status), patch.multiple(candidates.db, **common), patch.object(
@@ -216,6 +215,38 @@ class SegmentHighlightsTest(unittest.TestCase):
                 },
             ):
                 self.assertEqual(candidates.load_ready_filings(), [])
+
+
+class EnrichmentIsNarrowedToTargetsTest(unittest.TestCase):
+    """차트 보강 조회는 발송 대상 종목만 읽는다(RP-02).
+
+    관심종목 전체로 부르면 후보가 1건이어도 전 종목의 재무·가격 이력을 읽는다.
+    """
+
+    def test_loaders_receive_only_tickers_that_have_a_filing_to_send(self):
+        rows = [
+            {"ticker": "AAA", "fiscal_year": 2026, "fiscal_period": "Q2", "period_end": "2026-06-30",
+             "filed_at": date.today().isoformat(), "accession_no": "A1"},
+            # BBB는 관심종목이지만 최근 공시가 없어 발송 대상이 아니다.
+            {"ticker": "BBB", "fiscal_year": 2020, "fiscal_period": "Q2", "period_end": "2020-06-30",
+             "filed_at": "2020-08-01", "accession_no": "B0"},
+        ]
+        loaders = {name: Mock(return_value={}) for name in ("load_health", "load_valuation", "load_names")}
+        anomaly = Mock(return_value=set())
+        common = {
+            "watchlist_members": Mock(return_value=[
+                {"ticker": "AAA", "watch_from": "2000-01-01"}, {"ticker": "BBB", "watch_from": "2000-01-01"},
+            ]),
+            "load_headline_rows": Mock(return_value=rows),
+            "anomaly_keys": anomaly,
+            "load_segment_highlights": Mock(return_value={}),
+            **loaders,
+        }
+        with patch.multiple(candidates.db, **common):
+            candidates.load_ready_filings()
+        for name, loader in (("anomaly_keys", anomaly), *loaders.items()):
+            with self.subTest(loader=name):
+                loader.assert_called_once_with(["AAA"])
 
 
 class EarningsCardTest(unittest.TestCase):

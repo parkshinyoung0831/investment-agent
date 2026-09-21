@@ -45,12 +45,16 @@ def has_approved_chain(
     return set(zip(PROMOTION_PATH[:target], PROMOTION_PATH[1:target + 1])) <= approved
 
 
+_DAYS_PER_YEAR = 365.0
+
+
 @dataclass(frozen=True)
 class PromotionCriteria:
     min_out_of_sample_days: int = 60
     min_walk_forward_windows: int = 3
     min_paper_days: int = 30
     max_drawdown: float = 0.20
+    # 연환산 turnover(창 동안의 누적 회전 × 365/창 일수). 5년 백테스트와 3개월 창을 같은 문턱으로 잰다.
     max_turnover: float = 2.0
     require_positive_excess_return: bool = True
 
@@ -288,7 +292,9 @@ def aggregate_evaluations(rows: Sequence[Mapping[str, Any]]) -> EvaluationSummar
         else:
             excess_returns.append(excess)
             drawdowns.append(drawdown)
-            turnovers.append(turnover)
+            # 평가 창의 turnover는 창 동안의 누적 회전이라 창이 길수록 커진다 — 연환산해야 창 길이가 다른 평가를 같은 문턱으로 잰다.
+            window_days = max((end - start).total_seconds() / 86_400.0, 1.0)
+            turnovers.append(turnover * _DAYS_PER_YEAR / window_days)
 
         evaluation_id = row.get("evaluation_id")
         if isinstance(evaluation_id, bool) or not isinstance(evaluation_id, int):

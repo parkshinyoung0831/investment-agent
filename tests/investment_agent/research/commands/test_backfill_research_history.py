@@ -115,6 +115,8 @@ class BackfillAuditTest(unittest.TestCase):
             "unavailable_count": 1,
             "terminal_count": 3,
             "coverage": 0.75,
+            # 종목 하나는 봉이 없어 표본에서 빠졌다 — coverage(끝난 비율)가 가리는 사실이다.
+            "snapshot_coverage": 0.5,
             "missing_tickers": ["DDD"],
         }])
 

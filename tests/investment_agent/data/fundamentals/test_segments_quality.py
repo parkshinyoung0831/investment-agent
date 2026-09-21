@@ -43,6 +43,12 @@ def _row(
     }
 
 
+
+def _resolve(concept_qname, registry=None):
+    """(열 키, 판정 방식) — 세부 결과에서 테스트가 보는 두 값만 꺼낸다."""
+    detail = concepts.resolve_concept_details(concept_qname, registry)
+    return detail["column_key"], detail["method"]
+
 class DimensionPreservationTest(unittest.TestCase):
     def test_apple_member_names_keep_product_brand_casing(self):
         self.assertEqual(metrics.display_member_name("aapl:IPhoneMember"), "iPhone")
@@ -90,14 +96,14 @@ class DimensionPreservationTest(unittest.TestCase):
 
     def test_company_revenue_extension_tag_is_accepted_but_cost_is_not(self):
         self.assertEqual(
-            concepts.resolve_concept("goog:GoogleCloudRevenue"),
+            _resolve("goog:GoogleCloudRevenue"),
             ("revenue", "candidate"),
         )
         self.assertIsNone(concepts.to_column_key("goog:GoogleCloudCostOfRevenue"))
 
     def test_edgartools_is_the_default_revenue_dictionary(self):
         self.assertEqual(
-            concepts.resolve_concept(
+            _resolve(
                 "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax"
             ),
             ("revenue", "edgartools"),
@@ -114,7 +120,7 @@ class DimensionPreservationTest(unittest.TestCase):
         self.assertEqual(assets["column_key"], "assets")
 
     def test_database_concept_registry_has_priority(self):
-        key, method = concepts.resolve_concept(
+        key, method = _resolve(
             "goog:CloudMetric",
             {"CloudMetric": "revenue"},
         )
@@ -122,7 +128,7 @@ class DimensionPreservationTest(unittest.TestCase):
         self.assertEqual((key, method), ("revenue", "override"))
 
     def test_inactive_database_concept_blocks_heuristic_fallback(self):
-        key, method = concepts.resolve_concept(
+        key, method = _resolve(
             "goog:GoogleCloudRevenue",
             {"GoogleCloudRevenue": None},
         )
@@ -131,7 +137,7 @@ class DimensionPreservationTest(unittest.TestCase):
 
     def test_edgartools_gap_is_an_explicit_override(self):
         self.assertEqual(
-            concepts.resolve_concept(
+            _resolve(
                 "us-gaap:RevenueFromExternalCustomers",
                 {"RevenueFromExternalCustomers": "revenue"},
             ),

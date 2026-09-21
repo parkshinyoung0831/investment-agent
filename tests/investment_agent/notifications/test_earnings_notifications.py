@@ -75,7 +75,7 @@ class ReportTest(unittest.TestCase):
             patch.object(report_run.card, "build", return_value=({"ticker": "AVGO"}, "caption")),
             patch.object(report_run.render, "render", return_value="<html></html>"),
             patch.object(report_run.render, "shoot_png", new=shoot),
-            patch.object(report_run, "_persist_png", return_value="card.png"),
+            patch.object(report_run, "persist_png", return_value="card.png"),
             patch.object(report_run.embeds, "build_segments", return_value=[]),
             patch.object(report_run.routing, "thread_title", return_value="AVGO · Broadcom · 실적 기록"),
             patch.object(report_run, "_forum_tags", return_value=("9",)),

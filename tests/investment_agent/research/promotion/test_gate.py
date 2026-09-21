@@ -7,6 +7,7 @@ from investment_agent.research.promotion.gate import (
     PROMOTION_PATH,
     EvaluationSummary,
     ManualPromotionGate,
+    PromotionCriteria,
     PromotionDecision,
     aggregate_evaluations,
     approval_audit_row,
@@ -118,6 +119,25 @@ class PromotionGateTest(unittest.TestCase):
         self.assertEqual(summary.evaluation_ids, (1, 2, 3, 4))
         self.assertEqual(summary.excess_return, 0.01)
         self.assertEqual(summary.data_integrity_incidents, 0)
+
+    def test_turnover_is_annualized_so_window_length_does_not_decide_the_verdict(self):
+        """5년 백테스트의 누적 turnover 8과 3개월 창의 0.5는 같은 연 1.6이다(RS-6)."""
+        def summary_for(days: int, turnover: float):
+            return aggregate_evaluations([{
+                "evaluation_id": 1, "proposal_id": "p", "evaluation_kind": "backtest",
+                "start_at": "2020-01-01T00:00:00+00:00",
+                "end_at": (datetime(2020, 1, 1, tzinfo=timezone.utc) + timedelta(days=days)).isoformat(),
+                "excess_return": 0.1, "max_drawdown": -0.05, "turnover": turnover, "metrics": {},
+                "research_only": False, "survivorship_check_passed": True,
+                "leakage_check_passed": True, "data_integrity_check_passed": True,
+            }])
+
+        long_window = summary_for(365 * 5, 8.0)
+        short_window = summary_for(91, 0.4)
+        self.assertAlmostEqual(1.6, long_window.turnover, places=2)
+        self.assertAlmostEqual(1.6, short_window.turnover, delta=0.02)
+        self.assertLessEqual(long_window.turnover, PromotionCriteria().max_turnover)
+        self.assertLessEqual(short_window.turnover, PromotionCriteria().max_turnover)
 
     def test_missing_integrity_attestation_fails_closed(self):
         summary = aggregate_evaluations([{

@@ -246,5 +246,51 @@ class DuplicateThreadResolutionTest(unittest.TestCase):
         self.assertTrue(self._resolve([bare_new, bare_old]).endswith("/channels/200/messages"))
 
 
+class ArchivedThreadPaginationTest(unittest.TestCase):
+    """보관 스레드가 100개를 넘으면 뒤 페이지를 이어 받아야 오래된 종목의 스레드를 다시 찾는다."""
+
+    def _pages(self, calls):
+        first = [{"id": str(1000 + index), "name": f"T{index:03d} · 실적 기록",
+                  "thread_metadata": {"archive_timestamp": f"2026-09-{20 - index // 10:02d}T00:00:{index % 10:02d}+00:00"}}
+                 for index in range(100)]
+        second = [{"id": "5000", "name": "OLD · 오래된 종목 · 실적 기록",
+                   "thread_metadata": {"archive_timestamp": "2026-01-01T00:00:00+00:00"}}]
+
+        def get(url, **kwargs):
+            calls.append(url)
+            if "guilds" in url:
+                return _Response(payload={"threads": []})
+            if "before=" in url:
+                return _Response(payload={"threads": second, "has_more": False})
+            return _Response(payload={"threads": first, "has_more": True})
+
+        return get
+
+    def test_the_next_page_is_requested_with_the_last_archive_timestamp(self) -> None:
+        from investment_agent.notifications.channels.discord import fetch_forum_threads
+
+        calls: list[str] = []
+        found = fetch_forum_threads(_config(), "123", get=self._pages(calls))
+        self.assertIn("5000", found.values(), "둘째 페이지의 오래된 스레드를 찾아야 한다")
+        archived = [url for url in calls if "archived" in url]
+        self.assertEqual(2, len(archived))
+        self.assertIn("before=2026-09-11T00%3A00%3A09%2B00%3A00", archived[1])
+
+    def test_a_response_that_never_ends_stops_at_the_page_cap(self) -> None:
+        from investment_agent.notifications.channels import discord as module
+
+        calls: list[str] = []
+
+        def get(url, **kwargs):
+            calls.append(url)
+            threads = [] if "guilds" in url else [
+                {"id": "77", "name": "X · x", "thread_metadata": {"archive_timestamp": "2026-01-01T00:00:00+00:00"}}
+            ]
+            return _Response(payload={"threads": threads, "has_more": True})
+
+        module.fetch_forum_threads(_config(), "123", get=get)
+        self.assertEqual(module._MAX_ARCHIVED_PAGES, len([url for url in calls if "archived" in url]))
+
+
 if __name__ == "__main__":
     unittest.main()

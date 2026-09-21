@@ -15,11 +15,16 @@ from typing import Any, Mapping
 from collections import defaultdict
 
 from investment_agent.forecasting import SIGNAL_HORIZON_DAYS
-from investment_agent.platform.cli.runtime import run_log_payload
+from investment_agent.platform.cli.runtime import exit_code_for_run, run_log_payload
+from investment_agent.platform.clock import (
+    US_DAILY_BAR_FINALIZATION_TIME,
+    US_MARKET_TIMEZONE,
+    completed_us_daily_bar_cutoff,
+)
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.serialization import parse_datetime
 from investment_agent.research.evidence.reader import PitReader
-from investment_agent.research.features.layer import FEATURE_VERSION, HORIZONS, FeatureLayer
+from investment_agent.research.features.layer import FEATURE_VERSION, FeatureLayer
 from investment_agent.research.rl.contracts import RLSafetyError
 from investment_agent.research.datasets.universe import members_over_window
 from investment_agent.research.storage.repository import ResearchStore
@@ -28,16 +33,12 @@ log = get_logger(__name__)
 
 WORKFLOW = "ai_investor_build_labels"
 DEFAULT_BENCHMARK = "SPY"
-# 미국 정규장 마감(16:00 ET)의 보수적 UTC 상한. 이 시각 이전을 label 확정 시점으로
-# 주장하지 않으려고 쓴다. 실제 확정 시각은 적재 시각과 함께 max로 결정한다.
-_SESSION_CLOSE_UTC_HOUR = 21
-
-
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="investment_agent.research.commands.build_labels")
     parser.add_argument(
-        "--horizon", type=int, default=SIGNAL_HORIZON_DAYS, choices=HORIZONS,
-        help="label 구간의 거래일 수. 비중을 정하는 기대수익 기간(SIGNAL_HORIZON_DAYS)이 기본",
+        "--horizon", type=int, default=SIGNAL_HORIZON_DAYS, choices=(SIGNAL_HORIZON_DAYS,),
+        help="label 구간의 거래일 수. 저장된 label에는 구간이 기록되지 않아 다른 값을 섞으면 export가 20일 label로 "
+             "잘못 읽으므로 기대수익 기간(SIGNAL_HORIZON_DAYS) 하나만 받는다",
     )
     parser.add_argument(
         "--lookback-days", type=int, default=90,
@@ -50,15 +51,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def _session_close(trade_date: str) -> datetime:
-    """거래일 종가가 확정되는 보수적 시각을 UTC로 만든다.
+    """거래일 종가가 확정되는 시각을 UTC로 만든다.
 
-    `market.prices_daily.trade_date`는 시각이 없는 DATE라 parse_datetime이 거부한다.
-    여기서 마감 시각을 붙여 label 구간의 종료 시점을 명시적으로 만든다.
+    `market.prices_daily.trade_date`는 시각이 없는 DATE라 parse_datetime이 거부한다. 여기서 시각을 붙여 label 구간의
+    종료 시점을 명시적으로 만든다. feature 쪽이 봉을 "알 수 있다"고 보는 시각(뉴욕 18:00 확정)과 같은 기준이다 —
+    label이 같은 봉을 더 일찍 알려졌다고 주장하지 않는다.
     """
     day = date.fromisoformat(str(trade_date)[:10])
-    return datetime(
-        day.year, day.month, day.day, _SESSION_CLOSE_UTC_HOUR, tzinfo=timezone.utc,
-    )
+    return datetime.combine(day, US_DAILY_BAR_FINALIZATION_TIME, tzinfo=US_MARKET_TIMEZONE).astimezone(timezone.utc)
 
 
 def _label_symbols(selected: PitReader, *, start: date, end: date) -> tuple[str, ...]:
@@ -147,7 +147,9 @@ def build_labels(
             continue
         ticker = str(snapshot_row["ticker"])
         snapshot_as_of = parse_datetime(str(snapshot_row["as_of_at"]))
-        as_of_date = snapshot_as_of.date().isoformat()
+        # 시작 종가는 snapshot 시각에 **이미 확정된** 마지막 봉이다. UTC 달력일로 자르면 장전·장중 snapshot의
+        # 시작 종가가 그날 종가(as_of 이후에야 알 수 있는 값)가 되어 당일 등락이 label에서 빠진다.
+        as_of_date = completed_us_daily_bar_cutoff(snapshot_as_of).isoformat()
         try:
             ticker_prices = bulk_prices.get(ticker, []) if bulk_prices is not None else None
             current = ([row for row in ticker_prices if str(row["trade_date"]) <= as_of_date][-1:]
@@ -262,7 +264,10 @@ def main(argv: list[str] | None = None) -> int:
         benchmark=args.benchmark.upper(),
         dry_run=args.dry_run,
     )
-    return 0 if payload["status"] == "success" else 1
+    return exit_code_for_run(
+        str(payload["status"]), failed=int(payload["detail"]["failed_count"]),
+        total=int(payload["tickers_processed"]), saved=int(payload["rows_upserted"]),
+    )
 
 
 __all__ = ["DEFAULT_BENCHMARK", "WORKFLOW", "build_labels", "main"]

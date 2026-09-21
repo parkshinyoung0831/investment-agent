@@ -1,27 +1,16 @@
 """로컬 SQLite 실행 원장과 canonical 종목 identity 조회 경계."""
 from __future__ import annotations
 
-import hashlib
 import json
-import math
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
-from zoneinfo import ZoneInfo
 
 from investment_agent.execution.orders.intents import ExecutionIntent
 from investment_agent.platform.db.postgres import sb, select_all_paged
 from investment_agent.platform.serialization import parse_datetime
 from investment_agent.execution.approval.ledger import ApprovalRequest
 from investment_agent.execution.contracts import ExecutionSafetyError
-from investment_agent.execution.safety.control_state import DurableControlState
-from investment_agent.execution.orders.ledger import (
-    OrderAttempt,
-    OrderAttemptEvent,
-    OrderAttemptReservation,
-)
-from investment_agent.execution.safety.control import RuntimeRiskState
-from investment_agent.execution.orders.market_state import MarketQuote
-from investment_agent.execution.orders.toss_manual import TossManualHandoff
+from investment_agent.execution.orders.ledger import OrderAttempt, OrderAttemptEvent
 from investment_agent.platform.db.sqlite import runtime_connection
 
 # --- DB 식별자 (SSOT) ---------------------------------------------------
@@ -305,23 +294,3 @@ class ExecutionRepository(
     RuntimeLedgerRepository,
 ):
     """Lifecycle owner를 조합해 기존 실행 원장 계약을 유지하는 호환 façade."""
-
-# ops가 execution 스키마를 직접 조회하지 않도록 계약을 여기서 소유한다.
-
-def latest_paper_account_snapshot() -> dict | None:
-    with runtime_connection(read_only=True) as connection:
-        rows = connection.execute("SELECT payload_json FROM runtime_records WHERE record_type='account_snapshot' ORDER BY updated_at DESC").fetchall()
-    snapshots = [ExecutionRepository._decode(row[0]) for row in rows]
-    return next((row for row in snapshots if row.get("execution_mode") == "paper"), None)
-
-def latest_order() -> dict | None:
-    with runtime_connection(read_only=True) as connection:
-        row = connection.execute("SELECT payload_json FROM orders ORDER BY updated_at DESC LIMIT 1").fetchone()
-    return ExecutionRepository._decode(row[0]) if row else None
-
-def latest_reconciliation_run() -> dict | None:
-    with runtime_connection(read_only=True) as connection:
-        row = connection.execute("SELECT reconciliation_id,started_at,finished_at,status,payload_json FROM reconciliation_runs ORDER BY started_at DESC LIMIT 1").fetchone()
-    if row is None:
-        return None
-    return {"reconciliation_id": row[0], "started_at": row[1], "completed_at": row[2], "status": row[3], **ExecutionRepository._decode(row[4])}

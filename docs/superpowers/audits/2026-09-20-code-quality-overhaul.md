@@ -33,7 +33,7 @@
 | 높음 | **20** | 정확. 실주문 안전·사용자에게 가는 숫자·알림 누락에 닿는 것 |
 | 중간 | 약 38 | 분류 경계에 따라 ±3 |
 | 낮음 | 약 70 | 죽은 코드·중복·잠복 |
-| **수정됨(코드)** | **22 + 6** | 아래 표(운영 두 번째 분석 OPS-1·3·4·11, HC-17, 죽은 코드 정리 ST-1 포함) |
+| **수정됨(코드)** | **22 + 12** | 아래 표(운영 두 번째 분석 OPS-1·3·4·11, HC-17, RP-04·RS-10, IN-1, PF-3, 구조 정리 ST-1·6·7 포함) |
 | 오탐으로 기각 | 1 | RP-01(Altman Z'' 상수) |
 | 사용자 결정 대기 | 그 나머지 대부분 | 2.9에 사유별 정리 |
 
@@ -67,6 +67,11 @@
 | OPS-11 (=OP-01) | NYSE 휴장일에 Good Friday 누락·2027-12-31 오휴장 | 5개 연도 매일 대조 테스트 |
 | HC-17 | 의사 종목 `"CASH"` 선언 4곳·리터럴 30곳을 `portfolio_weights.CASH_SYMBOL` 하나로 | 3개 테스트, 주입 2종으로 실패 확인 |
 | ST-1 | 참조 0건 코드 1개·미사용 import 8개 제거 | 관련 테스트 통과 |
+| RP-04·RS-10 | TTM 4분기 합이 분기 누락을 무시(카드·research 밸류·quality 세 곳) → 공통 규칙 1개 | 테스트 15개, 세 호출부 주입이 각자 자기 테스트에서만 실패 |
+| IN-1 | 뉴스 수집이 전부 파싱 실패·전 종목 빈 응답이어도 `ok` | 테스트 7개(수정 전 3개 실패) |
+| PF-3 | `chunk_values`가 정수 0을 조용히 버림 | 테스트 3개(수정 전 1개 실패) |
+| ST-6 | `decision_features`는 죽은 코드가 아니라 생산자가 복제한 중복 → 한 곳으로 통일 | 계약 테스트 3개 |
+| ST-7 | 미사용 코드 13개 제거(execution·trading·research, 그 코드만 쓰던 테스트 포함) | 전체 테스트 통과 |
 
 수정 후 `python -m unittest discover -s tests -t .`는 본문 6절 참조.
 
@@ -277,6 +282,11 @@ attempt·`client_order_id` 멱등, reserve-before-submit, 결과 불명 무재�
 - **검증**: `test_schedule.py`에 휴일 주 4건, 평상 주 불변, "주간 지표 전부가 요일을 선언" 가드 추가.
 - **사용자 결정 필요**: 기존 유령 행 정리(DML), 그리고 미래 어긋난 일정이 다음 `sync_schedules`에서 올바른 ref로 다시 만들어진 뒤 옛 행이 "예정"으로 남는 문제(DA-11, 이동·취소 이벤트를 cancelled로 표시하는 경로 부재).
 
+#### DA-2·DA-10 데이터 정리 — 스크립트 준비됨, 실행은 사용자
+- **DA-10 정정**: 서브에이전트는 모기지(PMMS)의 관측 요일을 목요일이라 했으나, 운영 관측(1,611행)에서 **휴일 주에는 수요일(발표일)로 찍힌 것이 48건**이었다. 모기지는 발표일이 곧 관측일이라 요일 선언을 **제거**했다(맞춘 뒤 청구=토·순유동성=수·EIA=금은 관측 전건과 일치).
+- **정리 대상(dry-run 실측)**: 단위 오염 `own_model` 143행(`econ_baseline_*` 출처이고 measure 변환이 `level`이 아닌 것; 백필 출처 `alfred_baseline_*`는 정상 단위라 제외), 유령 발표 이벤트 67건(청구 24+24, 순유동성 19). 이벤트 삭제는 FK CASCADE로 일정 버전·예상 스냅샷이 함께 지워진다.
+- `scripts/cleanup_macro_release_artifacts.py`: 기본 dry-run, `--apply --confirm <project ref>`에서만 삭제, 백업은 만들지 않음(사용자 결정 — 파생 행이라 재생성), 한 트랜잭션. 삭제분은 고친 코드가 다음 동기화에서 올바른 ref·단위로 다시 만든다(과거 발표의 발표 직전 예상은 PIT상 복원 불가 — 이미 쓰레기 값이었다).
+
 #### 이 절의 나머지 (미수정 — 2.9 참조)
 DI-1(Pershing Square 13F 제출자 교체 → 최신 분기 영구 정체, 이전 감사 C-6의 원인 확정, 알림·채널 선언 동반), DI-2, DA-4·5·6·7·8·11, DM-1·2, DU-1·2.
 
@@ -375,6 +385,27 @@ DI-1(Pershing Square 13F 제출자 교체 → 최신 분기 영구 정체, 이�
 - **ST-4 테스트 격리(관찰)**: 가드 주입 테스트 일부가 `src/investment_agent/…/tmpXXXX/probe.py`를 만들었다 지운다. 다른 세션이 같은 트리에서 테스트를 동시에 돌리면 `test_view_reachability`처럼 src 전체를 순회하는 테스트가 그 순간의 임시 파일을 만나 `FileNotFoundError`로 죽는다(이번 전체 실행의 유일한 오류였고, 단독 재실행은 통과). 결함이 아니라 **한 트리에서 병렬 실행할 때만** 나는 경합이다.
 - **ST-5 규칙 14 이름**: `CASH_SYMBOL`의 `symbol`은 규칙 14(종목 컬럼은 `ticker`)의 이름이지만 execution 경계는 canonical broker/API 예외에 해당하고, 상수를 `ticker`로 바꾸는 것은 이번 범위에서 뺐다.
 
+### 2.8-B 코드 전용 후속 — 이번에 처리한 것과 못 한 것
+
+재적재·DB 삭제는 사용자가 직접 하므로(백업 없이 backfill로 다시 가져온다고 하셨다) 그 트리거는 만들지 않았다 — `SEMANTIC_POLICY_VERSION`도 그대로다.
+
+**수정됨**
+- **RP-04·RS-10 TTM 연속성** — 카드 TTM(`reporting/notifications/earnings_report.py`)·research valuation·research quality가 최근 4행을 자르기만 해서, 중간 분기가 빠지면 5분기에 걸친 합이 TTM으로 나갔다. 공통 규칙 `data/fundamentals/domain/periods.py:are_consecutive_quarters` 하나로 통일했고 허용 간격 `QUARTER_LENGTH_DAYS=(84,98)`은 52/53주 결산사 분기(12~14주)이다. 운영 데이터 인접 분기말 15,800쌍 중 99.6%가 이 안이고 나머지는 분기 누락(182일 이상)·회계연도 변경이다. research는 연속하지 않으면 사유 `ttm_quarters_not_consecutive`로 결측을 남긴다. 다른 세션이 만든 테스트 `test_ebitda_needs_depreciation`의 픽스처가 `period_end`가 없어 실패해, 로직을 느슨하게 하지 않고 픽스처에 실제 리더가 보장하는 분기말을 넣었다.
+  **research feature 값이 바뀌는 범위**는 분기 간격이 어긋난 행(전체의 약 0.2~0.5%)뿐이다. 이미 저장된 feature는 그대로이므로 재적재 시점에 함께 반영된다(FEATURE_VERSION 승격 여부는 RS-1·9와 묶어 결정).
+- **IN-1 뉴스 수집 상태** — 받은 기사가 전부 파싱 실패면 `error`(`parse_failed`, exit 1), 종목이 있는데 전부 빈 응답이면 `partial`(`no_articles`)로 기록하고, 실행 기록 detail에 `unparsed_count`·`error_kind`를 남긴다. 종목이 없는 실행은 그대로 `ok`.
+- **PF-3 `chunk_values`** — `str(value or "")`가 정수 0을 빈 값으로 보고 버렸다. `None`과 공백 문자열만 버리도록 고쳤다(현재 영향 없는 잠복 결함).
+- **ST-6 판단 feature 축 중복** — `research/rl/decision_dataset.py:decision_features`는 죽은 코드가 아니었다. 생산자 `build_decision_experiences.py`가 `ACTIONS`와 feature 조립을 복제해 두고 이 함수는 부르지 않았다. 생산자가 이 정의를 쓰게 통일했고, 한쪽만 고치면 학습 입력이 "decision feature axes mismatch"로 통째로 거부되는 위험을 계약 테스트(`test_decision_feature_axes_single_owner.py`)로 고정했다.
+- **ST-7 미사용 코드 13개 제거**(사용자 승인) — `execution/db.py`의 `latest_paper_account_snapshot`·`latest_order`·`latest_reconciliation_run`, `execution/brokers/toss/client.py:fetch_exchange_rate`, `orders.py:parse_personal_order_event`(와 그 테스트 클래스), `trading/decision/llm/runtime.py`의 `_no_external_data`·`apply_downstream_api_key`·`_llm_max_retries`·`_stock`·`_indicator`·`_DOWNSTREAM_API_KEY_ENV`와 분할 리팩터링 잔재 import 9개, `market_source.py`의 `fetch_stock_data`·`fetch_indicator_data`, 그리고 그 코드만 검증하던 `test_provider_key_rotation.py`와 `docs/ENV.md`의 `AI_INVESTOR_LLM_MAX_RETRIES` 행.
+  지우기 전에 확인한 것: `apply_downstream_api_key`는 "Azure 키로 Gemini를 불러 400" 사고를 막던 함수라 **수정이 끊긴 것일 수 있어** 대체 경로를 봤다 — `tradingagents` 라이브러리도 `OPENAI_API_KEY`도 더는 어디서도 쓰이지 않고, 현재 경로(`model_pool.apply_candidate`)가 후보별로 범위를 한정한 환경변수를 덮고 복원하므로 그 사고는 구조적으로 재발할 수 없다. 테스트가 지키던 동작(활성 bundle만 읽고 다른 종목·미래 날짜를 거부)은 삭제하지 않고 같은 규칙을 가진 살아 있는 `fetch_verified_market_snapshot`으로 옮겼다.
+  `runtime.fetch_external_news`·`validate_news_vendor_config`는 `runtime.` 속성으로 실제 쓰이고 테스트가 그 경로를 patch하므로 남겼다(pyflakes 경고는 오탐이며 noqa로 끄지 않았다).
+
+**하지 않은 것과 이유**
+- **RS-4**(`build_features`가 밸류에이션 조회 실패를 success로 삼킴): 상태를 `partial`로 바꾸면 `main()`이 exit 1을 돌려 feature_store 잡 전체가 서는 RS-12와 결합한다. 파이프라인 게이팅 결정이 먼저다.
+- **DU-1**(`refresh_korean_names(retry_after_days)` 무동작): 시도 시각을 저장하는 컬럼이 없어 코드만으로는 못 고친다(DDL).
+- **HC-13**(대시보드 매니저 이름 매칭): 한글 needle "클라만"이 카탈로그 "클라먼"과 달라 죽어 있지만 같은 `identity` 문자열의 영문 needle이 잡아 **동작에는 문제가 없다** — 결함이 아니라 중복이라 뺐다.
+- **남은 미사용 후보**: `execution/db.py:_attempt_event`, `trading/evidence/report.py`의 `dossier_sections`·`valuation_contract_rows`(다른 세션이 그 파일을 편집 중이라 손대지 않았다). `data/market/persistence.py:clear_id_cache`·`execution/brokers/toss/auth.py:_reset_shared_managers_for_tests`는 테스트가 setUp에서 쓰는 **테스트 훅**이라 남겼다. ST-3의 execution 미사용 import 약 25개도 남아 있다.
+- 이번 묶음의 삭제 도우미가 줄바꿈이 섞인 파일(`orders.py`)에서 **한 번 아무것도 지우지 못하고 같은 내용을 다시 썼다**(diff 없음, 피해 없음). 줄 수 기준을 AST와 같게 고쳐 재적용했다.
+
 ### 2.9 미수정 항목 — 사유별 정리
 
 | 사유 | 항목 |
@@ -386,6 +417,29 @@ DI-1(Pershing Square 13F 제출자 교체 → 최신 분기 영구 정체, 이�
 | **알림 재발송·발송 정책** | NT-04 스레드 생성 정책, NT-08 sending 고아, NT-02·03 이미 나간 카드 |
 | **제품·설계 결정** | RS-5 승격 문턱, RS-7, IN-6 정본 경로, WF-01·04, DI-1(거장 CIK 교체). TE-5·6은 9절에서 조회 정책·stale 검증을 정해 수정 |
 | **후속(코드만, 위험 낮음)** | RP-02·04·05, NT-01(브라우저 재사용), NT-05·06·07, DB-04·05, HC-2·6·7~9·11~16, PB-1·3~5·8, DA-4·5·7·8·11, DM-1·2, DU-1·2, DI-2·3, SC-02·04·05, OP-07~11, WF-06~09, IN-1~6, RS-3·4·6~8·10·13·16 |
+
+### 2.10 3차 진행 — research 값 오류 · 미사용 코드 정리
+
+사용자 지시: 백업 없이(파생 행은 재생성), 재적재는 아직 하지 않고 코드부터 고친다, 미사용 코드는 정리하면서 진행한다.
+
+#### RS-9 복수 주식 종류 기업의 시가총액이 한 종류 주식수만 써서 절반  [확정] [높음] [정확성] — **수정됨(코드) · 재적재는 대기**
+- 운영 `share_class_snapshots` 최신 공시: GOOGL은 A 58.68억 + C 55.27억 + B(비상장) 8.35억 = 122.3억주인데, 조회가 `mapped_security_id`로 **한 종류**만 가져와 A만 셌다(시총 2조·PER 8, 실제 약 4.1조·PER 17). META B(비상장)·BRK A·FOX·NWS도 같은 구조.
+- **수정**: `data/fundamentals/.../share_class_snapshots.py`의 두 조회 경로(단건·배치)가 같은 공시의 **전 종류 합계**를 `company_shares_outstanding`으로 행에 붙이고(`company_shares_by_filing`, 종류당 1행만 셈, 비상장 포함), `research/valuation/inputs.py::shares_scalar`가 그것을 우선 쓴다(없으면 종전 값 — 단일 종류·옛 표본 호환). `SOURCE_VERSION`을 `pit-valuation-v2`로 올렸다.
+- **한계**: 종류별 경제적 가치가 같다고 보는 근사다. **BRK는 여전히 틀린다**(A는 B의 1,500배) — 종류별 가격이 있어야 하며 이번에는 다루지 않았다. 종전보다 나빠지지는 않는다.
+- **검증**: `tests/investment_agent/research/valuation/test_company_shares.py` 5개, 우선순위 줄을 끄는 주입 시 실패 확인. research 전체·fundamentals 전체 통과.
+
+#### RS-1 13F guru feature·후보 신호가 영구 결측  [확정] [높음] [정확성] — **수정됨(코드) · 재적재는 대기**
+- 소비자(`evidence/reader.py`)가 `row["ticker"]`와 `mapping_status in {mapped, historical}`를 요구하는데 원천 `institutional.positions`에는 CUSIP만 있고 그 열이 없어, guru 9개 feature가 live·replay 모두 100% 결측이었다. 테스트 픽스처는 그 열을 직접 넣어 가렸다.
+- **수정**: `institutional/persistence.py::effective_portfolio_state`가 식별자 캐시(`verified`만)와 `tickers_by_security_id`로 `ticker`·`mapping_status`를 붙이는 순수 함수 `attach_tickers`를 거친다. 신원 확인 안 된 연결은 ticker 없이 상태만 남긴다. 운영 식별자 798개 중 605개가 verified 연결(75.8%)이다 — 나머지는 여전히 결측이며 이는 매핑 커버리지 문제(OpenFIGI 단계)다.
+- **검증**: `test_position_tickers.py` 4개(reader 계약 만족 포함), institutional 전체 통과.
+- **`FEATURE_VERSION`을 v5→v6으로 올렸다**(RS-9·RS-1이 feature 값을 바꾸므로). 재적재 전까지 v6 행은 새로 쌓이기만 하고, v5 champion 모델과 섞이지 않는다.
+
+#### 미사용 코드 정리 (ST-2 일부) — 삭제한 것
+- **함수 삭제**: `data/market/domain/adjustments.py`(파일째, 호출처 0·문서와 사실 불일치) · `macro_refresh._build_row`·`_rows_for_series` · `parse_shares.aggregate_company_share_history` · `edgartools_13f.edgartools_version` · `notifications/renderers/reports.py`(파일째) · `trading/evidence/report.py::coverage_rows`(하드코딩 수치 표) · `trading/decision/universe.py::rotate_after_latest_cases` · `segment_concepts.resolve_concept`(테스트는 `resolve_concept_details` 기반 헬퍼로 옮겨 **행동 검증은 유지**).
+- 위 함수만 검증하던 테스트는 함께 지웠다(테스트를 통과시키려고 지운 것이 아니라 지운 코드의 테스트라서). 시장 `adjustments` 문서 문구도 실제 구조에 맞게 고쳤다.
+- **되돌린 것**: `research/rl/decision_dataset.py::decision_features`는 src에서는 안 쓰이지만 테스트가 픽스처 생성기로 쓰고 있어 유지했다.
+- **미사용 import 30개 제거**: `execution/orders/repository.py`(16)·`execution/db.py`(10)·`safety/repository.py`(2)·`trading/repository.py`(1)·`approval/repository.py`(1). 다른 모듈이 그 이름을 이 모듈에서 import하는지(재수출) 전수 확인해 0건임을 보고 지웠고, 실주문 경로라 execution 테스트 216개로 확인했다. `trading/decision/llm/runtime.py`의 9개는 다른 세션이 수정 중이라 건드리지 않았다.
+- **남긴 것**: `execution/`·`brokers/toss/`·`llm/runtime.py`의 미사용 함수(다른 세션 소관), `market/persistence.clear_id_cache`(테스트 정리용), `trading/evidence/report.py`의 `dossier_sections`·`valuation_contract_rows`(문서 계약 검증용이라 판단 필요).
 
 ## 4. 하드코딩 목록과 이전 목적지
 
@@ -418,7 +472,7 @@ DI-1(Pershing Square 13F 제출자 교체 → 최신 분기 영구 정체, 이�
 |---|---|---|---|
 | PB-2 | DuckDB 연결마다 DDL 10문장 | 운영 8.4MB 사본 `_connect` 242ms, 백필 480회 ≈ 2분 / **수정 후 빈 DB 40.7→15.4ms(2.6배)**, 운영 크기 재측정은 안 함 | 수정됨 |
 | PB-1 | `build_valuations`(live_shadow)가 종목마다 8~10회 왕복 — 배치 사전 적재가 historical에만 연결됨 | 503종목 재무+주식수 약 79초, 배치 약 21초, 분할까지 약 58~75초 절감 견적 | 후속(결과 동일성 테스트 필요) |
-| RP-02 | 발송 대상 1건이어도 전 관심종목 재무·가격을 반복 조회 | `_financial_rows` 2.8초×7회, 가격 이력 9.4초 → 후보 1건에도 30초+ 낭비 | 후속(카드 값 동일성 테스트로 검증) |
+| RP-02 | 발송 대상 1건이어도 전 관심종목 재무·가격을 반복 조회 | `_financial_rows` 2.8초×7회, 가격 이력 9.4초 → 후보 1건에도 30초+ 낭비 | **부분 수정됨**(3차) — 보강 조회(이상·건전성·밸류·이름·업종)를 관심종목 전체가 아니라 **발송 대상 종목**으로 좁혔다(각 로더가 종목별 독립 계산이라 값 동일). 계약 테스트 `EnrichmentIsNarrowedToTargetsTest`, 좁힘을 되돌리는 주입 시 실패 확인. 전·후 시간은 운영 조회로 재지 않았다(견적 30초+ 절감). 카드마다 `_financial_rows`를 다시 읽는 N+1(카드 렌더 시점)은 원장이 렌더 대상을 정한 뒤라 지연 조회가 의도이므로 미수정 |
 | PB-3 | 사후 평가가 케이스마다 SPY 경로·ID 조회 반복 | limit 200이면 약 800왕복(약 67초) | 후속 |
 | PB-4/HC-3 | 관심종목 동기화의 무변경 UPDATE 50건 | — | **수정됨** |
 | PB-5 | 삭제·갱신 행 단위 5곳 | 빈도 낮음 | 후속 |
@@ -458,6 +512,7 @@ DI-1(Pershing Square 13F 제출자 교체 → 최신 분기 영구 정체, 이�
 
 ### 8-A 이전 세션 기록
 
+- 3차 진행 뒤 `python -m unittest discover -s tests -t .` → **3,237개 통과, skipped 1, 실패 0**(362초 — 다른 세션이 동시에 돌아 느렸다). 아래 줄은 2차 시점 기록이다.
 - `python -m unittest discover -s tests -t .` → **3,220개 통과, skipped 1, 실패 0**(105초). 수정 전 기준선은 3,146개 통과.
 - 중간에 **내가 만든 실패 3건**이 있었고 모두 그 자리에서 고쳤다: ① `metrics._total_debt` 사본을 지웠는데 옛 테스트가 그 이름을 불렀다(공개 `total_debt`로 갱신), ② 새 `platform/env.py`가 platform 허용 모듈 목록에 없었다(선언 추가), ③ `notifications/playwright.py`의 `hashlib`이 알림 import 허용 목록에 없었다(순수 표준 라이브러리라 추가). 이미 있던 실패는 없었다.
 - 새 가드·계약 테스트는 위반을 하나씩 주입해 실제로 실패하는 것을 확인했다(DB-01·NT-02·RP-03·DB-02·HC-3·HC-5·HC-10). DA-1(창 선택)·DA-2(단위)·DA-10(요일)·HC-1·PB-2는 순수 계약 테스트이며 옛 방식으로 되돌리는 주입은 하지 않았다.

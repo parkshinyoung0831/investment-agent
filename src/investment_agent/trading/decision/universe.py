@@ -31,44 +31,6 @@ def normalize_ticker(value: object) -> str:
     return str(value or "").strip().upper().replace(".", "-")
 
 
-def rotate_after_latest_cases(
-    tickers: Sequence[str],
-    recent_cases: Sequence[dict],
-    *,
-    limit: int,
-) -> list[str]:
-    """가장 최근 실행의 마지막 종목 다음부터 순환한다."""
-    ordered = sorted({normalize_ticker(ticker) for ticker in tickers if normalize_ticker(ticker)})
-    if not ordered:
-        return []
-    start = 0
-    if recent_cases:
-        latest_at = str(recent_cases[0].get("as_of_at") or "")
-        latest_tickers = sorted({
-            normalize_ticker(row.get("ticker"))
-            for row in recent_cases
-            if str(row.get("as_of_at") or "") == latest_at
-        })
-        anchors = [ticker for ticker in latest_tickers if ticker in ordered]
-        if anchors:
-            indices = sorted(ordered.index(ticker) for ticker in anchors)
-            if len(indices) == 1:
-                anchor_index = indices[0]
-            else:
-                # ZZZ→AAA처럼 배열 끝을 넘긴 실행도 가장 큰 미선택 gap의 앞을
-                # 실제 batch 끝으로 본다. 단순 max ticker는 AAA 쪽을 다시 고른다.
-                gaps = [
-                    (
-                        (indices[(position + 1) % len(indices)] - current) % len(ordered),
-                        current,
-                    )
-                    for position, current in enumerate(indices)
-                ]
-                anchor_index = max(gaps, key=lambda item: (item[0], item[1]))[1]
-            start = (anchor_index + 1) % len(ordered)
-    return (ordered[start:] + ordered[:start])[:limit]
-
-
 def select_tracked_tickers(
     repository: UniverseRepository,
     requested: Sequence[str] | None,

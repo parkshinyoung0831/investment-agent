@@ -12,7 +12,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
-from investment_agent.platform.cli.runtime import run_log_payload
+from investment_agent.platform.cli.runtime import exit_code_for_run, run_log_payload
 from investment_agent.platform.logging import get_logger
 from investment_agent.research.evidence.context import ContextBuilder
 from investment_agent.platform.serialization import parse_datetime
@@ -159,9 +159,17 @@ def build_features(
         saved = len(rows)
     write_sec = time.monotonic() - phase
 
+    with_valuation = sum(1 for ticker in tickers if ticker in valuations)
+    if tickers and built == 0:
+        status = "failed"  # 종목이 있는데 저장할 feature가 하나도 없다 — 성공으로 끝나면 안 된다
+    elif failures or (tickers and with_valuation == 0):
+        # 밸류에이션이 전 종목 결측이어도 feature 적재는 막지 않지만 success라고 말하지 않는다
+        status = "partial"
+    else:
+        status = "success"
     payload = run_log_payload(
         workflow=WORKFLOW,
-        status="success" if not failures else "partial",
+        status=status,
         rows_upserted=saved,
         tickers_processed=len(tickers),
         duration_sec=round(time.monotonic() - started, 3),
@@ -172,7 +180,7 @@ def build_features(
             "as_of_at": as_of_at.isoformat(),
             "source_kind": source_kind,
             "built": built,
-            "with_valuation": sum(1 for ticker in tickers if ticker in valuations),
+            "with_valuation": with_valuation,
             "unavailable": unavailable,
             "unavailable_tickers": unavailable_tickers,
             "failed": failures[:20],
@@ -208,7 +216,10 @@ def main(argv: list[str] | None = None) -> int:
         dry_run=args.dry_run,
         repository=repository,
     )
-    return 0 if payload["status"] == "success" else 1
+    return exit_code_for_run(
+        str(payload["status"]), failed=int(payload["detail"]["failed_count"]),
+        total=len(tickers), saved=int(payload["rows_upserted"]),
+    )
 
 
 __all__ = ["WORKFLOW", "build_features", "main"]

@@ -9,7 +9,6 @@ from investment_agent.trading.evidence.builder import DossierBuilder
 from investment_agent.trading.evidence.contracts import SECTION_IDS, DossierSection
 from investment_agent.trading.evidence.renderer import render_markdown, render_prompt_payload
 from investment_agent.trading.evidence.report import (
-    coverage_rows,
     dossier_sections,
     valuation_contract_rows,
 )
@@ -189,13 +188,6 @@ class RendererTest(unittest.TestCase):
 
 
 class DossierReportTest(unittest.TestCase):
-    def test_coverage_report_keeps_the_pit_limitations_visible(self) -> None:
-        rows = {str(row["영역"]): row for row in coverage_rows()}
-
-        self.assertEqual(rows["가격"]["7년 가능"], "482")
-        self.assertIn("historical 불가", str(rows["가격"]["PIT 판정"]))
-        self.assertEqual(rows["컨센서스"]["7년 가능"], "0")
-
     def test_report_includes_the_complete_dossier_shape(self) -> None:
         ids = {section.section_id for section in dossier_sections()}
 

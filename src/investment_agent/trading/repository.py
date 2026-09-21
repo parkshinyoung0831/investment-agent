@@ -32,7 +32,6 @@ from contextlib import nullcontext
 from investment_agent.platform.clock import utc_now
 from investment_agent.platform.db.postgres import Database
 from investment_agent.platform.logging import get_logger
-from investment_agent.trading.run_context import RunContext
 
 log = get_logger(__name__)
 

@@ -4,7 +4,13 @@ from __future__ import annotations
 from typing import Any
 
 from investment_agent.notifications.earnings_flash.quickchart import flash_performance_chart_url
-from investment_agent.notifications.earnings_flash.surprise import compute_surprise, judge
+from investment_agent.notifications.earnings_flash.surprise import (
+    compute_surprise,
+    eps_basis_note,
+    eps_decides_verdict,
+    eps_surprise,
+    judge,
+)
 from investment_agent.reporting.services.earnings.guidance import format_guidance_headline
 
 # 색상 토큰 (DESIGN-system.md)
@@ -45,14 +51,14 @@ def build_flash_embed(item: dict[str, Any]) -> dict[str, Any]:
 
     eps_act = flash.get("eps_actual")
     eps_est = flash.get("eps_estimate")
-    surp_eps = flash.get("surprise_eps_pct") or compute_surprise(eps_act, eps_est)
+    surp_eps = flash.get("surprise_eps_pct") or eps_surprise(flash)
 
     rev_act = flash.get("revenue_actual")
     rev_est = flash.get("revenue_estimate")
     surp_rev = flash.get("surprise_revenue_pct") or compute_surprise(rev_act, rev_est)
 
     # 서프라이즈 판정
-    verdict = judge([surp_eps, surp_rev])
+    verdict = judge([surp_eps if eps_decides_verdict(flash) else None, surp_rev])
     if verdict == "beat":
         color = COLOR_BEAT
         badge_text = "🟢 어닝 서프라이즈 (예상 상회)"
@@ -72,9 +78,11 @@ def build_flash_embed(item: dict[str, Any]) -> dict[str, Any]:
         act_str = format_eps(eps_act)
         est_str = format_eps(eps_est)
         surp_str = f" (`{surp_eps:+.1f}%`)" if surp_eps is not None else ""
+        basis_note = eps_basis_note(flash)
+        note_str = f"\n_{basis_note}_" if basis_note else ""
         fields.append({
             "name": "주당순이익 (EPS)",
-            "value": f"**실제 {act_str}** vs 예상 {est_str}{surp_str}",
+            "value": f"**실제 {act_str}** vs 예상 {est_str}{surp_str}{note_str}",
             "inline": True,
         })
 

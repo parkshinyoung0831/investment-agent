@@ -12,6 +12,7 @@ from typing import Any
 
 from investment_agent.dashboard.calculations import inspect_harness_state
 from investment_agent.platform.cache import cache_data
+from investment_agent.platform.env import env_float
 from investment_agent.platform.storage_paths import harness_state_dir, repository_root
 from investment_agent.reporting.models import DataResult, public_exception_message
 
@@ -22,11 +23,7 @@ LOCAL_SOURCE_HARNESS = "로컬 읽기 · investment harness state.json"
 
 
 def _harness_stale_seconds() -> float:
-    try:
-        stale_after = float(os.environ.get("DASHBOARD_HARNESS_STALE_SECONDS", "180"))
-    except ValueError:
-        stale_after = 180.0
-    return min(max(stale_after, 30.0), 86_400.0)
+    return env_float("DASHBOARD_HARNESS_STALE_SECONDS", 180.0, minimum=30.0, maximum=86_400.0)
 
 
 def _pid_exists_readonly(process_id: int) -> bool:

@@ -59,10 +59,6 @@ class EdgartoolsWrapperTest(unittest.TestCase):
 class WrapperUnavailableTest(unittest.TestCase):
     """edgartools 미설치/지연 import 경로. 설치 여부와 무관하게 동작해야 한다."""
 
-    def test_version_helper_returns_str_or_none(self):
-        value = edgartools_13f.edgartools_version()
-        self.assertTrue(value is None or isinstance(value, str))
-
     def test_import_failure_raises_edgartools_unavailable(self):
         # edgar.thirteenf import가 실패하면 EdgartoolsUnavailable로 변환되어
         # ETL이 shadow 대조만 건너뛸 수 있어야 한다(설치돼 있어도 강제 실패시킴).

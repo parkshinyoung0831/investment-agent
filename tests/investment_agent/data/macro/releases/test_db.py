@@ -64,9 +64,55 @@ class WriterTest(unittest.TestCase):
         database = Mock()
         database.upsert.return_value = 4
         with (patch.object(db, "_series_key", return_value=11),
+              patch.object(db, "_select", return_value=[]),
               patch.object(db, "_db", return_value=database)):
             self.assertEqual(db.append_forecasts(rows), 4)
         self.assertEqual([row["value"] for row in database.upsert.call_args.kwargs["rows"]], [.2, .3, .2, None])
+
+    def _forecast(self, value, hour="09"):
+        return {"series_id": "US_CPI", "ref_period": "2026-07-01", "measure_id": "US_CPI.MOM",
+                "forecast_kind": "own_model", "source": "econ_baseline_v1_drift", "time_precision": "exact",
+                "value": value, "effective_at": f"2026-09-20T{hour}:00:00Z"}
+
+    def _stored(self, value):
+        return {"series_key": 11, "ref_period": "2026-07-01", "measure_id": "US_CPI.MOM", "forecast_kind": "own_model",
+                "source_code": "econ_baseline_v1_drift", "value": value,
+                "effective_at": "2026-09-19T09:00:00+00:00", "collected_at": "2026-09-19T09:00:00+00:00"}
+
+    def test_an_unchanged_forecast_is_not_appended_again(self) -> None:
+        """매일 같은 예상을 다시 쌓으면 append-only 표가 날마다 부풀고 읽는 쪽이 매번 더 읽는다."""
+        database = Mock()
+        database.upsert.return_value = 0
+        with (patch.object(db, "_series_key", return_value=11),
+              patch.object(db, "_select", return_value=[self._stored(0.31)]),
+              patch.object(db, "_db", return_value=database)):
+            self.assertEqual(0, db.append_forecasts([self._forecast(0.31)]))
+        database.upsert.assert_not_called()
+
+    def test_a_changed_or_withdrawn_forecast_is_appended(self) -> None:
+        database = Mock()
+        database.upsert.return_value = 2
+        with (patch.object(db, "_series_key", return_value=11),
+              patch.object(db, "_select", return_value=[self._stored(0.31)]),
+              patch.object(db, "_db", return_value=database)):
+            db.append_forecasts([self._forecast(0.32, "09"), self._forecast(None, "10")])
+        self.assertEqual([0.32, None], [row["value"] for row in database.upsert.call_args.kwargs["rows"]])
+
+    def test_an_identical_schedule_is_not_versioned_again_but_a_move_is(self) -> None:
+        stored = {"scheduled_at": "2026-10-14T12:30:00+00:00", "schedule_precision": "exact", "source_code": "bls", "is_cancelled": False}
+        release = {"series_id": "US_CPI", "ref_period": "2026-09-01", "scheduled_at": "2026-10-14T12:30:00Z",
+                   "schedule_confidence": "exact", "schedule_source": "bls"}
+        database = Mock()
+        with (patch.object(db, "_series_key", return_value=11),
+              patch.object(db, "release_index", return_value={("US_CPI", "2026-09-01"): stored}),
+              patch.object(db, "_db", return_value=database)):
+            db.upsert_releases([release])
+            tables = [call.kwargs["table"] for call in database.upsert.call_args_list]
+            self.assertNotIn(db.T_SCHEDULE_VERSIONS, tables, "같은 일정은 새 버전이 아니다")
+            database.upsert.reset_mock()
+            db.upsert_releases([{**release, "scheduled_at": "2026-10-15T12:30:00Z"}])
+            tables = [call.kwargs["table"] for call in database.upsert.call_args_list]
+            self.assertIn(db.T_SCHEDULE_VERSIONS, tables, "일정이 바뀌면 새 버전이다")
 
     def test_mismatched_forecast_measure_fails_before_rpc(self) -> None:
         row = {"series_id": "US_CPI", "ref_period": "2026-07-01", "measure_id": "KR_CPI.MOM",
@@ -100,6 +146,46 @@ class WriterTest(unittest.TestCase):
         measure = {"measure_id": "US_FOMC_FED_FUNDS.LEVEL", "transform": "level"}
         with patch.object(db, "_select", return_value=rows), patch.object(db, "_series_key", return_value=1):
             self.assertEqual(db.measure_actual_history("US_FOMC_FED_FUNDS", measure, "monthly"), [3.5, 4.0])
+
+
+class SummaryReadScopeTest(unittest.TestCase):
+    """발표 요약은 관련 지표의 일정·관측·예상만 읽는다 — 호출마다 표 전체(관측 6만 행)를 읽지 않는다(DA-5)."""
+
+    def test_reads_are_limited_to_the_series_of_the_requested_events(self) -> None:
+        scoped: list[tuple[str, tuple]] = []
+
+        class Recorder:
+            def __init__(self, table):
+                self.table = table
+
+            def select(self, *_a):
+                return self
+
+            def in_(self, column, values):
+                scoped.append((self.table, (column, tuple(values))))
+                return self
+
+        def select(factory, *, order_by):
+            factory()
+            return []
+
+        with (patch.object(db, "_series_rows", return_value=[]),
+              patch.object(db, "primary_measures", return_value={}),
+              patch.object(db, "_series_maps", return_value=({11: "US_CPI", 12: "US_NFP"}, {"US_CPI": 11, "US_NFP": 12})),
+              patch.object(db, "_table", side_effect=Recorder),
+              patch.object(db, "_select", side_effect=select)):
+            db._summary_rows(as_of=datetime(2026, 9, 21, tzinfo=timezone.utc), event_keys={("US_CPI", "2026-07-01")})
+        tables = {table for table, _ in scoped}
+        self.assertEqual({db.T_SCHEDULE_VERSIONS, db.T_OBSERVATIONS, db.T_FORECAST_VERSIONS}, tables)
+        self.assertTrue(all(scope == ("series_key", (11,)) for _table_name, scope in scoped))
+
+    def test_unknown_series_reads_nothing(self) -> None:
+        with (patch.object(db, "_series_rows", return_value=[]),
+              patch.object(db, "primary_measures", return_value={}),
+              patch.object(db, "_series_maps", return_value=({}, {})),
+              patch.object(db, "_select", side_effect=AssertionError("must not read")) as select):
+            self.assertEqual([], db._summary_rows(as_of=datetime(2026, 9, 21, tzinfo=timezone.utc), event_keys={("NOPE", "2026-07-01")}))
+        select.assert_not_called()
 
 
 class IngestTest(unittest.TestCase):

@@ -133,14 +133,6 @@ def resolve_concept_details(
     return {**empty, "standard_tag": standard}
 
 
-def resolve_concept(
-    concept_qname: str | None,
-    concept_registry: dict[str, Any] | None = None,
-) -> tuple[str | None, str]:
-    detail = resolve_concept_details(concept_qname, concept_registry)
-    return detail["column_key"], detail["method"]
-
-
 def to_column_key(
     concept_qname: str | None,
     concept_registry: dict[str, Any] | None = None,

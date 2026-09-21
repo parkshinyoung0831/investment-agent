@@ -10,6 +10,7 @@ from decimal import Decimal
 from typing import Any, Mapping, Sequence
 
 from investment_agent.data.fundamentals.domain.filing import filing_available_at as _filing_available_at
+from investment_agent.data.fundamentals.domain.periods import are_consecutive_quarters
 from investment_agent.data.market.domain.calendar import bar_available_at
 from investment_agent.platform.serialization import parse_datetime
 from investment_agent.research.valuation.engine import PITScalar, PITValuationInputs
@@ -92,6 +93,8 @@ def ttm_scalars(
     if len(quarters) < TTM_QUARTERS:
         reason = f"ttm_incomplete_{len(quarters)}_of_{TTM_QUARTERS}_quarters"
         return {name: _missing(reason) for name in names}
+    if not are_consecutive_quarters(row["period_end"] for row in quarters):
+        return {name: _missing("ttm_quarters_not_consecutive") for name in names}
 
     available_at = max(filing_available_at(row["filed_at"]) for row in quarters)
     observed_at = max(
@@ -208,12 +211,18 @@ def shares_scalar(
 ) -> PITScalar:
     """공개가 끝난 발행주식수 snapshot을 고르고 가격과 같은 분할 기준으로 맞춘다.
 
+    값은 **회사 전체(모든 주식 종류) 주식수**다. 가치가 다른 종류(BRK A/B)는 근사다.
+
     `accepted_at`이 있으면 그 시각을 쓰고, 없으면 공시일 date-only 정책을 따른다.
     coverage가 475/503이라 결측이 정상적으로 발생한다 — 0으로 채우지 않는다.
     """
     best: tuple[datetime, Decimal, str, date] | None = None
     for row in rows:
-        shares = _decimal(row.get("shares_outstanding"))
+        # 시가총액은 회사 전체 값이다. 조회 계층이 붙인 전 종류 합계를 우선하고, 없으면(단일 종류·옛
+        # 표본) 그 행의 값을 쓴다. 한 종류만 쓰면 GOOGL 같은 다종류 회사의 시총이 절반이 된다.
+        shares = _decimal(row.get("company_shares_outstanding"))
+        if shares is None or shares <= 0:
+            shares = _decimal(row.get("shares_outstanding"))
         if shares is None or shares <= 0:
             continue
         accepted = row.get("accepted_at")

@@ -137,6 +137,42 @@ def load_shares_outstanding_by_cik(cik: str | int) -> list[dict[str, Any]]:
     ]
 
 
+def company_shares_by_filing(rows: Sequence[dict]) -> dict[tuple[str, str], float]:
+    """공시(accession)·기준일별 **모든 주식 종류의 합계**. 종류마다 하나의 행만 센다.
+
+    시가총액은 회사 전체 값인데 `mapped_security_id`로 고른 행은 한 종류뿐이다. 그 값만 쓰면
+    GOOGL은 A 58.7억주만 세어 시총 2조·PER 8이 나온다(전체 122억주, PER 약 17). 상장되지 않은
+    종류(`unmapped_unlisted`)도 회사 주식이라 합계에 들어간다. 종류별 경제적 가치는 같다고 본다 —
+    가치가 다른 종류(BRK A는 B의 1,500배)는 이 합계가 근사일 뿐이다.
+    """
+    per_class: dict[tuple[str, str], dict[str, float]] = defaultdict(dict)
+    for row in rows:
+        shares = row.get("shares_outstanding")
+        if shares is None or not row.get("accession_no"):
+            continue
+        key = (str(row["accession_no"]), str(row.get("as_of_date") or ""))
+        klass = str(row.get("share_class_key") or "")
+        per_class[key][klass] = max(per_class[key].get(klass, 0.0), float(shares))
+    return {key: sum(classes.values()) for key, classes in per_class.items()}
+
+
+def _attach_company_shares(rows: list[dict]) -> None:
+    """선택된 행마다 같은 공시의 전 종류 합계를 `company_shares_outstanding`으로 붙인다."""
+    accessions = sorted({str(row["accession_no"]) for row in rows if row.get("accession_no")})
+    if not accessions:
+        return
+    every_class = select_paged_in_chunks(
+        lambda chunk: sb.schema(SCHEMA_FUNDAMENTALS).table(T_SHARE_CLASS_SNAPSHOTS)
+        .select("accession_no,as_of_date,share_class_key,shares_outstanding").in_("accession_no", chunk),
+        accessions, order_by="accession_no,as_of_date,share_class_key", paged_reader=select_all_paged,
+    )
+    totals = company_shares_by_filing(every_class)
+    for row in rows:
+        row["company_shares_outstanding"] = totals.get(
+            (str(row.get("accession_no")), str(row.get("as_of_date") or ""))
+        )
+
+
 def share_class_snapshots_filed_before(
     ticker: str, as_of_at: datetime, *, limit: int = 24
 ) -> list[dict]:
@@ -153,6 +189,7 @@ def share_class_snapshots_filed_before(
         .select("*").eq("mapped_security_id", security_id),
         order_by="as_of_date,accession_no",
     )
+    _attach_company_shares(rows)
     accessions = sorted({str(row["accession_no"]) for row in rows if row.get("accession_no")})
     filings = select_paged_in_chunks(
         lambda chunk: sb.schema(SCHEMA_FUNDAMENTALS).table(T_FILINGS)
@@ -198,6 +235,7 @@ def share_class_snapshots_for_tickers_filed_before(
         sorted(tickers_by_id), order_by="mapped_security_id,as_of_date,accession_no",
         paged_reader=select_all_paged,
     )
+    _attach_company_shares(rows)
     accessions = sorted({str(row["accession_no"]) for row in rows if row.get("accession_no")})
     filings = select_paged_in_chunks(
         lambda chunk: sb.schema(SCHEMA_FUNDAMENTALS).table(T_FILINGS)

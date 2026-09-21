@@ -16,9 +16,9 @@ DESIGN-system.md를 embed가 표현할 수 있는 범위에서 따른다.
 """
 from __future__ import annotations
 
-from datetime import date
 from typing import Any
 
+from investment_agent.platform.clock import kst_today
 from investment_agent.notifications.renderers.text import table as _table
 from investment_agent.reporting.services.macro import palette
 from investment_agent.reporting.services.macro.constants import (
@@ -134,5 +134,5 @@ def build_watch(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "description": f"### {headline}\n-# 평시 범위를 벗어난 지표만 선별해 보여줍니다",
         "color": ACCENT,
         "fields": fields[:25],
-        "footer": {"text": f"{date.today().isoformat()} · {code_map(rows)}"[:2048]},
+        "footer": {"text": f"{kst_today().isoformat()} · {code_map(rows)}"[:2048]},
     }

@@ -83,7 +83,7 @@ class ContinuousLearner:
             drawdown = max(drawdown, float(info.get("drawdown", 0.0)))
             turnover += float(info.get("turnover", 0.0))
 
-        # DSR 과적합 검정 (연율화 샤프비율)
+        # DSR 과적합 검정. 수익률 한 개가 한 평가 기간이므로 샤프는 연환산하지 않은 기간 단위다.
         dsr_res = DeflatedSharpeRatio.compute(returns, num_trials=num_trials, annualize=False)
 
         tot_excess = float(np.prod(1.0 + np.asarray(returns)) - np.prod(1.0 + np.asarray(benchmark_returns)))

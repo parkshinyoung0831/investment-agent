@@ -107,6 +107,8 @@ class CollectionRun:
     deleted_count: int = 0
     error_kind: str | None = None
     message: str | None = None
+    #: 호출 한도로 멈춘 실행이 다음에 이어 받을 첫 종목. 한도가 종목 수보다 작은 날 앞쪽 종목만 반복되지 않게 한다.
+    resume_from: str | None = None
 
     def __post_init__(self) -> None:
         self.started_at = ensure_aware(self.started_at)

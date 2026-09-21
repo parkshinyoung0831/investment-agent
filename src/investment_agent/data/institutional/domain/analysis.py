@@ -5,6 +5,11 @@ from collections import defaultdict
 from collections.abc import Iterable
 from decimal import Decimal
 
+from investment_agent.data.institutional.domain.holdings import (
+    AMENDMENT_NEW_HOLDINGS,
+    AMENDMENT_RESTATEMENT,
+    select_effective,
+)
 from investment_agent.data.institutional.domain.managers import SIGNAL_GROUP_LABELS
 
 
@@ -42,25 +47,13 @@ def _coverage_status(filings: Iterable[dict]) -> str:
 
 
 def _authoritative_filings(rows: list[dict]) -> list[dict]:
-    """기준 공시와 이후 NEW HOLDINGS 수정공시를 최종 포트폴리오로 결합한다."""
-    base_candidates = [
-        row
-        for row in rows
-        if row.get("form_type") == "13F-HR"
-        or row.get("amendment_type") == "RESTATEMENT"
-    ]
-    if not base_candidates:
-        return []
-
-    base = max(base_candidates, key=_filing_order)
-    base_order = _filing_order(base)
-    additions = [
-        row
-        for row in rows
-        if row.get("amendment_type") == "NEW HOLDINGS"
-        and _filing_order(row) >= base_order
-    ]
-    return [base, *sorted(additions, key=_filing_order)]
+    """기준 공시와 이후 NEW HOLDINGS 수정공시를 최종 포트폴리오로 결합한다(규칙은 `holdings.select_effective`)."""
+    return select_effective(
+        rows,
+        order=_filing_order,
+        is_base=lambda row: row.get("form_type") == "13F-HR" or row.get("amendment_type") == AMENDMENT_RESTATEMENT,
+        is_addition=lambda row: row.get("amendment_type") == AMENDMENT_NEW_HOLDINGS,
+    )
 
 
 def _combined_positions(

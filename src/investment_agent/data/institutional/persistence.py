@@ -234,6 +234,7 @@ def effective_portfolio_state(
     current: dict[str, dict[str, Any]] = {}
     previous: dict[str, dict[str, Any]] = {}
     selected: set[str] = set()
+    effective_key: dict[str, str] = {}
     for manager in managers:
         period_filings: dict[date, list[Filing13F]] = {}
         for (manager_cik, _period), filings in by_period.items():
@@ -246,6 +247,9 @@ def effective_portfolio_state(
             chosen = max(filings, key=lambda item: (item.filing_date, item.accession_no))
             event = _filing_row(chosen, raw_by_accession[chosen.accession_no])
             (current if index == 0 else previous)[manager] = event
+            # 그 분기 포트폴리오를 이루는 신고(원본+덧붙임)는 모두 사건의 accession으로 묶는다.
+            for item in filings:
+                effective_key[item.accession_no] = chosen.accession_no
             selected.update(item.accession_no for item in filings)
 
     if not selected:
@@ -259,15 +263,45 @@ def effective_portfolio_state(
         values=sorted(selected),
         order_by="accession_no,source_row_no",
     )
-    return current, previous, [
-        {"effective_accession_no": row["accession_no"], **row}
-        for row in positions
-    ]
+    cache = get_identifier_cache()
+    tickers = UniverseRepository(db).tickers_by_security_id(
+        sorted({int(item["security_id"]) for item in cache.values()
+                if item.get("security_id") is not None and item.get("mapping_status") == "verified"})
+    )
+    return current, previous, attach_tickers(
+        [{"effective_accession_no": effective_key[row["accession_no"]], **row} for row in positions],
+        cache, tickers,
+    )
+
+
+def attach_tickers(
+    positions: list[dict[str, Any]],
+    identifier_cache: dict[tuple[str, str], dict[str, Any]],
+    tickers_by_security_id: dict[int, str],
+) -> list[dict[str, Any]]:
+    """보유 행에 `ticker`와 `mapping_status`를 붙인다.
+
+    13F 원천에는 CUSIP만 있고 ticker가 없다. 소비자(evidence의 guru feature·후보 신호)는
+    ticker로 묶으므로, 읽는 쪽이 요구하는 열을 여기서 채우지 않으면 guru 신호가 영구 결측이다.
+    신원이 확인된(`verified`) 연결만 `mapped`로 인정하고, 나머지는 ticker 없이 상태만 남긴다.
+    """
+    out = []
+    for row in positions:
+        link = identifier_cache.get((str(row.get("identifier")), str(row.get("identifier_type"))))
+        security_id = link.get("security_id") if link else None
+        ticker = tickers_by_security_id.get(int(security_id)) if security_id is not None else None
+        verified = bool(link) and link.get("mapping_status") == "verified" and ticker is not None
+        out.append({
+            **row,
+            "ticker": ticker if verified else None,
+            "mapping_status": "mapped" if verified else str((link or {}).get("mapping_status") or "unmapped"),
+        })
+    return out
 
 
 __all__ = [
     "SCHEMA_INSTITUTIONAL", "SCHEMA_UNIVERSE", "T_IDENTIFIERS", "T_SECURITIES",
     "configure", "get_active_manager_ciks", "stored_accessions", "delete_filings_before",
     "ingest_filing", "get_identifier_cache", "referenced_identifiers", "mapping_is_due",
-    "known_universe_tickers", "cache_mappings", "effective_portfolio_state",
+    "known_universe_tickers", "cache_mappings", "effective_portfolio_state", "attach_tickers",
 ]

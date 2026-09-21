@@ -10,7 +10,10 @@ from collections.abc import Iterator, Mapping, Sequence
 from itertools import product
 from datetime import date, datetime, timezone
 from typing import Any
+from investment_agent.platform.logging import get_logger
 from investment_agent.reporting.models import DataResult, normalize_observed_at
+
+log = get_logger(__name__)
 
 DB_SOURCE = "DB 저장 데이터 · v1 Supabase"
 
@@ -66,6 +69,15 @@ def security_identity(gateway: Any, tickers: Sequence[str]) -> tuple[dict[str, d
         str(row["cik"]).zfill(10): row
         for row in rows if row.get("cik")
     }
+    # `by_cik`는 회사당 한 행이다 — 같은 CIK의 종목(GOOG/GOOGL 등)을 함께 넘기면 하나가 조용히 사라진다.
+    # 호출자는 회사당 대표 종목 하나만 넘긴다는 계약이라(`watchlist_members`), 어기면 드러낸다.
+    tickers_by_cik: dict[str, set[str]] = {}
+    for row in rows:
+        if row.get("cik"):
+            tickers_by_cik.setdefault(str(row["cik"]).zfill(10), set()).add(str(row["ticker"]).upper())
+    shared = {cik: sorted(names) for cik, names in tickers_by_cik.items() if len(names) > 1}
+    if shared:
+        log.warning("security_identity: 같은 CIK에 종목이 둘 이상이라 by_cik에는 하나만 남는다: %s", shared)
     return by_ticker, by_cik
 
 
@@ -176,6 +188,9 @@ class SelectOnlyGateway:
                 if len(chunk) < end - start + 1:
                     break
                 start = end + 1
+            else:
+                # 마지막 페이지까지 가득 차서 상한에 닿았다 — 더 있었을 수 있는데 호출자는 잘린 줄 모른다.
+                log.warning("select_rows reached its row ceiling: %s.%s ceiling=%d", schema_name, table_name, ceiling)
             return rows[:ceiling]
 
         ceiling = int(max_rows or limit or 20_000)

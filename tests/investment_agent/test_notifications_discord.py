@@ -8,8 +8,6 @@ from unittest.mock import Mock
 from investment_agent.config import Config
 from investment_agent.notifications.channels.contracts import DeliveryRejected, DeliveryUnknown
 from investment_agent.notifications.channels.discord import DiscordChannel, validate_message
-from investment_agent.notifications.renderers.reports import render_report
-from investment_agent.reporting.models import DataResult
 
 
 def response(status, body=None, headers=None):
@@ -135,19 +133,3 @@ class DiscordTest(unittest.TestCase):
                 validate_message({"embeds": [{"title": "t", "url": url}]})
 
 
-class ReportRendererTest(unittest.TestCase):
-    def test_preserves_zero_missing_and_stored_weights(self):
-        report = DataResult.ok(source="reporting.portfolio_decisions", rows=[{"zero": 0, "missing": None, "approved_weights": {"A": 0.3, "CASH": 0.7}}])
-        message = render_report(report, title="포트폴리오", fields={"zero": "실제 0", "missing": "미확인", "approved_weights": "승인 비중"})
-        fields = message["embeds"][0]["fields"]
-        self.assertEqual(["0", "—", '{"A":0.3,"CASH":0.7}'], [f["value"] for f in fields])
-        self.assertEqual("reporting.portfolio_decisions", message["embeds"][0]["footer"]["text"])
-        validate_message(message)
-
-    def test_failed_and_empty_reports_are_not_success_messages(self):
-        for status in ("empty", "offline", "unconfigured", "blocked", "error"):
-            report = DataResult(status=status, source="reporting.test")
-            with self.assertRaises(ValueError):
-                render_report(report, title="보고서", fields={"x": "값"})
-        with self.assertRaises(ValueError):
-            render_report(DataResult.ok(source="reporting.test", rows=[{"x": 1}]), title="보고서", fields={"missing": "값"})

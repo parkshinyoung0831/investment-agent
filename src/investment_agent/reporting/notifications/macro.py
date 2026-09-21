@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import timedelta
 from typing import Any
 
 import pandas as pd
 
+from investment_agent.platform.clock import kst_today
 from investment_agent.config import load_config
 from investment_agent.data.macro.repository import MacroRepository
 from investment_agent.platform.db.postgres import Database
@@ -99,7 +100,7 @@ class MacroNotificationStore:
             for row in self._macro.market_catalog()
             if str(row["series_id"]) in selected
         }
-        since = date.today() - timedelta(days=_WINDOW_DAYS)
+        since = kst_today() - timedelta(days=_WINDOW_DAYS)
         observations = self._macro.observations(series_ids, since=since)
         raw = []
         for observation in observations:

@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import argparse
 import time
-from datetime import date, datetime, timedelta
-from zoneinfo import ZoneInfo
+from datetime import date, timedelta
 
+from investment_agent.platform.clock import us_market_today
 from investment_agent.platform.cli.runtime import elapsed_sec, notify_ops
 from investment_agent.platform.logging import get_logger
 from investment_agent.operations.monitoring.incidents import (
@@ -71,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
     from investment_agent.data.market.infrastructure.sources.yahoo import download_ohlcv
 
     t0 = time.monotonic()
-    today = datetime.now(ZoneInfo("America/New_York")).date()
+    today = us_market_today()
     since = (today - timedelta(days=args.lookback_days)).isoformat()
     targets = store.price_targets()
     log.info(

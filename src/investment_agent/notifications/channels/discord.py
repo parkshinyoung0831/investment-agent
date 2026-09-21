@@ -10,6 +10,7 @@ from __future__ import annotations
 from copy import deepcopy
 import math
 from typing import Any, Callable
+from urllib.parse import quote
 
 from investment_agent.config import Config
 from investment_agent.notifications.channels.contracts import (
@@ -156,38 +157,59 @@ def fetch_forum_threads(
         get = requests.get
     headers = {"Authorization": f"Bot {token}"}
     found: dict[str, str] = {}
+    # (url, 부모 포럼으로 거를지, 페이지를 이어 받을지). 보관 스레드는 한 번에 100개까지라 종목 수가 그보다
+    # 많으면 오래된 종목의 스레드를 못 찾고 같은 종목의 스레드를 새로 만들게 된다.
     sources = (
-        (f"{_API_BASE}/guilds/{guild_id}/threads/active", True),
-        (f"{_API_BASE}/channels/{channel_id}/threads/archived/public?limit=100", False),
+        (f"{_API_BASE}/guilds/{guild_id}/threads/active", True, False),
+        (f"{_API_BASE}/channels/{channel_id}/threads/archived/public?limit=100", False, True),
     )
-    for url, filter_parent in sources:
-        response = get(url, headers=headers, timeout=30, allow_redirects=False)
-        if not 200 <= response.status_code < 300:
-            raise RuntimeError(f"discord_forum_threads_http_{response.status_code}")
-        payload = response.json()
-        threads = payload.get("threads") if isinstance(payload, dict) else None
+    for url, filter_parent, paginate in sources:
         newest: dict[str, tuple[str, str]] = {}
-        for thread in threads or []:
-            if filter_parent and str(thread.get("parent_id") or "") != str(channel_id):
-                continue
-            name = _thread_match_key(thread.get("name") or "")
-            thread_id = str(thread.get("id") or "")
-            if not name or not thread_id.isdigit():
-                continue
-            # 같은 키에 스레드가 둘 이상이면 **가장 최근에 만들어진 것**을 쓴다.
-            # 표시명이 바뀌어 스레드가 갈라진 적이 있는데, 그때 어느 쪽에 쌓일지가
-            # Discord 응답 순서에 달려 있었다 — 실행마다 목적지가 달라진다.
-            # 최신 스레드에 최신 카드가 있으므로 그쪽으로 모은다.
-            created = str(
-                (thread.get("thread_metadata") or {}).get("create_timestamp") or ""
-            ) or _snowflake_order(thread_id)
-            previous = newest.get(name)
-            if previous is None or created > previous[0]:
-                newest[name] = (created, thread_id)
+        page_url = url
+        for _ in range(_MAX_ARCHIVED_PAGES if paginate else 1):
+            response = get(page_url, headers=headers, timeout=30, allow_redirects=False)
+            if not 200 <= response.status_code < 300:
+                raise RuntimeError(f"discord_forum_threads_http_{response.status_code}")
+            payload = response.json()
+            threads = payload.get("threads") if isinstance(payload, dict) else None
+            for thread in threads or []:
+                if filter_parent and str(thread.get("parent_id") or "") != str(channel_id):
+                    continue
+                name = _thread_match_key(thread.get("name") or "")
+                thread_id = str(thread.get("id") or "")
+                if not name or not thread_id.isdigit():
+                    continue
+                # 같은 키에 스레드가 둘 이상이면 **가장 최근에 만들어진 것**을 쓴다.
+                # 표시명이 바뀌어 스레드가 갈라진 적이 있는데, 그때 어느 쪽에 쌓일지가
+                # Discord 응답 순서에 달려 있었다 — 실행마다 목적지가 달라진다.
+                # 최신 스레드에 최신 카드가 있으므로 그쪽으로 모은다.
+                created = str(
+                    (thread.get("thread_metadata") or {}).get("create_timestamp") or ""
+                ) or _snowflake_order(thread_id)
+                previous = newest.get(name)
+                if previous is None or created > previous[0]:
+                    newest[name] = (created, thread_id)
+            cursor = _next_archive_cursor(payload, threads) if paginate else None
+            if cursor is None:
+                break
+            page_url = f"{url}&before={quote(cursor, safe='')}"
         # 활성 스레드가 보관된 동명보다 우선이다 — 보관된 곳에는 글을 못 붙인다.
         for name, (_created, thread_id) in newest.items():
             found.setdefault(name, thread_id)
     return found
+
+
+# 보관 스레드 페이지 상한(100개 × 이 값). 관심종목이 수십 개라 이 안에서 끝나야 하고, 응답이 끝나지 않는
+# 이상 상황에서 요청이 끝없이 이어지지 않게 하는 안전장치다.
+_MAX_ARCHIVED_PAGES = 10
+
+
+def _next_archive_cursor(payload: Any, threads: Any) -> str | None:
+    """다음 페이지를 받을 `before` 값(마지막 스레드의 보관 시각). 더 없으면 None."""
+    if not isinstance(payload, dict) or not payload.get("has_more") or not threads:
+        return None
+    cursor = str(((threads[-1] or {}).get("thread_metadata") or {}).get("archive_timestamp") or "")
+    return cursor or None
 
 
 def _snowflake_order(thread_id: str) -> str:

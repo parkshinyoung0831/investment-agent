@@ -24,7 +24,7 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from investment_agent.platform.clock import ensure_aware, utc_now
+from investment_agent.platform.clock import ensure_aware, us_market_today, utc_now
 
 MARKET_TIMEZONE = ZoneInfo("America/New_York")
 
@@ -42,7 +42,7 @@ def market_today(now: datetime | None = None) -> date:
     UTC 자정 근처에서 한국 시각과 뉴욕 날짜가 하루 어긋나므로, 날짜가 필요한
     자리에서는 반드시 이것을 쓴다.
     """
-    return ensure_aware(now or utc_now()).astimezone(MARKET_TIMEZONE).date()
+    return us_market_today(now)
 
 
 def completed_bar_cutoff(now: datetime | None = None) -> date:

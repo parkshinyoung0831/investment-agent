@@ -26,10 +26,13 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"tickers": tickers, "count": len(tickers)}, ensure_ascii=False))
         return 0
 
+    repository = IntelligenceRepository()
     run = service.collect_news(
-        repository=IntelligenceRepository(),
+        repository=repository,
         fetch=lambda ticker: fetch_ticker_news(ticker, limit=args.limit),
         tickers=tickers,
+        # 종목을 직접 지정한 실행은 목록이 다르므로 이어 받지 않는다.
+        resume_from=None if args.ticker else repository.resume_cursor("collect", "news"),
     )
     print(
         json.dumps(

@@ -19,6 +19,9 @@ from typing import Any, Protocol
 ACTIONS = frozenset({"create", "edit", "suppressed"})
 OUTCOMES = frozenset({"sent", "failed", "abandoned", "unknown"})
 MIN_LEASE_SECONDS, MAX_LEASE_SECONDS = 30, 3600
+# 전송 호출 하나는 몇 초면 끝난다. 이보다 오래 `sending`이면 전송 도중 프로세스가 죽은 것이라, 보냈는지 알 수 없고
+# 자동으로 다시 보내지도 않는다(중복 방지). 사람이 확인하도록 드러내는 기준이다.
+STUCK_SENDING_SECONDS = 1800
 
 
 @dataclass(frozen=True)
@@ -67,6 +70,10 @@ class NotificationLedger(Protocol):
                failure_code: str | None, retry_seconds: int | None) -> int: ...
 
     def replay(self, topic: str, subject: str, occurrence: str) -> int: ...
+
+    def stuck_sending(self, *, older_than_seconds: int = STUCK_SENDING_SECONDS) -> list[tuple[str, str, str]]:
+        """`sending`에서 멈춘 알림의 (topic, subject, occurrence). 자동 재전송 대상이 아니라 확인 대상이다."""
+        ...
 
     def last_known(self, topic: str, subject: str) -> KnownNotice | None: ...
 
@@ -207,6 +214,10 @@ class MemoryLedger:
         now = self._clock()
         row.status, row.retry_at, row.owner, row.lease_until, row.updated_at = "failed", now, None, None, now
         return 1
+
+    def stuck_sending(self, *, older_than_seconds: int = STUCK_SENDING_SECONDS) -> list[tuple[str, str, str]]:
+        cutoff = self._clock() - timedelta(seconds=older_than_seconds)
+        return sorted(key for key, row in self.rows.items() if row.status == "sending" and row.updated_at < cutoff)
 
     def last_known(self, topic: str, subject: str) -> KnownNotice | None:
         known = [row for row in self.rows.values()

@@ -32,8 +32,9 @@ class FeatureEvidenceBundle(Protocol):
 
 
 # feature 계약 세대. `rl_feature_snapshots`의 identity 구성요소이며, 컬럼 계약이
-# 바뀌면 snapshot과 label이 다른 세대로 분리된다.
-FEATURE_VERSION = "v5"
+# 바뀌면 snapshot과 label이 다른 세대로 분리된다. 값이 바뀌는 입력 수정도 같다 — v6은 시가총액이
+# 회사 전체 주식수 기준으로, guru 신호가 ticker 조인 뒤의 값으로 바뀐 세대다(v5 행과 섞지 않는다).
+FEATURE_VERSION = "v6"
 HORIZONS = (1, 5, 20)
 
 # 20거래일 수익률은 오늘 종가와 20거래일 전 종가가 둘 다 필요하다. ContextBuilder가

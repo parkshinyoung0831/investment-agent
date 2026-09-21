@@ -11,11 +11,11 @@ from __future__ import annotations
 
 import argparse
 import time
-from datetime import date, datetime
-from zoneinfo import ZoneInfo
+from datetime import date
 
 import pandas as pd
 
+from investment_agent.platform.clock import kst_today
 from investment_agent.platform.cli.runtime import elapsed_sec
 from investment_agent.platform.logging import get_logger
 from investment_agent.research.strategies import BACKFILL_FROM, db
@@ -78,7 +78,7 @@ def _run_backfill(target_apply: date) -> int:
     compute_all(full)
     cur_apply = target_apply
     cur_decision = (pd.Timestamp(cur_apply) - pd.offsets.MonthEnd(1)).date()
-    today_first = datetime.now(ZoneInfo("Asia/Seoul")).date().replace(day=1)
+    today_first = kst_today().replace(day=1)
 
     n_months = 0
     available_strategies: set[str] = set()
@@ -128,7 +128,7 @@ def _run_backfill(target_apply: date) -> int:
 # ── 월간 정기 실행 ─────────────────────────────────
 def _run_monthly(*, mark_sent: bool) -> None:
     """가장 최근에 끝난 달 기준으로 6개 전략을 계산해 저장한다."""
-    apply_month = datetime.now(ZoneInfo("Asia/Seoul")).date().replace(day=1)
+    apply_month = kst_today().replace(day=1)
     expected = set(STRATEGY_CATALOG)
     existing = db.allocation_strategy_ids(apply_month)
     if existing == expected:

@@ -7,10 +7,16 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from investment_agent.notifications.ledger import ACTIONS, KnownNotice, NoticeState, Reservation
+from investment_agent.notifications.ledger import (
+    ACTIONS,
+    STUCK_SENDING_SECONDS,
+    KnownNotice,
+    NoticeState,
+    Reservation,
+)
 from investment_agent.platform.serialization import json_value
 
 SCHEMA = "notifications"
@@ -93,6 +99,17 @@ class PostgresNotificationLedger:
         return _count(self._db.rpc(SCHEMA, RPC_REPLAY, {
             "p_topic": topic, "p_subject": subject, "p_occurrence": occurrence,
         }).execute())
+
+    def stuck_sending(self, *, older_than_seconds: int = STUCK_SENDING_SECONDS) -> list[tuple[str, str, str]]:
+        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=older_than_seconds)).isoformat()
+        rows = self._db.select_paged(
+            lambda: self._db.table(SCHEMA, T_NOTICES)
+            .select("topic,subject,occurrence")
+            .eq("status", "sending")
+            .lt("updated_at", cutoff),
+            order_by="topic,subject,occurrence",
+        )
+        return [(str(row["topic"]), str(row["subject"]), str(row["occurrence"])) for row in rows]
 
     def last_known(self, topic: str, subject: str) -> KnownNotice | None:
         rows = (

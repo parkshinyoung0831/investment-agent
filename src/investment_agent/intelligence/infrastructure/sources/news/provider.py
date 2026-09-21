@@ -86,21 +86,32 @@ def _news_time(value: object) -> str | None:
     return parsed.astimezone(timezone.utc).isoformat()
 
 
+def _contains(text: str, term: str) -> bool:
+    """영어는 단어 경계로, 한국어는 부분 일치로 찾는다.
+
+    부분 문자열로 찾으면 "software"·"warning"이 지정학(war), "generates"가 매크로(rates), "execute"가 부정(cut)으로
+    분류된다. 영어 단어는 흔한 어미(s·es·d·ed·ing)까지만 허용한다.
+    """
+    if term.isascii():
+        return re.search(rf"\b{re.escape(term)}(?:s|es|d|ed|ing)?\b", text) is not None
+    return term in text
+
+
 def _sentiment_and_risk(title: str, summary: str) -> tuple[str, list[str]]:
     text = f"{title} {summary}".lower()
     positive = ("beat", "growth", "upgrade", "surge", "record", "profit", "상향", "성장", "호조")
     negative = ("miss", "downgrade", "loss", "fall", "cut", "probe", "하향", "손실", "부진")
-    positive_score = sum(word in text for word in positive)
-    negative_score = sum(word in text for word in negative)
+    positive_score = sum(_contains(text, word) for word in positive)
+    negative_score = sum(_contains(text, word) for word in negative)
     sentiment = "긍정" if positive_score > negative_score else "부정" if negative_score > positive_score else "불확실"
     risk_terms = {
         "규제": ("regulation", "regulator", "antitrust", "규제"),
         "소송": ("lawsuit", "litigation", "court", "소송"),
         "실적": ("earnings", "revenue", "profit", "guidance", "실적"),
         "매크로": ("inflation", "rates", "fed", "recession", "금리", "침체"),
-        "지정학": ("war", "sanction", "geopolit", "전쟁", "제재"),
+        "지정학": ("war", "sanction", "geopolitics", "geopolitical", "전쟁", "제재"),
     }
-    tags = [label for label, words in risk_terms.items() if any(word in text for word in words)]
+    tags = [label for label, words in risk_terms.items() if any(_contains(text, word) for word in words)]
     return sentiment, tags
 
 

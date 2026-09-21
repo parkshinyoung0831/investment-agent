@@ -55,5 +55,38 @@ class JudgeTest(unittest.TestCase):
         self.assertNotIn("서프라이즈", embed["description"] + str(embed.get("title", "")) + str(embed))
 
 
+class EpsBasisTest(unittest.TestCase):
+    """GAAP 실제와 조정 예상은 같은 축이 아니다 — 뷰가 비교를 비우는 규칙을 속보도 따른다."""
+
+    def test_mismatched_basis_hides_the_eps_comparison_and_says_why(self) -> None:
+        embed = build_flash_embed(_flash(eps_actual=2.0, eps_estimate=1.0, eps_basis_match="mismatch"))
+        text = str(embed)
+        self.assertNotIn("+100.0%", text)
+        self.assertIn("EPS 정의 불일치", text)
+        self.assertNotIn("서프라이즈", embed["description"] + str(embed.get("title", "")))
+
+    def test_unknown_basis_shows_the_value_but_does_not_call_a_beat(self) -> None:
+        embed = build_flash_embed(_flash(eps_actual=2.0, eps_estimate=1.0, eps_basis_match="unknown"))
+        text = str(embed)
+        self.assertIn("+100.0%", text)
+        self.assertIn("EPS 정의 미확인", text)
+        self.assertNotIn("서프라이즈", embed["description"] + str(embed.get("title", "")))
+
+    def test_matching_basis_keeps_the_verdict(self) -> None:
+        embed = build_flash_embed(_flash(eps_actual=2.0, eps_estimate=1.0, eps_basis_match="match"))
+        self.assertIn("서프라이즈", str(embed))
+
+    def test_chart_drops_a_mismatched_eps_bar(self) -> None:
+        self.assertIsNone(flash_performance_chart_url(
+            {"ticker": "T", "eps_actual": 2.0, "eps_estimate": 1.0, "eps_basis_match": "mismatch"}
+        ))
+
+    def test_the_flash_reader_selects_the_basis_column(self) -> None:
+        import inspect
+        from investment_agent.reporting.notifications.earnings_flash import EarningsFlashStore
+
+        self.assertIn("eps_basis_match", inspect.getsource(EarningsFlashStore.load_flash_rows))
+
+
 if __name__ == "__main__":
     unittest.main()

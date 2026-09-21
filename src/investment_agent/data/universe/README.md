@@ -39,7 +39,7 @@ Toss(로컬 전용)    → entities.company_name_ko 보강
 ```powershell
 python -m investment_agent.data.universe.commands.universe_monthly
 python -m investment_agent.data.universe.commands.universe_membership
-python -m investment_agent.data.universe.commands.universe_names --retry-after-days 30
+python -m investment_agent.data.universe.commands.universe_names
 ```
 
 월간·membership entrypoint는 `collection.py`를 통해서만 저장소를 호출한다.

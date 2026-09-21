@@ -16,6 +16,7 @@ from collections.abc import Sequence
 from datetime import date, datetime, time, timezone
 from typing import Any
 
+from investment_agent.platform.clock import kst_today
 from investment_agent.config import load_config
 from investment_agent.notifications.context import default_context
 from investment_agent.reporting.notifications.macro import MacroNotificationStore
@@ -135,7 +136,7 @@ def _build_ctx(rows: list[dict[str, Any]]) -> dict[str, Any]:
     )
 
     return {
-        "today": date.today().isoformat(),
+        "today": kst_today().isoformat(),
         "side_color": side_color,
         "strong_counts": strong,
         "tone_chips": tone_chips,
@@ -178,7 +179,7 @@ def run(*, store: MacroNotificationStore | None = None, target: str | None = Non
         log.info("core: no rows from macro v1 observation reader (CORE_SERIES) — silent skip (stale)")
         return 0
     report = publish(
-        TOPIC, [notice_for(rows, today or date.today())], render_card,
+        TOPIC, [notice_for(rows, today or kst_today())], render_card,
         context=context or default_context(config),
         target=discord_target(TOPIC.channel_kind, config=config, override=target),
     )

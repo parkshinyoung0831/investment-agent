@@ -13,6 +13,7 @@ import re
 import time
 from datetime import datetime, timedelta, timezone
 
+from investment_agent.platform.storage_paths import ai_investor_artifact_dir
 from investment_agent.platform.env import env_int
 from investment_agent.forecasting import SIGNAL_HORIZON_DAYS
 from investment_agent.trading.decision.agents.engine import (
@@ -63,9 +64,7 @@ def _model_pool_ledger_path() -> Path:
     configured = os.environ.get("AI_INVESTOR_MODEL_POOL_LEDGER_PATH", "").strip()
     if configured:
         return Path(configured).expanduser()
-    return Path(
-        os.environ.get("AI_INVESTOR_ARTIFACT_DIR", "artifacts/ai_investor/tradingagents")
-    ).expanduser() / "metadata" / "llm-model-usage.sqlite3"
+    return ai_investor_artifact_dir() / "metadata" / "llm-model-usage.sqlite3"
 
 
 def _attempt_case(bundle, memory_text: str, runner: TradingAgentsRunner):
@@ -114,6 +113,16 @@ def _select_and_run(
                 "model pool candidate failed ticker=%s candidate=%s: %s",
                 getattr(bundle, "ticker", "?"), candidate.name, type(exc).__name__,
             )
+
+
+def failure_model(candidate) -> tuple[str, str]:
+    """실패한 사례에 남길 (provider, model). 모델이 답한 뒤(제안 검증·저장)에 실패했다면 그 모델이다.
+
+    풀에서 후보를 하나도 못 얻었거나 전부 실패했을 때만 모델이 없어 `exhausted`로 적는다.
+    """
+    if candidate is None:
+        return "model_pool", "exhausted"
+    return candidate.provider, candidate.name
 
 
 def verify_runtime(pool, *, verify=verify_tradingagents_runtime) -> str:
@@ -308,6 +317,7 @@ def main(argv: list[str] | None = None) -> int:
             "policy_version": AGENT_POLICY_VERSION,
             "source_kind": "live_shadow",
         }
+        candidate = None
         try:
             result, candidate = _select_and_run(
                 bundle,
@@ -373,6 +383,7 @@ def main(argv: list[str] | None = None) -> int:
                 **bundle.to_dict(),
                 "external_evidence": list(external_evidence),
             }
+            failed_provider, failed_model = failure_model(candidate)
             archived = archive_case_evidence(
                 case_key=case_key,
                 evidence_bundle=failed_evidence_bundle,
@@ -381,8 +392,8 @@ def main(argv: list[str] | None = None) -> int:
             )
             repository.save_case({
                 **base,
-                "model_provider": "model_pool",
-                "model_name": "exhausted",
+                "model_provider": failed_provider,
+                "model_name": failed_model,
                 "status": "failed",
                 "context_hash": hashlib.sha256(
                     canonical_json(failed_evidence_bundle).encode("utf-8")

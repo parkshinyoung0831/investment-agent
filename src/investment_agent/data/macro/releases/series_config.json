@@ -709,8 +709,7 @@
         "release_id": 190,
         "time": "12:00",
         "timezone": "America/New_York",
-        "confidence": "exact",
-        "observation_weekday": 3
+        "confidence": "exact"
       },
       "survey": {
         "status": "unsupported"

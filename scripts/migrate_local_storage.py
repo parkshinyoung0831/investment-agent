@@ -22,6 +22,7 @@ from investment_agent.platform.storage_paths import (
     intelligence_database_path,
     legacy_candidates,
     local_artifact_root,
+    repository_root,
     research_database_path,
     runtime_database_path,
 )
@@ -58,7 +59,13 @@ class Verification:
 
 
 def _rooted(root: Path, path: Path) -> Path:
-    return path if path.is_absolute() else root / path
+    """저장소 루트 기준 경로로 만든다. 기본 경로가 이미 저장소 루트의 절대 경로이면 `root` 아래로 옮겨 잡는다."""
+    if not path.is_absolute():
+        return root / path
+    try:
+        return root / path.relative_to(repository_root())
+    except ValueError:
+        return path
 
 
 def _sidecars(path: Path, engine: str) -> tuple[Path, ...]:

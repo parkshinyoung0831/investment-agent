@@ -12,20 +12,12 @@ log = get_logger(__name__)
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="investment_agent.data.universe.commands.universe_names")
-    parser.add_argument(
-        "--retry-after-days",
-        type=int,
-        default=90,
-        help="이름을 받지 못한 추적 종목을 다시 조회할 최소 경과일.",
-    )
-    args = parser.parse_args(argv)
-    if args.retry_after_days < 1:
-        parser.error("--retry-after-days must be at least 1")
+    parser.parse_args(argv)
 
     from investment_agent.data.universe.application import collection as etl
 
     t0 = time.monotonic()
-    metrics = etl.refresh_korean_names(retry_after_days=args.retry_after_days)
+    metrics = etl.refresh_korean_names()
     log.info(
         "universe korean names done: pending=%d attempted=%d updated=%d "
         "duration_sec=%.1f",

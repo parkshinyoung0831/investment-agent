@@ -2,10 +2,8 @@
 from __future__ import annotations
 
 import argparse
-import math
 import time
-from datetime import date, datetime, timedelta
-from zoneinfo import ZoneInfo
+from datetime import date, timedelta
 
 import pandas as pd
 
@@ -18,25 +16,12 @@ from investment_agent.data.macro.application.refresh_market_state import refresh
 from investment_agent.data.universe.repository import UniverseRepository
 from investment_agent.platform.cli.backfill import add_backfill_from_arg
 from investment_agent.platform.cli.runtime import EXIT_FAILED, EXIT_OK, EXIT_PARTIAL, elapsed_sec, notify_ops
-from investment_agent.platform.clock import utc_now
+from investment_agent.platform.clock import kst_today, utc_now
 from investment_agent.platform.db.postgres import Database
 from investment_agent.platform.logging import configure_logging, get_logger
 
 log = get_logger(__name__)
 FAIL_ALERT_THRESHOLD = 1
-
-
-def _kst_today() -> date:
-    """실행 위치와 무관하게 한국 기준 실행일을 반환한다."""
-    return datetime.now(ZoneInfo("Asia/Seoul")).date()
-
-
-def _build_row(series_id: str, timestamp, value: float) -> dict | None:
-    if not math.isfinite(value):
-        return None
-    obs_date = timestamp.date() if hasattr(timestamp, "date") else timestamp
-    obs_str = obs_date.isoformat() if hasattr(obs_date, "isoformat") else str(obs_date)
-    return {"series_id": series_id, "obs_date": obs_str, "value": float(value)}
 
 
 def _incremental_cutoff(
@@ -52,39 +37,6 @@ def _incremental_cutoff(
         else settings.INCREMENTAL_LOOKBACK_DAYS.get(frequency, daily_lookback_days)
     )
     return end - timedelta(days=days)
-
-
-def _rows_for_series(
-    series_id: str,
-    series: pd.Series,
-    *,
-    cutoff: date,
-    end: date,
-) -> list[dict]:
-    """겹침 구간의 시계열을 저장 후보 행으로 변환한다."""
-    if not isinstance(series, pd.Series):
-        raise TypeError(f"{series_id}: source returned {type(series).__name__}")
-    cleaned = series.dropna().sort_index()
-    if cleaned.empty:
-        return []
-    output: list[dict] = []
-    seen_dates: set[str] = set()
-    cutoff_ts = pd.Timestamp(cutoff)
-    end_ts = pd.Timestamp(end)
-    for timestamp, value in cleaned.items():
-        ts = pd.Timestamp(timestamp)
-        if ts.tzinfo is not None:
-            ts = ts.tz_localize(None)
-        if ts < cutoff_ts or ts > end_ts:
-            continue
-        row = _build_row(series_id, ts, float(value))
-        if row is None:
-            continue
-        if row["obs_date"] in seen_dates:
-            raise ValueError("source returned duplicate observation dates")
-        seen_dates.add(row["obs_date"])
-        output.append(row)
-    return output
 
 
 def _failure(series_id: str, error: Exception) -> dict[str, str]:
@@ -108,7 +60,7 @@ def main(argv: list[str] | None = None) -> int:
 
     configure_logging()
     t0 = time.monotonic()
-    end = _kst_today()
+    end = kst_today()
     if save_cutoff is not None and save_cutoff > end:
         parser.error("--backfill-from cannot be in the future")
     mode = "backfill" if save_cutoff is not None else "daily"

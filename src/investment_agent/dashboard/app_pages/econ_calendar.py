@@ -15,6 +15,7 @@ from investment_agent.dashboard.components.calendar_grid import CalendarEvent, c
 from investment_agent.reporting.readers.dashboard import (
     load_econ_calendar_window,
     load_econ_detail,
+    load_econ_past_due,
     load_econ_recent_results,
     load_econ_series,
     load_econ_series_history,
@@ -352,6 +353,8 @@ upcoming_result = load_econ_upcoming(30)
 recent_result = load_econ_recent_results(45)
 upcoming = result_payload(upcoming_result, default=[]) if result_status(upcoming_result, empty_text="향후 발표 일정 없음") else []
 recent = result_payload(recent_result, default=[]) if result_status(recent_result, empty_text="최근 발표 결과 없음") else []
+past_due_result = load_econ_past_due(14)
+past_due = list(result_payload(past_due_result, default=[]) or []) if getattr(past_due_result, "status", "error") == "ok" else []
 # 조회 함수나 캐시의 반환 순서와 무관하게 화면에서도 카드에 표시하는 발표 시각 최신순을 보장한다.
 recent.sort(key=lambda row: (str(row.get("scheduled_at") or row.get("first_actual_at") or ""), str(row.get("event_key") or "")), reverse=True)
 
@@ -361,6 +364,13 @@ metrics[0].metric("향후 30일", len(upcoming) if _query_ready(upcoming_result)
 metrics[1].metric("최근 45일 최초 발표", len(recent) if _query_ready(recent_result) else "—", help="최근 45일에 처음 보관한 실제 발표값이 있는 지표 건수예요.")
 metrics[2].metric("시장 예상 보유", sum(row.get("survey_value") is not None for row in upcoming + recent) if _query_ready(upcoming_result) and _query_ready(recent_result) else "—", help="향후·최근 발표 중 시장 예상값을 보관한 건수예요.")
 metrics[3].metric("개정 관측", sum(row.get("revision") not in (None, 0) for row in recent) if _query_ready(recent_result) else "—", help="최근 45일 발표 가운데 최초 발표값과 이후 값이 달라진 건수예요.")
+if past_due:
+    st.warning(
+        f"예정 시각이 지났지만 값이 아직 없는 발표 {len(past_due)}건: "
+        + ", ".join(str(row.get("series_name_ko") or row.get("series_id")) for row in past_due[:6])
+        + (" 외" if len(past_due) > 6 else ""),
+        icon=":material/schedule:",
+    )
 
 visible_rows = recent
 if view in {"주간 캘린더", "월간 캘린더"}:

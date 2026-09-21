@@ -1,12 +1,12 @@
 """market owner가 적재한 일봉에서 전략용 월말 종가를 읽는다."""
 from __future__ import annotations
 
-from datetime import date, datetime
-from zoneinfo import ZoneInfo
+from datetime import date
 
 import numpy as np
 import pandas as pd
 
+from investment_agent.platform.clock import kst_today
 from investment_agent.data.market import persistence as market_prices
 from investment_agent.research.strategies import MIN_MONTHS, TICKERS
 
@@ -14,7 +14,7 @@ from investment_agent.research.strategies import MIN_MONTHS, TICKERS
 def _last_complete_month_end(today: date | None = None) -> pd.Timestamp:
     """가장 최근에 끝난 달의 마지막 날 (KST 기준)."""
     if today is None:
-        today = datetime.now(ZoneInfo("Asia/Seoul")).date()
+        today = kst_today()
     return pd.Timestamp(today.replace(day=1) - pd.Timedelta(days=1))
 
 
@@ -67,7 +67,7 @@ def download_monthly_close(
         raise RuntimeError(
             "market strategy history is missing, stale, or invalid for: " + ", ".join(incomplete)
         )
-    today_kst = datetime.now(ZoneInfo("Asia/Seoul")).date()
+    today_kst = kst_today()
     if df.index[-1].to_period("M") >= pd.Timestamp(today_kst).to_period("M"):
         raise RuntimeError("strategy history contains an incomplete current month")
     return df.loc[:, requested]

@@ -18,6 +18,24 @@ EXIT_OK = 0
 EXIT_FAILED = 1
 EXIT_PARTIAL = 2
 
+# 종목 몇 개의 일시 오류(PostgREST 503·8초 timeout)로 그날 파이프라인 전체를 세우지 않는 허용 비율.
+# 하네스는 종료 코드가 0이 아니면 그 단계를 실패로 보고 뒤 단계(label·표본·평가)를 그날 건너뛴다.
+MAX_TOLERATED_FAILURE_RATIO = 0.05
+
+
+def exit_code_for_run(status: str, *, failed: int, total: int, saved: int) -> int:
+    """연구 배치 명령의 종료 코드.
+
+    `success`는 0. `partial`은 저장된 행이 있고 실패가 전체의 `MAX_TOLERATED_FAILURE_RATIO` 이하일 때만 0이다 —
+    상태는 payload에 partial로 남아 로그에서 보인다. 실패가 그보다 많거나 저장된 것이 없으면(대개 상류·원천 장애)
+    실패로 올려 조용히 지나가지 않게 한다.
+    """
+    if status == "success":
+        return EXIT_OK
+    if status == "partial" and saved > 0 and total > 0 and failed / total <= MAX_TOLERATED_FAILURE_RATIO:
+        return EXIT_OK
+    return EXIT_FAILED
+
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()

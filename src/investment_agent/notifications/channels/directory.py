@@ -27,6 +27,7 @@
 """
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping
 
@@ -37,9 +38,11 @@ log = get_logger(__name__)
 
 FORUM = 15
 
-# 한 프로세스 안에서 길드 구조는 바뀌지 않는다고 본다. 카드 한 장마다 길드 전체를
-# 다시 받아오면 발송이 느려지고 rate limit에 먼저 걸린다.
-_CACHE: dict[str, "GuildDirectory"] = {}
+# 길드 구조는 잠깐 동안 바뀌지 않는다고 본다. 카드 한 장마다 길드 전체를 다시 받아오면 발송이 느려지고
+# rate limit에 먼저 걸린다. 다만 하네스처럼 오래 사는 프로세스는 그 사이에 생긴 채널·포럼 태그를 못 보므로
+# 일정 시간이 지나면 다시 받는다(새 태그가 안 붙는 것으로 조용히 나타난다).
+_CACHE_TTL_SECONDS = 3600.0
+_CACHE: dict[str, tuple[float, "GuildDirectory"]] = {}
 
 
 @dataclass(frozen=True)
@@ -140,19 +143,20 @@ def guild_directory(
     config: Config, *, fetch: Callable[[Config], list[dict[str, Any]]] | None = None,
     refresh: bool = False,
 ) -> GuildDirectory:
-    """길드 채널 디렉터리. 프로세스당 한 번만 받아온다."""
+    """길드 채널 디렉터리. 유효 시간(`_CACHE_TTL_SECONDS`) 안에서는 한 번만 받아온다."""
     guild_id, = config.require("DISCORD_GUILD_ID")
     if refresh:
         _CACHE.pop(guild_id, None)
-    cached = _CACHE.get(guild_id)
-    if cached is None:
-        if fetch is None:  # HTTP는 channels/discord.py 하나가 소유한다.
-            from investment_agent.notifications.channels.discord import fetch_guild_channels
+    entry = _CACHE.get(guild_id)
+    if entry is not None and time.monotonic() - entry[0] < _CACHE_TTL_SECONDS:
+        return entry[1]
+    if fetch is None:  # HTTP는 channels/discord.py 하나가 소유한다.
+        from investment_agent.notifications.channels.discord import fetch_guild_channels
 
-            fetch = fetch_guild_channels
-        cached = build_directory(fetch(config))
-        _CACHE[guild_id] = cached
-    return cached
+        fetch = fetch_guild_channels
+    directory = build_directory(fetch(config))
+    _CACHE[guild_id] = (time.monotonic(), directory)
+    return directory
 
 
 def reset_cache() -> None:

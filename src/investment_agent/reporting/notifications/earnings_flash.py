@@ -71,7 +71,7 @@ class EarningsFlashStore:
             table=V_EARNINGS_SURPRISE,
             columns=(
                 "ticker,cik,fiscal_year,fiscal_period,period_end,filing_date,available_at,"
-                "accession_no,revenue_actual,eps_actual,eps_estimate,revenue_estimate,"
+                "accession_no,revenue_actual,eps_actual,eps_estimate,eps_basis_match,revenue_estimate,"
                 "estimate_snapshot_date,eps_analysts,eps_surprise_ratio,revenue_surprise_ratio,"
                 "guidance_summary,operating_income_actual,net_income_actual,press_release_url"
             ),

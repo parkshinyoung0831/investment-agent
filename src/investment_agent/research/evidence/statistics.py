@@ -6,6 +6,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 
+from investment_agent.data.fundamentals.domain.periods import are_consecutive_quarters
 from investment_agent.platform.serialization import finite_float as _finite
 
 
@@ -150,7 +151,7 @@ def quality_statistics(rows: Iterable[Mapping[str, Any]]) -> dict[str, float]:
     quarters = _quarters_desc(list(rows))
     ttm = quarters[:_TTM_QUARTERS]
     output: dict[str, float] = {}
-    if len(ttm) < _TTM_QUARTERS:
+    if len(ttm) < _TTM_QUARTERS or not are_consecutive_quarters(row["period_end"] for row in ttm):
         return output
     latest = ttm[0]
     revenue = _sum(ttm, "revenue")

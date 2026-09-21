@@ -17,13 +17,10 @@ from investment_agent.execution.safety.control import (
 )
 from investment_agent.execution.brokers.toss.orders import (
     TossOrderApi,
-    TossOrderApiError,
     TossOrderCommand,
     TossOrderModification,
     TossOrderOutcomeUnknown,
     TossOrderRejected,
-    TossOrderSnapshot,
-    parse_personal_order_event,
 )
 
 NOW = datetime(2026, 8, 22, 1, 0, tzinfo=timezone.utc)
@@ -344,23 +341,6 @@ class TossOrderApiTest(unittest.TestCase):
             self.api.cancel_order(
                 account_seq=7, order_id="other", permit=cancel_permit,
                 controls=controls(), now=NOW,
-            )
-
-
-class TossOrderEventTest(unittest.TestCase):
-    def test_personal_order_frame_is_account_bound(self):
-        event, order = parse_personal_order_event(
-            {"type": "message", "topic": "personal:order:7",
-             "data": {"event": "FILL", "accountSeq": "7", "order": remote_order()}},
-            expected_account_seq=7,
-        )
-        self.assertEqual(event, "FILL")
-        self.assertIsInstance(order, TossOrderSnapshot)
-        with self.assertRaises(TossOrderApiError):
-            parse_personal_order_event(
-                {"type": "message", "topic": "personal:order:8",
-                 "data": {"event": "FILL", "accountSeq": "8", "order": remote_order()}},
-                expected_account_seq=7,
             )
 
 

@@ -56,11 +56,24 @@ def _rows(connection, sql, params=()):
     return [dict(zip(names, row)) for row in cursor.fetchall()]
 
 
-def _table_rows(connection, table):
+def _table_rows(connection, table, *, order_by: str | None = None, limit: int | None = None):
+    """표 전체(또는 최근 `limit`행)를 읽는다. 정렬·상한은 SQL에서 처리해 원장이 커져도 화면이 전부 읽지 않는다.
+
+    `order_by`는 호출자 문자열을 SQL에 넣지 않고 그 표의 실제 컬럼 이름과 대조한 뒤에만 쓴다.
+    """
     types = {item[1]: str(item[2]).upper() for item in connection.execute(f"PRAGMA table_info({table})")}
+    sql = f"SELECT * FROM {table}"
+    params: tuple = ()
+    if order_by is not None:
+        if order_by not in types:
+            raise ValueError("unknown order column for runtime reporting dataset")
+        sql += f" ORDER BY {order_by} DESC"
+    if limit is not None:
+        sql += " LIMIT ?"
+        params = (int(limit),)
     return [{key: json.loads(value) if value is not None and types[key] == "JSON"
              else bool(value) if value is not None and types[key] == "BOOLEAN" else value
-             for key, value in row.items()} for row in _rows(connection, f"SELECT * FROM {table}")]
+             for key, value in row.items()} for row in _rows(connection, sql, params)]
 
 
 def _payload_rows(connection, table: str, payload_column: str = "payload_json") -> list[dict]:
@@ -74,12 +87,14 @@ def _payload_rows(connection, table: str, payload_column: str = "payload_json") 
     return output
 
 
-def read_runtime_rows(dataset: str) -> list[dict]:
+def read_runtime_rows(dataset: str, *, order_by: str | None = None, limit: int | None = None) -> list[dict]:
     """Dashboard가 사용하는 로컬 원장 데이터셋만 읽는다.
 
     호출자가 table 이름을 임의로 전달해 SQL을 만들 수 없도록 allowlist를 먼저
     검사한다. 이 함수는 읽기 전용 연결만 열며 빈 파일이나 낡은 스키마를 만들거나
     고치지 않는다.
+
+    `order_by`(내림차순)·`limit`은 일반 표 데이터셋(`_PLAIN_DATASETS`)에서만 SQL로 적용한다.
     """
     allowed = _PLAIN_DATASETS | _PAYLOAD_DATASETS | set(_SYSTEM_DATASETS) | {
         "execution_control", "order_events", "reconciliation_runs",
@@ -87,9 +102,11 @@ def read_runtime_rows(dataset: str) -> list[dict]:
     }
     if dataset not in allowed:
         raise ValueError("unknown runtime reporting dataset")
+    if (order_by is not None or limit is not None) and dataset not in _PLAIN_DATASETS:
+        raise ValueError("order_by/limit are supported only for plain runtime datasets")
     with runtime_connection(read_only=True) as connection:
         if dataset in _PLAIN_DATASETS:
-            return _table_rows(connection, dataset)
+            return _table_rows(connection, dataset, order_by=order_by, limit=limit)
         if dataset in _PAYLOAD_DATASETS:
             return _payload_rows(connection, dataset)
         if dataset in _SYSTEM_DATASETS:

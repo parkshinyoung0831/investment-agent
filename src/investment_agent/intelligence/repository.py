@@ -33,7 +33,7 @@ class IntelligenceRepository:
         self.read_only = read_only
         self.archive_root = db.parquet_root(self.path)
         self.runtime_path = Path(runtime_path) if runtime_path is not None else (
-            default_runtime_database_path() if path is None or self.path == db.DEFAULT_DATABASE_PATH or os.environ.get(RUNTIME_DB_PATH_ENV)
+            default_runtime_database_path() if path is None or self.path == db.default_database_path() or os.environ.get(RUNTIME_DB_PATH_ENV)
             else self.path.parent / f"{self.path.stem}.runtime.sqlite3"
         )
 
@@ -263,10 +263,25 @@ class IntelligenceRepository:
                 "INSERT INTO local_job_state (job_name,last_started_at,last_finished_at,last_status,detail) VALUES (?,?,?,?,?) ON CONFLICT(job_name) DO UPDATE SET last_started_at=excluded.last_started_at,last_finished_at=excluded.last_finished_at,last_status=excluded.last_status,detail=excluded.detail",
                 (f"intelligence:{run.kind}:{run.domain}", run.started_at.isoformat(), run.finished_at.isoformat() if run.finished_at else None, runtime_status, json.dumps({
                     "run_id": run.run_id, "provider": run.provider, "stored_count": run.stored_count,
-                    "duplicate_count": run.duplicate_count, "deleted_count": run.deleted_count,
-                    "message": run.message,
+                    "duplicate_count": run.duplicate_count, "unparsed_count": run.unparsed_count,
+                    "deleted_count": run.deleted_count, "error_kind": run.error_kind,
+                    "message": run.message, "resume_from": run.resume_from,
                 }, ensure_ascii=False, separators=(",", ":"))),
             )
+
+    def resume_cursor(self, kind: str, domain: str) -> str | None:
+        """직전 실행이 호출 한도로 멈춘 종목. 없으면 None(처음부터)."""
+        with runtime_connection(self.runtime_path) as connection:  # 없으면 선언된 스키마로 만든다(record_run과 같은 경로)
+            row = connection.execute(
+                "SELECT detail FROM local_job_state WHERE job_name = ?", (f"intelligence:{kind}:{domain}",)
+            ).fetchone()
+        if row is None or not row[0]:
+            return None
+        try:
+            cursor = json.loads(row[0]).get("resume_from")
+        except (TypeError, ValueError):
+            return None
+        return str(cursor) if cursor else None
 
     def _delete_mentions(self, connection: Any, kind: str, source_ids: Sequence[str]) -> int:
         if not source_ids:

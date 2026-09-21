@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from investment_agent.platform.cli.runtime import run_log_payload
+from investment_agent.platform.cli.runtime import exit_code_for_run, run_log_payload
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.serialization import ContractError, parse_datetime
 from investment_agent.research.evidence.reader import PitReader
@@ -25,7 +25,7 @@ from investment_agent.research.valuation.inputs import build_valuation_inputs
 log = get_logger(__name__)
 
 WORKFLOW = "ai_investor_build_valuations"
-SOURCE_VERSION = "pit-valuation-v1"
+SOURCE_VERSION = "pit-valuation-v2"
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -177,7 +177,10 @@ def main(argv: list[str] | None = None) -> int:
         dry_run=args.dry_run,
         repository=repository,
     )
-    return 0 if payload["status"] == "success" else 1
+    return exit_code_for_run(
+        str(payload["status"]), failed=int(payload["detail"]["failed_count"]),
+        total=len(tickers), saved=int(payload["rows_upserted"]),
+    )
 
 
 __all__ = ["SOURCE_VERSION", "WORKFLOW", "build_valuations", "main"]

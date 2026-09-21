@@ -5,7 +5,7 @@ import unittest
 from datetime import datetime, timezone
 
 from investment_agent.trading.contracts import ContractError
-from investment_agent.trading.decision.universe import rotate_after_latest_cases, select_tracked_tickers
+from investment_agent.trading.decision.universe import select_tracked_tickers
 
 _AS_OF = datetime(2026, 8, 21, 21, 0, tzinfo=timezone.utc)
 
@@ -71,30 +71,6 @@ class UniverseSelectionTest(unittest.TestCase):
             select_tracked_tickers(
                 _Repository(), None, limit=1, as_of_at=datetime(2026, 8, 21)
             )
-
-    def test_rotation_continues_after_last_ticker_in_latest_run(self):
-        selected = rotate_after_latest_cases(
-            ["AAPL", "AMZN", "MSFT", "NVDA"],
-            [
-                {"ticker": "AMZN", "as_of_at": "2026-08-21T00:00:00+00:00"},
-                {"ticker": "AAPL", "as_of_at": "2026-08-21T00:00:00+00:00"},
-                {"ticker": "NVDA", "as_of_at": "2026-08-20T00:00:00+00:00"},
-            ],
-            limit=2,
-        )
-        self.assertEqual(selected, ["MSFT", "NVDA"])
-
-    def test_rotation_handles_wraparound_batch_without_repeating_aaa(self):
-        selected = rotate_after_latest_cases(
-            ["AAA", "BBB", "CCC", "YYY", "ZZZ"],
-            [
-                {"ticker": "YYY", "as_of_at": "2026-08-21T00:00:00+00:00"},
-                {"ticker": "ZZZ", "as_of_at": "2026-08-21T00:00:00+00:00"},
-                {"ticker": "AAA", "as_of_at": "2026-08-21T00:00:00+00:00"},
-            ],
-            limit=2,
-        )
-        self.assertEqual(selected, ["BBB", "CCC"])
 
 
 if __name__ == "__main__":

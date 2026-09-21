@@ -9,6 +9,7 @@ from investment_agent.execution.orders.planning import FUNDING_PHASE_SELLS
 from investment_agent.execution.orders.toss_manual import TossManualHandoff
 
 _BLUE = 0x3182F6
+_FIELD_LIMIT = 1_024
 
 
 def _ticket_lines(handoff: TossManualHandoff) -> str:
@@ -19,8 +20,25 @@ def _ticket_lines(handoff: TossManualHandoff) -> str:
         f"@ ${ticket.reference_price:,.2f} ≈ ${ticket.estimated_notional:,.2f}"
         for ticket in handoff.tickets
     ]
+    return _fit_field(lines)
+
+
+def _fit_field(lines: list[str]) -> str:
+    """Discord field 값 한도 안에서 주문을 줄 단위로 담고, 못 담은 건수를 밝힌다.
+
+    글자 단위로 자르면 주문 줄이 중간에서 끊겨 어떤 주문이 빠졌는지 알 수 없다. 예상 금액은 전체 기준이므로
+    보이지 않는 주문이 있다는 사실 자체가 승인 판단에 필요한 정보다.
+    """
     text = "\n".join(lines)
-    return text if len(text) <= 1_024 else text[:1_021] + "..."
+    if len(text) <= _FIELD_LIMIT:
+        return text
+    kept: list[str] = []
+    for line in lines:
+        omitted = f"\n… 외 {len(lines) - len(kept)}건 (예상 금액은 전체 기준)"
+        if len("\n".join([*kept, line])) + len(omitted) > _FIELD_LIMIT:
+            return "\n".join(kept) + omitted
+        kept.append(line)
+    return text
 
 
 def button_components(

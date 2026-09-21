@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 from investment_agent.trading.decision.agents.engine import TradingAgentsDecisionEngine
+from investment_agent.trading.decision.llm import market_source
 from investment_agent.trading.decision.llm import runtime as adapter
 from investment_agent.trading.decision.llm import social_source
 from investment_agent.trading.contracts import ContractError
@@ -162,11 +163,13 @@ class TradingAgentsAdapterTest(unittest.TestCase):
         bundle = _bundle()
         token = adapter._ACTIVE_BUNDLE.set(bundle)
         try:
-            result = adapter._stock("AAPL", "2026-08-01", "2026-08-20")
+            def market(symbol, curr_date):
+                return market_source.fetch_verified_market_snapshot(symbol, curr_date, get_bundle=adapter._bundle)
+
+            result = market("AAPL", "2026-08-20")
             self.assertIn("EV-MARKET-123", result)
-            self.assertIn("NO_DATA_AVAILABLE", adapter._stock("MSFT", "2026-08-01", "2026-08-20"))
-            self.assertIn("NO_DATA_AVAILABLE", adapter._stock("AAPL", "2026-08-01", "2026-08-22"))
-            self.assertIn("Internet fallback is disabled", adapter._no_external_data("news"))
+            self.assertIn("NO_DATA_AVAILABLE", market("MSFT", "2026-08-20"))
+            self.assertIn("NO_DATA_AVAILABLE", market("AAPL", "2026-08-22"))
         finally:
             adapter._ACTIVE_BUNDLE.reset(token)
 
@@ -557,7 +560,7 @@ class TradingAgentsAdapterTest(unittest.TestCase):
 
         bundle = _bundle()
         # Market source direct test
-        stock_res = market_source.fetch_stock_data("AAPL", "2026-08-01", "2026-08-20", lambda: bundle)
+        stock_res = market_source.fetch_verified_market_snapshot("AAPL", "2026-08-20", get_bundle=lambda: bundle)
         self.assertIn("EV-MARKET-123", stock_res)
 
         # Fundamentals source direct test

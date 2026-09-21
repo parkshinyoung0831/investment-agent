@@ -31,6 +31,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
+from investment_agent.platform.storage_paths import repository_artifact_root
 from investment_agent.data.market import persistence as market_data
 from investment_agent.data.universe import persistence as universe_data
 from investment_agent.platform.logging import get_logger
@@ -53,7 +54,6 @@ _MAX_PRICE_RATIO = 4.0
 SUGGEST_MIN_T = 1.5
 # 거래일 → 달력일 환산(겹침 판정용).
 _CALENDAR_PER_TRADING_DAY = 365.25 / 252
-DEFAULT_OUTPUT_DIR = Path("artifacts/research/factor_ic")
 
 
 def spearman(left: Mapping[str, float], right: Mapping[str, float]) -> tuple[float | None, int]:
@@ -212,6 +212,28 @@ def suggest_category_weights(
     }
 
 
+class _CloseCache:
+    """(날짜, 종목)별로 종가를 한 번만 읽는다.
+
+    날짜만 키로 쓰면 그 날짜를 먼저 요청한 종목 집합으로 채워져, 나중에 새로 들어온 멤버는 시작가가 없어
+    조용히 수익률에서 빠진다(편입 종목이 IC 표본에서 누락). 요청한 종목 중 아직 못 읽은 것만 조회한다.
+    """
+
+    def __init__(self, closes_on: Callable[[Sequence[str], date], Mapping[str, float]]) -> None:
+        self._closes_on = closes_on
+        self._asked: dict[date, set[str]] = {}
+        self._closes: dict[date, dict[str, float]] = {}
+
+    def __call__(self, day: date, tickers: Sequence[str]) -> Mapping[str, float]:
+        asked = self._asked.setdefault(day, set())
+        missing = [ticker for ticker in tickers if ticker not in asked]
+        if missing:
+            self._closes.setdefault(day, {}).update(self._closes_on(missing, day))
+            asked.update(missing)
+        known = self._closes.get(day, {})
+        return {ticker: known[ticker] for ticker in tickers if ticker in known}
+
+
 def research(
     *,
     snapshots_by_date: Mapping[date, Mapping[str, Mapping[str, float | None]]],
@@ -230,12 +252,7 @@ def research(
     ics: dict[tuple[str, int], list[float]] = defaultdict(list)
     spreads: dict[tuple[str, int], list[float]] = defaultdict(list)
     per_date: list[dict[str, Any]] = []
-    close_cache: dict[date, Mapping[str, float]] = {}
-
-    def closes(day: date, tickers: Sequence[str]) -> Mapping[str, float]:
-        if day not in close_cache:
-            close_cache[day] = closes_on(tickers, day)
-        return close_cache[day]
+    closes = _CloseCache(closes_on)
 
     for as_of in dates:
         features = snapshots_by_date[as_of]
@@ -311,7 +328,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--horizons", type=int, nargs="+", default=list(DEFAULT_HORIZONS))
     parser.add_argument("--source-kind", default="historical_replay",
                         help="이 출처의 snapshot만 쓴다(provenance.source_kind). 빈 값이면 전부")
-    parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
+    parser.add_argument("--output-dir", default=str(repository_artifact_root() / "research" / "factor_ic"))
     args = parser.parse_args(argv)
 
     from investment_agent.research.features.layer import FEATURE_VERSION

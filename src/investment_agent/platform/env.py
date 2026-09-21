@@ -14,21 +14,30 @@ def env_str(name: str, default: str) -> str:
     return value or default
 
 
-def env_int(name: str, default: int) -> int:
+def _checked(name: str, number, minimum, maximum):
+    """범위를 벗어난 값은 조용히 고치지 않고 변수 이름과 함께 거절한다(음수 lookback은 조회 창을 미래로 보낸다)."""
+    if minimum is not None and number < minimum or maximum is not None and number > maximum:
+        raise ValueError(f"{name}은 {minimum}~{maximum} 범위여야 합니다: {number!r}")
+    return number
+
+
+def env_int(name: str, default: int, *, minimum: int | None = None, maximum: int | None = None) -> int:
     value = os.environ.get(name, "").strip()
     if not value:
         return default
     try:
-        return int(value)
+        number = int(value)
     except ValueError as error:
         raise ValueError(f"{name}은 정수여야 합니다: {value!r}") from error
+    return _checked(name, number, minimum, maximum)
 
 
-def env_float(name: str, default: float) -> float:
+def env_float(name: str, default: float, *, minimum: float | None = None, maximum: float | None = None) -> float:
     value = os.environ.get(name, "").strip()
     if not value:
         return default
     try:
-        return float(value)
+        number = float(value)
     except ValueError as error:
         raise ValueError(f"{name}은 숫자여야 합니다: {value!r}") from error
+    return _checked(name, number, minimum, maximum)

@@ -11,11 +11,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
+from investment_agent.platform.storage_paths import ai_investor_artifact_dir
 from investment_agent.platform.serialization import canonical_json, json_value, parse_datetime
 
 ARTIFACT_KIND = "decision_evidence"
 ARTIFACT_SCHEMA_VERSION = 1
-DEFAULT_ARTIFACT_ROOT = Path("artifacts/ai_investor/tradingagents")
 _ARTIFACT_URI_PREFIX = "artifact://"
 
 
@@ -142,12 +142,9 @@ class EvidenceArtifactStore:
     """결정 근거를 해시 경로에 원자적으로 기록하고 읽을 때 다시 검증한다."""
 
     def __init__(self, root: str | Path | None = None) -> None:
-        configured = root
-        if configured is None:
-            configured = os.environ.get("AI_INVESTOR_ARTIFACT_DIR", str(DEFAULT_ARTIFACT_ROOT))
-        if not str(configured).strip():
-            raise EvidenceArtifactError("AI_INVESTOR_ARTIFACT_DIR must not be empty")
-        self.root = Path(configured).expanduser()
+        if root is not None and not str(root).strip():
+            raise EvidenceArtifactError("artifact root must not be empty")
+        self.root = Path(root).expanduser() if root is not None else ai_investor_artifact_dir()
 
     @staticmethod
     def _payload(

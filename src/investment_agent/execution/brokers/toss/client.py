@@ -4,7 +4,6 @@
 """
 from __future__ import annotations
 
-import math
 import os
 import time
 from dataclasses import dataclass
@@ -25,7 +24,6 @@ _ACCOUNTS_URL = f"{_BASE}/api/v1/accounts"
 _HOLDINGS_URL = f"{_BASE}/api/v1/holdings"
 _PRICES_URL = f"{_BASE}/api/v1/prices"
 _BUYING_POWER_URL = f"{_BASE}/api/v1/buying-power"
-_EXCHANGE_RATE_URL = f"{_BASE}/api/v1/exchange-rate"
 _ORDERS_URL = f"{_BASE}/api/v1/orders"
 _US_MARKET_CALENDAR_URL = f"{_BASE}/api/v1/market-calendar/US"
 _PRICE_BATCH = 200
@@ -181,45 +179,6 @@ def fetch_buying_power(account_seq: int, *, currency: str = "USD") -> float:
     if value < 0:
         raise TossExecutionError("토스 매수 가능 금액이 음수입니다")
     return value
-
-
-def fetch_exchange_rate(
-    *,
-    base_currency: str = "USD",
-    quote_currency: str = "KRW",
-    date_time: str | None = None,
-) -> dict[str, Any]:
-    """토스 참고용 환율을 읽어 통화 변환에 필요한 값만 반환한다."""
-
-    base = str(base_currency).strip().upper()
-    quote = str(quote_currency).strip().upper()
-    if not base or not quote or base == quote:
-        raise TossExecutionError("토스 환율 조회 통화가 올바르지 않습니다")
-    params = {"baseCurrency": base, "quoteCurrency": quote}
-    if date_time:
-        params["dateTime"] = str(date_time)
-    payload = _get(
-        _EXCHANGE_RATE_URL,
-        params=params,
-        label="환율 조회",
-    )
-    result = payload.get("result")
-    if not isinstance(result, dict):
-        raise TossExecutionError("토스 환율 응답의 result가 객체가 아닙니다")
-    try:
-        rate = float(result["rate"])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise TossExecutionError("토스 환율이 올바르지 않습니다") from exc
-    if not math.isfinite(rate) or rate <= 0:
-        raise TossExecutionError("토스 환율이 양수가 아닙니다")
-    return {
-        "base_currency": str(result.get("baseCurrency") or base).upper(),
-        "quote_currency": str(result.get("quoteCurrency") or quote).upper(),
-        "rate": rate,
-        "mid_rate": result.get("midRate"),
-        "valid_from": result.get("validFrom"),
-        "valid_until": result.get("validUntil"),
-    }
 
 
 def fetch_open_orders(account_seq: int) -> list[dict[str, Any]]:

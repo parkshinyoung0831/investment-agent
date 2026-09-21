@@ -23,15 +23,21 @@ from investment_agent.dashboard.components.ui import result_payload
 ACTIVE_POLICY_PATH = rl_policy_dir() / "active_policy.json"
 
 
+class ActivePolicyUnreadable(RuntimeError):
+    """정책 파일은 있는데 읽거나 해석하지 못했다 — '아직 챔피언 없음'과 다른 상태다."""
+
+
 def _load_real_active_policy() -> dict[str, Any] | None:
-    """실제 강화학습 승격 정책 메타데이터 로드 (없으면 None)."""
+    """실제 강화학습 승격 정책 메타데이터 로드. 파일이 없으면 None, 있는데 손상됐으면 예외."""
     if not ACTIVE_POLICY_PATH.exists():
         return None
     try:
         payload = json.loads(ACTIVE_POLICY_PATH.read_text(encoding="utf-8"))
-        return payload
-    except Exception:
-        return None
+    except (OSError, ValueError) as exc:
+        raise ActivePolicyUnreadable(f"{ACTIVE_POLICY_PATH.name}을 읽지 못했습니다({type(exc).__name__})") from exc
+    if not isinstance(payload, dict):
+        raise ActivePolicyUnreadable(f"{ACTIVE_POLICY_PATH.name}의 형식이 올바르지 않습니다")
+    return payload
 
 
 def render_dsr_gauge(probability: float) -> go.Figure:
@@ -116,9 +122,15 @@ def show() -> None:
 
     # 2. 실제 PPO 강화학습 챔피언 정책 및 과적합 검정
     st.subheader("2. PPO 강화학습 챔피언 정책 & DSR 과적합 검정")
-    real_policy = _load_real_active_policy()
+    try:
+        real_policy = _load_real_active_policy()
+        policy_error = None
+    except ActivePolicyUnreadable as exc:
+        real_policy, policy_error = None, str(exc)
 
-    if real_policy is None:
+    if policy_error is not None:
+        st.error(f"활성 정책 파일 오류: {policy_error}", icon=":material/error:")
+    elif real_policy is None:
         st.warning(
             "⚠️ **현재 승격된 실제 PPO 정책 파일이 없습니다.**\n\n"
             "아직 강화학습 재학습이 실행되지 않았습니다. 터미널에서 아래 명령을 실행하면 실제 훈련된 모델이 생성됩니다:\n"

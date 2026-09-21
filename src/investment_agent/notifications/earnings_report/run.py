@@ -7,10 +7,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
-import shutil
 from collections.abc import Sequence
-from pathlib import Path
 
 from investment_agent.platform.logging import get_logger
 from investment_agent.config import load_config
@@ -24,6 +21,7 @@ from investment_agent.notifications.engine import PublishContext, Rendered, publ
 from investment_agent.notifications.subscriptions import discord_target
 from investment_agent.notifications.channels import routing
 from investment_agent.notifications.channels.directory import guild_directory
+from investment_agent.notifications.playwright import persist_png
 from investment_agent.platform.logging import configure_logging
 
 log = get_logger(__name__)
@@ -49,21 +47,6 @@ def _forum_tags(target: str, item: dict, config) -> tuple[str, ...]:
     return tuple(directory.tag_ids_by_channel_id(target, tuple(names)))
 
 
-def _persist_png(path: str, ticker: str, accession_no: str) -> str:
-    source = Path(path)
-    if not source.is_file():
-        raise FileNotFoundError(path)
-    target = Path("artifacts") / "notifications" / "earnings_report" / f"{ticker}_{accession_no}.png"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_suffix(".tmp")
-    try:
-        shutil.copyfile(source, temporary)
-        os.replace(temporary, target)
-    finally:
-        temporary.unlink(missing_ok=True)
-    return str(target)
-
-
 def _extras_by_ticker(tickers: list[str]) -> dict[str, dict]:
     """역사 밸류·건전성·이익의 질 계산에 필요한 데이터를 티커별로 한 번만 읽는다."""
     if not tickers:
@@ -78,9 +61,6 @@ def _extras_by_ticker(tickers: list[str]) -> dict[str, dict]:
     for row in db.load_earnings_estimates(tickers):
         consensus_rows.setdefault(str(row["ticker"]), []).append(row)
     surprise_history = db.load_surprise_history(tickers)
-    price_targets: dict[str, list[dict]] = {}
-    for row in db.load_price_targets(tickers):
-        price_targets.setdefault(str(row["ticker"]), []).append(row)
     out: dict[str, dict] = {}
     for ticker in tickers:
         raw_prices = prices.get(ticker, [])
@@ -106,7 +86,6 @@ def _extras_by_ticker(tickers: list[str]) -> dict[str, dict]:
             "shares": shares.get(ticker, []),
             "earnings_estimates": consensus_rows.get(ticker, []),
             "surprise_history": surprise_history.get(ticker, []),
-            "price_targets": price_targets.get(ticker, []),
         }
     return out
 
@@ -137,8 +116,9 @@ def run(
         if ticker not in extras:
             extras.update(_extras_by_ticker([ticker]))
         ctx, caption = card.build(item, extras.get(ticker))
-        png = _persist_png(
-            asyncio.run(render.shoot_png(render.render("earnings.html.j2", ctx))), ticker, notice.occurrence,
+        png = persist_png(
+            asyncio.run(render.shoot_png(render.render("earnings.html.j2", ctx))),
+            kind="earnings_report", name=f"{ticker}_{notice.occurrence}",
         )
         return Rendered(
             {"content": caption, "embeds": embeds.build_segments(item)},

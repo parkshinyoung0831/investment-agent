@@ -13,8 +13,8 @@ RUNTIME_DATABASE_PATH_ENV = "AI_INVESTOR_RUNTIME_DB_PATH"
 EVIDENCE_CACHE_PATH_ENV = "AI_INVESTOR_NEWS_CACHE_PATH"
 MARKET_CHANGE_MANIFEST_PATH_ENV = "AI_INVESTOR_MARKET_CHANGE_MANIFEST_PATH"
 LOCAL_MIRROR_ROOT_ENV = "AI_INVESTOR_LOCAL_MIRROR_ROOT"
+AI_INVESTOR_ARTIFACT_DIR_ENV = "AI_INVESTOR_ARTIFACT_DIR"
 
-DEFAULT_LOCAL_DATA_ROOT = Path("data/local")
 DEFAULT_LOCAL_ARTIFACT_ROOT_NAME = "artifacts"
 DEFAULT_INTELLIGENCE_DATABASE_NAME = "intelligence.duckdb"
 DEFAULT_RESEARCH_DATABASE_NAME = "research.duckdb"
@@ -35,23 +35,41 @@ def repository_root() -> Path:
     raise RuntimeError("저장소 루트를 찾지 못했다 (pyproject.toml + db/)")
 
 
+def repository_artifact_root() -> Path:
+    """저장소 루트의 `artifacts/` — 사람이 열어 보는 산출물(카드 PNG·백테스트·시장 archive·TradingAgents).
+
+    상대 경로(`Path("artifacts")`)는 실행 폴더가 저장소 루트가 아니면 다른 곳에 만들어져, 나중에 그 경로를
+    다시 여는 쪽(알림 dispatcher)이 파일을 못 찾는다.
+    """
+    return repository_root() / "artifacts"
+
+
+def ai_investor_artifact_dir() -> Path:
+    """TradingAgents cache·report와 선택적 raw 저장 루트. `AI_INVESTOR_ARTIFACT_DIR`가 우선한다."""
+    return _configured_path(AI_INVESTOR_ARTIFACT_DIR_ENV) or repository_artifact_root() / "ai_investor" / "tradingagents"
+
+
 def harness_state_dir() -> Path:
     """투자 하네스의 state.json·lockdown이 놓이는 폴더. 쓰는 쪽과 읽는 화면이 같은 곳을 본다."""
-    return repository_root() / "artifacts" / "ops" / "investment_harness"
+    return repository_artifact_root() / "ops" / "investment_harness"
 
 
 def rl_policy_dir() -> Path:
     """RL 정책 산출물 폴더. 학습(research)이 쓰고 대시보드가 읽는다."""
-    return repository_root() / "artifacts" / "trading" / "rl_policies"
+    return repository_artifact_root() / "trading" / "rl_policies"
 
 
 def _configured_path(name: str) -> Path | None:
     configured = os.environ.get(name, "").strip()
-    return Path(configured) if configured else None
+    return Path(configured).expanduser() if configured else None
 
 
 def local_data_root() -> Path:
-    return _configured_path(LOCAL_DATA_ROOT_ENV) or DEFAULT_LOCAL_DATA_ROOT
+    """로컬 저장소들의 뿌리. 실행 폴더가 아니라 저장소 루트 기준이다.
+
+    상대 경로면 다른 폴더에서 CLI를 돌릴 때 그 폴더에 빈 DB가 새로 만들어지고 "데이터 없음"으로 조용히 끝난다.
+    """
+    return _configured_path(LOCAL_DATA_ROOT_ENV) or repository_root() / "data" / "local"
 
 
 def local_mirror_root() -> Path:
@@ -122,9 +140,9 @@ def market_change_manifest_path() -> Path:
 
 def legacy_candidates(store: str) -> tuple[Path, ...]:
     candidates = {
-        "intelligence": (Path("data/local/intelligence.duckdb"),),
-        "research": (Path("artifacts/research/research.duckdb"),),
-        "runtime": (Path("data/local/runtime.sqlite3"),),
+        "intelligence": (repository_root() / "data" / "local" / "intelligence.duckdb",),
+        "research": (repository_artifact_root() / "research" / "research.duckdb",),
+        "runtime": (repository_root() / "data" / "local" / "runtime.sqlite3",),
     }
     try:
         return candidates[store]
@@ -135,7 +153,7 @@ def legacy_candidates(store: str) -> tuple[Path, ...]:
 __all__ = [
     "DEFAULT_INTELLIGENCE_DATABASE_NAME",
     "DEFAULT_EVIDENCE_CACHE_NAME",
-    "DEFAULT_LOCAL_DATA_ROOT",
+    "AI_INVESTOR_ARTIFACT_DIR_ENV",
     "DEFAULT_MARKET_CHANGE_MANIFEST_NAME",
     "DEFAULT_RESEARCH_DATABASE_NAME",
     "DEFAULT_RUNTIME_DATABASE_NAME",
@@ -157,4 +175,9 @@ __all__ = [
     "research_database_path",
     "research_root",
     "runtime_database_path",
+    "ai_investor_artifact_dir",
+    "harness_state_dir",
+    "repository_artifact_root",
+    "repository_root",
+    "rl_policy_dir",
 ]

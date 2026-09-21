@@ -72,7 +72,7 @@ def audit_backfill(
             rows.append({
                 "as_of_at": as_of.isoformat(), "status": "no_membership",
                 "expected_count": 0, "snapshot_count": 0, "unavailable_count": 0,
-                "terminal_count": 0, "coverage": 0.0, "missing_tickers": [],
+                "terminal_count": 0, "coverage": 0.0, "snapshot_coverage": 0.0, "missing_tickers": [],
             })
             continue
         state = date_state(as_of, expected)
@@ -91,7 +91,10 @@ def audit_backfill(
             "snapshot_count": len(stored),
             "unavailable_count": len(unavailable),
             "terminal_count": len(terminal),
+            # coverage는 "이 날짜를 더 처리할 것이 없다"(불가로 확정한 종목 포함)의 비율이라 1.0이어도 표본에는 없는 종목이
+            # 있다. 학습·IC 표본이 멤버십을 얼마나 실제로 담았는지는 snapshot_coverage로 읽는다(생존 편향 점검).
             "coverage": round(len(terminal) / len(expected), 6),
+            "snapshot_coverage": round(len(stored) / len(expected), 6),
             "missing_tickers": missing,
         })
     return rows

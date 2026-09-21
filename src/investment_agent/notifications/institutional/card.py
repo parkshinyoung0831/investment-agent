@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from datetime import datetime
-from zoneinfo import ZoneInfo
 
+from investment_agent.platform.clock import kst_today
 from investment_agent.data.institutional.domain.managers import blind_spot_caveat
 from . import format as fmt
 from .palette import TOKENS
@@ -367,7 +366,7 @@ def build_quarterly(data: dict[str, list[dict]]) -> dict:
         "tokens": TOKENS,
         "period": period,
         "quarter": fmt.quarter(period),
-        "generated_on": datetime.now(ZoneInfo("Asia/Seoul")).date().isoformat(),
+        "generated_on": kst_today().isoformat(),
         "radar_status": radar_status,
         "co_held": co_held,
         "filed_count": len(filings),

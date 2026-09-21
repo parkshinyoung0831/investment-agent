@@ -16,16 +16,17 @@ import re
 import unittest
 from pathlib import Path
 
-from investment_agent.platform.storage_paths import research_database_path, research_root
+from investment_agent.platform.storage_paths import repository_root, research_database_path, research_root
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / ".github" / "workflows"
 
 #: artifact를 주고받는 워크플로와 그 경로가 가리켜야 하는 것.
+#: 워크플로의 cwd는 저장소 루트이므로 저장소 루트 기준 상대 경로로 비교한다.
 _ARTIFACT_PATHS = {
-    "tech_indicators.yml": research_database_path(),
-    "strategy_monthly.yml": research_database_path(),
-    "notify_strategy.yml": research_root(),
+    "tech_indicators.yml": research_database_path().relative_to(repository_root()),
+    "strategy_monthly.yml": research_database_path().relative_to(repository_root()),
+    "notify_strategy.yml": research_root().relative_to(repository_root()),
 }
 
 _PATH_LINE = re.compile(r"^\s+path:\s*(.+?)\s*$", re.M)

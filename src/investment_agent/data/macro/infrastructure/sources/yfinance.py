@@ -2,22 +2,16 @@
 from __future__ import annotations
 
 import math
-from datetime import date, datetime, timezone
-from zoneinfo import ZoneInfo
+from datetime import date
 
 import pandas as pd
 import yfinance as yf
 
+from investment_agent.platform.clock import us_market_today
 from investment_agent.data.macro.infrastructure.fetch import safe_fetch
 from investment_agent.platform.logging import get_logger
 
 log = get_logger(__name__)
-_NEW_YORK = ZoneInfo("America/New_York")
-
-
-def _market_today() -> date:
-    """yfinance info 값의 기준일을 뉴욕 날짜로 맞춘다."""
-    return datetime.now(timezone.utc).astimezone(_NEW_YORK).date()
 
 SPARSE_THRESHOLD = 60
 _INFO_FIELD_MAP = {"per": "trailingPE", "fwd_per": "forwardPE", "pbr": "priceToBook"}
@@ -209,7 +203,7 @@ def _fetch_info_ratio(ticker: str, info_key: str) -> pd.Series:
         raise YFinanceDataError(
             f"{ticker}: yfinance info field {info_key} is non-finite"
         )
-    return pd.Series({pd.Timestamp(_market_today()).normalize(): numeric})
+    return pd.Series({pd.Timestamp(us_market_today()).normalize(): numeric})
 
 
 def _validate_result(ticker: str, series: pd.Series) -> pd.Series:

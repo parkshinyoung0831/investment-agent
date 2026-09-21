@@ -16,8 +16,9 @@ from typing import Any
 
 import pandas as pd
 
+from investment_agent.platform.storage_paths import repository_artifact_root
+
 ARCHIVE_ENV = "INVESTMENT_AGENT_MARKET_ARCHIVE_DIR"
-DEFAULT_ARCHIVE_ROOT = Path("artifacts/market_history")
 _COLUMNS = (
     "security_id", "ticker", "fetched_at", "trade_date", "open", "high", "low", "close", "adj_close",
     "volume", "div_amount", "split_ratio", "source",
@@ -31,7 +32,7 @@ class MarketArchiveError(RuntimeError):
 def archive_root(root: str | Path | None = None) -> Path:
     """명시한 영속 볼륨 또는 프로젝트 artifact root를 반환한다."""
     configured = root if root is not None else os.environ.get(ARCHIVE_ENV)
-    return Path(configured).expanduser() if configured else DEFAULT_ARCHIVE_ROOT
+    return Path(configured).expanduser() if configured else repository_artifact_root() / "market_history"
 
 
 def _frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
@@ -98,4 +99,4 @@ def archive_daily_rows(rows: list[dict[str, Any]], *, root: str | Path | None = 
     return len(incoming)
 
 
-__all__ = ["ARCHIVE_ENV", "DEFAULT_ARCHIVE_ROOT", "MarketArchiveError", "archive_daily_rows", "archive_root"]
+__all__ = ["ARCHIVE_ENV", "MarketArchiveError", "archive_daily_rows", "archive_root"]

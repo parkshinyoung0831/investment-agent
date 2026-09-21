@@ -15,18 +15,6 @@ class DossierSectionSpec:
     data_status: str
 
 
-def coverage_rows() -> list[dict[str, object]]:
-    """읽기 전용 DB 감사 시점의 coverage를 화면용 행으로 돌려준다."""
-    return [
-        {"영역": "가격", "대상": "503 ticker", "보유": "503", "7년 가능": "482", "최초": "2016-09-02", "PIT 판정": "원천 적재시각 때문에 historical 불가"},
-        {"영역": "재무 wide", "대상": "503 tracked security", "보유": "500 CIK", "7년 가능": "465", "최초": "2016-09-27", "PIT 판정": "filed_at 일자만 있어 intraday 불가"},
-        {"영역": "완전 TTM", "대상": "503 ticker", "보유": "501", "7년 가능": "462", "최초": "2017-06-01", "PIT 판정": "TTM vintage 미증명"},
-        {"영역": "발행주식수", "대상": "503 tracked security", "보유": "475 CIK", "7년 가능": "434", "최초": "2016-09-01", "PIT 판정": "accepted_at 사용 가능; coverage 부족"},
-        {"영역": "컨센서스", "대상": "503 ticker", "보유": "502", "7년 가능": "0", "최초": "2026-06-01", "PIT 판정": "collected_at은 있으나 이력 부족"},
-        {"영역": "SIC 산업", "대상": "503 tracked security", "보유": "503", "7년 가능": "—", "최초": "—", "PIT 판정": "현재 mapping만 존재"},
-    ]
-
-
 def dossier_sections() -> tuple[DossierSectionSpec, ...]:
     """목표 서류철의 섹션과 현재 소비 가능 상태를 고정한다."""
     return (

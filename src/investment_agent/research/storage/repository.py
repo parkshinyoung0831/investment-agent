@@ -30,7 +30,6 @@ from investment_agent.research.promotion.gate import (
 )
 from investment_agent.research.rl.contracts import FeatureSnapshot, ForwardReturnLabel, normalize_symbols
 
-DEFAULT_RESEARCH_ROOT = Path("data/local/research")
 DATABASE_NAME = "research.duckdb"
 RESEARCH_DDL_DIR = Path("db/duckdb/research/v1")
 _PROJECT_ROOT = repository_root()
@@ -1060,7 +1059,6 @@ def _iso(value: Any) -> str:
 
 __all__ = [
     "DATABASE_NAME",
-    "DEFAULT_RESEARCH_ROOT",
     "RESEARCH_DDL_DIR",
     "FEATURE_VERSION",
     "RESEARCH_ROOT_ENV",

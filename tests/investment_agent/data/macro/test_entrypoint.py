@@ -1,11 +1,9 @@
 """macro v1 진입점의 범위·모드·종료코드 계약을 검증한다."""
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 import unittest
 from unittest import mock
-
-import pandas as pd
 
 from investment_agent.data.macro.application.refresh_market_state import MacroRefreshResult
 from investment_agent.data.macro.commands import macro_refresh as run
@@ -25,11 +23,6 @@ def _indicator(series_id: str = "SPY") -> dict:
     }
 
 
-def _series(*days: int) -> pd.Series:
-    index = pd.to_datetime([_TODAY - timedelta(days=day) for day in days])
-    return pd.Series([100.0 + day for day in days], index=index)
-
-
 class MacroTransformTest(unittest.TestCase):
     def test_daily_overlap_cutoff(self):
         self.assertEqual(
@@ -37,21 +30,12 @@ class MacroTransformTest(unittest.TestCase):
             date(2026, 8, 13),
         )
 
-    def test_rows_are_limited_to_inclusive_overlap(self):
-        rows = run._rows_for_series(
-            "SPY", _series(20, 14, 13, 0, -1), cutoff=date(2026, 8, 13), end=_TODAY
-        )
-        self.assertEqual(
-            [(row["series_id"], row["obs_date"]) for row in rows],
-            [("SPY", "2026-08-13"), ("SPY", "2026-08-14"), ("SPY", "2026-08-27")],
-        )
-
 
 class MacroRunTest(unittest.TestCase):
     def _run(self, result: MacroRefreshResult, argv: list[str], catalog=None):
         db = mock.Mock()
         with (
-            mock.patch.object(run, "_kst_today", return_value=_TODAY),
+            mock.patch.object(run, "kst_today", return_value=_TODAY),
             mock.patch.object(run.Database, "from_config", return_value=db),
             mock.patch.object(run.MacroRepository, "market_catalog", return_value=catalog or [_indicator()]),
             mock.patch.object(run, "refresh_macro", return_value=result) as refresh,
@@ -91,7 +75,7 @@ class MacroRunTest(unittest.TestCase):
     def test_catalog_failure_is_failed(self):
         db = mock.Mock()
         with (
-            mock.patch.object(run, "_kst_today", return_value=_TODAY),
+            mock.patch.object(run, "kst_today", return_value=_TODAY),
             mock.patch.object(run.Database, "from_config", return_value=db),
             mock.patch.object(run.MacroRepository, "market_catalog", side_effect=RuntimeError("offline")),
             mock.patch.object(run, "notify_ops") as notify,
