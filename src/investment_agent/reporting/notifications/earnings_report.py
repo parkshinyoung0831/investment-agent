@@ -20,7 +20,7 @@ from investment_agent.data.fundamentals.domain.periods import are_consecutive_qu
 from investment_agent.data.market.domain.actions import merge_corporate_actions
 from investment_agent.data.market.repository import MarketRepository
 from investment_agent.data.universe.repository import UniverseRepository
-from investment_agent.reporting.services.financial_row import f, total_debt
+from investment_agent.reporting.services.financial_row import f, net_debt, total_debt
 from investment_agent.data.fundamentals.domain.services.classify_dimensions import display_member_name
 
 # --- DB 식별자 (SSOT) ---------------------------------------------------
@@ -466,17 +466,9 @@ def _ratio_or_none(numerator: float | None, denominator: float | None) -> float 
     return numerator / denominator
 
 
-def _net_debt(row: dict) -> float | None:
-    debt = total_debt(row)
-    cash = f(row.get("cash_and_cash_equivalents"))
-    if debt is None or cash is None:
-        return None
-    return debt - cash
-
-
 def _ev_ex_market_cap(row: dict) -> float | None:
     """EV = 시총 + 이 값. 순부채에 소수주주 지분과 우선주를 더한다."""
-    net = _net_debt(row)
+    net = net_debt(row)
     if net is None:
         return None
     for column in ("minority_interest_balance", "preferred_stock"):
@@ -690,7 +682,7 @@ def load_health(tickers: list[str]) -> dict[str, dict]:
         debt = total_debt(current)
         invested = None if equity is None or debt is None else equity + debt
         ebitda = _ebitda_ttm(rows)
-        net_debt = _net_debt(current)
+        net_debt_value = net_debt(current)
         interest = _ttm(rows, "interest_expense")
         operating = _ttm(rows, "operating_income_loss")
 
@@ -705,7 +697,7 @@ def load_health(tickers: list[str]) -> dict[str, dict]:
             # 쪽으로 표시된다 — 실제 의미는 "EBITDA로 부채를 전혀 갚을 수 없다"다.
             # 빈칸이 틀린 숫자보다 낫다(감사 RR2-10).
             "net_debt_to_ebitda": (
-                None if not ebitda or ebitda <= 0 or net_debt is None else net_debt / ebitda
+                None if not ebitda or ebitda <= 0 or net_debt_value is None else net_debt_value / ebitda
             ),
             "altman_z": _altman_z(current, operating_ttm=operating),
         }

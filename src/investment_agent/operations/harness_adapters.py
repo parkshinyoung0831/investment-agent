@@ -112,6 +112,33 @@ from investment_agent.operations.adapters.notifications import NotificationAdapt
 from investment_agent.operations.adapters.research import ResearchAdapters
 from investment_agent.operations.adapters.trading import TradingAdapters, follow_system_target
 
+# 긴 읽기·분석 stage 전부 — 감싸지 않으면 tick 루프를 그 stage가 끝날 때까지 막는다
+# (감사 OP2-03). 값이 None인 것은 `self.timeouts`에 단일 키가 없는 stage다(예: `notify_reports`는
+# kind별로 따로 시간을 잰다) — 타임아웃 강제 없이 워커 자리만 확보한다.
+_BACKGROUND_STAGE_TIMEOUT_KEYS: dict[str, str | None] = {
+    "analysis": "analysis",
+    "build_valuations": "build_valuations",
+    "build_features": "build_features",
+    "build_labels": "build_labels",
+    "build_training_samples": "build_training_samples",
+    "build_events": "build_events",
+    "evaluate_decisions": "evaluate_decisions",
+    "build_decision_experiences": "build_decision_experiences",
+    "continuous_learning": "continuous_learning",
+    "run_system_portfolio": "system_portfolio",
+    "update_performance": "update_performance",
+    "notify_reports": None,
+    "notify_investment": "notify_investment",
+    # 여기부터는 예전에 감싸는 목록에서 빠졌던 것들이다(감사 OP2-03) — 하나라도 오래 걸리면
+    # 1분 주기 job(승인 처리·가격 감시)이 그동안 통째로 멈췄다.
+    "watch": "earnings_watch",
+    "watch_releases": "econ_release_watch",
+    "sync_local_mirror": "sync_local_mirror",
+    "risk_snapshot": "risk_snapshot",
+    "reconcile": "reconcile",
+    "run_ml_challengers": "ml_challengers",
+}
+
 
 class ProductionInvestmentAdapters(
     DataAdapters,
@@ -161,11 +188,12 @@ class ProductionInvestmentAdapters(
         self.timeouts = dict(timeouts or {})
         if is_background_enabled:
             from investment_agent.operations.harness.background import BackgroundStages
-            self._background=BackgroundStages()
-            for name in ('analysis','build_valuations','build_features','build_labels','build_training_samples',
-                         'build_events','evaluate_decisions','build_decision_experiences','continuous_learning',
-                         'run_system_portfolio','update_performance','notify_reports','notify_investment'):
-                setattr(self,name,self._background.wrap(getattr(self,name)))
+            # 감싸는 stage 수 이상으로 둔다 — 6칸에 13개를 몰아넣던 것(감사 OP2-02)을
+            # 워커 부족 자체로는 못 막게 하고, 그래도 갇히면 타임아웃이 실패로 드러낸다.
+            self._background=BackgroundStages(max_workers=len(_BACKGROUND_STAGE_TIMEOUT_KEYS))
+            for name, timeout_key in _BACKGROUND_STAGE_TIMEOUT_KEYS.items():
+                timeout = self.timeouts.get(timeout_key) if timeout_key else None
+                setattr(self, name, self._background.wrap(getattr(self, name), timeout_seconds=timeout))
     @classmethod
     def from_env(
         cls,
@@ -229,6 +257,27 @@ class ProductionInvestmentAdapters(
             # embed 몇 장을 올릴 뿐이라 짧다. rate limit 대기까지만 감안한다.
             "notify_investment": _positive_float(
                 values, "HARNESS_NOTIFY_INVESTMENT_TIMEOUT_SEC", 5 * 60, maximum=30 * 60,
+            ),
+            # 아래 여섯은 handler 안의 `self.timeouts.get(key, 기본값)` 기본값과 같다 — 예전에는
+            # 이 dict에 없어서(값은 있었지만) background wrap의 타임아웃 근거가 없었다(감사 OP2-03).
+            "continuous_learning": _positive_float(
+                values, "HARNESS_CONTINUOUS_LEARNING_TIMEOUT_SEC", 60 * 60, maximum=4 * 60 * 60,
+            ),
+            "build_decision_experiences": _positive_float(
+                values, "HARNESS_BUILD_DECISION_EXPERIENCES_TIMEOUT_SEC", 60 * 60, maximum=4 * 60 * 60,
+            ),
+            # 재학습·challenger 비교는 시간이 오래 걸리는 게 정상이라 넉넉히 3시간이다.
+            "ml_challengers": _positive_float(
+                values, "HARNESS_ML_CHALLENGERS_TIMEOUT_SEC", 3 * 60 * 60, maximum=6 * 60 * 60,
+            ),
+            "system_portfolio": _positive_float(
+                values, "HARNESS_SYSTEM_PORTFOLIO_TIMEOUT_SEC", 30 * 60, maximum=2 * 60 * 60,
+            ),
+            "update_performance": _positive_float(
+                values, "HARNESS_UPDATE_PERFORMANCE_TIMEOUT_SEC", 10 * 60, maximum=30 * 60,
+            ),
+            "sync_local_mirror": _positive_float(
+                values, "HARNESS_SYNC_LOCAL_MIRROR_TIMEOUT_SEC", 60 * 60, maximum=4 * 60 * 60,
             ),
         }
         runner = SubprocessModuleRunner(

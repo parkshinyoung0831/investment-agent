@@ -78,14 +78,14 @@ research·reporting 20 (`RR2-*`) · 워크플로·시각·그 밖 4 (`AU-*`).
 | RR2-06 | **총수익률이 분할을 두 번 반영한다** (사후평가·RL 보상) | 확정(운영 대조) | 높음 | 수정됨 |
 | RR2-06a | 그 결함을 가리던 테스트 픽스처 2개(미조정 종가) | 확정(운영 대조) | 높음 | 수정됨 |
 | RR2-07 | 백테스트 시뮬레이터가 분할을 수량에 적용한다 — 저장소 가격은 이미 조정됨 | 확정 | 중간 | 잠복(생산자 없음) |
-| RR2-08 | 순부채가 같은 카드 안에서 두 정의로 계산된다(단기투자자산 차감 여부) | 확정 | 중간 | 보고만 |
-| RR2-09 | `total_debt` 정의가 reporting과 research에서 다르다(운용리스 포함 여부) | 확정 | 중간 | 보고만 |
+| RR2-08 | 순부채가 같은 카드 안에서 두 정의로 계산된다(단기투자자산 차감 여부) | 확정 | 중간 | 수정됨 |
+| RR2-09 | `total_debt` 정의가 reporting과 research에서 다르다(운용리스 포함 여부) | 확정 | 중간 | 수정됨(재적재 진행 중) |
 | RR2-10 | EBITDA가 음수면 `net_debt_to_ebitda`가 음수로 나와 "건전해 보인다" | 확정 | 중간 | 수정됨 |
-| RR2-11 | 역사 EV 시계열이 순부채 결측을 0으로 접어 EV/EBITDA 백분위를 싸게 만든다 | 확정 | 중간 | 보고만 |
+| RR2-11 | 역사 EV 시계열이 순부채 결측을 0으로 접어 EV/EBITDA 백분위를 싸게 만든다 | 확정 | 중간 | 수정됨 |
 | RR2-12 | 분할 조정 기준일 규약이 두 곳에서 다르다(`>=` vs `>`) | 의심 | 낮음 | 보고만 |
 | RR2-13 | rate·spread 지표의 고저 계산에 소비자가 없어 금리 4종이 어떤 경보도 못 낸다 | 확정 | 낮음 | 보고만 |
 | RR2-14 | `daily_change` 경보가 절대 변화로 걸고 상대 변화율로 적는다 | 확정 | 낮음 | 수정됨 |
-| RR2-15 | 최대낙폭 부호 규약이 세 곳에서 다르고 승격 게이트가 하나를 "데이터 오류"로 센다 | 확정 | 중간 | 보고만 |
+| RR2-15 | 최대낙폭 부호 규약이 세 곳에서 다르고 승격 게이트가 하나를 "데이터 오류"로 센다 | 확정 | 중간 | 수정됨 |
 | RR2-16 | RL 학습·추론이 결측 feature를 0으로 채운다 — layer가 금지한 규칙, log 스케일에서 극단값 | 확정 | 중간 | 보고만 |
 | RR2-17 | 판단 한 종목의 가격 경로가 어긋나면 RL 재학습 전체가 예외로 선다 | 확정 | 중간 | 보고만 |
 | RR2-18 | 순위 상관을 세 가지 동점 규칙으로 계산한다 | 확정 | 낮음 | 보고만 |
@@ -104,12 +104,12 @@ research·reporting 20 (`RR2-*`) · 워크플로·시각·그 밖 4 (`AU-*`).
 | TR2-07 | 섹터 분류가 없는 종목이 섹터 한도 밖에 놓이고 그 사실이 경고도 없이 통과한다 | 확정 | 중간 | 수정됨 |
 | TR2-08 | 보유 한 종목의 짧은 가격 이력이 테마 전체의 사건 민감도를 경고 한 줄로 없앤다 | 확정 | 중간 | 보고만 |
 | TR2-09 | `estimate_betas`가 종목마다 benchmark 전체 가격을 다시 파싱한다 | 확정 | 낮음 | 수정됨 |
-| TR2-10 | 배당 수익이 어떤 손익에도 안 들어가고 계산된 `dividend_income`을 아무도 읽지 않는다 | 확정 | 중간 | 보고만 |
+| TR2-10 | 배당 수익이 어떤 손익에도 안 들어가고 계산된 `dividend_income`을 아무도 읽지 않는다 | 확정 | 중간 | 부분 수정됨(a) |
 | TR2-11 | `nav_returns`의 `daily_return`이 하루가 아니라 "마지막 스냅샷 이후"다 | 확정 | 낮음 | 수정됨 |
 | TR2-12 | 귀속 불가 체결 카운터가 전역이라 무관한 계좌 보고서에도 품질 결함을 찍는다 | 확정 | 낮음 | 보고만 |
 | TR2-13 | 순 기대수익이 정확히 0인 신호의 confidence를 1.0으로 기록한다 | 확정 | 낮음 | 수정됨 |
 | TR2-14 | 스트레스 한도 하나를 충격 크기가 다른 8개 시나리오에 그대로 적용한다 | 의심 | 중간 | 보고만 |
-| TR2-15 | Evidence Dossier 계층(1,116줄)이 src에서 호출되지 않고 테스트가 살아 있게 유지한다 | 확정 | 중간 | 보고만 |
+| TR2-15 | Evidence Dossier 계층(1,116줄)이 src에서 호출되지 않고 테스트가 살아 있게 유지한다 | 확정 | 중간 | 수정됨 |
 | TR2-16 | `fundamental_trend`의 연간 합산이 FY 행과 Q1~Q4를 함께 더해 약 2배로 만든다 | 확정 | 낮음 | 수정됨 |
 
 ### 2.3 execution (`EX2-*`, 원본 [raw](raw/2026-09-21-execution.txt))
@@ -122,7 +122,7 @@ research·reporting 20 (`RR2-*`) · 워크플로·시각·그 밖 4 (`AU-*`).
 | EX2-02 | 30초 risk state 창이 준비 단계에 소진돼 승인 소비 후 배치가 중간에 잘린다 | 확정 | 높음 | 보고만(사용자 결정) |
 | EX2-03 | 브로커 `REPLACED`가 전이표에 없어 대사 패스 전체가 예외로 끊긴다 | 확정(재검증) | 높음 | 수정됨 |
 | EX2-07 | 제출 시점 인증 실패가 worker의 except 3개를 모두 통과해 고아 `planned` 주문을 만든다 | 확정(재검증) | 높음 | 수정됨 |
-| EX2-11 | **`fills`에 쓰는 코드가 하나도 없다** — 성과·체결 카드·화면이 영구히 "체결 0건" | 확정(재검증) | 높음 | 보고만(설계 결정) |
+| EX2-11 | **`fills`에 쓰는 코드가 하나도 없다** — 성과·체결 카드·화면이 영구히 "체결 0건" | 확정(재검증) | 높음 | 수정됨 |
 | EX2-04 | `order_attempts.state`에 UPDATE가 0건이라 재실행 가드 SQL 조건이 공허하다 | 확정 | 중간 | 보고만 |
 | EX2-05 | 기준점 보관 2일 vs 조회 5일 — 연휴 뒤 기준점이 비어 실주문이 막힌다 | 확정(재검증) | 중간 | 수정됨 |
 | EX2-06 | 주문 직전 위험 계산이 `cash: 0` 가짜 계좌 스냅샷을 성과 읽기 경로에 남긴다 | 확정 | 중간 | 보고만 |
@@ -148,10 +148,10 @@ research·reporting 20 (`RR2-*`) · 워크플로·시각·그 밖 4 (`AU-*`).
 | OP2-02 | background 단계가 6개 worker를 13개 stage와 공유하고 대기에 시간 상한이 없다 | 확정 | 중간 | 보고만 |
 | OP2-03 | 가장 긴 stage 셋이 background에서 빠져 tick 루프를 최대 3시간 막는다 | 확정 | 중간 | 보고만 |
 | OP2-05 | 정비 보류를 걸어도 돌고 있는 하네스는 안 멈추는데 메시지는 멈춘다고 읽힌다 | 확정 | 중간 | 수정됨 |
-| OP2-07 | 상태창의 `mode`가 실제 프로세스 모드가 아니라 `.env`에서 다시 계산된다 | 확정 | 중간 | 보고만 |
+| OP2-07 | 상태창의 `mode`가 실제 프로세스 모드가 아니라 `.env`에서 다시 계산된다 | 확정 | 중간 | 수정됨 |
 | OP2-08 | `emergency_stop --lockdown-env`만 쓰면 잠금이 성공해도 종료 코드 1 | 확정 | 중간 | 수정됨 |
 | OP2-09 | `.env` 킬스위치 잠금이 파일이 없으면 조용히 아무 일도 안 하고 경로를 깊이로 추측한다 | 확정 | 중간 | 수정됨 |
-| OP2-10 | 긴급 정지가 state.json의 PID 하나만 노려 승인 리스너·여분 하네스가 살아남는다 | 확정 | 중간 | 보고만 |
+| OP2-10 | 긴급 정지가 state.json의 PID 하나만 노려 승인 리스너·여분 하네스가 살아남는다 | 확정 | 중간 | 수정됨 |
 | OP2-11 | 보안 사전점검이 잘못된 한도 값을 검사하지 않고 넘겨 "healthy"를 준다 | 확정 | 중간 | 수정됨 |
 | OP2-16 | 일일 점검 카드가 "전부 조회 실패"와 "전부 0"을 구분하지 않는다 | 확정 | 중간 | 수정됨 |
 | OP2-17 | embed 본문이 1,900자로 잘려 채널 도착 표가 먼저 사라진다 | 확정 | 중간 | 수정됨 |
@@ -358,6 +358,37 @@ python -m investment_agent.data.fundamentals.commands.backfill_history \
 총계 태그가 없는 은행의 매출은 "이자수익+비이자수익"이라는 합성 규칙이 필요하고, 그러려면 fundamentals 전체(약 19,000개 공시)를
 `SEMANTIC_POLICY_VERSION` v3로 다시 처리해야 한다. 그 대가로 얻는 것은 P/S가 의미 없는 은행 몇 종목의 매출뿐이고, 재처리 중에는
 Actions(v2 코드)와 운영 DB(v3)가 어긋난다.
+
+
+### 9.3 세 번째 묶음 — 남은 결정 항목 중 코드로 되는 것 전부(같은 날, 사용자 지시로 계속)
+
+| ID | 고친 것 | 파일 | 검증 |
+|---|---|---|---|
+| EX2-11 | 대사가 브로커 관측 두 개의 차이를 체결로 기록한다(`_incremental_fill_row`). 개별 체결 id가 없어(EX2-10 미확인) 누적 관측 델타를 체결 하나로 본다 — `trading/performance/service.py`의 `observed_fills` fallback과 같은 계산이라 값이 어긋나지 않는다 | `execution/reconciliation/worker.py`, `execution/brokers/repository.py`(`latest_broker_order_snapshot` 추가) | 테스트 5개(첫 체결·두 번째 증분·중복 미기록·취소는 체결 아님·실제 SQLite 통합). 배선을 끄면 3건 실패 확인 |
+| TR2-15 | 쓰이지 않는 Dossier 계층(`builder.py`·`bundle.py`·`contracts.py`·`history.py`·`renderer.py`·`report.py`, 약 1,100줄)을 삭제했다. `artifacts.py`(`archive_case_evidence`, 실제 쓰이는 경로)만 남았다 — 이 둘은 서로 다른 구현으로 같은 표(`decision_evidence`)를 썼다 | `trading/evidence/*`, 전용 테스트 3개 삭제 | 참조 0건 확인(architecture 테스트 포함). `trading/repository.py`의 낡은 docstring도 고쳤다(`evidence.bundle`이 아니라 `artifacts.archive_case_evidence`가 실제 owner) |
+| RR2-11 | 역사 EV 시계열이 순부채 결측을 0으로 접어 그 분기 EV/EBITDA가 싸게 통계에 들어가던 것 → 결측이면 그 시점을 뺀다. 현재값 경로와 같은 규칙 | `reporting/services/earnings/valuation_history.py` | 테스트 1개. 0-fill 주입 시 실패 확인 |
+| RR2-15 | RL 정책 평가 세 producer(`pipeline.py`·`continuous_learner.py`)가 양수 관례를, `experiment.py`가 음수 관례를 쓰던 것 → 전부 음수(gate.py와 같음)로 통일. **소비자 확인**: `portfolio_evaluations`에 쓰는 코드가 없어(RS-15, 이미 알려진 설계 공백) 지금은 게이트에 영향이 없다 — 그래도 값을 맞춰 다음에 producer가 연결될 때 조용히 안 틀리게 했다 | `research/rl/pipeline.py`, `research/rl/continuous_learner.py` | 테스트 2개(파이프라인 walk-forward, `evaluate_model` 직접 호출). 부호를 되돌리면 둘 다 실패 확인 |
+| TR2-10(a) | 체결·미실현손익만 보여 배당만큼 계좌 증가분을 설명 못 하던 것 → "배당 수익" 필드를 카드에 추가(0이지 미확인이 아님). 배당을 원가에 반영하는 (b)는 청산 알림 재발송 위험이 있어 사용자 결정으로 남긴다 | `notifications/investment/run_performance.py` | 테스트 2개(배당 있음/없음). 필드를 빼면 실패 확인 |
+| RR2-08 | 카드(`earnings_report.py`)와 화면(`services/earnings/metrics.py`)이 순부채를 각자 계산해 카드만 단기투자자산을 빠뜨리던 것 → `net_debt`·`cash_and_equivalents`를 `reporting/services/financial_row.py` 하나로 모았다 | `reporting/services/financial_row.py`, `reporting/notifications/earnings_report.py`, `reporting/services/earnings/metrics.py` | 테스트 2개. **부수 발견**: 고치는 중 지역변수 `net_debt`가 새로 import한 함수 `net_debt`를 그림자화해 `net_debt_to_ebitda`가 함수 객체를 나누려던 버그를 만들 뻔했다 — 변수명을 `net_debt_value`로 분리해 막았다 |
+| RR2-09 | research(`research/evidence/statistics.py`)의 `total_debt`가 운용리스 부채를 빠뜨려 reporting과 다른 값을 내던 것 → 공유 정의를 fundamentals 도메인(`data/fundamentals/domain/services/leverage_metrics.py`)으로 올리고 reporting·research 둘 다 그것을 쓴다 | 새 파일 `leverage_metrics.py`, `reporting/services/financial_row.py`, `research/evidence/statistics.py` | 테스트 1개(운용리스 포함 D/E). 운용리스 항을 빼면 실패 확인. **research feature 값이 바뀌어 재적재가 필요했다** — 9.4절 |
+| OP2-07 | 상태창의 `mode`가 `.env`에서 다시 계산돼 실제 프로세스와 다를 수 있던 것 → `HarnessState`에 `mode`를 적고(`scheduler.start`) 상태창은 그 값을 그대로 보여준다. env 기반 추정값은 `mode_would_be`로 분리 | `operations/harness/state.py`, `operations/harness/runtime.py`, `operations/harness/switch.py`, `operations/commands/harness_switch.py`(대시보드에 표시 줄 추가) | 테스트 3개(실제 모드 유지·기동 전 None·scheduler.start가 적음). env 기반으로 되돌리면 2건 실패 확인 |
+| OP2-10 | 긴급 정지가 state.json의 PID 하나만 노려 승인 리스너·재부팅 뒤 여분 하네스가 살아남던 것 → `stop_harness_service`와 같은 대상 선정(`_find_running_harness_pids()` 전부)으로 통일. `killed_pids`/`failed_pids`를 결과와 CLI 출력에 남긴다 | `operations/harness/emergency.py`, `operations/commands/emergency_stop.py` | 테스트 1개 추가(리스너 PID가 기록 PID와 달라도 함께 꺼짐). 단일 PID로 되돌리면 2건 실패 확인 |
+
+**하지 않은 것과 이유**
+- **EX2-02·EX2-08·EX2-16·OP2-06**: 실주문 안전 의미(위험 판정 창, 인증 재시도, 한도 소진 규칙, 실주문 플래그 변경 확인 문구)를 바꾸는 항목이라 코드를 고치지 않았다. 정비 보류·킬스위치는 그대로다.
+- **EX2-11의 설계 대안**: 체결 소비자를 `orders`의 체결 수량으로 옮기는 대안은 검토하지 않았다 — 현재 방식이 `observed_fills`의 기존 fallback과 값이 일치해 더 안전하다.
+- **RR2-04**([의심]): 구성요소 중 일부만 관측된 차입을 결측으로 볼지는 실제 태깅 분포 확인이 먼저다(원 보고서도 [의심]으로 표시). balance_sheet category가 RR2-02와 함께 움직이는 상호작용이 있어 값 변경은 보류한다.
+- **TR2-02·TR2-05·TR2-14**: 위험 파이프라인의 집행 위치·공분산 계산·시나리오별 한도를 바꾸는 항목이라 보류했다. 특히 TR2-05는 실행 중인 optimizer의 목적함수를 바꾸는 것이라 검증 없이 넣기엔 위험이 크다.
+- **OP2-02·OP2-03**(background worker 용량·타임아웃): 하네스 스케줄러 핵심 로직 변경이라 이번 배치에서는 건너뛰었다. 하네스는 지금 정지·정비 보류 상태라 급하지 않다.
+- **은행·리츠 매출 v3**: `SEMANTIC_POLICY_VERSION` 승격과 약 19,000개 공시 재처리가 필요해 여전히 사용자 결정이다.
+- **매크로 정리 스크립트 실행**: 운영 DB DML이라 사용자가 직접 실행한다(기존 규칙).
+
+### 9.4 두 번째 재적재 — RR2-09 반영 (2026-09-22)
+
+RR2-09가 `debt_to_equity`(저장 feature 컬럼)의 값을 바꿔서, 전날 재적재한 feature snapshot·label·학습
+표본이 낡은 정의를 담고 있었다. `scripts/reset_feature_version_stores.py --apply`로 파생 dataset을
+다시 지우고 `backfill_research_history --start 2021-09-03 --every-days 7`를 다시 돌렸다. 결과는
+10절에 기록한다.
 
 ## 10. 인계 — 다음 세션이 이어서 할 일
 

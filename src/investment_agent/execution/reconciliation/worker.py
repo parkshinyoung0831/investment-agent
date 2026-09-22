@@ -26,6 +26,8 @@ class ReconciliationRepository(Protocol):
     def append_order_attempt_event(self, attempt_id: str, **kwargs): ...
     def update_order_execution(self, client_order_id: str, **kwargs) -> None: ...
     def save_broker_order_snapshot(self, row: dict) -> bool: ...
+    def latest_broker_order_snapshot(self, client_order_id: str) -> dict | None: ...
+    def save_fill(self, row: dict) -> None: ...
     def intent_orders(self, intent_id: str) -> list[dict]: ...
     def update_intent_status(
         self,
@@ -115,6 +117,56 @@ def _snapshot_row(
         ).hexdigest(),
         **identity,
         "observed_at": parse_datetime(observed_at).isoformat(),
+    }
+
+
+def _incremental_fill_row(
+    *,
+    client_order_id: str,
+    broker_order_id: str,
+    remote: TossOrderSnapshot,
+    previous: Mapping | None,
+    observed_at: datetime,
+) -> dict | None:
+    """직전 관측과 비교해 이번에 새로 채워진 수량·가격·비용만 담은 체결 행을 만든다.
+
+    토스가 개별 체결 id를 주지 않아(명세 미확인, 감사 EX2-10 참고) 실제 체결을 흉내 낼 수는
+    없다. 대신 누적 관측 두 개의 차이를 하나의 체결로 본다 — `trading/performance/service.py`의
+    `observed_fills`가 `fills`가 비어 있을 때 이미 같은 방식으로 유도하던 것과 같은 계산이라,
+    여기서 미리 써 두면 그 fallback과 값이 어긋나지 않는다. 수량이 늘지 않았으면(취소·정정만
+    있으면) `None`이다 — `fills`는 실제 체결만 담는다.
+    """
+    new_quantity = remote.filled_quantity
+    previous_quantity = Decimal(str(previous["filled_quantity"])) if previous else Decimal("0")
+    if new_quantity <= previous_quantity or remote.average_filled_price is None:
+        return None
+    new_price = remote.average_filled_price
+    previous_price = (
+        Decimal(str(previous["average_fill_price"]))
+        if previous and previous.get("average_fill_price") is not None else Decimal("0")
+    )
+    delta_quantity = new_quantity - previous_quantity
+    notional = new_quantity * new_price - previous_quantity * previous_price
+    price = notional / delta_quantity
+    if price <= 0:
+        return None
+
+    def _delta(field: str) -> float | None:
+        current = getattr(remote, field)
+        if current is None:
+            return None
+        prior = Decimal(str(previous[field])) if previous and previous.get(field) is not None else Decimal("0")
+        return float(current - prior)
+
+    return {
+        "broker_fill_id": f"{broker_order_id}:{new_quantity}",
+        "client_order_id": client_order_id,
+        "broker_order_id": broker_order_id,
+        "quantity": float(delta_quantity),
+        "price": float(price),
+        "commission": _delta("commission"),
+        "tax": _delta("tax"),
+        "filled_at": parse_datetime(observed_at).isoformat(),
     }
 
 
@@ -298,11 +350,22 @@ class TossReconciliationWorker:
                 raw_response=remote.raw,
                 now=current,
             )
+            previous_snapshot = self.repository.latest_broker_order_snapshot(client_id)
             snapshot_changed = self.repository.save_broker_order_snapshot(_snapshot_row(
                 client_order_id=client_id,
                 remote=remote,
                 observed_at=current,
             ))
+            if snapshot_changed:
+                fill_row = _incremental_fill_row(
+                    client_order_id=client_id,
+                    broker_order_id=broker_id,
+                    remote=remote,
+                    previous=previous_snapshot,
+                    observed_at=current,
+                )
+                if fill_row is not None:
+                    self.repository.save_fill(fill_row)
             changed = changed or bool(snapshot_changed)
             self.repository.update_order_execution(
                 client_id,

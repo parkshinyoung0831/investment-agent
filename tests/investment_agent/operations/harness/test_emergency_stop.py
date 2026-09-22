@@ -123,6 +123,26 @@ class TestEmergencyStop(unittest.TestCase):
         self.assertTrue(res["durable_lockdown_set"])
         self.assertTrue(is_execution_locked_down(self.state_dir))
 
+    def test_an_approval_listener_with_no_recorded_pid_is_still_killed(self) -> None:
+        """긴급 정지가 state.json의 PID 하나만 겨누면 승인 리스너 등 여분 하네스가 살아남는다(감사 OP2-10).
+
+        재현: 하네스 프로세스 PID는 기록됐지만, 명령줄로 확인한 실제 하네스 후보는 그것과
+        무관한 프로세스(승인 리스너 등) 하나 더다 — 둘 다 꺼져야 한다.
+        """
+        self.store.save(HarnessState(process_id=111, process_started_at=utc_iso(),
+                                     process_heartbeat_at=utc_iso(), stopped_cleanly=False, jobs={}))
+        killed = []
+        with patch("investment_agent.operations.harness.emergency._is_process_alive", return_value=True), \
+             patch("investment_agent.operations.harness.switch._find_running_harness_pids",
+                   return_value=[111, 222]), \
+             patch("investment_agent.operations.harness.emergency._terminate_process",
+                   side_effect=lambda pid: killed.append(pid) or True):
+            res = emergency_stop(state_dir=self.state_dir, kill_process=True)
+        self.assertEqual(sorted(killed), [111, 222])
+        self.assertEqual(sorted(res["killed_pids"]), [111, 222])
+        self.assertTrue(res["process_killed"])
+        self.assertTrue(res["success"])
+
     def test_recorded_pid_reused_by_another_program_is_never_killed(self) -> None:
         # 재부팅 뒤 상태 파일의 PID를 다른 프로그램이 받았다. 살아 있어도 하네스가 아니면 끄지 않는다.
         self.store.save(HarnessState(process_id=12345, process_started_at=utc_iso(),

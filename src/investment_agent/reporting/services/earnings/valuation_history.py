@@ -87,7 +87,11 @@ def daily_series(
             continue
         mcap = close * shares[si][1]
         snap = snaps[fi]
-        ev = mcap + (_f(snap.get("ev_ex_market_cap")) or 0.0)
+        ev_ex_market_cap = _f(snap.get("ev_ex_market_cap"))
+        # 순부채·소수주주지분을 그 분기에 계산할 수 없으면 EV도 결측이다 — 0으로 접으면
+        # EV가 시가총액과 같아져 그 분기의 EV/EBITDA가 실제보다 싸게 통계에 들어간다(감사 RR2-11).
+        # 현재값 경로(`earnings_report.load_valuation`)도 이 결측에서 `enterprise_value`를 None으로 둔다.
+        ev = None if ev_ex_market_cap is None else mcap + ev_ex_market_cap
         dates.append(td)
         series["pe"].append(_positive_den_ratio(mcap, _f(snap.get("earnings_ttm"))))
         series["pb"].append(_positive_den_ratio(mcap, _f(snap.get("book_value"))))

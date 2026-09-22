@@ -79,45 +79,13 @@ def _label_row(value: LabelRecord | Mapping[str, Any], *, label_definition: str)
         label_available_at=str(value.get("label_available_at") or value["forward_end_at"]),
         label_definition=str(value.get("label_definition") or label_definition),
         label=float(value.get("label", value.get("forward_return"))),
-        benchmark_label=float(value.get("benchmark_label", value.get("benchmark_forward_return", 0.0))),
+        # 없으면 0.0으로 접지 않고 KeyError로 드러낸다 — 0%는 실제 값이다.
+        benchmark_label=float(
+            value["benchmark_label"] if "benchmark_label" in value
+            else value["benchmark_forward_return"]
+        ),
         label_id=str(value["label_id"]) if value.get("label_id") else None,
     )
-
-
-def _period_from_rows(rows: Sequence[FeatureRecord], name: str) -> tuple[str, str]:
-    ordered = sorted(row.as_of_at for row in rows)
-    if not ordered:
-        raise ContractError(f"cannot infer {name} from an empty dataset")
-    start_dt = parse_datetime(ordered[0])
-    end_dt = parse_datetime(ordered[-1])
-    if end_dt <= start_dt:
-        end_dt = start_dt + timedelta(microseconds=1)
-    return start_dt.isoformat(), end_dt.isoformat()
-
-
-def _inferred_periods(rows: Sequence[FeatureRecord]) -> tuple[tuple[str, str], tuple[str, str], tuple[str, str]]:
-    """명시적 split이 없을 때 날짜 경계를 섞지 않고 세 구간으로 나눈다."""
-    dates = sorted({parse_datetime(row.as_of_at) for row in rows})
-    if len(dates) < 3:
-        raise ContractError(
-            "train_period, validation_period, and test_period are required "
-            "when fewer than three distinct feature dates are available"
-        )
-    first_count = max(1, len(dates) // 3)
-    second_count = max(first_count + 1, (2 * len(dates)) // 3)
-    second_count = min(second_count, len(dates) - 1)
-    groups = (
-        dates[:first_count],
-        dates[first_count:second_count],
-        dates[second_count:],
-    )
-    return tuple(
-        _period_from_rows(
-            tuple(row for row in rows if parse_datetime(row.as_of_at) in set(group)),
-            name,
-        )
-        for group, name in zip(groups, ("train_period", "validation_period", "test_period"))
-    )  # type: ignore[return-value]
 
 
 def build_research_dataset(
@@ -181,22 +149,16 @@ def build_research_dataset(
         "feature_names": list(names),
     }
     dataset_hash = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
-    inferred_periods = _inferred_periods(rows) if not all(
-        period is not None for period in (train_period, validation_period, test_period)
-    ) else None
-    if inferred_periods is None:
-        inferred_periods = (
-            tuple(train_period),
-            tuple(validation_period),
-            tuple(test_period),
-        )  # type: ignore[arg-type]
+    # 호출자가 주지 않으면 **추정하지 않고 비워 둔다**. 전에는 as_of를 1/3씩 나눈 구간을
+    # 대신 적었는데, 실제 학습 구간은 `training/baseline.py`의 purged split이 정하므로
+    # 같은 학습 기록에 기간이 두 벌 들어가 감사하는 사람이 틀린 쪽을 믿었다.
     manifest = DatasetManifest(
         dataset_version=dataset_version,
         label_definition=label_definition,
         pit_cutoff_at=cutoff.isoformat(),
-        train_period=tuple(train_period or inferred_periods[0]),
-        validation_period=tuple(validation_period or inferred_periods[1]),
-        test_period=tuple(test_period or inferred_periods[2]),
+        train_period=tuple(train_period) if train_period is not None else None,
+        validation_period=tuple(validation_period) if validation_period is not None else None,
+        test_period=tuple(test_period) if test_period is not None else None,
         dataset_hash=dataset_hash,
         created_at=datetime.now(timezone.utc).isoformat(),
         code_version=code_version,

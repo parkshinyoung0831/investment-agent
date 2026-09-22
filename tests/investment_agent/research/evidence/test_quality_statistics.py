@@ -74,6 +74,18 @@ class QualityStatisticsTest(unittest.TestCase):
         self.assertAlmostEqual(stats["gross_margin_ttm"], 120 / 400)
         self.assertAlmostEqual(stats["debt_to_equity"], 60 / 200)
 
+    def test_debt_to_equity_includes_operating_lease_liabilities(self):
+        """카드(reporting)와 같은 정의를 써야 한다 — 예전엔 research만 운용리스를 빠뜨렸다(감사 RR2-09)."""
+        rows = _eight_quarters()
+        rows[0].pop("total_debt_including_current")
+        rows[0].update(
+            short_term_debt=10.0, long_term_debt=50.0,
+            operating_lease_current_debt_equivalent=5.0,
+            operating_lease_non_current_debt_equivalent=15.0,
+        )
+        stats = quality_statistics(rows)
+        self.assertAlmostEqual(stats["debt_to_equity"], (10 + 50 + 5 + 15) / 200)
+
     def test_fewer_than_four_quarters_produces_nothing(self):
         self.assertEqual(quality_statistics(_eight_quarters()[:3]), {})
 

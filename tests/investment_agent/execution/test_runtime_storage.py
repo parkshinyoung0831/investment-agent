@@ -171,6 +171,25 @@ class RuntimeStorageTest(unittest.TestCase):
             quantity, payload = connection.execute("SELECT quantity,payload_json FROM fills").fetchone()
         self.assertEqual(quantity, json.loads(payload)["quantity"])
 
+    def test_latest_broker_order_snapshot_picks_the_most_recent_observed_at(self):
+        """`_incremental_fill_row`(EX2-11)가 체결 증분을 계산하는 유일한 근거라, 순서가 틀리면 안 된다."""
+        self.assertIsNone(self.repo.latest_broker_order_snapshot("client-1"))
+        first = {
+            "snapshot_hash": "hash-1", "client_order_id": "client-1", "broker_order_id": "broker-1",
+            "broker_status": "PARTIAL", "filled_quantity": "1", "average_fill_price": "100.5",
+            "commission": "0.1", "tax": "0", "raw_snapshot": {},
+            "observed_at": self.now.isoformat(),
+        }
+        second = {
+            **first, "snapshot_hash": "hash-2", "filled_quantity": "2",
+            "observed_at": (self.now + timedelta(minutes=1)).isoformat(),
+        }
+        self.repo.save_broker_order_snapshot(first)
+        self.assertEqual(self.repo.latest_broker_order_snapshot("client-1")["filled_quantity"], "1")
+        self.repo.save_broker_order_snapshot(second)
+        self.assertEqual(self.repo.latest_broker_order_snapshot("client-1")["filled_quantity"], "2")
+        self.assertIsNone(self.repo.latest_broker_order_snapshot("client-other"))
+
     def test_nonempty_legacy_ledger_is_not_replaced_with_empty_tables(self):
         legacy = self.path.parent / "legacy.sqlite3"
         with sqlite3.connect(legacy) as connection:

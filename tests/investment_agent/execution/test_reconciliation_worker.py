@@ -63,6 +63,7 @@ class FakeRepo:
         }
         self.events = [event("outcome_unknown" if unknown else "submitted")]
         self.snapshots = []
+        self.fills = []
         self.intent_status = None
 
     def reconcilable_orders(self, *, account_seq):
@@ -86,7 +87,14 @@ class FakeRepo:
 
     def save_broker_order_snapshot(self, row):
         self.snapshots.append(row)
+        return True
 
+    def latest_broker_order_snapshot(self, client_order_id):
+        matches = [row for row in self.snapshots if row["client_order_id"] == client_order_id]
+        return max(matches, key=lambda row: row["observed_at"]) if matches else None
+
+    def save_fill(self, row):
+        self.fills.append(row)
 
     def update_order_execution(self, client_order_id, **kwargs):
         self.row.update(kwargs)
@@ -118,7 +126,8 @@ class FakeApi:
 
 
 class ReconciliationWorkerTest(unittest.TestCase):
-    def test_partial_fill_is_snapshotted_without_inventing_fill_ids(self):
+    def test_partial_fill_is_snapshotted_and_recorded_as_a_fill(self):
+        """개별 체결 id는 없다(감사 EX2-10) — 누적 관측 두 개의 차이를 체결로 기록한다(감사 EX2-11)."""
         repo = FakeRepo()
         result = TossReconciliationWorker(
             repository=repo,
@@ -135,6 +144,43 @@ class ReconciliationWorkerTest(unittest.TestCase):
             result.card_updates[0].approval_id,
             "approval_" + "b" * 32,
         )
+        self.assertEqual(len(repo.fills), 1)
+        fill = repo.fills[0]
+        self.assertEqual(fill["client_order_id"], "client-1")
+        self.assertEqual(fill["broker_order_id"], "broker-1")
+        self.assertEqual(fill["quantity"], 1.0)
+        self.assertEqual(fill["price"], 100.5)
+        self.assertEqual(fill["commission"], 0.1)
+        self.assertEqual(fill["tax"], 0.0)
+
+    def test_a_second_partial_fill_records_only_the_new_quantity(self):
+        """1주 체결 뒤 2주로 늘면 두 번째 체결 행은 증분 1주만 담는다 — 누적 2주를 다시 세지 않는다."""
+        repo = FakeRepo()
+        worker = TossReconciliationWorker(
+            repository=repo, api=FakeApi(remote(status="PARTIAL", filled="1")), account_seq=7,
+        )
+        worker.run_once(now=NOW)
+        worker.api = FakeApi(remote(status="FILLED", filled="2"))
+        worker.run_once(now=NOW)
+        self.assertEqual(len(repo.fills), 2)
+        self.assertEqual(repo.fills[1]["quantity"], 1.0)
+        self.assertEqual(repo.fills[1]["broker_fill_id"], "broker-1:2")
+
+    def test_a_repeated_observation_with_no_new_quantity_does_not_duplicate_a_fill(self):
+        repo = FakeRepo()
+        worker = TossReconciliationWorker(
+            repository=repo, api=FakeApi(remote(status="PARTIAL", filled="1")), account_seq=7,
+        )
+        worker.run_once(now=NOW)
+        worker.run_once(now=NOW)
+        self.assertEqual(len(repo.fills), 1)
+
+    def test_cancellation_with_no_fill_quantity_does_not_invent_a_fill(self):
+        repo = FakeRepo()
+        TossReconciliationWorker(
+            repository=repo, api=FakeApi(remote(status="CANCELED")), account_seq=7,
+        ).run_once(now=NOW)
+        self.assertEqual(repo.fills, [])
 
     def test_full_fill_completes_intent(self):
         repo = FakeRepo()

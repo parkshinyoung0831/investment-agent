@@ -36,8 +36,7 @@ src/investment_agent/trading/decision/
   ├─ candidate_ranker.py    # LLM 없는 deep-analysis priority
   ├─ event_impact.py        # 글로벌 사건 → 테마 → 대표 ETF → 민감한 보유 종목 재분석
   ├─ analysis.py            # TradingAgents 논지 → SignalBatch (비중을 정하지 않음)
-  ├─ alpha.py               # factor 사전값 + 채택 champion ML + 논지 검증 → 기대초과수익·제약
-  └─ alpha.py               # Factor·champion ML·TradingAgents 논지 → 기대초과수익
+  └─ alpha.py               # factor 사전값 + 채택 champion ML + 논지 검증 → 기대초과수익·제약
 
 src/investment_agent/trading/system/   # System Portfolio — 실계좌·승인을 모른다
   ├─ target.py              # 시장위험·CVaR → 위험예산 → optimizer → RiskGate → 목표비중
@@ -59,9 +58,10 @@ src/investment_agent/research/
 src/investment_agent/trading/portfolio/
   ├─ signal_book.py          # 분석 배치·논지 기록 계약
   ├─ optimizer.py            # 비중 최적화
+  ├─ market_risk.py          # 베타·공분산·시장위험 추정
+  ├─ contracts.py            # 포트폴리오 제안·비중 계약
   ├─ ../risk/budget.py       # 시장·거시 입력 → 위험 한도
   ├─ ../risk/gate.py         # DeterministicRiskGate — hard limit
-  ├─ evaluator.py
   └─ (snapshot contract는 src/investment_agent/execution/orders/snapshots.py)
 
 src/investment_agent/research/backtest/      # fill/slippage/fee 가정과 walk-forward 검증

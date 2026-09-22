@@ -136,7 +136,11 @@ def main(argv: list[str] | None = None) -> int:
             _safe_print("=" * 60)
             _safe_print(f"  종합 성공: {result['success']}")
             _safe_print(f"  Durable Lockdown 설정: {result['durable_lockdown_set']}")
-            _safe_print(f"  대상 프로세스 ID: {result['target_pid']}")
+            _safe_print(f"  기록된 프로세스 ID: {result['target_pid']}")
+            # state.json의 PID 하나만이 아니라 명령줄로 확인한 하네스 전부를 겨눈다(감사 OP2-10).
+            _safe_print(f"  종료된 프로세스: {result['killed_pids'] or '없음'}")
+            if result["failed_pids"]:
+                _safe_print(f"  종료 실패한 프로세스: {result['failed_pids']}")
             _safe_print(f"  프로세스 강제 종료 여부: {result['process_killed']}")
             _safe_print(f"  상태 파일 갱신(Paused): {result['state_updated']}")
             _safe_print(f"  .env 킬스위치 잠금: {result['env_locked']}")

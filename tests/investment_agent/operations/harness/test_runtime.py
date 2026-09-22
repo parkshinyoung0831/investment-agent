@@ -85,6 +85,8 @@ class HarnessSchedulerTest(unittest.TestCase):
                 reporter=FakeReporter(),
             )
             scheduler.start(now=T0, process_id=7)
+            # 상태창이 실제 기동 모드를 말하게 한다(감사 OP2-07) — .env가 나중에 바뀌어도 이 값은 그대로다.
+            self.assertEqual(scheduler.state.mode, "approval_workflow")
             scheduler.tick(now=T0)
             job = scheduler.state.jobs[definition.job_id]
             self.assertEqual(job.status, "waiting")

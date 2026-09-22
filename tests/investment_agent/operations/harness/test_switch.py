@@ -13,6 +13,8 @@ from unittest.mock import MagicMock, patch
 from investment_agent.operations.commands.harness_switch import main as cli_main
 from investment_agent.operations.harness.state import HarnessState, JobRuntime, JsonStateStore, StageRuntime, utc_iso
 from investment_agent.operations.harness.switch import (
+    ALLOW_ORDERS_CONFIRMATION,
+    ENABLE_LIVE_CONFIRMATION,
     get_harness_status,
     parse_env_file,
     set_kill_switch,
@@ -86,6 +88,29 @@ class TestHarnessSwitch(unittest.TestCase):
         self.assertEqual(status.process_id, 12345)
         self.assertEqual(status.active_jobs_count, 1)
 
+    def test_mode_is_the_recorded_startup_mode_not_recomputed_from_env(self) -> None:
+        """`.env`가 실행 중 프로세스에 반영되지 않아도, 상태창이 실제 기동 모드를 말해야 한다(감사 OP2-07).
+
+        재현: analysis_only로 뜬 프로세스인데 `.env`는 나중에 approval_workflow 조건으로 바뀐 경우다.
+        """
+        state = HarnessState(process_id=12345, mode="analysis_only", jobs={})
+        self.store.save(state)
+        env_file = self.root_dir / ".env"
+        env_file.write_text("TRADING_KILL_SWITCH=off\nTOSS_LIVE_ENABLED=true\n", encoding="utf-8")
+
+        with patch("investment_agent.operations.harness.switch._is_pid_alive", return_value=True), \
+             patch("investment_agent.operations.harness.switch._find_running_harness_pids", return_value=[12345]):
+            status = get_harness_status(state_dir=self.state_dir, root_dir=self.root_dir)
+
+        self.assertEqual(status.mode, "analysis_only")
+        # env만 보면 승인 흐름이 켜진 것처럼 읽힌다 — 실제 모드와 다르다는 사실이 남아야 한다.
+        self.assertEqual(status.mode_would_be, "approval_workflow")
+
+    def test_mode_is_none_before_the_harness_has_ever_started(self) -> None:
+        with patch("investment_agent.operations.harness.switch._find_running_harness_pids", return_value=[]):
+            status = get_harness_status(state_dir=self.state_dir, root_dir=self.root_dir)
+        self.assertIsNone(status.mode)
+
     def test_status_and_stop_ignore_a_recorded_pid_that_is_not_the_harness(self) -> None:
         from investment_agent.operations.harness.switch import stop_harness_service
 
@@ -121,7 +146,9 @@ class TestHarnessSwitch(unittest.TestCase):
         parsed = parse_env_file(self.root_dir)
         self.assertEqual(parsed["TRADING_KILL_SWITCH"], "on")
 
-        res_live = set_live_enabled(True, root_dir=self.root_dir)
+        res_live = set_live_enabled(
+            True, root_dir=self.root_dir, confirm=ENABLE_LIVE_CONFIRMATION,
+        )
         self.assertTrue(res_live["success"])
         self.assertTrue(res_live["toss_live_enabled"])
 
@@ -298,6 +325,101 @@ class TestHarnessSwitch(unittest.TestCase):
         with patch("investment_agent.operations.harness.switch._find_running_harness_pids", return_value=[]):
             code_off = cli_main(["--state-dir", str(self.state_dir), "--root-dir", str(self.root_dir), "--off"])
             self.assertEqual(code_off, 0)
+
+
+class GateConfirmationTest(unittest.TestCase):
+    """주문을 허용하는 방향으로 게이트를 바꿀 때만 확인 문구를 요구한다.
+
+    CLAUDE.md의 첫 "하지 말 것"이 이 게이트다. 전에는 `--live-enabled true` 한 줄이나
+    대화형 메뉴의 Enter 두 번으로 바뀌었고 확인 문구가 없었다. 문구를 요구하는 자리는
+    진입점이 아니라 setter다 — 진입점에 두면 새 진입점에서 빠뜨린다.
+    """
+
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.root_dir = Path(self.temp_dir.name)
+        (self.root_dir / ".env").write_text(
+            "TRADING_KILL_SWITCH=on\nTOSS_LIVE_ENABLED=false\n", encoding="utf-8",
+        )
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def _env(self) -> dict[str, str]:
+        return parse_env_file(self.root_dir)
+
+    def test_allowing_orders_without_the_phrase_changes_nothing(self) -> None:
+        result = set_kill_switch("off", root_dir=self.root_dir)
+        self.assertFalse(result["success"])
+        self.assertFalse(result["changed"])
+        self.assertIn(ALLOW_ORDERS_CONFIRMATION, result["message"])
+        # 거절하고도 파일을 쓰면 거절한 의미가 없다.
+        self.assertEqual(self._env()["TRADING_KILL_SWITCH"], "on")
+
+    def test_a_wrong_phrase_is_not_accepted(self) -> None:
+        result = set_kill_switch("off", root_dir=self.root_dir, confirm="yes")
+        self.assertFalse(result["success"])
+        self.assertEqual(self._env()["TRADING_KILL_SWITCH"], "on")
+
+    def test_allowing_orders_with_the_phrase_applies(self) -> None:
+        result = set_kill_switch(
+            "off", root_dir=self.root_dir, confirm=ALLOW_ORDERS_CONFIRMATION,
+        )
+        self.assertTrue(result["success"])
+        self.assertEqual(self._env()["TRADING_KILL_SWITCH"], "off")
+
+    def test_blocking_orders_needs_no_phrase(self) -> None:
+        """막는 방향은 안전 방향이다 — 급할 때 문구를 몰라 못 막으면 더 나쁘다."""
+        set_kill_switch("off", root_dir=self.root_dir, confirm=ALLOW_ORDERS_CONFIRMATION)
+        result = set_kill_switch("on", root_dir=self.root_dir)
+        self.assertTrue(result["success"])
+        self.assertEqual(self._env()["TRADING_KILL_SWITCH"], "on")
+
+    def test_enabling_live_trading_without_the_phrase_changes_nothing(self) -> None:
+        result = set_live_enabled(True, root_dir=self.root_dir)
+        self.assertFalse(result["success"])
+        self.assertFalse(result["changed"])
+        self.assertIn(ENABLE_LIVE_CONFIRMATION, result["message"])
+        self.assertEqual(self._env()["TOSS_LIVE_ENABLED"], "false")
+
+    def test_enabling_live_trading_with_the_phrase_applies(self) -> None:
+        result = set_live_enabled(
+            True, root_dir=self.root_dir, confirm=ENABLE_LIVE_CONFIRMATION,
+        )
+        self.assertTrue(result["success"])
+        self.assertEqual(self._env()["TOSS_LIVE_ENABLED"], "true")
+
+    def test_disabling_live_trading_needs_no_phrase(self) -> None:
+        set_live_enabled(True, root_dir=self.root_dir, confirm=ENABLE_LIVE_CONFIRMATION)
+        result = set_live_enabled(False, root_dir=self.root_dir)
+        self.assertTrue(result["success"])
+        self.assertEqual(self._env()["TOSS_LIVE_ENABLED"], "false")
+
+    def test_the_two_phrases_are_different(self) -> None:
+        """같은 문구면 하나를 외운 사람이 둘 다 열 수 있다."""
+        self.assertNotEqual(ALLOW_ORDERS_CONFIRMATION, ENABLE_LIVE_CONFIRMATION)
+
+    def _cli(self, *arguments: str) -> int:
+        return cli_main(["--root-dir", str(self.root_dir), *arguments])
+
+    def test_the_cli_refuses_to_enable_live_without_the_phrase(self) -> None:
+        """진입점이 setter의 거절을 종료 코드로 그대로 옮겨야 한다."""
+        with patch("sys.stdout", new=io.StringIO()):
+            code = self._cli("--live-enabled", "true")
+        self.assertEqual(code, 1)
+        self.assertEqual(self._env()["TOSS_LIVE_ENABLED"], "false")
+
+    def test_the_cli_enables_live_with_the_phrase(self) -> None:
+        with patch("sys.stdout", new=io.StringIO()):
+            code = self._cli("--live-enabled", "true", "--confirm", ENABLE_LIVE_CONFIRMATION)
+        self.assertEqual(code, 0)
+        self.assertEqual(self._env()["TOSS_LIVE_ENABLED"], "true")
+
+    def test_the_cli_refuses_to_allow_orders_without_the_phrase(self) -> None:
+        with patch("sys.stdout", new=io.StringIO()):
+            code = self._cli("--kill-switch", "off")
+        self.assertEqual(code, 1)
+        self.assertEqual(self._env()["TRADING_KILL_SWITCH"], "on")
 
 
 if __name__ == "__main__":

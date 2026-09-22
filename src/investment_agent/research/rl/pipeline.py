@@ -30,7 +30,7 @@ class PolicyEvaluation:
     total_return: float
     benchmark_return: float
     excess_return: float
-    max_drawdown: float
+    max_drawdown: float  # 음수 관례(worse = 더 음수) — `research/promotion/gate.py`와 같다(감사 RR2-15)
     turnover: float
     transaction_cost: float
 
@@ -148,7 +148,9 @@ def evaluate_baseline_policy(
         total_return=float(total_return),
         benchmark_return=float(benchmark_return),
         excess_return=float(total_return - benchmark_return),
-        max_drawdown=float(max((info["drawdown"] for info in infos), default=0.0)),
+        # `info["drawdown"]`은 비음수 fraction이다 — 부호를 여기서 뒤집어 `experiment.py`·
+        # `research/promotion/gate.py`와 같은 음수 관례로 맞춘다(감사 RR2-15).
+        max_drawdown=-float(max((info["drawdown"] for info in infos), default=0.0)),
         turnover=float(math.fsum(info["turnover"] for info in infos)),
         transaction_cost=float(math.fsum(info["transaction_cost"] for info in infos)),
     )

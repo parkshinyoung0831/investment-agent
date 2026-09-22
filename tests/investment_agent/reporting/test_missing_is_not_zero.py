@@ -4,7 +4,7 @@ from __future__ import annotations
 import unittest
 
 from investment_agent.reporting.notifications import earnings_report as er
-from investment_agent.reporting.services.financial_row import total_debt
+from investment_agent.reporting.services.financial_row import cash_and_equivalents, net_debt, total_debt
 
 
 class MissingIsNotZeroTest(unittest.TestCase):
@@ -17,7 +17,16 @@ class MissingIsNotZeroTest(unittest.TestCase):
         self.assertEqual(total_debt({"total_debt_including_current": 9, "long_term_debt": 1}), 9.0)
 
     def test_net_debt_is_unknown_when_debt_is_unknown(self) -> None:
-        self.assertIsNone(er._net_debt({"cash_and_cash_equivalents": 100}))
+        self.assertIsNone(net_debt({"cash_and_cash_equivalents": 100}))
+
+    def test_net_debt_counts_short_term_investments_as_cash(self) -> None:
+        """카드(`earnings_report`)와 화면(`services/earnings/metrics`)이 예전에 따로 계산해
+        한쪽만 단기투자자산을 반영했다(감사 RR2-08) — 이제 `financial_row.net_debt` 하나다."""
+        row = {"long_term_debt": 1000, "cash_and_cash_equivalents": 300, "short_term_investments": 300}
+        self.assertEqual(cash_and_equivalents(row), 600.0)
+        self.assertEqual(net_debt(row), 400.0)
+        # 카드가 직접 부르는 EV 가산분도 같은 정의를 쓴다.
+        self.assertEqual(er._ev_ex_market_cap(row), 400.0)
 
     def test_ebitda_needs_depreciation(self) -> None:
         # 리더가 넘기는 분기 행은 항상 period_end를 갖고, TTM은 이어진 4분기여야 한다.

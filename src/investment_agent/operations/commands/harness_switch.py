@@ -11,12 +11,15 @@
     # 3. 하네스 끄기 (모든 프로세스 완전 정지 + 락 정리)
     python -m investment_agent.operations.commands.harness_switch --off
 
-    # 4. 트레이딩 킬스위치 설정
+    # 4. 트레이딩 킬스위치 설정 (막는 쪽은 그냥, 허용하는 쪽은 확인 문구가 필요하다)
     python -m investment_agent.operations.commands.harness_switch --kill-switch on
-    python -m investment_agent.operations.commands.harness_switch --kill-switch off
+    python -m investment_agent.operations.commands.harness_switch --kill-switch off \
+        --confirm ALLOW_TRADING_ORDERS
 
-    # 5. 토스 실주문 플래그 설정
+    # 5. 토스 실주문 플래그 설정 (끄는 쪽은 그냥, 켜는 쪽은 확인 문구가 필요하다)
     python -m investment_agent.operations.commands.harness_switch --live-enabled false
+    python -m investment_agent.operations.commands.harness_switch --live-enabled true \
+        --confirm ENABLE_TOSS_LIVE
 
     # 6. 대화형 인터랙티브 메뉴 실행
     python -m investment_agent.operations.commands.harness_switch --interactive
@@ -34,6 +37,8 @@ from investment_agent.operations.harness.maintenance import (
     set_maintenance_hold,
 )
 from investment_agent.operations.harness.switch import (
+    ALLOW_ORDERS_CONFIRMATION,
+    ENABLE_LIVE_CONFIRMATION,
     get_harness_status,
     set_kill_switch,
     set_live_enabled,
@@ -58,6 +63,17 @@ def _safe_print(text: str) -> None:
             sys.stdout.write(text.encode("ascii", errors="replace").decode("ascii") + "\n")
 
 
+def _ask_confirmation(phrase: str, why: str) -> str:
+    """확인 문구를 그대로 입력받는다. 틀리면 그 입력을 그대로 넘겨 setter가 거절한다.
+
+    여기서 판정하지 않는 것이 중요하다 — 판정은 setter 하나가 한다(진입점마다
+    다시 구현하면 한 곳이 느슨해진다).
+    """
+    _safe_print(f"\n⚠️  {why}")
+    _safe_print(f"   계속하려면 다음을 그대로 입력하세요: {phrase}")
+    return input("   확인 문구: ").strip()
+
+
 def print_status_dashboard(status_dict: dict) -> None:
     _safe_print("=" * 65)
     _safe_print("   ⚡ ATLAS Investment Harness — 런타임 스위치 제어판")
@@ -68,6 +84,10 @@ def print_status_dashboard(status_dict: dict) -> None:
     _safe_print(f"  * 하트비트 시각      : {status_dict['heartbeat_at'] or 'N/A'}")
     _safe_print(f"  * 정상 종료 여부     : {status_dict['stopped_cleanly']}")
     _safe_print(f"  * 프로세스 락 파일   : {'존재 (Locked)' if status_dict['lock_file_exists'] else '없음'}")
+    # `mode`는 실제로 그 프로세스가 떴을 때 기록한 값이다(감사 OP2-07) — `.env`에서 다시
+    # 계산한 값이 아니라서, 돌고 있지 않으면 None이다.
+    mode = status_dict.get("mode")
+    _safe_print(f"  * 기동 모드          : {mode or ('N/A (정지됨)' if not status_dict['is_running'] else '알 수 없음')}")
     _safe_print("-" * 65)
     kill_badge = "🚨 ON (신규 주문 전역 차단)" if status_dict["trading_kill_switch"] in {"1", "on", "true", "yes"} else "🟢 OFF (게이트 통과 시 주문 허용)"
     live_badge = "🟢 TRUE (실매매 연동)" if status_dict["toss_live_enabled"] else "⚪ FALSE (실매매 비활성)"
@@ -123,16 +143,37 @@ def interactive_loop(state_dir: Path, root_dir: Path) -> int:
             _safe_print(f"결과: {res.get('message')} (정지된 PID: {res.get('killed_pids')})")
             input("\n계속하려면 Enter를 누르세요...")
         elif choice == "4":
-            curr = status.trading_kill_switch in {"1", "on", "true", "yes"}
-            new_val = "off" if curr else "on"
-            res = set_kill_switch(new_val, root_dir=root_dir)
-            _safe_print(f"\n[변경] {res.get('message')}")
+            # 토글이 아니라 목표 상태를 받는다 — 화면을 잘못 읽으면 끄려다 켜게 된다.
+            blocked = status.trading_kill_switch in {"1", "on", "true", "yes"}
+            _safe_print(f"\n현재 킬스위치: {'ON (주문 차단)' if blocked else 'OFF (주문 허용)'}")
+            target = input("목표 상태를 입력하세요 (on=차단 / off=허용, 그 외는 취소): ").strip().lower()
+            if target not in {"on", "off"}:
+                _safe_print("취소했습니다. 바뀐 것이 없습니다.")
+            else:
+                res = set_kill_switch(
+                    target, root_dir=root_dir,
+                    confirm=_ask_confirmation(
+                        ALLOW_ORDERS_CONFIRMATION,
+                        "신규 주문을 허용하는 변경입니다.",
+                    ) if target == "off" else None,
+                )
+                _safe_print(f"\n[변경] {res.get('message')}")
             input("\n계속하려면 Enter를 누르세요...")
         elif choice == "5":
-            curr = status.toss_live_enabled
-            new_val = not curr
-            res = set_live_enabled(new_val, root_dir=root_dir)
-            _safe_print(f"\n[변경] {res.get('message')}")
+            live = status.toss_live_enabled
+            _safe_print(f"\n현재 실매매: {'TRUE (연동)' if live else 'FALSE (비활성)'}")
+            target = input("목표 상태를 입력하세요 (true=연동 / false=비활성, 그 외는 취소): ").strip().lower()
+            if target not in {"true", "false"}:
+                _safe_print("취소했습니다. 바뀐 것이 없습니다.")
+            else:
+                res = set_live_enabled(
+                    target == "true", root_dir=root_dir,
+                    confirm=_ask_confirmation(
+                        ENABLE_LIVE_CONFIRMATION,
+                        "실제 돈으로 주문을 내는 경로를 켜는 변경입니다.",
+                    ) if target == "true" else None,
+                )
+                _safe_print(f"\n[변경] {res.get('message')}")
             input("\n계속하려면 Enter를 누르세요...")
         elif choice == "6":
             if read_maintenance_hold(state_dir):
@@ -198,6 +239,15 @@ def main(argv: list[str] | None = None) -> int:
         help="TOSS_LIVE_ENABLED 값 변경",
     )
     parser.add_argument(
+        "--confirm",
+        help=(
+            "주문을 허용하는 방향으로 게이트를 바꿀 때 필요한 확인 문구. "
+            f"--kill-switch off는 {ALLOW_ORDERS_CONFIRMATION}, "
+            f"--live-enabled true는 {ENABLE_LIVE_CONFIRMATION}. "
+            "막는 방향(on/false)은 문구 없이 즉시 적용된다"
+        ),
+    )
+    parser.add_argument(
         "--maintenance",
         choices=["on", "off"],
         help="정비 보류. on이면 어떤 진입점으로도 하네스가 기동하지 않는다",
@@ -260,7 +310,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.kill_switch:
-        res = set_kill_switch(args.kill_switch, root_dir=root_dir)
+        res = set_kill_switch(args.kill_switch, root_dir=root_dir, confirm=args.confirm)
         if args.json:
             _safe_print(canonical_json(res))
         else:
@@ -268,7 +318,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if res.get("success") else 1
 
     if args.live_enabled:
-        res = set_live_enabled(args.live_enabled == "true", root_dir=root_dir)
+        res = set_live_enabled(
+            args.live_enabled == "true", root_dir=root_dir, confirm=args.confirm,
+        )
         if args.json:
             _safe_print(canonical_json(res))
         else:

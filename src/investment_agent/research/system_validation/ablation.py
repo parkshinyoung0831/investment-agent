@@ -227,7 +227,16 @@ def _coverage_reason(row: Mapping[str, Any], variant: AblationVariant) -> str | 
         return "ml_forecast_never_applied"
     if variant.alpha.use_thesis and not coverage["thesis_views_seen"]:
         return "thesis_view_never_observed"
-    if variant.name in {"no_tail_risk", "no_market_risk", "cvar_5", "cvar_12"} and not coverage["risky_target_count"]:
+    # 변형 이름 목록으로 판정하면 `--cvar-limits`가 기본값(0.05·0.12)이 아닐 때 이름이
+    # `cvar_3`·`cvar_20`이 되어 이 검사가 조용히 건너뛰어진다. 그러면 게이트가 위험자산을
+    # 전부 거절한 회차도 `completed`로 보고된다. 그래서 정책 차이 자체로 판정한다.
+    baseline = SystemPortfolioPolicy()
+    changes_risk_policy = (
+        variant.system.use_tail_risk != baseline.use_tail_risk
+        or variant.system.use_market_risk != baseline.use_market_risk
+        or variant.system.max_cvar_95_5d != baseline.max_cvar_95_5d
+    )
+    if changes_risk_policy and not coverage["risky_target_count"]:
         return "risk_policy_never_exercised"
     return None
 

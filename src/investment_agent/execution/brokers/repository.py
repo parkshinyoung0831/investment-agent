@@ -29,6 +29,21 @@ class BrokerRepository:
                 return False
             self._save_record(connection, "broker_order_snapshot", key, payload)
         return True
+
+    def latest_broker_order_snapshot(self, client_order_id: str) -> dict | None:
+        """이 주문의 가장 최근 관측. `_incremental_fill_row`가 체결 증분을 계산하는 유일한 근거다."""
+        with runtime_connection(read_only=True) as connection:
+            rows = connection.execute(
+                "SELECT payload_json FROM runtime_records WHERE record_type='broker_order_snapshot'"
+            ).fetchall()
+        matches = [
+            self._decode(row[0]) for row in rows
+        ]
+        matches = [row for row in matches if row.get("client_order_id") == client_order_id]
+        if not matches:
+            return None
+        return max(matches, key=lambda row: (row["observed_at"], row["snapshot_hash"]))
+
     def _raw_artifact(cls, payload: dict) -> dict:
         """원본 응답을 내용 주소 파일로 보존하고 원장에는 경로·해시만 남긴다."""
         import os

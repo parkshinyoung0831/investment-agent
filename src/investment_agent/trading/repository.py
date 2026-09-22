@@ -20,7 +20,7 @@ decision_runs  →  security_decisions  →  portfolio_proposals
 
 ## 근거 payload는 여기 없다
 
-`decision_evidence`에 주소와 지문만 넣는다. 내용은 `evidence.bundle`이 파일로 옮긴다.
+`decision_evidence`에 주소와 지문만 넣는다. 내용은 `evidence/artifacts.py`의 `archive_case_evidence`가 파일로 옮긴다.
 """
 from __future__ import annotations
 

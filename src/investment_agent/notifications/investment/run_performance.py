@@ -58,8 +58,13 @@ def render(batch):
                   dict(name="기록된 체결 손익 · 비용 반영", value=_amount(result["net_pnl"], currency))]
     else:
         accounting, nav = row["accounting"], row["nav"]
+        # 체결·미실현 손익 둘 다 배당을 반영하지 않는다 — 안 보여 주면 계좌 증가분을 두
+        # 숫자의 합으로 설명할 수 없다(감사 TR2-10). 원장에 배당 사건 자체가 없으면(None)
+        # "0"이지 "미확인"이 아니다.
+        dividend = accounting.get("dividend_income")
         fields = [dict(name="기록된 체결 손익 · 비용 반영", value=_amount(accounting["realized_pnl"], currency)),
                   dict(name="미실현손익", value=_amount(accounting["unrealized_pnl"], currency)),
+                  dict(name="배당 수익", value=_amount(dividend if dividend is not None else 0.0, currency)),
                   # 옛 보고서 payload는 `daily_return` 키로 저장돼 있다(이름이 값과 달라
                   # `latest_period_return`으로 바꿨다 — 감사 TR2-11). 둘 다 받는다.
                   dict(name="최근 평가 구간 수익률 · 시간가중",

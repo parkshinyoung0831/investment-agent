@@ -9,6 +9,7 @@ from investment_agent.research.rl.continuous_learner import (
     PolicyEvaluationScore,
     PromotionDecision,
 )
+from tests.investment_agent.research.rl.fixtures import historical_training_set
 
 
 class ContinuousLearnerTests(unittest.TestCase):
@@ -19,7 +20,7 @@ class ContinuousLearnerTests(unittest.TestCase):
             sharpe_ratio=1.20,
             total_reward=15.0,
             excess_return=0.08,
-            max_drawdown=0.05,
+            max_drawdown=-0.05,
             turnover=1.0,
             dsr_probability=0.92,
             is_statistically_significant=True,
@@ -30,7 +31,7 @@ class ContinuousLearnerTests(unittest.TestCase):
             sharpe_ratio=1.35,
             total_reward=18.0,
             excess_return=0.11,
-            max_drawdown=0.04,
+            max_drawdown=-0.04,
             turnover=0.9,
             dsr_probability=0.96,
             is_statistically_significant=True,
@@ -48,7 +49,7 @@ class ContinuousLearnerTests(unittest.TestCase):
             sharpe_ratio=1.20,
             total_reward=15.0,
             excess_return=0.08,
-            max_drawdown=0.05,
+            max_drawdown=-0.05,
             turnover=1.0,
             dsr_probability=0.92,
             is_statistically_significant=True,
@@ -59,7 +60,7 @@ class ContinuousLearnerTests(unittest.TestCase):
             sharpe_ratio=1.10,
             total_reward=12.0,
             excess_return=0.05,
-            max_drawdown=0.08,
+            max_drawdown=-0.08,
             turnover=1.2,
             dsr_probability=0.80,
             is_statistically_significant=False,
@@ -78,7 +79,7 @@ class ContinuousLearnerTests(unittest.TestCase):
             sharpe_ratio=1.9077,
             total_reward=-0.8565,
             excess_return=-0.072,
-            max_drawdown=0.0136,
+            max_drawdown=-0.0136,
             turnover=0.8153,
             dsr_probability=1.0,
             is_statistically_significant=True,
@@ -92,11 +93,11 @@ class ContinuousLearnerTests(unittest.TestCase):
     def test_challenger_needs_a_positive_excess_return_against_a_champion(self) -> None:
         learner = ContinuousLearner(min_sharpe_improvement=0.10, min_dsr_probability=0.90)
         champion = PolicyEvaluationScore(
-            sharpe_ratio=1.20, total_reward=15.0, excess_return=0.08, max_drawdown=0.05,
+            sharpe_ratio=1.20, total_reward=15.0, excess_return=0.08, max_drawdown=-0.05,
             turnover=1.0, dsr_probability=0.92, is_statistically_significant=True,
         )
         challenger = PolicyEvaluationScore(
-            sharpe_ratio=1.60, total_reward=18.0, excess_return=-0.01, max_drawdown=0.04,
+            sharpe_ratio=1.60, total_reward=18.0, excess_return=-0.01, max_drawdown=-0.04,
             turnover=0.9, dsr_probability=0.96, is_statistically_significant=True,
         )
 
@@ -107,8 +108,6 @@ class ContinuousLearnerTests(unittest.TestCase):
 
     def test_invalid_policy_fails_closed(self) -> None:
         """정책이 없으면 가짜 균등비중 성과를 내지 않는다."""
-        from tests.investment_agent.research.rl.fixtures import historical_training_set
-
         _, training_set = historical_training_set(periods=4)
 
         class _Opaque:
@@ -116,6 +115,18 @@ class ContinuousLearnerTests(unittest.TestCase):
 
         with self.assertRaises(TypeError):
             ContinuousLearner().evaluate_model(_Opaque(), training_set.dataset)
+
+    def test_evaluate_model_reports_drawdown_as_non_positive(self) -> None:
+        """`gate.py`는 음수 관례를 기대한다 — 양수로 새면 낙폭 한도가 절대 걸리지 않는다(감사 RR2-15)."""
+        _, training_set = historical_training_set(periods=6)
+        dataset = training_set.dataset
+        action_size = len(dataset.symbols) + 1
+
+        def model(_observation: np.ndarray) -> np.ndarray:
+            return np.ones(action_size)
+
+        score = ContinuousLearner().evaluate_model(model, dataset)
+        self.assertLessEqual(score.max_drawdown, 0.0)
 
 
 if __name__ == "__main__":

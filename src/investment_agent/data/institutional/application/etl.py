@@ -283,7 +283,7 @@ def _run(
 
     manager_ciks = db.get_active_manager_ciks()
     if not manager_ciks:
-        raise GuruConfigurationError("institutional.managers.MANAGER_CATALOG has no active managers")
+        raise GuruConfigurationError("institutional.domain.managers.MANAGER_CATALOG has no active managers")
     log.info("active managers=%d", len(manager_ciks))
 
     cache = db.get_identifier_cache()

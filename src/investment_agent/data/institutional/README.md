@@ -20,7 +20,7 @@ v1의 원천 테이블은 `db/postgres/v1/50_institutional.sql`이 선언한다.
 | `institutional.positions` | 원시 information-table 행과 수량·가치·옵션 정보 |
 
 추적 대상 CIK와 운영 메타데이터(name/fund_name/is_active)는 Supabase 표가 아니라
-`investment_agent.data.institutional.managers.MANAGER_CATALOG`가 SSOT다 —
+`investment_agent.data.institutional.domain.managers.MANAGER_CATALOG`가 SSOT다 —
 manager는 SEC 사실이 아니라 우리가 고른 추적 대상이기 때문이다.
 
 CUSIP/CINS 매핑은 `universe.security_identifiers`가 소유한다. 변화량·컨센서스 같은

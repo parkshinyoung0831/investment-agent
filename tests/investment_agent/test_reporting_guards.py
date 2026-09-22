@@ -34,6 +34,8 @@ ALLOWED_IMPORTS = {
     "investment_agent.data.macro.domain.releases.release_catalog",
     "investment_agent.data.fundamentals.domain.services.classify_dimensions",
     "investment_agent.data.fundamentals.domain.taxonomy.segment_concepts",
+    # total_debt 정의를 reporting과 research가 공유한다(감사 RR2-09) — 순수 계산 함수만 있다.
+    "investment_agent.data.fundamentals.domain.services.leverage_metrics",
     "investment_agent.research.strategies.catalog",
     "itertools",
     "investment_agent.reporting.readers.select_only",

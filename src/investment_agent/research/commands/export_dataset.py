@@ -155,9 +155,12 @@ def export_dataset(
         "feature_rows": feature_payload,
         "label_rows": label_payload,
     }
-    # train/validation/test_period은 일부러 쓰지 않는다. 실제 학습 구간은
-    # train_baseline이 purged_row_splits로 다시 정하므로, 여기서 추정 구간을 박아두면
-    # manifest와 artifact가 서로 다른 기간을 주장하게 된다.
+    # train/validation/test_period을 넘기지 않는다 — 실제 학습 구간은 train_baseline이
+    # purged_row_splits로 정하고, 그 구간은 artifact.train_period가 갖는다.
+    # 다만 manifest는 기간을 비워둘 수 없어서(DatasetManifest가 세 기간을 요구한다)
+    # build_research_dataset이 as_of 날짜를 1/3씩 나눈 **추정 구간**을 대신 적는다.
+    # 그래서 학습 기록 안의 dataset_manifest.*_period는 학습에 쓰인 구간이 아니다 —
+    # 어느 구간으로 학습했는지는 artifact.train_period만 말한다.
     if output is not None:
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(

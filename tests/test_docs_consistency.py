@@ -15,6 +15,7 @@
 """
 from __future__ import annotations
 
+import ast
 import re
 import unittest
 from pathlib import Path
@@ -383,6 +384,189 @@ class EnvironmentVariableDocumentedTest(unittest.TestCase):
             if name not in documented and not self.PROVIDED_BY_PLATFORM.match(name)
         )
         self.assertEqual([], missing, "docs/ENV.md에 없는 환경변수")
+
+
+class NamedModulePathTest(unittest.TestCase):
+    """문서가 부르는 `investment_agent.…` 경로가 실재하는지 본다.
+
+    표 이름과 달리 모듈 경로는 링크가 아니라 본문 코드 표기(`...`)로 적히므로 링크
+    검사에 걸리지 않는다. 계층을 하나 빼먹은 경로(`fundamentals.filings` ↔
+    `fundamentals.domain.filings`)는 읽는 사람만 막히고 테스트는 통과했다.
+    """
+
+    # `econ_calendar_*`처럼 여러 명령을 한 번에 가리키는 표기는 경로가 아니다.
+    _PATH = re.compile(r"\b(tests\.)?(investment_agent(?:\.[A-Za-z_][A-Za-z_0-9]*)+)(?![A-Za-z_0-9*])")
+
+    def _module_root(self, is_test: bool) -> Path:
+        return ROOT / ("tests" if is_test else "src")
+
+    def _resolve(self, dotted: str, *, is_test: bool) -> bool:
+        """파일 경로로 최대한 내려가고, 남은 첫 조각은 모듈 최상위 이름이어야 한다."""
+        parts = dotted.split(".")
+        base = self._module_root(is_test)
+        if is_test:
+            parts = parts[1:] if parts[:1] == ["investment_agent"] else parts
+            base = base / "investment_agent"
+        consumed = 0
+        module: Path | None = None
+        for index in range(len(parts), 0, -1):
+            candidate = base.joinpath(*parts[:index])
+            if candidate.is_dir() and (candidate / "__init__.py").exists():
+                module, consumed = candidate / "__init__.py", index
+                break
+            if candidate.with_suffix(".py").exists():
+                module, consumed = candidate.with_suffix(".py"), index
+                break
+        if module is None:
+            return False
+        remaining = parts[consumed:]
+        if not remaining:
+            return True
+        return self._declares(module, remaining[0])
+
+    def _declares(self, module: Path, name: str) -> bool:
+        tree = ast.parse(module.read_text(encoding="utf-8"))
+        for node in tree.body:
+            if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                if node.name == name:
+                    return True
+            elif isinstance(node, ast.Assign):
+                if any(isinstance(t, ast.Name) and t.id == name for t in node.targets):
+                    return True
+            elif isinstance(node, ast.AnnAssign):
+                if isinstance(node.target, ast.Name) and node.target.id == name:
+                    return True
+            elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                if any((alias.asname or alias.name.split(".")[0]) == name for alias in node.names):
+                    return True
+        return False
+
+    def test_the_path_scan_finds_paths(self) -> None:
+        """경로를 못 모으면 아래 검사가 공허하게 통과한다."""
+        found = {
+            match.group(2)
+            for path in _markdown_files()
+            for match in self._PATH.finditer(path.read_text(encoding="utf-8"))
+        }
+        self.assertGreater(len(found), 80)
+
+    def test_every_named_module_path_exists(self) -> None:
+        missing: list[str] = []
+        for path in _markdown_files():
+            relative = path.relative_to(ROOT).as_posix()
+            for number, line in _strip_code_fences(path.read_text(encoding="utf-8")):
+                for match in self._PATH.finditer(line):
+                    dotted = match.group(2)
+                    if not self._resolve(dotted, is_test=bool(match.group(1))):
+                        missing.append(f"{relative}:{number}: {match.group(0)}")
+        self.assertEqual([], missing, "문서가 부르는데 실재하지 않는 모듈 경로")
+
+
+class NamedSourceFileTest(unittest.TestCase):
+    """문서가 그림처럼 나열하는 `src/investment_agent/…py` 경로가 실재하는지 본다.
+
+    링크가 아니라 코드블록 안의 트리 그림으로 적히므로 링크 검사에 걸리지 않는다.
+    한 문서는 `trading/portfolio/evaluator.py`를 적고 있었지만 그 파일은
+    `research/evaluation/evaluator.py`다 — 계층이 다른 곳을 가리켰다.
+    """
+
+    _SOURCE = re.compile(r"\b(src/investment_agent/[A-Za-z0-9_/]*\.py)(?![A-Za-z0-9_])")
+
+    def test_the_source_scan_finds_paths(self) -> None:
+        """경로를 못 모으면 아래 검사가 공허하게 통과한다."""
+        found = {
+            match.group(1)
+            for path in _markdown_files()
+            for match in self._SOURCE.finditer(path.read_text(encoding="utf-8"))
+        }
+        self.assertGreater(len(found), 40)
+
+    def test_every_named_source_file_exists(self) -> None:
+        missing: list[str] = []
+        for path in _markdown_files():
+            relative = path.relative_to(ROOT).as_posix()
+            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                for match in self._SOURCE.finditer(line):
+                    if not (ROOT / match.group(1)).is_file():
+                        missing.append(f"{relative}:{number}: {match.group(1)}")
+        self.assertEqual([], missing, "문서가 부르는데 실재하지 않는 소스 파일")
+
+
+class RiskLimitDocumentationTest(unittest.TestCase):
+    """문서가 적는 hard risk limit 값이 코드의 기본값과 같은지 본다.
+
+    `trading/risk/gate.py`가 SSOT이고 문서는 설명이다. 그런데 문서의 숫자는 아무도
+    검사하지 않아서, 한도를 코드에서 바꾸면 문서만 옛 값을 계속 주장한다. 값을 완화한
+    것처럼 읽히는 문서는 리뷰를 오도한다.
+
+    방향을 하나로 고정한다 — **정책이 가진 모든 수치 한도가 문서에 나타나야 한다.**
+    그래서 한도를 새로 추가하면 문서를 고칠 때까지 실패한다.
+    """
+
+    DOCUMENT = "docs/INVESTMENT_SYSTEM.md"
+    TABLE_HEADER = "| 제한 | V1 기본 설명값 |"
+
+    def _limit_table_cells(self) -> set[str]:
+        """한도 표의 값 칸만 모은다.
+
+        문서 전체에서 숫자를 찾으면 777줄 어딘가에 우연히 같은 숫자가 있어 가드가
+        **공허하게 통과한다**(실측: 0.10을 0.12로 바꿔도 통과했다). 그래서 표로 좁힌다.
+        """
+        text = (ROOT / self.DOCUMENT).read_text(encoding="utf-8")
+        start = text.index(self.TABLE_HEADER)
+        cells: set[str] = set()
+        for line in text[start:].splitlines()[2:]:
+            if not line.startswith("|"):
+                break
+            parts = [part.strip() for part in line.strip().strip("|").split("|")]
+            if len(parts) < 2:
+                break
+            value = parts[-1]
+            cells.add(value)
+            # "0.15 (발동하지 않는다 — 아래)"처럼 주석이 붙은 칸은 첫 토큰이 값이다.
+            tokens = value.split()
+            if tokens:
+                cells.add(tokens[0])
+        return cells
+
+    def _renderings(self, value: float | int) -> set[str]:
+        """같은 값이 표에서 쓰일 수 있는 표기들. 하나라도 있으면 통과한다."""
+        number = float(value)
+        forms = {str(value), f"{number:g}"}
+        if isinstance(value, int) and not isinstance(value, bool):
+            return forms
+        percent = number * 100.0
+        forms.add(f"{percent:g}%")
+        forms.add(f"{percent:.1f}%")
+        forms.add(f"{number:g}시간")  # 시간은 비율이 아니다
+        return forms
+
+    def test_the_limit_table_is_found(self) -> None:
+        """표를 못 찾으면 아래 검사가 공허하게 통과한다."""
+        cells = self._limit_table_cells()
+        self.assertGreaterEqual(len(cells), 8)
+        self.assertIn("10%", cells)
+
+    def test_every_numeric_risk_limit_appears_in_the_limit_table(self) -> None:
+        from dataclasses import fields
+
+        from investment_agent.trading.risk.gate import PortfolioRiskPolicy
+
+        policy = PortfolioRiskPolicy()
+        cells = self._limit_table_cells()
+        checked = 0
+        missing: list[str] = []
+        for field in fields(policy):
+            value = getattr(policy, field.name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                continue
+            if field.name == "version":
+                continue
+            checked += 1
+            if not (self._renderings(value) & cells):
+                missing.append(f"{field.name}={value}")
+        self.assertGreaterEqual(checked, 10, "한도를 거의 못 찾았다 — 이 가드가 공허하게 통과하는 중이다")
+        self.assertEqual([], missing, f"{self.DOCUMENT}의 한도 표에 값이 없는 hard risk limit")
 
 
 if __name__ == "__main__":

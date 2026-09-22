@@ -1,10 +1,18 @@
 """financial_versions 한 행에서 값을 읽는 순수 함수.
 
 DB에 접근하지 않으므로 read model 계산과 카드 계산 양쪽에서 같이 쓴다. 계산의 owner는
-reporting이고 알림 카드는 이것을 소비한다. EV 가산분 자체는 reporting/notifications/earnings_report.py가 소유한다 — 현금 정의가
-카드의 표시 규칙과 함께 움직여서 여기 굳혀 두면 두 답이 갈린다.
+reporting이고 알림 카드는 이것을 소비한다. `net_debt`·`cash_and_equivalents`도 여기가
+유일한 정의다 — 예전에는 카드(`earnings_report.py`)와 화면(`services/earnings/metrics.py`)이
+각자 구현해 한쪽만 단기투자자산을 반영했다(감사 RR2-08). EV 가산분(소수주주지분·우선주를
+더하는 것) 자체는 `earnings_report.py`가 계속 소유한다.
+
+`total_debt`는 `data/fundamentals/domain/services/leverage_metrics.py`에서 가져온다 — research도
+같은 정의를 쓴다(`research/evidence/statistics.py`). 예전에는 두 계층이 각자 구현해 research가
+운용리스 부채를 빠뜨렸다(감사 RR2-09).
 """
 from __future__ import annotations
+
+from investment_agent.data.fundamentals.domain.services.leverage_metrics import total_debt
 
 
 def f(v) -> float | None:
@@ -15,20 +23,25 @@ def f(v) -> float | None:
         return None
 
 
-def total_debt(row: dict) -> float | None:
-    """단기차입·유동성 장기부채·장기부채·운용리스 부채 합계. 구성요소가 하나도 없으면 모른다(None).
+def cash_and_equivalents(row: dict) -> float | None:
+    """현금성 자산 = 현금·현금성자산 + 단기투자자산.
 
-    결측을 0으로 접으면 부채 없는 회사처럼 보여 순부채·부채비율이 좋게 나온다.
+    둘 다 없으면 None이다. 합산 태그 하나만 보던 시절에는 분기 행의 98%에서 현금이
+    0으로 취급돼 순부채가 계통적으로 과대평가됐다(감사 RR2-08) — 이 함수가 유일한 정의다.
     """
-    total = f(row.get("total_debt_including_current"))
-    if total is not None:
-        return total
-    parts = (
-        f(row.get("short_term_debt")),
-        f(row.get("current_portion_of_long_term_debt")),
-        f(row.get("long_term_debt")),
-        f(row.get("operating_lease_current_debt_equivalent")),
-        f(row.get("operating_lease_non_current_debt_equivalent")),
-    )
-    known = [v for v in parts if v is not None]
-    return sum(known) if known else None
+    cash = f(row.get("cash_and_cash_equivalents"))
+    short_term = f(row.get("short_term_investments"))
+    if cash is None and short_term is None:
+        return None
+    return (cash or 0.0) + (short_term or 0.0)
+
+
+def net_debt(row: dict) -> float | None:
+    """`total_debt` − `cash_and_equivalents`. 부채·현금 어느 쪽도 모르면 None이다."""
+    debt = total_debt(row)
+    if debt is None:
+        return None
+    return debt - (cash_and_equivalents(row) or 0.0)
+
+
+__all__ = ["cash_and_equivalents", "f", "net_debt", "total_debt"]

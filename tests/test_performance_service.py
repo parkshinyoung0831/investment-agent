@@ -115,6 +115,24 @@ class PerformanceServiceTests(unittest.TestCase):
         self.assertIn("미확인", str(rendered))
         self.assertIn("실계좌", str(rendered))
 
+    def test_dividend_income_appears_as_its_own_card_field(self):
+        """체결·미실현손익만 보면 배당만큼 계좌 증가분을 설명하지 못한다(감사 TR2-10)."""
+        self.repo.save_event(dict(
+            event_id="div-1", source_ref="broker:div-1", broker_account_hash="account",
+            execution_mode="live", kind="dividend", amount=25, currency="USD",
+            occurred_at="2026-09-02T00:00:00+00:00",
+        ))
+        update_performance(source=Source(), repository=self.repo)
+        rendered = str(render(notices([self.repo.latest_performance()])))
+        self.assertIn("배당 수익", rendered)
+        self.assertIn("+25.00", rendered)
+
+    def test_dividend_income_shows_zero_not_unconfirmed_when_there_are_no_dividend_events(self):
+        update_performance(source=Source(), repository=self.repo)
+        rendered = str(render(notices([self.repo.latest_performance()])))
+        self.assertIn("배당 수익", rendered)
+        self.assertIn("+0.00 USD", rendered)
+
     def test_original_decision_report_exists_without_any_account(self):
         from unittest.mock import patch
         from investment_agent.reporting.notifications.investment.performance import performance_reports

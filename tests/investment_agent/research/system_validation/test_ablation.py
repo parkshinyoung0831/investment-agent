@@ -7,6 +7,7 @@ from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 
 from investment_agent.research.system_validation.ablation import (
+    _coverage_reason,
     ReplayRepository,
     default_variants,
     ml_artifact_lookahead,
@@ -153,6 +154,52 @@ class AblationTest(unittest.TestCase):
         self.assertEqual(by_name["factor_ml_thesis"]["status"], "insufficient_coverage")
         self.assertEqual(by_name["factor_ml_thesis"]["reason"], "thesis_view_never_observed")
 
+
+class CoverageHonestyTest(unittest.TestCase):
+    """위험 정책을 바꾼 변형은 위험자산을 한 번도 담지 못했으면 completed가 아니다."""
+
+    def _row(self, *, risky: int) -> dict:
+        return {
+            "targets": [{"as_of": "2025-06-02T00:00:00+00:00"}],
+            "coverage": {
+                "factor_snapshot_periods": 3,
+                "ml_forecasts_applied": 0,
+                "thesis_views_seen": 0,
+                "risky_target_count": risky,
+            },
+        }
+
+    def _cvar_variant(self, limit: float):
+        """--cvar-limits 로 요청한 임의 한도의 변형. 이름은 기본값 목록에 없다."""
+        variants = default_variants(cvar_limits=(limit,))
+        return next(variant for variant in variants
+                    if variant.system.max_cvar_95_5d == limit
+                    and variant.name.startswith("cvar_"))
+
+    def test_a_cvar_variant_outside_the_default_limits_is_still_checked(self):
+        """이름 목록으로 판정하면 cvar_20 은 검사를 건너뛰어 조용히 completed 가 된다."""
+        variant = self._cvar_variant(0.20)
+        self.assertNotIn(variant.name, {"cvar_5", "cvar_12"})
+        self.assertEqual(
+            _coverage_reason(self._row(risky=0), variant),
+            "risk_policy_never_exercised",
+        )
+
+    def test_the_default_cvar_variants_are_still_checked(self):
+        variant = self._cvar_variant(0.05)
+        self.assertEqual(
+            _coverage_reason(self._row(risky=0), variant),
+            "risk_policy_never_exercised",
+        )
+
+    def test_a_variant_that_did_hold_risky_assets_is_not_flagged(self):
+        self.assertIsNone(_coverage_reason(self._row(risky=4), self._cvar_variant(0.20)))
+
+    def test_the_operating_variant_is_not_treated_as_a_risk_variant(self):
+        """운영 구성은 위험 정책을 바꾸지 않았으므로 이 사유로 걸리지 않는다."""
+        operating = next(variant for variant in default_variants()
+                         if variant.name == "factor_only")
+        self.assertIsNone(_coverage_reason(self._row(risky=0), operating))
 
 if __name__ == "__main__":
     unittest.main()

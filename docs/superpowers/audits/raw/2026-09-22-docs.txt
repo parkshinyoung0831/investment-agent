@@ -1,0 +1,365 @@
+# 2026-09-22 문서 감사 원본
+
+## DOC-01 [확정] docs/OPERATIONS.md:40 이 부르는 모듈이 없다
+문서: `investment_agent.trading.decision.llm.agents.orchestrator`
+실제: `investment_agent.trading.decision.agents.orchestrator`
+근거: src/investment_agent/trading/decision/llm/ 에 agents 패키지가 없다.
+      decision/agents/runner.py:11 이 `from investment_agent.trading.decision.agents import orchestrator`.
+영향: 읽는 사람이 없는 경로를 찾아간다. 판단 엔진 진입점을 문서로만 아는 사람은 막힌다.
+
+## DOC-02 [확정] fundamentals/domain/README.md:40 계층을 뺀 경로
+문서: `investment_agent.data.fundamentals.filings.FilingRef`
+실제: `investment_agent.data.fundamentals.domain.filings.FilingRef`
+근거: grep "class FilingRef" -> domain/filings.py:50. fundamentals/filings.py 는 없다.
+
+## DOC-03 [확정] institutional/README.md:23 + 코드 오류 메시지가 같은 낡은 경로
+문서: `investment_agent.data.institutional.managers.MANAGER_CATALOG`
+실제: `investment_agent.data.institutional.domain.managers.MANAGER_CATALOG`
+추가 발견: application/etl.py:286 의 GuruConfigurationError 메시지도
+  "institutional.managers.MANAGER_CATALOG has no active managers" 라고 말한다.
+  이 문자열은 Postgres 표 이름(`institutional.managers`)처럼 읽히는데 그런 표는 없다
+  (domain/managers.py:4 머리주석이 "Supabase institutional.managers 테이블은 없다"고 적혀 있다).
+  즉 운영자가 오류를 보고 DB를 찾아간다. 코드 쪽이 틀렸다.
+
+## RS3-01 [확정] baselines.py 의 순위 상관이 행 순서에 따라 ±1 이 된다
+파일: src/investment_agent/research/models/baselines.py:155-161 (_rank_correlation)
+코드:
+  a = np.argsort(np.argsort(actual)).astype(float)
+  p = np.argsort(np.argsort(predicted)).astype(float)
+  if np.std(a) == 0 or np.std(p) == 0: return 0.0
+
+문제: argsort(argsort(x)) 는 동률을 "등장 순서"로 갈라 서로 다른 정수 순위를 준다.
+      따라서 예측이 전부 같은 값이어도 p = [0,1,2,...,n-1] 이 되고 np.std(p) != 0 이다.
+      즉 함수가 스스로 둔 std==0 가드에 **도달할 수 없다**. 주석/가드가 의도한 답(0.0)과
+      실제 답이 다르다 — 어느 쪽이 틀렸는지는 가드가 말한다(가드가 의도다).
+
+수치 재현 (numpy):
+  actual=[-0.05,-0.01,0.0,0.02,0.07], predicted=[0.006]*5
+  -> 0.99999999   (actual 오름차순)
+  -> -0.99999999  (actual 내림차순)
+  -> -0.20        (actual 뒤섞음)
+  scipy.stats.spearmanr 의 정답: nan (정의되지 않음)
+  std of ranks for constant pred: 1.414 (0 이 아니다 -> 가드 무력)
+
+영향: `naive` baseline 은 정의상 상수(train 평균)를 예측한다. 따라서 naive 의
+  out_of_sample.rank_correlation 은 **표본 행 순서가 정하는 값**이고, naive 는
+  challenger 비교의 기준선이다. 동률이 많은 label(0 이 많은 구간)도 같은 방식으로 오염된다.
+  표시 경로: dashboard/components/alpha_lab.py:159 "OOS 순위 상관".
+  저장 경로: ModelArtifact.to_db_record -> trading.model_versions.params.out_of_sample.
+
+## RS3-02 [확정] 같은 이름의 지표를 네 곳이 서로 다르게 계산한다
+1. research/models/baselines.py::_rank_correlation  — 동률을 등장 순서로 (RS3-01, 틀림)
+2. research/evaluation/metrics.py::evaluate_predictions — 고유값 dense rank (동률 같은 순위)
+3. research/evaluation/alpha.py::_rank + spearman_ic — 동률 평균 순위, 상수면 None
+4. research/factors/core.py::percentile_ranks — 동률 평균 순위
+
+1 과 2 는 둘 다 `rank_correlation` 이라는 같은 필드명을 채우고(BaselineEvaluation /
+EvaluationScore) 대시보드에서 같은 개념으로 읽힌다. 2(dense)와 3/4(average)도 동률에서
+값이 다르다 — 다만 2 는 행 순서에 의존하지 않아 조용히 틀리지는 않는다.
+
+## RS3-03 [확정] direction_accuracy 정의가 두 곳에서 다르다
+baselines.py:_evaluate      : np.sign(predicted) == np.sign(actual)   -> actual==0 은 predicted 도 정확히 0 이어야 맞음
+evaluation/metrics.py       : (left >= 0) == (right >= 0)             -> actual==0 은 predicted>=0 이면 맞음
+같은 이름 같은 개념인데 label 이 0 인 표본에서 결과가 갈린다.
+
+## 가드 추가: tests/test_docs_consistency.py::NamedModulePathTest
+문서 본문의 `investment_agent.…` 경로를 전부 모아 src(또는 tests) 파일 트리로 내려가며 해석하고,
+남은 첫 조각은 그 모듈의 최상위 선언(class/def/대입/import)이어야 한다고 단정한다.
+`econ_calendar_*` 같은 와일드카드 표기는 (?![A-Za-z_0-9*]) 로 경로에서 뺀다.
+공허 통과 방지: test_the_path_scan_finds_paths 가 80개 이상 모였는지 먼저 본다(현재 수집 성공).
+주입 확인: institutional/README.md 를 낡은 경로로 되돌리면
+  "src/investment_agent/data/institutional/README.md:23: investment_agent.data.institutional.managers.MANAGER_CATALOG"
+  으로 실패한다(확인 완료, try/finally 복원).
+
+함정 기록: 이 가드의 정규식을 heredoc으로 쓸 때 `\b`가 도구 호출에서 백스페이스(\x08)로
+저장됐다. 저장 뒤 파일을 다시 읽어 repr로 확인해야 한다(메모리의 알려진 함정).
+
+## RS3-04 [확정] export_dataset의 주석이 막았다고 말하는 일이 그대로 일어난다
+파일: src/investment_agent/research/commands/export_dataset.py:158-160
+주석: "train/validation/test_period은 일부러 쓰지 않는다. 실제 학습 구간은 train_baseline이
+       purged_row_splits로 다시 정하므로, 여기서 추정 구간을 박아두면 manifest와 artifact가
+       서로 다른 기간을 주장하게 된다."
+실제: 넘기지 않으면 build_research_dataset(datasets/core.py:180-196)이 _inferred_periods()로
+       as_of 날짜를 1/3·1/3·1/3로 갈라 **manifest에 그대로 박는다**. 즉 주석이 피하려던 상태가
+       된다 — train_baseline.py:60 이 "dataset_manifest": dataset.manifest.to_dict() 로 그 값을
+       학습 기록에 저장하고, 같은 기록의 artifact.train_period(training/baseline.py:117-119)는
+       purged_row_splits 로 만든 **다른** 기간이다.
+소비자 확인: DatasetManifest.train_period 를 읽는 운영 코드는 없다(dashboard·reporting 0건).
+       따라서 값이 판단을 바꾸지는 않는다 — 학습 기록을 감사하는 사람만 잘못된 구간을 믿는다.
+       manifest_hash 는 created_at 을 포함하므로 어차피 매 실행 달라져 재현 키가 아니다.
+판단: 주석이 의도를 옳게 말하고 코드가 그것을 못 지킨다. 계약(DatasetManifest의 세 기간을
+       optional 로) 변경은 native 테스트 1개·export 테스트 1개를 함께 고쳐야 하므로
+       **사용자 결정으로 올린다**. 이번에는 주석이 현실을 말하게 고치고 사실을 가드로 고정한다.
+
+## RS3-05 [보고만] benchmark label 기본값 0.0 이 결측을 0% 수익으로 접는다
+datasets/core.py:82  benchmark_label=float(value.get("benchmark_label", value.get("benchmark_forward_return", 0.0)))
+research/contracts.py:85  benchmark_label: float = 0.0
+운영 경로(export_dataset.py:138)는 row["benchmark_forward_return"]를 직접 인덱싱해 결측이면 KeyError다.
+따라서 이 기본값은 손으로 쓴 dataset JSON 에서만 발동한다.
+또한 build_training_sample 이 넣는 labels["benchmark"] 를 **읽는 코드가 0건**이다(죽은 값).
+
+## TR3-01 [확정] 사건 재분석 경로가 보유 종목 종가를 proxy마다 다시 파싱한다
+파일: src/investment_agent/trading/decision/candidates.py:351-360 (event_reanalysis_priorities)
+      src/investment_agent/trading/portfolio/market_risk.py:309 (estimate_betas)
+전에: for proxy in proxies: estimate_betas(rows, symbols=held, benchmark_symbol=proxy)
+      estimate_betas 안의 closes_cache 는 **호출마다 새로** 만들어졌다. 그래서 보유 종목
+      파싱이 proxy 수만큼 반복됐다. _aligned_returns 의 docstring 은 closes_cache 가
+      "호출자끼리 나누는 자리"라고 말하는데 estimate_betas 가 그 자리를 노출하지 않았다
+      (2차 감사 TR2-09 가 한 호출 안의 benchmark 재파싱만 없앴다).
+측정: 보유 12 · proxy 5 -> _close_by_date 65회 (필요한 최소 17회, 3.8배)
+      테스트 규모(보유 6 · proxy 3) -> 21회 -> 9회
+경로 빈도: entry_watch 계열로 몇 분마다 돈다. 심볼당 260행을 읽는다.
+수정: estimate_betas 에 closes_cache 인자를 노출하고 candidates.py 가 하나를 공유한다.
+검증: test_a_shared_cache_spans_several_benchmarks_without_changing_values
+      - 파싱 횟수 9회 단정 + set(calls) 가 보유+proxy 전체와 같음
+      - 캐시 없이 따로 계산한 베타와 12자리까지 같음(결과 동일성)
+      주입(캐시 무시로 되돌림) -> "AssertionError: 21 != 9" 확인, try/finally 복원.
+
+## TR3-02 [의심] 전역 사건 조회가 저장소를 통째로 읽는다
+파일: src/investment_agent/trading/decision/candidates.py:_recent_global_events
+      records("events", start_as_of=None, end_as_of=None) 로 **전 기간**을 받아 파이썬에서
+      최근 48시간만 남긴다. 같은 클래스의 _candidate_event_features 는 start/end 를 넘긴다.
+왜 의심인가: events 행에 as_of 가 없어서(필터가 available_at 을 본다) 저장소 인자로
+      좁힐 수 없는 것일 수 있다. ResearchStore.records 의 as_of 컬럼 의미를 확인해야 한다.
+      이 경로도 몇 분마다 돈다.
+
+## 음성 결과 (다음 세션이 다시 하지 않도록)
+- naive datetime 전수: date.today()/datetime.now() 무시간대 사용 **0건** (주석 언급 2건만).
+- Postgres 선언 컬럼 355개(표 28개) 중 **선언 밖에서 한 번도 등장하지 않는 컬럼 0건**.
+  스캔은 CREATE TABLE 본문을 코퍼스에서 제외해 자기참조로 통과하는 것을 막았고,
+  양성 대조(zzz_orphan_column=False, sic_division_name=True)로 유효함을 확인했다.
+- 문서가 부르는 워크플로 파일·scripts 경로 누락 0건.
+
+## DOC-04 [확정] AUTONOMOUS_SYSTEM.md 가 alpha.py 를 두 번 적는다
+docs/AUTONOMOUS_SYSTEM.md 의 trading/decision 트리 그림에 alpha.py 가 두 줄로 있고 설명이 다르다.
+  ├─ alpha.py  # factor 사전값 + 채택 champion ML + 논지 검증 → 기대초과수익·제약
+  └─ alpha.py  # Factor·champion ML·TradingAgents 논지 → 기대초과수익
+병합 흔적이다. 뒤의 요약 줄을 지우고 앞의 상세한 줄만 남겼다.
+
+## DOC-05 [확정] 없는 파일을 계층이 다른 패키지에 있다고 적었다
+docs/AUTONOMOUS_SYSTEM.md:64 가 trading/portfolio/ 트리에 `evaluator.py` 를 적는다.
+실제: src/investment_agent/trading/portfolio/ 에는 __init__·contracts·market_risk·optimizer·signal_book 뿐이고
+      evaluator 는 **src/investment_agent/research/evaluation/evaluator.py** 다
+      (operations/commands/evaluate_decisions.py:7 이 그곳에서 import 한다).
+왜 중요한가: CLAUDE.md 가 Research/Trading 계층 방향을 강제하는데, 문서가 평가기를 Trading 쪽에
+      있다고 말하면 읽는 사람이 계층 경계를 거꾸로 이해한다. docs/INVESTMENT_SYSTEM.md:281 은
+      패키지 없이 `evaluator.py` 라고만 쓰므로 두 문서를 함께 읽으면 틀린 자리로 간다.
+수정: 블록에서 evaluator.py 를 빼고 실제 있는 market_risk.py·contracts.py 를 적었다.
+
+## 가드 추가: tests/test_docs_consistency.py::NamedSourceFileTest
+문서 본문의 `src/investment_agent/….py` 경로가 실재하는 파일인지 단정한다.
+트리 그림은 링크가 아니라 코드블록이라 기존 링크 검사가 보지 못했다.
+공허 통과 방지: 40개 이상 모였는지 먼저 본다.
+주입 확인: AUTONOMOUS_SYSTEM.md 에 없는 evaluator.py 경로를 다시 넣으면
+  "docs/AUTONOMOUS_SYSTEM.md:62: src/investment_agent/trading/portfolio/evaluator.py" 로 실패한다.
+
+## 음성 결과 추가
+- 문서가 부르는 repo 경로(src/db/tests/scripts/prompts) 전수 17건 후보 -> **실제 결함 0건**.
+  전부 오탐이었다: `docs/diagrams/src/*.json`(꼬리만 매치), `scripts/harness/on|off|status`(파이프 표기),
+  `db/postgres.py`(platform 패키지 안의 상대 표기), `db/infrastructure`(서술어).
+- docs/README.md 의 경로 주장 14개 전수 확인 -> 전부 실재.
+
+## RS3-06 [확정] Ablation 정직성 검사가 변형 이름 목록에 묶여 있어 사용자 지정 한도를 건너뛴다
+파일: src/investment_agent/research/system_validation/ablation.py::_coverage_reason
+전에: if variant.name in {"no_tail_risk","no_market_risk","cvar_5","cvar_12"} and not coverage["risky_target_count"]
+문제: 변형 이름은 `default_variants(cvar_limits=...)` 이 f"cvar_{round(limit*100)}" 로 만든다.
+      CLI(`operations/commands/system_ablation.py`)가 `--cvar-limits` 를 **명시적으로 받는다**
+      (기본 "0.05,0.12"). 사용자가 `--cvar-limits 0.03,0.20` 을 주면 이름이 cvar_3·cvar_20 이
+      되어 이 집합에 없고, 검사가 조용히 건너뛰어진다. 그러면 게이트가 위험자산을 한 번도
+      담지 못한 회차도 `status="completed"` 로 보고되고 excess_return 이 비교표에 들어간다.
+      (같은 파일이 ml/thesis 는 variant.alpha.use_* 로 **속성**으로 판정한다 — 위험 정책만 이름이다.)
+수정: 변형의 system 정책을 기준 정책과 비교해 판정한다(use_tail_risk·use_market_risk·max_cvar_95_5d).
+검증: 새 테스트 4개(CoverageHonestyTest) — cvar_20 도 걸린다 / cvar_5 도 여전히 걸린다 /
+      위험자산을 담았으면 안 걸린다 / 위험 정책을 안 바꾼 factor_only 는 안 걸린다.
+      옛 이름 목록 주입 -> "AssertionError: None != 'risk_policy_never_exercised'" 실패 확인.
+
+## RS3-07 [보고만] 같은 5거래일 CVaR95 에 한도가 둘이고 서로 유도되지 않는다
+SystemPortfolioPolicy.max_cvar_95_5d = 0.08            (trading/system/target.py:76) — 목표 축소 단계
+PortfolioRiskPolicy.cvar_95_5d_limit = 0.0872          (trading/risk/gate.py:71) — 2.0627 × 변동성 0.30 × sqrt(5/252)
+파이프라인 순서가 위험예산 -> optimizer -> RiskGate 이므로, 축소 단계가 0.08 로 줄인 뒤
+게이트는 0.0872 까지 받는다 -> **운영 경로에서 게이트의 CVaR 한도는 발동하지 않는다**
+(HHI 한도와 같은 구조 — 2차 TR2-01). 다만 use_tail_risk=False 경로에서는 backstop 으로 살아 있어
+장식이라고 단정할 수 없다. 문제는 두 숫자가 **서로 유도되지 않는다**는 것이다:
+ - max_portfolio_volatility 를 올리면 게이트 한도만 자동으로 느슨해진다.
+ - SystemPortfolioPolicy.max_cvar_95_5d 를 0.0872 위로 올리면(연구가 0.12 를 비교 대상으로 부른다)
+   축소 단계가 0.12 를 목표로 삼고 게이트가 그 목표를 거절한다 — 파이프라인이 자기 게이트가
+   받지 않는 목표를 만든다. RS3-06 의 정직성 검사가 그 회차를 insufficient_coverage 로 잡아주지만,
+   이것은 관계를 고정한 것이 아니라 증상을 잡는 것이다.
+판단: 두 한도의 관계(게이트 한도 >= System 한도)를 계약으로 고정하는 것이 옳아 보이지만
+      **hard risk limit 의 의미를 바꾸는 변경**이라 고치지 않고 올린다(규칙 C).
+문서: docs/INVESTMENT_SYSTEM.md:135 은 "기본 8%" 라고 SystemPortfolioPolicy 값을 옳게 적는다.
+      system_ablation.py 의 --cvar-limits help 는 "운영 기본 0.08 외" 라고 적는데 이것도 옳다.
+      즉 문서는 맞고 두 정책 값의 **관계**가 선언되지 않은 것이 문제다.
+
+## FD3-01 [확정] 읽을 수 없는 qtrs 를 0(=시점값)으로 접어 흐름을 잔액으로 만든다
+파일: src/investment_agent/data/fundamentals/domain/services/normalize_segment_facts.py
+전에: def _qtrs(value) -> int:  except (TypeError, ValueError): return 0
+0 은 이 도메인의 **실제 값**이다(0=instant, 1=분기, 4=연간). 그래서 못 읽은 것과
+"시점값이다"가 같은 값으로 접힌다. 결과 경로:
+  :149  _period_is_usable(period_kind, 0) -> True  (0 은 annual·quarter 양쪽에서 usable)
+  :154  belongs_to_report_period(..., is_instant=True)
+  :177  period_start = None
+  :209  is_instant = True
+  :210  period_kind = "instant"
+즉 3개월 흐름(매출)이 시점의 잔액처럼 라벨링된다.
+같은 파일의 다른 필드는 전부 못 읽으면 None 을 주고 호출부가 continue 한다
+(_to_number, _int_to_date, period_end/filing_end). _qtrs 만 규약을 깼다.
+현실적 발동 조건: SEC num.txt 의 qtrs 가 빈칸이면 pandas 가 NaN 으로 읽고 int(nan) -> ValueError.
+  키가 없으면 None -> TypeError. 둘 다 옛 코드에서 0 이 됐다.
+수정: _qtrs -> int | None, None 이면 _period_is_usable 의 `in` 검사가 걸러 행을 버린다.
+검증: 새 테스트 2개(UnreadableQuarterCountTest).
+  - qtrs=1 은 여전히 흐름(is_instant=False, period_start="2026-03-30")
+  - qtrs in (None, "", "N/A", nan) 은 전부 버려진다(subTest 4개)
+  주입(return 0 로 되돌림) -> 4개 subTest 전부 "Lists differ: [{...}] != []" 실패 확인.
+운영 영향 규모는 **측정하지 못했다**: is_instant·period_start 는 application 메모리에만 있고
+  fundamentals.segment_metrics 에 저장되지 않는다(CLAUDE.md 규칙 6). 따라서 과거에 이 경로로
+  잘못 분류된 행이 몇 개인지 Postgres 로는 셀 수 없다. 지금 코드가 옳은 쪽으로 바뀐 것만 확실하다.
+
+## FD3-02 [의심] fy 를 못 읽으면 period_end.year 로 대체한다
+같은 파일 :168  except (TypeError, ValueError): fiscal_year = period_end.year
+비달력 회계연도 기업(예: 9월 결산)에서는 period_end.year 가 회계연도와 다를 수 있다.
+_qtrs 와 달리 이쪽은 "그럴듯한 값"이라 조용히 틀릴 수 있다. 다만 SEC sub.txt 의 fy 가
+실제로 비는 빈도를 확인하지 못해 의심으로 둔다.
+
+## _precision 의 -10000 은 정상이다 (오탐 해소)
+src/.../sec/filing_xbrl.py:96 의 -10_000 은 **정렬 키 sentinel** 이고(사용처 :203 정렬 tuple 한 곳뿐)
+재무 값으로 저장되지 않는다. INF -> 10_000 과 짝이다. 결함 아님.
+
+## RP3-01 [확정] intelligence 리더의 docstring 이 강제되지 않는 계약을 주장한다
+파일: src/investment_agent/reporting/readers/intelligence.py 머리주석
+주장: "예외 대신 `available=False`를 돌려준다."
+실제: 네 함수 중 load_overview 만 그렇게 한다. load_news·load_social·load_trending 은
+      DuckDBStoreError 를 잡아 **빈 목록**을 돌려주므로 "보관된 것이 없다"와 "저장소를
+      못 열었다"가 구별되지 않는다(2차 감사 OP2-16 과 같은 클래스, 다른 자리).
+실제 보호는 화면에 있다: dashboard/app_pages/news_social.py:69 가 load_overview 의 available 을
+      **먼저** 확인하고 그 else 안에서만 나머지를 부른다. 즉 계약은 코드에 없고 호출 순서에 있었다.
+수정: 머리주석이 그 사실(어느 함수가 상태를 말하는지, 화면이 왜 그 순서인지)을 말하게 했다.
+가드: tests/investment_agent/dashboard/test_news_social_page.py::StoreAvailabilityGateTest
+      — 세 loader 호출이 available 게이트의 If 안에 있어야 한다(AST 구조).
+주입 확인: 게이트 **앞에** load_news / load_trending 호출을 각각 넣으면
+      "[] != ['load_news (line 68)']" / "['load_trending (line 68)']" 로 실패한다.
+
+### 이 가드는 처음에 공허하게 통과했다 (기록해 둘 것)
+첫 판은 게이트 안팎을 **이름 집합의 차집합**으로 셌다:
+    outside = {밖의 호출 이름들} - {안의 호출 이름들}
+게이트 안에도 load_news 가 있으므로, 게이트 **밖에** load_news 를 하나 더 넣어도
+차집합이 비어 통과했다(주입으로 확인). 호출 **자리**(id(node)+lineno)로 세도록 고쳐서야
+잡혔다. 가드를 만들면 반드시 위반을 주입해 볼 것 — 이번 세션에서 실제로 걸린 사례다.
+
+## 도구 함정 추가
+빠른 주입/복원 루프에서 __pycache__ 가 재사용돼 **이전 주입의 실패 메시지**가 나올 수 있다
+(mtime 해상도). 주입은 한 번에 하나씩 하고, subprocess 에 `-B` 와
+PYTHONDONTWRITEBYTECODE=1 을 주고 1초 이상 간격을 둘 것. 이번 세션에서 실제로 겪었다.
+
+## 생산자/소비자 대조 — 결과와 방법의 한계
+
+### 읽기만 하는 dict 키 전수 (AST)
+`x.get("k")` · `x["k"]`(Load) 로 읽는 문자열 키를 전부 모아, dict 리터럴·kwargs·인자명·
+클래스 속성·db/**/*.sql 토큰에 없는 것을 골랐다 -> 85종.
+**대부분 오탐이었다.** 원인 둘:
+ 1. f-string 으로 만드는 키. 예: statistics.py:27 `output[f"return_{horizon}d"]` 가
+    return_252d·return_120d 를 만들고, :235 `output[f"{field}_change"]` 가
+    eps_avg_change·revenue_avg_change 를 만든다. 전부 실재하는 생산자다.
+ 2. 외부 API 응답 키(Discord·GitHub·SEC·ECOS). 저장소가 만들지 않는 것이 정상이다.
+=> 이 스캔은 **가드로 쓸 수 없다**. 다음 세션이 같은 방법을 다시 시도하지 않도록 적어 둔다.
+
+### research dataset 읽기/쓰기 대조
+records·records_with_payload_fields 대 upsert_records·append_records 의 리터럴 인자를 비교:
+  읽지만 쓰는 곳 없음: portfolio_evaluations
+  쓰지만 읽는 곳 없음: training_samples  <- **오탐**
+`training_samples` 는 reporting/readers/dashboard.py:435 가 load_local_research_records()
+헬퍼로 읽고, repository.py:807 이 record_keys() 로도 읽는다. 스캔이 메서드 이름 목록에만
+의존해서 놓쳤다. 이 대조도 가드로 쓰기엔 방법 이름 목록이 계속 자란다.
+
+## 확인(회귀) — 이미 알려진 것, 다시 세지 않음
+- **RS-15 `portfolio_evaluations` 에 쓰는 코드가 없다**: 여전히 그렇다. db/duckdb/ 어디에도
+  선언이 없고 쓰는 곳 0건, 읽는 곳만 3곳(alpha_lab 화면 2곳, repository.py:976).
+  결과: research/promotion/gate.py:327-331 의 세 정직성 검사(leakage·survivorship·
+  data_integrity `_check_passed`)가 `is not True` 로 incident 를 올려 **fail-closed** 로
+  승격을 막는다. 방향은 안전한 쪽이다.
+  덧붙여 새로 확인한 것: ResearchStore._dataset_root(:571) 은 **이름 패턴만** 검사하고
+  선언 목록과 대조하지 않는다. 따라서 dataset 이름을 잘못 적으면 예외가 아니라 빈 목록이 온다.
+  portfolio_evaluations 가 조용히 비는 구조적 이유다.
+- 2차의 6개 수정(AU-02·OP2-01·OP2-04·EX2-05·TR2-01·RR2-09) 전부 코드에 존재.
+
+## 음성 결과 추가
+- reporting/readers/dashboard.py 의 dataset 조회 실패는 `failures` 에 모아
+  DataResult.message 로 올리고, dashboard/app_pages/intelligence.py:504-505 가
+  status=="ok" 인데 message 가 있으면 st.warning 으로 보여준다. **부분 실패가 0건으로
+  보이지 않는다** — OP2-16 클래스의 올바른 구현 예.
+- research/commands/build_features.py:86 의 `except Exception: return {}` 는 결함 아니다.
+  docstring 이 주장하는 `__is_missing` 지표가 실제로 있다(features/layer.py:51 MISSING_SUFFIX).
+  밸류에이션 결측이 0 이 아니라 결측으로 남는다.
+- filing_xbrl.py 의 -10_000 은 정렬 sentinel(위 참조).
+
+## 정비 보류 상태 (만들지도 풀지도 않았다)
+artifacts/ops/investment_harness/MAINTENANCE_HOLD
+  held_at 2026-09-20T15:53:05Z · hold_id hold_d99de260e8cf4169 · pid 38328
+  reason "repository upgrade: runtime audit and offline validation"
+2차 감사와 같은 보류가 그대로 걸려 있다.
+
+================================================================================
+## RS3-07 정정 — 내 오탐이었다 (2026-09-22, 사용자 승인 후 수정 착수 중 발견)
+================================================================================
+원래 주장: "System 한도 0.08 과 게이트 한도 0.0872 가 서로 유도되지 않는다.
+            운영 경로에서 게이트 CVaR 한도는 발동하지 않는다. System 한도를 0.0872 위로
+            올리면 파이프라인이 자기 게이트가 거절하는 목표를 만든다."
+
+실제 배선 (trading/system/target.py:359):
+    base_risk_policy = replace(PortfolioRiskPolicy(),
+        max_cvar_95_5d=selected.max_cvar_95_5d if selected.use_tail_risk else 1.0)
+즉 SystemPortfolioPolicy.max_cvar_95_5d(0.08)가 **PortfolioRiskPolicy 안으로 주입된다**.
+PortfolioRiskPolicy.cvar_95_5d_limit 는 max_cvar_95_5d 가 None 이 아니면 그 값을 그대로
+돌려주므로(gate.py:80-82), 게이트 한도도 0.08 이 된다.
+경로 확인:
+  - risk_budget(base_policy=base_risk_policy) -> tighten_for_regime / tighten_for_macro 는
+    둘 다 replace(policy, ...) 라서 max_cvar_95_5d 를 **보존한다**
+    (regime_budget.py:89, macro_exposure.py:121 — 바꾸는 필드에 cvar 가 없다).
+  - fit_tail_risk(..., max_cvar_95_5d=risk_policy.cvar_95_5d_limit)   target.py:390
+  - DeterministicRiskGate(risk_policy).evaluate(...)                  target.py:304
+  => 축소 단계와 게이트가 **같은 값 0.08** 을 쓴다.
+따라서 세 주장 모두 틀렸다:
+  (1) 게이트 한도가 발동하지 않는다 -> 틀림. 같은 0.08 이고 경계에서 발동한다(+1e-9 허용).
+  (2) System 한도를 올리면 게이트가 거절한다 -> 틀림. 함께 올라간다.
+  (3) 변동성 상한을 올리면 게이트 한도만 느슨해진다 -> System 경로에서는 틀림.
+      max_cvar_95_5d 가 명시돼 있어 변동성 유도 fallback 을 쓰지 않는다.
+0.0872(변동성 유도 fallback)는 **System 정책이 주입되지 않는 경로에서만** 쓰인다.
+
+이것이 이 저장소에서 도메인 지식 주장이 오탐 난 **세 번째** 사례다(1차 감사가 두 번).
+규칙대로 "운영 데이터·코드 경로로 끝까지 확인"을 했어야 했다 — 나는 두 정책의 선언만 보고
+배선을 끝까지 읽지 않았다. RS3-07 상태를 [오탐]으로 바꾼다.
+
+## RP3-02 [확정] 정정 과정에서 나온 진짜 결함 — 화면이 쓰이지 않는 한도를 보여준다
+파일: src/investment_agent/reporting/services/investment/policy_snapshots.py:30
+    def build_risk_policy_read_model(): return PortfolioRiskPolicy().to_config()
+`PortfolioRiskPolicy()` 맨몸 기본값은 max_cvar_95_5d=None 이라 cvar_95_5d_limit 가
+**0.08716**(변동성 유도)로 나온다. 그러나 System 파이프라인은 항상
+SystemPortfolioPolicy.max_cvar_95_5d=0.08 을 주입하므로 실제 한도는 **0.08** 이다.
+실측: 화면 0.08716498406142555 / 실제 0.08 / 차이 0.007165 (약 0.72%p 느슨하게 보인다).
+즉 화면은 **어떤 실행도 쓰지 않는 한도**를 "현재 portfolio risk 기본 한도"라고 말한다.
+다른 필드(min_cash_weight·max_symbol_weight)는 regime·macro 로 조여지지만 그것은 문서가
+"기본 한도"라고 정직하게 말한다 — CVaR 는 기본값 자체가 실제와 다른 유일한 필드다.
+
+## OP2-06 [수정됨] 실주문 게이트에 확인 문구 (사용자 승인 후)
+문구를 요구하는 자리를 **진입점이 아니라 setter** 로 뒀다 — 진입점에 두면 새 진입점이
+생길 때 빠뜨리고, CLAUDE.md 의 첫 "하지 말 것" 이 바로 이 게이트다.
+  src/investment_agent/operations/harness/switch.py
+    ALLOW_ORDERS_CONFIRMATION = "ALLOW_TRADING_ORDERS"   <- kill switch off (주문 허용)
+    ENABLE_LIVE_CONFIRMATION  = "ENABLE_TOSS_LIVE"       <- live true (실매매 켜기)
+  비대칭이 의도다: **막는 방향(on/false)은 문구 없이 즉시 적용**한다.
+  급할 때 문구를 몰라서 못 막는 것이 더 나쁘다.
+  거절이면 success=False, changed=False 이고 **.env 를 쓰지 않는다**.
+진입점 배선:
+  commands/harness_switch.py --confirm 인자 추가, kill_switch·live_enabled 둘 다 전달.
+  대화형 메뉴 [4][5] 는 **토글을 없애고 목표 상태를 입력받는다**(전에는 화면을 잘못 읽으면
+  끄려다 켰다). 허용 방향이면 _ask_confirmation() 이 문구를 그대로 받아 setter 에 넘기고,
+  판정은 setter 하나가 한다(진입점이 다시 구현하지 않는다).
+검증: 새 테스트 11개 (GateConfirmationTest). 주입 2회 각각 따로:
+  - 킬스위치 검사 제거 -> 3건 실패 (setter·wrong-phrase·CLI)
+  - 실매매 검사 제거   -> 2건 실패 (setter·CLI)
+  복원 후 25개 통과. 기존 테스트 1개(test_update_env_variable_and_parse)는 실매매를
+  켜므로 문구를 넘기도록 고쳤다 — 계약이 바뀌었으니 테스트도 바뀌는 것이 맞다.
+문서: docs/ENV.md 의 TOSS_LIVE_ENABLED·TRADING_KILL_SWITCH 행에 문구 요구를 적었다.
+
+주의: 이 작업은 플래그의 **값을 바꾸지 않았다**. .env 의 실제 값은 그대로다
+(TRADING_KILL_SWITCH=on / TOSS_LIVE_ENABLED=false). 켜는 것은 사람이 한다.

@@ -11,6 +11,7 @@ from typing import Any, Mapping, Protocol, Sequence
 import numpy as np
 
 from investment_agent.platform.serialization import canonical_json, parse_datetime
+from investment_agent.research.evaluation.alpha import average_ranks
 
 _MODELS = {"naive", "ridge", "lightgbm", "xgboost"}
 
@@ -152,10 +153,16 @@ def _period(value: Sequence[str], name: str) -> tuple[str, str]:
 
 
 def _rank_correlation(actual: np.ndarray, predicted: np.ndarray) -> float:
+    """동점은 평균 순위로 둔다 — 상수 예측(naive)의 상관은 0이지 표본 행 순서가 아니다.
+
+    argsort를 두 번 하면 동점이 입력 순서대로 서로 다른 순위를 받아 아래 std 가드에
+    도달하지 못한다. 그러면 train 평균만 내놓는 naive baseline의 순위 상관이 표본
+    정렬에 따라 ±1까지 나오고, 그 값이 challenger 비교의 기준선이 된다.
+    """
     if len(actual) < 2:
         return 0.0
-    a = np.argsort(np.argsort(actual)).astype(float)
-    p = np.argsort(np.argsort(predicted)).astype(float)
+    a = average_ranks(np.asarray(actual, dtype=float))
+    p = average_ranks(np.asarray(predicted, dtype=float))
     if np.std(a) == 0 or np.std(p) == 0:
         return 0.0
     return float(np.corrcoef(a, p)[0, 1])

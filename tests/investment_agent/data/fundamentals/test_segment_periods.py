@@ -107,5 +107,44 @@ class CurrentSegmentPeriodTest(unittest.TestCase):
         )
 
 
+class UnreadableQuarterCountTest(unittest.TestCase):
+    """`qtrs`를 읽지 못한 행은 시점값으로 접지 않고 버린다."""
+
+    ACCESSION = "0000000002-26-000001"
+
+    def _frames(self, qtrs):
+        return SimpleNamespace(
+            sub_df=pd.DataFrame([{
+                "adsh": self.ACCESSION, "cik": 2, "form_type": "10-Q",
+                "fy": 2026, "fp": "Q2", "period": 20260630, "filed": 20260801,
+            }]),
+            num_df=pd.DataFrame([{
+                "adsh": self.ACCESSION,
+                "tag": "RevenueFromContractWithCustomerExcludingAssessedTax",
+                "ddate": 20260630, "qtrs": qtrs, "uom": "USD",
+                "segments": ("us-gaap:StatementBusinessSegmentsAxis="
+                             "acme:CloudMember;"),
+                "coreg": "", "value": 200,
+            }]),
+        )
+
+    def _facts(self, qtrs):
+        _, facts_by_accession, _ = bulk_frames_to_filings_and_facts(
+            self._frames(qtrs), ciks={2}, period_kind="quarter",
+        )
+        return facts_by_accession.get(self.ACCESSION, [])
+
+    def test_a_readable_quarter_count_still_produces_a_flow_fact(self):
+        facts = self._facts(1)
+        self.assertEqual(len(facts), 1)
+        self.assertFalse(facts[0]["is_instant"])
+        self.assertEqual(facts[0]["period_start"], "2026-03-30")
+
+    def test_an_unreadable_quarter_count_is_dropped_not_called_instant(self):
+        """0으로 접으면 3개월 흐름인 매출이 시점 잔액으로 저장된다."""
+        for unreadable in (None, "", "N/A", float("nan")):
+            with self.subTest(qtrs=unreadable):
+                self.assertEqual(self._facts(unreadable), [])
+
 if __name__ == "__main__":
     unittest.main()

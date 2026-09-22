@@ -7,6 +7,9 @@ from typing import Any
 
 
 from investment_agent.data.fundamentals.domain.periods import are_consecutive_quarters
+from investment_agent.data.fundamentals.domain.services.leverage_metrics import (
+    total_debt as _total_debt,
+)
 from investment_agent.platform.serialization import finite_float as _finite
 
 
@@ -122,16 +125,6 @@ def _gross_profit(row: Mapping[str, Any]) -> float | None:
     revenue = _finite(row.get("revenue"))
     cost = _finite(row.get("cost_of_goods_and_services_sold"))
     return revenue - cost if revenue is not None and cost is not None else None
-
-
-def _total_debt(row: Mapping[str, Any]) -> float | None:
-    """총차입 합계가 없으면 단기·유동성장기·장기 차입을 더한다. 어느 것도 없으면 모른다."""
-    total = _finite(row.get("total_debt_including_current"))
-    if total is not None:
-        return total
-    parts = [_finite(row.get(name)) for name in ("short_term_debt", "current_portion_of_long_term_debt", "long_term_debt")]
-    known = [part for part in parts if part is not None]
-    return math.fsum(known) if known else None
 
 
 def _ratio(numerator: float | None, denominator: float | None, *, positive: bool = False) -> float | None:

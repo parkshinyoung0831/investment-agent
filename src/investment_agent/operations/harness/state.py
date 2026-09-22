@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from investment_agent.platform.serialization import canonical_json, parse_datetime
+from investment_agent.operations.harness.contracts import HarnessMode
 from investment_agent.operations.harness.sanitize import sanitized
 
 STATE_VERSION = 1
@@ -99,6 +100,7 @@ class JobRuntime:
 class HarnessState:
     version: int = STATE_VERSION
     process_id: int | None = None
+    mode: str | None = None  # 기동 인자(`HarnessMode.value`) — 상태창의 유일한 실제 근거(감사 OP2-07)
     process_started_at: str | None = None
     process_heartbeat_at: str | None = None
     stopped_at: str | None = None
@@ -111,6 +113,8 @@ class HarnessState:
             raise StateCorruptionError(f"unsupported state version: {self.version}")
         if not isinstance(self.recovery_count, int) or self.recovery_count < 0:
             raise StateCorruptionError("recovery_count must be non-negative")
+        if self.mode is not None and self.mode not in {member.value for member in HarnessMode}:
+            raise StateCorruptionError(f"unknown harness mode: {self.mode}")
         for value in (self.process_started_at, self.process_heartbeat_at, self.stopped_at):
             if value is not None:
                 parse_datetime(value)
@@ -142,6 +146,7 @@ class HarnessState:
             state = cls(
                 version=int(payload.get("version", 0)),
                 process_id=payload.get("process_id"),
+                mode=payload.get("mode"),
                 process_started_at=payload.get("process_started_at"),
                 process_heartbeat_at=payload.get("process_heartbeat_at"),
                 stopped_at=payload.get("stopped_at"),

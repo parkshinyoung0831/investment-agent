@@ -35,7 +35,8 @@ class HarnessStatusInfo:
     started_at: str | None
     heartbeat_at: str | None
     stopped_cleanly: bool
-    mode: str | None
+    mode: str | None  # 실제 기동 모드(state.json에 적은 값). 한 번도 안 떴으면 None(감사 OP2-07)
+    mode_would_be: str  # 지금 `.env`로 기동하면 어느 모드가 될지 — 실제 모드의 근거가 아니다
     trading_kill_switch: str
     toss_live_enabled: bool
     ai_investor_mode: str
@@ -201,7 +202,8 @@ def get_harness_status(
         started_at=state.process_started_at,
         heartbeat_at=state.process_heartbeat_at,
         stopped_cleanly=state.stopped_cleanly,
-        mode="approval_workflow" if not trading_kill.startswith("on") and toss_live else "analysis_only",
+        mode=state.mode,
+        mode_would_be="approval_workflow" if not trading_kill.startswith("on") and toss_live else "analysis_only",
         trading_kill_switch=trading_kill,
         toss_live_enabled=toss_live,
         ai_investor_mode=ai_mode,
@@ -413,29 +415,72 @@ def stop_harness_service(
     }
 
 
-def set_kill_switch(value: str, root_dir: Path | str | None = None) -> dict[str, Any]:
-    """TRADING_KILL_SWITCH 환경변수 값을 on/off 로 설정한다."""
+# 주문을 **허용하는 방향**으로 게이트를 바꿀 때만 요구하는 확인 문구.
+# 막는 방향(킬스위치 on · 실매매 false)은 안전 방향이므로 그대로 허용한다 —
+# 급할 때 문구를 몰라서 끄지 못하는 것이 더 나쁘다.
+# 문구를 요구하는 곳은 진입점이 아니라 **이 setter**다. 진입점에 두면 새 진입점이
+# 생길 때마다 빠뜨릴 수 있고, CLAUDE.md의 첫 "하지 말 것"이 바로 이 게이트다.
+ALLOW_ORDERS_CONFIRMATION = "ALLOW_TRADING_ORDERS"
+ENABLE_LIVE_CONFIRMATION = "ENABLE_TOSS_LIVE"
+
+
+def set_kill_switch(
+    value: str, root_dir: Path | str | None = None, *, confirm: str | None = None,
+) -> dict[str, Any]:
+    """TRADING_KILL_SWITCH 환경변수 값을 on/off 로 설정한다.
+
+    `off`(= 신규 주문 허용)는 `confirm=ALLOW_ORDERS_CONFIRMATION`이 있어야 한다.
+    """
     normalized = "on" if value.strip().lower() in {"1", "on", "true", "yes"} else "off"
+    if normalized == "off" and confirm != ALLOW_ORDERS_CONFIRMATION:
+        return {
+            "success": False,
+            "changed": False,
+            "trading_kill_switch": normalized,
+            "message": (
+                "거절: 신규 주문을 허용하는 변경입니다. 확인 문구가 필요합니다 — "
+                f"--confirm {ALLOW_ORDERS_CONFIRMATION}"
+            ),
+        }
     success = update_env_variable("TRADING_KILL_SWITCH", normalized, root_dir=root_dir)
     return {
         "success": success,
+        "changed": success,
         "trading_kill_switch": normalized,
         "message": f"TRADING_KILL_SWITCH가 '{normalized}'으로 설정되었습니다.",
     }
 
 
-def set_live_enabled(enabled: bool, root_dir: Path | str | None = None) -> dict[str, Any]:
-    """TOSS_LIVE_ENABLED 환경변수 값을 true/false 로 설정한다."""
+def set_live_enabled(
+    enabled: bool, root_dir: Path | str | None = None, *, confirm: str | None = None,
+) -> dict[str, Any]:
+    """TOSS_LIVE_ENABLED 환경변수 값을 true/false 로 설정한다.
+
+    `true`(= 실매매 연동)는 `confirm=ENABLE_LIVE_CONFIRMATION`이 있어야 한다.
+    """
+    if enabled and confirm != ENABLE_LIVE_CONFIRMATION:
+        return {
+            "success": False,
+            "changed": False,
+            "toss_live_enabled": True,
+            "message": (
+                "거절: 실매매를 켜는 변경입니다. 확인 문구가 필요합니다 — "
+                f"--confirm {ENABLE_LIVE_CONFIRMATION}"
+            ),
+        }
     val_str = "true" if enabled else "false"
     success = update_env_variable("TOSS_LIVE_ENABLED", val_str, root_dir=root_dir)
     return {
         "success": success,
+        "changed": success,
         "toss_live_enabled": enabled,
         "message": f"TOSS_LIVE_ENABLED가 '{val_str}'으로 설정되었습니다.",
     }
 
 
 __all__ = [
+    "ALLOW_ORDERS_CONFIRMATION",
+    "ENABLE_LIVE_CONFIRMATION",
     "HarnessStatusInfo",
     "get_harness_status",
     "parse_env_file",

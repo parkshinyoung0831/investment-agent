@@ -82,7 +82,9 @@ class LabelRecord:
     label_available_at: str
     label_definition: str
     label: float
-    benchmark_label: float = 0.0
+    # 기본값을 두지 않는다. 0.0은 "벤치마크가 0% 움직였다"는 **실제 값**이라, 결측을
+    # 그것으로 접으면 초과수익이 원수익률과 같아지고 아무도 알려주지 않는다.
+    benchmark_label: float
     label_id: str | None = None
 
     def __post_init__(self) -> None:
@@ -118,16 +120,29 @@ class LabelRecord:
 
 @dataclass(frozen=True)
 class DatasetManifest:
-    """dataset hash·기간·PIT cutoff을 모델 artifact와 함께 추적한다."""
+    """dataset hash·PIT cutoff을 모델 artifact와 함께 추적한다.
+
+    ## 세 기간은 선언하지 않을 수 있다 (None)
+
+    dataset을 만드는 시점에는 그것을 어떻게 나눠 학습할지 **모른다**. 실제 학습 구간은
+    `training/baseline.py`가 purged split으로 정하고 `ModelArtifact.train_period`에 남는다.
+    전에는 이 세 필드가 필수라서, 구간을 모르는 호출자에게 builder가 as_of 날짜를 1/3씩
+    나눈 **추정 구간**을 대신 적어줬다. 그러면 같은 학습 기록 안에 기간이 두 벌
+    (manifest의 추정값 · artifact의 실제값) 들어가 감사하는 사람이 틀린 쪽을 믿는다.
+
+    그래서 `None`을 허용한다 — "이 dataset은 split을 선언하지 않는다"는 뜻이고,
+    어느 구간으로 학습했는지는 artifact만 말한다. 셋 중 일부만 주는 것은 거절한다
+    (반쪽 선언은 읽는 쪽이 나머지를 추측하게 만든다).
+    """
 
     dataset_version: str
     label_definition: str
     pit_cutoff_at: str
-    train_period: tuple[str, str]
-    validation_period: tuple[str, str]
-    test_period: tuple[str, str]
     dataset_hash: str
     created_at: str
+    train_period: tuple[str, str] | None = None
+    validation_period: tuple[str, str] | None = None
+    test_period: tuple[str, str] | None = None
     code_version: str = "investment-agent-research-v1"
     membership_source: str = "point_in_time"
     manifest_hash: str = field(init=False)
@@ -146,15 +161,23 @@ class DatasetManifest:
             raise ContractError("membership_source must be point_in_time or current_cohort")
         cutoff = parse_datetime(self.pit_cutoff_at).isoformat()
         created = parse_datetime(self.created_at).isoformat()
-        periods = {
-            "train_period": _period(self.train_period, "train_period"),
-            "validation_period": _period(self.validation_period, "validation_period"),
-            "test_period": _period(self.test_period, "test_period"),
-        }
-        if periods["train_period"][1] > periods["validation_period"][0]:
-            raise ContractError("train and validation periods overlap")
-        if periods["validation_period"][1] > periods["test_period"][0]:
-            raise ContractError("validation and test periods overlap")
+        declared = (self.train_period, self.validation_period, self.test_period)
+        if any(item is None for item in declared) and any(item is not None for item in declared):
+            raise ContractError("declare all three dataset periods or none of them")
+        if declared[0] is None:
+            periods: dict[str, tuple[str, str] | None] = {
+                "train_period": None, "validation_period": None, "test_period": None,
+            }
+        else:
+            periods = {
+                "train_period": _period(self.train_period, "train_period"),
+                "validation_period": _period(self.validation_period, "validation_period"),
+                "test_period": _period(self.test_period, "test_period"),
+            }
+            if periods["train_period"][1] > periods["validation_period"][0]:
+                raise ContractError("train and validation periods overlap")
+            if periods["validation_period"][1] > periods["test_period"][0]:
+                raise ContractError("validation and test periods overlap")
         if len(values["dataset_hash"]) != 64 or any(char not in "0123456789abcdef" for char in values["dataset_hash"]):
             raise ContractError("dataset_hash must be a sha256 hex digest")
         identity = {**values, "pit_cutoff_at": cutoff, **periods, "created_at": created}

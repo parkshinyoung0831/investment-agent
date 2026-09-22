@@ -37,7 +37,7 @@ uv sync --group research
 ### TradingAgents 판단 엔진은 로컬 구현이다
 
 판단 엔진(분석가 5명·Bull/Bear·Trader·Risk 3자·Portfolio Manager)은
-`investment_agent.trading.decision.llm.agents.orchestrator`가 로컬로 실행한다. 외부
+`investment_agent.trading.decision.agents.orchestrator`가 로컬로 실행한다. 외부
 git 의존이나 별도 설치 단계가 없다 — `uv sync --group dev`만으로 끝난다. LLM 호출은
 전부 자체 httpx 클라이언트(`llm/client.py`) 하나를 거친다.
 

@@ -18,7 +18,7 @@ class PolicyEvaluationScore:
     sharpe_ratio: float
     total_reward: float
     excess_return: float
-    max_drawdown: float
+    max_drawdown: float  # 음수 관례(worse = 더 음수) — `research/promotion/gate.py`와 같다(감사 RR2-15)
     turnover: float
     dsr_probability: float
     is_statistically_significant: bool
@@ -92,7 +92,9 @@ class ContinuousLearner:
             sharpe_ratio=round(float(dsr_res.observed_sr), 4),
             total_reward=round(sum(rewards), 4),
             excess_return=round(tot_excess, 4),
-            max_drawdown=round(float(drawdown), 4),
+            # `info["drawdown"]`은 비음수 fraction이다 — 부호를 뒤집어 `experiment.py`·gate.py와
+            # 같은 음수 관례로 맞춘다(감사 RR2-15).
+            max_drawdown=round(-float(drawdown), 4),
             turnover=round(float(turnover), 4),
             dsr_probability=dsr_res.dsr_probability,
             is_statistically_significant=(

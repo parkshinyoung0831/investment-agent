@@ -8,7 +8,10 @@ DuckDB는 파일당 쓰기 프로세스가 하나다. Streamlit이 쓰기 모드
 ## 저장소가 없어도 화면은 살아 있어야 한다
 
 수집이 한 번도 돌지 않은 노트북에서 파일이 없는 것은 오류가 아니라 상태다.
-예외 대신 `available=False`를 돌려준다.
+**`load_overview()`만** `available=False`로 그 상태를 말한다. 나머지 세 함수는
+빈 목록을 돌려주므로 "보관된 것이 없다"와 "저장소를 못 열었다"가 구별되지 않는다 —
+그래서 화면은 `load_overview()`의 `available`을 **먼저** 확인한 뒤에만 나머지를 부른다
+(`dashboard/app_pages/news_social.py`). 그 순서를 바꾸면 저장소 장애가 0건으로 보인다.
 """
 from __future__ import annotations
 

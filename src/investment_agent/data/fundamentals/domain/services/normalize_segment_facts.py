@@ -45,11 +45,17 @@ def _to_number(value: Any) -> float | None:
     return number if math.isfinite(number) else None
 
 
-def _qtrs(value: Any) -> int:
+def _qtrs(value: Any) -> int | None:
+    """분기 수를 못 읽으면 0으로 접지 않는다 — 0은 이 도메인의 실제 값(시점값)이다.
+
+    0을 돌려주면 `_period_is_usable`을 통과하고 `is_instant=True`·`period_start=None`으로
+    저장된다. 즉 3개월 동안의 흐름(매출)이 시점의 잔액처럼 적힌다. 이 파일의 나머지
+    필드는 모두 못 읽으면 None을 주고 호출부가 그 행을 건너뛴다 — 같은 규약을 쓴다.
+    """
     try:
         return int(value)
     except (TypeError, ValueError):
-        return 0
+        return None
 
 
 def _sub_months(day: date, months: int) -> date:
@@ -83,7 +89,8 @@ def _dimension_path(dimensions: dict[str, str]) -> str:
     return " | ".join(f"{axis}={member}" for axis, member in sorted(dimensions.items()))
 
 
-def _period_is_usable(period_kind: str, qtrs: int) -> bool:
+def _period_is_usable(period_kind: str, qtrs: int | None) -> bool:
+    """`qtrs`가 None이면(읽지 못했다) 쓸 수 없다 — 아래 `in` 검사가 그것을 거른다."""
     if period_kind == "annual":
         return qtrs in (0, 4)
     return qtrs in (0, 1)

@@ -130,16 +130,23 @@ def emergency_stop(
     # 프로세스가 살아 있으면 잠금이 모두 성공해도 `success: False`·종료 코드 1이 나왔다 —
     # "죽였는가"와 "요청한 일을 다 했는가"를 한 변수로 합친 탓이다(감사 OP2-08).
     process_killed: bool | None = None
-    if kill_process and pid is not None:
+    killed_pids: list[int] = []
+    failed_pids: list[int] = []
+    if kill_process:
         from investment_agent.operations.harness.switch import _find_running_harness_pids
 
-        # 재부팅 뒤 같은 PID를 받은 다른 프로그램을 죽이지 않도록 명령줄로 하네스인지 확인한다.
-        if _is_process_alive(pid) and pid in _find_running_harness_pids():
-            process_killed = _terminate_process(pid)
-        else:
-            process_killed = True
-    elif pid is None:
-        process_killed = True
+        # state.json의 PID 하나만 겨누면 승인 리스너·재부팅 뒤 여분 하네스가 살아남는다
+        # (감사 OP2-10). `stop_harness_service`와 같은 대상 선정 — 명령줄로 하네스임을
+        # 확인한 프로세스 전부다.
+        target_pids = _find_running_harness_pids()
+        for target in target_pids:
+            if not _is_process_alive(target):
+                continue  # 이미 죽어 있다 — 실패가 아니다.
+            if _terminate_process(target):
+                killed_pids.append(target)
+            else:
+                failed_pids.append(target)
+        process_killed = not failed_pids if target_pids else True
 
     # 4. Update .env if requested
     env_locked = False
@@ -178,6 +185,8 @@ def emergency_stop(
             "emergency_stop_triggered",
             process_id=pid,
             process_killed=process_killed,
+            killed_pids=killed_pids,
+            failed_pids=failed_pids,
             env_locked=env_locked,
             lockdown_sentinel=str(lockdown_file),
             overall_success=overall_success,
@@ -186,6 +195,8 @@ def emergency_stop(
     return {
         "success": overall_success,
         "target_pid": pid,
+        "killed_pids": killed_pids,
+        "failed_pids": failed_pids,
         "process_killed": process_killed,
         "durable_lockdown_set": True,
         "lockdown_file": str(lockdown_file),

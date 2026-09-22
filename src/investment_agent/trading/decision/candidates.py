@@ -354,10 +354,15 @@ class CandidateSelection(LedgerAccess):
         proxy_rows: dict[str, list[dict]] = {}
         if proxies:
             rows = {symbol: self.market_prices(symbol, as_of_at, limit=260) for symbol in (*held, *proxies)}
+            # 보유 종목 종가 파싱을 테마별 proxy 사이에서 나눈다 — proxy마다 다시 파싱하면
+            # 보유 12·proxy 5에서 파싱이 17회가 아니라 65회가 된다(이 경로는 몇 분마다 돈다).
+            closes_cache: dict[Any, Any] = {}
             for proxy in proxies:
                 proxy_rows[proxy] = rows[proxy]
                 try:
-                    sensitivities[proxy] = estimate_betas(rows, symbols=held, benchmark_symbol=proxy)
+                    sensitivities[proxy] = estimate_betas(
+                        rows, symbols=held, benchmark_symbol=proxy, closes_cache=closes_cache,
+                    )
                 except ContractError as exc:
                     log.warning("global event sensitivity unavailable proxy=%s: %s", proxy, exc)
         global_priority = global_event_priorities(

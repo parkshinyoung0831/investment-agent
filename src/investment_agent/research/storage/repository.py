@@ -11,6 +11,9 @@ import hashlib
 import os
 import re
 import tempfile
+import time
+
+import duckdb
 from collections import defaultdict
 from contextlib import contextmanager
 from datetime import date, datetime
@@ -213,7 +216,12 @@ class ResearchStore:
 
     @staticmethod
     def _write_parquet(connection: Any, table: str, target: Path) -> None:
-        """같은 파일시스템의 임시 파일에 쓴 뒤 원자 교체한다."""
+        """같은 파일시스템의 임시 파일에 쓴 뒤 원자 교체한다.
+
+        Windows에서는 방금 만든 임시 파일을 백신 실시간 검사가 짧게 잠가, DuckDB의 내부
+        rename(COPY 문 자체가 하는 것)이 "액세스가 거부되었습니다"로 실패할 때가 있다.
+        디스크 내용이 아니라 타이밍 문제라 몇 번 안에 저절로 풀린다 — 재시도한다.
+        """
         target.parent.mkdir(parents=True, exist_ok=True)
         handle = tempfile.NamedTemporaryFile(
             prefix=target.stem + ".", suffix=".parquet", dir=target.parent, delete=False
@@ -222,9 +230,20 @@ class ResearchStore:
         handle.close()
         escaped = temporary.resolve().as_posix().replace("'", "''")
         try:
-            connection.execute(
-                f"COPY {table} TO '{escaped}' (FORMAT PARQUET, COMPRESSION ZSTD)"
-            )
+            attempts = 5
+            for attempt in range(1, attempts + 1):
+                try:
+                    connection.execute(
+                        f"COPY {table} TO '{escaped}' (FORMAT PARQUET, COMPRESSION ZSTD)"
+                    )
+                    break
+                except duckdb.IOException:
+                    if attempt == attempts:
+                        raise
+                    # 실패한 시도가 대상 경로에 부분 파일을 남겼을 수 있다 — 다음 COPY가
+                    # "파일이 이미 있다"로 다시 틀리지 않게 지운다.
+                    temporary.unlink(missing_ok=True)
+                    time.sleep(0.2 * attempt)
             os.replace(temporary, target)
         finally:
             temporary.unlink(missing_ok=True)

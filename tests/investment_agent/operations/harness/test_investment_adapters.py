@@ -227,5 +227,44 @@ class InvestmentAdaptersTest(unittest.TestCase):
         self.assertGreater(SessionWindow().seconds_until_open(saturday), 24 * 60 * 60)
 
 
+class BackgroundWiringTest(unittest.TestCase):
+    """1분 주기 job을 막던 긴 stage들이 실제로 background로 감싸지는지 본다(감사 OP2-03)."""
+
+    def _adapters(self, *, is_background_enabled: bool) -> ProductionInvestmentAdapters:
+        return ProductionInvestmentAdapters(
+            command_runner=FakeRunner(),
+            decision_repository=FakeDecisionRepository(),
+            approval_repository=FakeApprovalRepository(),
+            system_store=FakeSystemStore(),
+            follow_target=lambda **kwargs: None,
+            create_execution_intent=lambda **kwargs: None,
+            now=lambda: OPEN,
+            is_background_enabled=is_background_enabled,
+        )
+
+    def test_worker_capacity_covers_every_wrapped_stage(self) -> None:
+        """6칸에 stage 13개를 몰아넣던 것(감사 OP2-02) — 이제 감싼 stage 수 이상이다."""
+        from investment_agent.operations.harness_adapters import _BACKGROUND_STAGE_TIMEOUT_KEYS
+
+        adapters = self._adapters(is_background_enabled=True)
+        self.assertGreaterEqual(
+            adapters._background.executor._max_workers, len(_BACKGROUND_STAGE_TIMEOUT_KEYS),
+        )
+
+    def test_previously_unwrapped_long_stages_are_now_wrapped(self) -> None:
+        """`watch`·`watch_releases`·`sync_local_mirror`·`risk_snapshot`·`reconcile`·`run_ml_challengers`가
+        감싸는 목록에서 빠져 있어서, 하나라도 오래 걸리면 tick 루프 전체가 막혔다(감사 OP2-03)."""
+        adapters = self._adapters(is_background_enabled=True)
+        for name in ("watch", "watch_releases", "sync_local_mirror",
+                     "risk_snapshot", "reconcile", "run_ml_challengers"):
+            with self.subTest(stage=name):
+                # background.wrap()이 인스턴스 속성으로 덮어써야 한다 — 클래스 메서드 그대로면 감싸지지 않은 것이다.
+                self.assertIn(name, vars(adapters))
+
+    def test_without_background_enabled_the_class_methods_are_untouched(self) -> None:
+        adapters = self._adapters(is_background_enabled=False)
+        self.assertNotIn("watch", vars(adapters))
+
+
 if __name__ == "__main__":
     unittest.main()

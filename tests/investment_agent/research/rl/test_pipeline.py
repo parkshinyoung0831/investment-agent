@@ -44,6 +44,10 @@ class WalkForwardPipelineTest(unittest.TestCase):
                 self.assertEqual(window.test.periods, 2)
                 self.assertGreaterEqual(window.validation.transaction_cost, 0.0)
                 self.assertGreaterEqual(window.test.turnover, 0.0)
+                # 음수 관례 — `research/promotion/gate.py`가 같은 이름의 필드를 음수로 기대한다
+                # (감사 RR2-15). 여기서 양수가 나오면 게이트가 한도(`< -limit`)를 절대 걸지 못한다.
+                self.assertLessEqual(window.validation.max_drawdown, 0.0)
+                self.assertLessEqual(window.test.max_drawdown, 0.0)
                 self.assertIsNotNone(window.artifact)
                 artifact = window.artifact
                 assert artifact is not None

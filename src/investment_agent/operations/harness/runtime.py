@@ -85,6 +85,9 @@ class HarnessScheduler:
         recovered = recover_interrupted_jobs(self.state, now=now)
         timestamp = utc_iso(now)
         self.state.process_id = process_id if process_id is not None else os.getpid()
+        # 상태창이 실제 기동 모드를 말하게 한다 — 전에는 `.env`에서 다시 계산해서 프로세스가
+        # 다른 모드로 떴을 때 서로 다른 답을 냈다(감사 OP2-07).
+        self.state.mode = self.mode.value
         self.state.process_started_at = timestamp
         self.state.process_heartbeat_at = timestamp
         self.state.stopped_at = None

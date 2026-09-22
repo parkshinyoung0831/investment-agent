@@ -710,8 +710,15 @@ LLM prompt나 문서 수정으로 완화할 수 없다.
 | proposal age | 36시간 |
 | 연환산 volatility | 30% |
 | absolute beta | 1.5 |
+| 쌍 상관 최대 | 0.95 |
+| 집중도 HHI 최대 | 0.15 (발동하지 않는다 — 아래) |
 
 필수 market-risk 입력이 없으면 System 목표를 만들지 않는다(fail-closed).
+
+HHI 한도는 **종목 상한에 이미 가려져 있다**. HHI = Σw² ≤ max(w)·Σw 이므로 종목 상한 10%·현금 하한 5%에서
+도달 가능한 최대 HHI는 0.095다(`reachable_concentration_hhi`). 0.15 한도는 어떤 입력에서도 거절을 만들지 못한다 —
+`concentration_hhi_limit_binds`가 그것을 False로 말하고 위험 판정 `metrics`에 함께 남는다. 종목 상한을 올리면 이 한도가
+비로소 살아난다.
 
 ## Native Backtest
 

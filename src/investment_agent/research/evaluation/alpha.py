@@ -52,7 +52,7 @@ class CrossSectionalAlphaScore:
         return asdict(self)
 
 
-def _rank(values: np.ndarray) -> np.ndarray:
+def average_ranks(values: np.ndarray) -> np.ndarray:
     """동점은 평균 순위로 둔다. argsort 두 번은 동점을 입력 순서로 갈라 IC를 흔든다."""
     order = np.argsort(values, kind="mergesort")
     ranks = np.empty(len(values), dtype=float)
@@ -73,7 +73,7 @@ def spearman_ic(actual: Sequence[float], predicted: Sequence[float]) -> float | 
     p = np.asarray(predicted, dtype=float)
     if len(a) != len(p) or len(a) < 3:
         return None
-    ra, rp = _rank(a), _rank(p)
+    ra, rp = average_ranks(a), average_ranks(p)
     if np.std(ra) == 0 or np.std(rp) == 0:
         return None
     return float(np.corrcoef(ra, rp)[0, 1])
@@ -119,7 +119,7 @@ def cross_sectional_alpha_metrics(
         ics.append(ic)
         used += len(rows)
         # 예측 순위로 나눈 분위의 실현 평균: 최상위 분위 - 최하위 분위.
-        buckets = np.array_split(np.argsort(_rank(p), kind="mergesort"), quantiles)
+        buckets = np.array_split(np.argsort(average_ranks(p), kind="mergesort"), quantiles)
         spreads.append(float(np.mean(a[buckets[-1]]) - np.mean(a[buckets[0]])))
 
     if not ics:
@@ -157,4 +157,4 @@ def cross_sectional_alpha_metrics(
     )
 
 
-__all__ = ["IC_INFERENCE_METHOD", "overlap_lags", "CrossSectionalAlphaScore", "cross_sectional_alpha_metrics", "spearman_ic"]
+__all__ = ["IC_INFERENCE_METHOD", "overlap_lags", "CrossSectionalAlphaScore", "average_ranks", "cross_sectional_alpha_metrics", "spearman_ic"]

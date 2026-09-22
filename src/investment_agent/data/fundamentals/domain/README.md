@@ -37,7 +37,7 @@ domain 함수는 이미 가져온 dict·bytes·날짜를 받아 같은 입력에
 | --- | --- |
 | Python 표준 라이브러리 | 날짜, hash, 정규식, dataclass, 컬렉션 |
 | `lxml.etree` | 호출자가 전달한 XBRL instance bytes의 인메모리 XML 파싱 |
-| `investment_agent.data.fundamentals.filings.FilingRef` | fundamentals 공시 값 계약 |
+| `investment_agent.data.fundamentals.domain.filings.FilingRef` | fundamentals 공시 값 계약 |
 | `investment_agent.platform.logging` | 구조화 로깅. 외부 호출이나 저장을 수행하지 않는다. |
 | `data/gaap_mappings.json` | 패키지에 vendoring한 edgartools 기반 concept 사전 |
 

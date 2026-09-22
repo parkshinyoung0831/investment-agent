@@ -312,12 +312,18 @@ def estimate_betas(
     symbols: Sequence[str],
     benchmark_symbol: str = "SPY",
     minimum_observations: int = 60,
+    closes_cache: dict[str, dict[date, float]] | None = None,
 ) -> dict[str, float]:
-    """종목별 시장 베타. 같은 거래일 수익률로만 추정한다(결측일을 채우지 않는다)."""
+    """종목별 시장 베타. 같은 거래일 수익률로만 추정한다(결측일을 채우지 않는다).
+
+    `closes_cache`를 받으면 **호출 사이에도** 파싱을 나눈다. 같은 보유 종목을 여러
+    benchmark(사건 테마별 대표 ETF)에 대해 연달아 추정하는 경로가 보유 종목을 매번
+    다시 파싱하던 것을 없앤다. 캐시가 없어도 결과는 같다.
+    """
     benchmark = str(benchmark_symbol).upper()
     result: dict[str, float] = {}
-    # benchmark는 모든 쌍에 들어가므로 파싱을 한 번만 한다. 종목별 파싱도 재사용된다.
-    closes_cache: dict[str, dict[date, float]] = {}
+    if closes_cache is None:
+        closes_cache = {}
     for raw_symbol in symbols:
         symbol = str(raw_symbol).upper().strip()
         if symbol == benchmark:

@@ -228,3 +228,44 @@ class BetaParsingReuseTest(unittest.TestCase):
         }
         for symbol in symbols:
             self.assertAlmostEqual(betas[symbol], expected[symbol], places=12)
+
+    def test_a_shared_cache_spans_several_benchmarks_without_changing_values(self):
+        """사건 테마별 proxy를 연달아 추정하는 경로가 보유 종목을 다시 파싱하지 않는다."""
+        from unittest import mock
+
+        from investment_agent.trading.portfolio import market_risk
+
+        held = [f"H{index}" for index in range(6)]
+        proxies = ["XLE", "TLT", "QQQ"]
+        rows = {symbol: self._rows(index)
+                for index, symbol in enumerate((*held, *proxies))}
+
+        original = market_risk._close_by_date
+        calls: list[str] = []
+
+        def counting(rows_arg, symbol):
+            calls.append(symbol)
+            return original(rows_arg, symbol)
+
+        shared: dict = {}
+        with mock.patch.object(market_risk, "_close_by_date", side_effect=counting):
+            shared_betas = {
+                proxy: market_risk.estimate_betas(
+                    rows, symbols=held, benchmark_symbol=proxy,
+                    minimum_observations=60, closes_cache=shared,
+                )
+                for proxy in proxies
+            }
+
+        # 보유 6 + proxy 3 = 9번. 캐시를 나누지 않으면 proxy마다 보유를 다시 파싱해 21번이다.
+        self.assertEqual(len(calls), len(held) + len(proxies))
+        self.assertEqual(sorted(set(calls)), sorted((*held, *proxies)))
+
+        # 캐시를 나누지 않은 계산과 값이 같다 — 결과 동일성.
+        for proxy in proxies:
+            isolated = market_risk.estimate_betas(
+                rows, symbols=held, benchmark_symbol=proxy, minimum_observations=60,
+            )
+            for symbol in held:
+                self.assertAlmostEqual(shared_betas[proxy][symbol], isolated[symbol], places=12)
+

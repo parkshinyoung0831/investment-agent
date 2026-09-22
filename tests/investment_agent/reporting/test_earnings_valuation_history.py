@@ -9,6 +9,20 @@ from investment_agent.reporting.services.earnings import valuation_history
 class EarningsValuationHistoryTest(unittest.TestCase):
     """역사적 밸류에이션 계산은 카드와 화면이 같은 분포를 주장해야 한다."""
 
+    def test_a_quarter_with_no_net_debt_leaves_ev_ebitda_missing_not_cheap(self) -> None:
+        """EV 가산분(순부채)을 그 분기에 계산할 수 없으면 EV/EBITDA도 결측이다(감사 RR2-11).
+
+        0으로 접으면 EV가 시가총액과 같아져 실제보다 싼 배수가 통계에 들어간다.
+        """
+        prices = [("2026-01-02", 100.0), ("2026-04-06", 100.0)]
+        shares = [("2026-01-02", 10.0), ("2026-04-06", 10.0)]
+        snaps = [
+            {"available_date": "2026-01-02", "ev_ex_market_cap": None, "ebitda_ttm": 50.0},
+            {"available_date": "2026-04-06", "ev_ex_market_cap": 200.0, "ebitda_ttm": 50.0},
+        ]
+        dates, series = valuation_history.daily_series(prices, shares, snaps)
+        self.assertEqual([None, 24.0], series["ev_ebitda"])
+
     def test_window_stats_needs_a_current_value(self) -> None:
         today = date(2026, 9, 4)
         dates = [(today - timedelta(days=i)).isoformat() for i in range(400, 0, -1)]

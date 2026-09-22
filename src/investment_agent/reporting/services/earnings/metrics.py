@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from investment_agent.reporting.services.financial_row import total_debt
+from investment_agent.reporting.services.financial_row import cash_and_equivalents, net_debt, total_debt
 
 
 def as_float(v: Any) -> float | None:
@@ -32,26 +32,6 @@ def _margin(num: float | None, den: float | None) -> float | None:
     if num is None or den is None or den == 0:
         return None
     return num / den
-
-
-def _cash(row: dict) -> float | None:
-    """현금성 자산 = 현금·현금성자산 + 단기투자자산.
-
-    둘 다 없으면 None이다. 합산 태그 하나만 보던 시절에는 분기 행의 98%에서
-    현금이 0으로 취급돼 순부채가 계통적으로 과대평가됐다.
-    """
-    cash = as_float(row.get("cash_and_cash_equivalents"))
-    short_term = as_float(row.get("short_term_investments"))
-    if cash is None and short_term is None:
-        return None
-    return (cash or 0.0) + (short_term or 0.0)
-
-
-def _net_debt(row: dict) -> float | None:
-    debt = total_debt(row)
-    if debt is None:
-        return None
-    return debt - (_cash(row) or 0.0)
 
 
 def _fcf(row: dict) -> float | None:
@@ -100,8 +80,8 @@ def derive(row: dict, prev: dict | None) -> dict:
         "operating_margin": op_margin,
         "net_margin": net_margin,
         "fcf": _fcf(row),
-        "cash": _cash(row),
-        "net_debt": _net_debt(row),
+        "cash": cash_and_equivalents(row),
+        "net_debt": net_debt(row),
         "buyback": as_float(row.get("stock_repurchase_payments")),
         "dividends": as_float(row.get("common_dividends_paid")),
         "revenue_yoy": _yoy(rev, p_rev),

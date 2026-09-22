@@ -165,6 +165,9 @@ class NativeCoreTests(unittest.TestCase):
                 label_available_at=end.isoformat(),
                 label_definition="excess_return_5d",
                 label=float(index) / 10.0,
+                # 실제 producer(`export_dataset`)는 항상 벤치마크를 채운다. 기본값 0.0에
+                # 기대던 픽스처가 리더보다 빈약했다.
+                benchmark_label=0.01,
             ))
         dataset = build_research_dataset(
             features,
@@ -173,7 +176,10 @@ class NativeCoreTests(unittest.TestCase):
             label_cutoff_at="2026-08-20T00:00:00+00:00",
         )
         self.assertEqual(len(dataset.rows), 6)
-        self.assertLess(dataset.manifest.train_period[1], dataset.manifest.validation_period[0])
+        # dataset은 split을 선언하지 않는다 — 학습 구간은 아래 artifact가 말한다.
+        self.assertIsNone(dataset.manifest.train_period)
+        self.assertIsNone(dataset.manifest.validation_period)
+        self.assertIsNone(dataset.manifest.test_period)
         result = train_baseline_dataset(
             dataset,
             model_kind="ridge",
