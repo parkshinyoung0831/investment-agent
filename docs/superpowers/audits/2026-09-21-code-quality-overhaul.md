@@ -145,8 +145,8 @@ research·reporting 20 (`RR2-*`) · 워크플로·시각·그 밖 4 (`AU-*`).
 | OP2-06 | 실주문 플래그와 킬스위치가 확인 문구 없이 한 글자로 바뀐다 | 확정 | 높음 | 보고만(사용자 결정) |
 | OP2-15 | 1분 주기 job이 영구 실패하면 운영 webhook으로 분당 1건씩 쏟아진다 | 확정(재검증) | 높음 | 수정됨 |
 | OP2-19 | 대사가 "찾은 것이 있다"를 "명령이 실패했다"로 돌려줘 수동 주문 하나로 job이 영구 실패한다 | 확정(재검증) | 높음 | 수정됨 |
-| OP2-02 | background 단계가 6개 worker를 13개 stage와 공유하고 대기에 시간 상한이 없다 | 확정 | 중간 | 보고만 |
-| OP2-03 | 가장 긴 stage 셋이 background에서 빠져 tick 루프를 최대 3시간 막는다 | 확정 | 중간 | 보고만 |
+| OP2-02 | background 단계가 6개 worker를 13개 stage와 공유하고 대기에 시간 상한이 없다 | 확정 | 중간 | 수정됨 |
+| OP2-03 | 가장 긴 stage 셋이 background에서 빠져 tick 루프를 최대 3시간 막는다 | 확정 | 중간 | 수정됨 |
 | OP2-05 | 정비 보류를 걸어도 돌고 있는 하네스는 안 멈추는데 메시지는 멈춘다고 읽힌다 | 확정 | 중간 | 수정됨 |
 | OP2-07 | 상태창의 `mode`가 실제 프로세스 모드가 아니라 `.env`에서 다시 계산된다 | 확정 | 중간 | 수정됨 |
 | OP2-08 | `emergency_stop --lockdown-env`만 쓰면 잠금이 성공해도 종료 코드 1 | 확정 | 중간 | 수정됨 |
@@ -389,6 +389,27 @@ RR2-09가 `debt_to_equity`(저장 feature 컬럼)의 값을 바꿔서, 전날 �
 표본이 낡은 정의를 담고 있었다. `scripts/reset_feature_version_stores.py --apply`로 파생 dataset을
 다시 지우고 `backfill_research_history --start 2021-09-03 --every-days 7`를 다시 돌렸다. 결과는
 10절에 기록한다.
+
+
+### 9.5 네 번째 묶음 — OP2-02·OP2-03, 재적재 재시도 안정화 (같은 날, 사용자 지시로 계속)
+
+| ID | 고친 것 | 파일 | 검증 |
+|---|---|---|---|
+| OP2-02 | background worker 6칸에 stage 13개를 몰아넣던 것 → 감싸는 stage 수(19개) 이상으로 늘렸다. 잡 재시작으로 남는 옛 run의 pending 항목도 정리한다(누수 방지) | `operations/harness/background.py` | 테스트 4개(제출→완료, 워커 부족, 잔여 항목 정리, 타임아웃 없이도 예전처럼 동작). |
+| OP2-03 | `watch`·`watch_releases`·`sync_local_mirror`·`risk_snapshot`·`reconcile`·`run_ml_challengers`가 감싸는 목록에서 빠져 있어 하나라도 오래 걸리면(ml_challengers는 최대 3시간) tick 루프 전체가 막혔다 → 여섯 다 감쌌다. `BackgroundStages`에 stage별 타임아웃을 추가해, 갇히면 대기 대신 실패로 드러낸다(스레드는 못 죽이므로 재시도가 새로 제출한다는 한계는 문서화) | `operations/harness_adapters.py`(`_BACKGROUND_STAGE_TIMEOUT_KEYS`), `operations/harness/background.py`(`StageTimeoutError`) | 테스트 3개(6개 stage가 실제로 감싸짐, 워커 용량 확인, background 꺼지면 그대로). 옛 13개 목록으로 되돌리면 7건 실패 확인 |
+| (부수) parquet 쓰기 재시도 | 재적재 중 Windows 백신 실시간 검사로 추정되는 일시적 파일 잠금이 DuckDB의 내부 rename을 두 차례 실패시켰다(`IO Error: Could not move file`) → `_write_parquet`에 5회 재시도(지수 백오프)를 추가했다 | `research/storage/repository.py` | 테스트 2개(실제 DuckDB 연결로 일시 실패 재시도 성공 확인, 반복 실패 시 그대로 올림). 재시도 제거 시 실패 확인 |
+
+**세 번째 재적재**: RR2-09 반영 재적재가 두 번 이 파일 잠금으로 41번째 지점 근처에서 끊겼다. 재시도 로직을 넣은 뒤 세 번째 시도가 259/259 전부, 오류 0건으로 끝났다(약 2시간 소요 — 두 번의 실패한 시도 포함). Parquet를 직접 세어 확인: feature snapshot 119,546건, forward label 118,697건, 학습 표본 118,697건, 밸류에이션 관측 130,352건, 259개 날짜.
+
+### 9.6 macro 정리 — 사용자가 Supabase SQL Editor로 직접 실행
+
+`scripts/cleanup_macro_release_artifacts.py`는 이 네트워크에서 Supabase pooler 포트 5432가 막혀
+(psycopg2 직접 연결) 실행할 수 없었다 — dry-run도 마찬가지였다. 사용자의 실제 PC에서도 같은
+오류였다(ISP·네트워크 단의 5432 차단으로 보인다). 대신 같은 SQL을 Supabase 대시보드
+SQL Editor(HTTPS, 5432 무관)로 옮겨 사용자가 직접 실행했다 — 이 부분은 운영 DB 영구 삭제라
+사용자 실행 원칙을 그대로 지켰다. 유령 발표 이벤트 67건(FED_NET_LIQUIDITY 19·US_CONTINUING_CLAIMS 24·
+US_INITIAL_CLAIMS 24) 삭제를 확인했다. own_model 예상값은 `econ_calendar_daily`가 매일 자동으로
+다시 채운다(미래 발표분만 — 이미 지난 발표는 실제값이 있어 다시 만들 필요가 없다).
 
 ## 10. 인계 — 다음 세션이 이어서 할 일
 
