@@ -382,40 +382,50 @@ failed 사유 상위: 232건이 "ModelPoolError: no LLM model pool candidate has
 
 ---
 
-### P0-5 평가 피드백 루프가 한 번도 실행되지 않았다
+### P0-5 평가 피드백 루프에 결과가 한 줄도 없다
 
-- **상태**: `OPEN`
-- **대상 파일**: `src/investment_agent/operations/commands/evaluate_decisions.py`(진입점은 있음),
-  `src/investment_agent/trading/performance/attribution.py`(production 호출자 없음),
-  `src/investment_agent/operations/harness/` (job 미등록)
+- **상태**: `OPEN` (원인은 배선이 아니라 입력 부재 — 아래 구분)
+- **대상 파일**: `src/investment_agent/trading/performance/attribution.py`(production 호출자 없음)
 
 #### 현재 문제
-원장 실측:
+원장 실측(2026-09-22):
 
 ```text
 decision_evaluations     0행   ← 판단이 채점된 적이 없다
 attribution_reports      0행   ← attribution이 계산된 적이 없다
-intents / orders / fills 0행   ← 실행된 적이 없다
-performance_reports     64행
+intents / orders / fills 0행   ← 주문이 나간 적이 없다
+performance_reports     64행   ← 전부 fill_count=0, positions=[]
 ```
 
-- `build_attribution_report()`는 테스트에서만 호출된다. `update_performance`가 부르지 않아 **사실상 orphan**이다.
-- `evaluate_decisions` 명령은 존재하지만 하네스 job으로 등록돼 있지 않다.
+**절반은 배선 문제가 아니다.** `evaluate_decisions`는 이미 하네스에 완전히 배선돼 있다 —
+`feature_store_job`의 stage로 매일 돈다(`operations/harness/pipeline.py`,
+`operations/adapters/research.py`). 표가 빈 것은 다음 둘 때문이다.
 
-#### 왜 P0인가
-§11(Evaluation & Feedback)과 `INVESTMENT_DECISION_ENGINE_DESIGN.md` §18(LLM Reliability)·§37(Attribution)·
-§48(Ablation benchmark)은 **모두 이 표의 행을 입력으로 요구한다.** 행이 0이면:
+- 완료된 판단 57건의 판단 시각이 2026-09-09~15이고 20·60거래일 horizon은 아직 성숙하지 않았다.
+- 원장의 마지막 활동이 2026-09-15다. 그 뒤로 하네스가 이 호스트에서 돌지 않았다.
 
-- LLM·ML·Factor의 신뢰도를 사후 검증할 수 없다.
-- Champion을 측정할 수 없으므로 **어떤 Challenger도(System-One 포함) 비교 대상이 없다.**
+**나머지 절반은 실재하는 구멍이다.** `build_attribution_report()`와
+`record_attribution_report()`는 있지만 **production 호출자가 없다**(테스트에서만 부른다).
+`update_performance`도 부르지 않는다.
 
-완료된 판단 57건의 판단 시각은 2026-09-09~15이고 horizon이 20거래일이므로 결과가 확정되는 시점은
-2026-10-07~13이다. 그 전에 루프를 연결해 두지 않으면 첫 결과가 나와도 아무도 채점하지 않는다.
+#### 지금 구현하지 않는 이유
+attribution은 체결 결과를 분해한다. 그런데 `fills`가 0행이고 `performance_reports`의
+positions도 비어 있다 — **분해할 손익이 존재하지 않는다.** 이 상태에서 분해식을 짜 넣으면
+검증할 수 없는 계산을 Production에 넣는 것이고, §16.10·§14의 검증 절차를 건너뛰는 것이다.
+
+`INVESTMENT_DECISION_ENGINE_DESIGN.md` §37이 요구하는 Factor/ML/LLM 기여 분해도 마찬가지다.
+현재 `AttributionReport`의 성분은 market/selection/allocation/timing/risk_overlay/slippage/fees이고
+신호 출처별 분해가 없다. 둘 다 **실제 체결이 쌓인 뒤에** 설계한다.
 
 #### 목표 및 해결 방안
-- `evaluate_decisions`를 하네스 job으로 등록해 성숙한 판단을 주기적으로 채점한다.
-- `update_performance` 경로에서 `build_attribution_report()`를 호출해 orphan을 연결한다.
-- 둘 다 읽기·기록만 하며 주문·비중에 영향을 주지 않는다(§4.2 유지).
+- 이 절의 값은 "고칠 것"이 아니라 **"기다릴 것"** 이다. 다음 세션이 이것을 배선 누락으로
+  오해하고 빈 attribution을 만들지 않게 여기 적어 둔다.
+- 선행 조건: 실제 체결(`fills` > 0)과 성숙한 판단(`decision_evaluations` > 0).
+- 그 뒤에 `update_performance` 경로에서 attribution을 부르고, 성분에 신호 출처별 기여를
+  더할지 결정한다.
+- **주의**: `SYSTEM_UPGRADE_MASTER.md` §2의 canonical owner 표는 performance attribution을
+  "기존 계층 재사용"으로 적는다. 그 계층은 **만들어져 있지만 한 번도 먹인 적이 없다** —
+  재사용하라는 말이 이미 동작 중이라는 뜻이 아니다.
 
 ---
 
@@ -641,9 +651,9 @@ Decision Price, Arrival Price, Submitted Limit, Fill Price, Fees, Spread, ADV, O
 - Workflow dispatch contract (`P0-3`)
 - 예산 소진 실패가 순환을 억제하는 문제 (`P0-4`)
 - LLM 비용·지연 계측 (`P0-6`)
-- 평가 피드백 루프 연결 (`P0-5`)
 - SQLite schema generation (`P0-1`)
 - DuckDB artifact compatibility (`P0-2`)
+- (`P0-5`는 여기 없다 — 고칠 배선이 아니라 기다릴 입력이다. 해당 절 참고)
 - **완료 조건**: 관련 CI green, recreate / restore / dispatch failure injection 통과,
   그리고 각 가드는 **위반을 주입해 실패를 먼저 확인**한 것만 인정한다(§14).
 
