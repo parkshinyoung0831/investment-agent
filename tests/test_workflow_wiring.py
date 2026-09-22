@@ -227,6 +227,89 @@ class UniverseCadenceTest(unittest.TestCase):
                 self.assertNotIn("workflow_run:", text)
 
 
+class DispatchInputContractTest(unittest.TestCase):
+    """`gh workflow run`이 넘기는 -f 입력이 피호출 워크플로에 실재하는가.
+
+    어긋나면 GitHub API가 422(Unexpected input)로 거절하고 **후속 백필 전체가 중단된다.**
+    호출자 워크플로는 성공으로 끝나므로 CI는 초록이고 알림도 오지 않는다.
+
+    실제로 `-f dataset=both`가 두 워크플로에 남아 있었고, `market_backfill.yml`에서 그 입력이
+    삭제된 뒤로 매월·주3회 경로가 조용히 죽고 있었다. 기존 배선 테스트는 "호출 문자열이 있는가"만
+    봐서 통과했다 — 검사 대상을 좁게 잡으면 가드가 공허하게 통과한다.
+    """
+
+    _DISPATCH = re.compile(r"gh workflow run\s+([A-Za-z0-9_.-]+)\.yml([^\n]*)")
+    _INPUT = re.compile(r"-f\s+([A-Za-z0-9_]+)=")
+
+    @staticmethod
+    def _declared_inputs(name: str) -> set[str]:
+        """피호출 워크플로의 `workflow_dispatch.inputs` 키 집합."""
+        lines = _text(name).splitlines()
+        inside_dispatch = False
+        dispatch_indent = 0
+        for index, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("#") or not stripped:
+                continue
+            indent = len(line) - len(line.lstrip())
+            if stripped == "workflow_dispatch:":
+                inside_dispatch, dispatch_indent = True, indent
+                continue
+            if inside_dispatch and indent <= dispatch_indent:
+                break  # workflow_dispatch 블록을 벗어났다
+            if inside_dispatch and stripped == "inputs:":
+                keys: set[str] = set()
+                key_indent: int | None = None
+                for follow in lines[index + 1:]:
+                    if not follow.strip() or follow.strip().startswith("#"):
+                        continue
+                    follow_indent = len(follow) - len(follow.lstrip())
+                    if key_indent is None:
+                        key_indent = follow_indent
+                    if follow_indent < key_indent:
+                        break
+                    if follow_indent == key_indent:
+                        match = re.match(r"([A-Za-z0-9_]+):", follow.strip())
+                        if match:
+                            keys.add(match.group(1))
+                return keys
+        return set()
+
+    def _dispatches(self) -> list[tuple[str, str, set[str]]]:
+        found: list[tuple[str, str, set[str]]] = []
+        for path in sorted(_WORKFLOWS.glob("*.yml")):
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if line.lstrip().startswith("#"):
+                    continue
+                for match in self._DISPATCH.finditer(line):
+                    found.append(
+                        (path.stem, match.group(1), set(self._INPUT.findall(match.group(2))))
+                    )
+        return found
+
+    def test_the_dispatch_scan_finds_calls(self) -> None:
+        """호출을 못 모으면 아래 검사가 공허하게 통과한다."""
+        dispatches = self._dispatches()
+        self.assertGreaterEqual(len(dispatches), 6)
+        self.assertTrue(any(passed for _caller, _callee, passed in dispatches))
+
+    def test_the_input_scan_finds_declared_inputs(self) -> None:
+        """선언을 못 읽으면 모든 호출이 '입력 없음'으로 보여 검사가 공허해진다."""
+        self.assertEqual({"backfill_from", "scope"}, self._declared_inputs("market_backfill"))
+        self.assertIn("period", self._declared_inputs("fundamentals_dimensions_backfill"))
+
+    def test_every_dispatched_input_is_declared_by_the_callee(self) -> None:
+        offenders: list[str] = []
+        for caller, callee, passed in self._dispatches():
+            if callee not in _workflow_names():
+                offenders.append(f"{caller} dispatches unknown workflow {callee}.yml")
+                continue
+            unknown = sorted(passed - self._declared_inputs(callee))
+            if unknown:
+                offenders.append(f"{caller} -> {callee}.yml: {', '.join(unknown)}")
+        self.assertEqual([], offenders, "피호출 워크플로에 없는 입력을 넘긴다 (GitHub API 422)")
+
+
 class NotifyChainTest(unittest.TestCase):
     def test_notify_fundamentals_follows_both_etl_paths(self):
         text = _text("notify_fundamentals")

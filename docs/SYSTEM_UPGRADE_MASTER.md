@@ -2,9 +2,9 @@
 
 > **문서 역할**: 전체 투자 시스템의 현재 상태, 불변 원칙, 확인된 문제, 목표 아키텍처, 구현 우선순위와 검증 절차를 정의하는 **고도화 계획의 단일 기준 문서(SSOT)**  
 > **기준 브랜치**: `main`  
-> **분석 기준 SHA**: `4e02de453c977461eaee9a07bf5eb6955d28df1c` (및 `ab7e3a6ff33636cbb74f2218a2215d19d6480139`)  
+> **분석 기준 SHA**: `494de6b217384369c33b612d17d02bb49df6f80f`  
 > **기준일**: 2026-09-22  
-> **중요**: 이 문서는 “현재 구현”과 “제안된 개선”을 명확히 구분한다. 제안된 알고리즘이 문서에 존재한다는 이유만으로 Production에 채택된 것으로 간주하지 않는다.
+> **중요**: 이 문서는 “현재 구현”과 “제안된 개선”을 명확히 구분한다. 제안된 알고리즘이 문서에 존재한다는 이유만으로 Production에 채택된 것으로 간주하지 않는다. 새 세션은 이 SHA 이후 `main`이 얼마나 이동했는지부터 다시 확인한다 — SHA는 출발점이지 현재 상태의 보증이 아니다.
 
 ---
 
@@ -19,11 +19,11 @@
 5. 어떤 순서로 구현·검증·승격할 것인가?
 6. 다른 세션이나 Coding Agent가 무엇을 기준으로 작업해야 하는가?
 
-Factor·ML·RL·Alpha·Optimizer의 구체적인 수식과 후보 알고리즘 비교는 별도 문서인:
+Factor·ML·RL·Alpha·Optimizer의 구체적인 수식과 후보 알고리즘 비교, 그리고 AI Decision Layer(System-One/Deep LLM/Multi-Agent) 설계는 별도 문서인:
 
-`docs/QUANT_ALGORITHM_DESIGN.md`
+`docs/INVESTMENT_DECISION_ENGINE_DESIGN.md`
 
-가 소유한다.
+가 소유한다(Part I: Factor/ML/Alpha/Optimizer/Risk/RL/TCA, Part II: AI Decision Layer).
 
 과거 특정 시점의 조사 기록·실패 로그·실험 결과는:
 
@@ -44,7 +44,7 @@ Factor·ML·RL·Alpha·Optimizer의 구체적인 수식과 후보 알고리즘 �
                 ↓
 Upgrade Master
                 ↓
-Algorithm Design
+Investment Decision Engine Design
                 ↓
 과거 Audit
 ```
@@ -283,13 +283,22 @@ Learning           ▼
 
 ### P0-1 Runtime SQLite schema cache
 
-- **상태**: `OPEN`
+- **상태**: `OPEN` (설계 결함 확인, 심각도는 플랫폼에 따라 다름)
 - **대상 파일**: `src/investment_agent/platform/db/sqlite.py`
 - **테스트**: `tests/investment_agent/platform/test_sqlite_schema_applied_once.py`
 
 #### 현재 문제
 `platform/db/sqlite.py`의 `_PREPARED` 캐시는 `(path, st_dev, st_ino, DDL fingerprint)`를 기반으로 한다.
-삭제된 SQLite 파일이 동일한 `inode`를 재사용하면, 새로 생성된 비어있는 DB임에도 불구하고 이미 schema가 적용되었다고 잘못 판단하여 DDL 적용을 건너뛴다 (`test_a_recreated_file_gets_the_schema_again` 실패 원인).
+삭제된 SQLite 파일이 동일한 `inode`를 재사용하면, 새로 생성된 비어있는 DB임에도 불구하고 이미 schema가 적용되었다고 잘못 판단하여 DDL 적용을 건너뛴다.
+
+결함의 본질은 **schema 적용 여부의 진실을 DB가 아니라 파일시스템 신원이 소유한다**는 것이고, 그것은 현재 코드에서 그대로다.
+
+다만 심각도는 실측으로 좁혀 둔다 — 근거 없이 "테스트가 실패 중"이라고 적어 두면 다음 세션이 잘못된 전제로 출발한다.
+
+- 명명된 테스트 `test_a_recreated_file_gets_the_schema_again`은 **현재 통과한다**(3/3 OK).
+- Windows/NTFS 실측(2026-09-22): 같은 이름 삭제→재생성 30회에서 inode 재사용 **0회**. 이 호스트에서는 기술된 경로가 재현되지 않는다.
+- ext4(GitHub Actions ubuntu 러너·Mac mini)에서는 inode 재사용이 흔하므로 그쪽 실측 전에는 심각도를 확정하지 않는다.
+- 즉 이 테스트는 **결함이 있어도 통과할 수 있다**(공허한 통과). 고칠 때 위반 주입으로 먼저 실패를 확인한다.
 
 #### 목표 및 해결 방안
 Schema correctness의 진실을 filesystem inode가 아니라 DB 자체가 소유하도록 전환한다.
@@ -322,15 +331,116 @@ Artifact 복원 시 schema 호환성 계약을 추가한다.
 ### P0-3 GitHub Workflow input contract mismatch
 
 - **상태**: `OPEN`
-- **대상 파일**: `.github/workflows/universe_membership_check.yml`, `.github/workflows/market_backfill.yml`
+- **대상 파일**: `.github/workflows/universe_membership_check.yml`, `.github/workflows/universe_monthly.yml`, `.github/workflows/market_backfill.yml`
 - **실제 에러**: GitHub Actions API `HTTP 422: Unprocessable Entity` (Unexpected input 'dataset')
 
 #### 현재 문제
 `universe_membership_check.yml`에서 S&P 500 종목 변경이 감지되면 후속 단계로 `market_backfill.yml`을 트리거하면서 `-f dataset=both`를 전달한다. 하지만 피호출자인 `market_backfill.yml`의 `workflow_dispatch.inputs`에서 `dataset` 옵션이 이미 삭제되어 있어 GitHub API 422 에러로 실패하며 후속 SEC/재무제표 백필 전체가 중단된다.
 
+**같은 호출이 `universe_monthly.yml`에도 있다**(매월 1일 정합성 경로). 한쪽만 고치면 월간 경로가 같은 이유로 계속 죽는다.
+
 #### 목표 및 해결 방안
 1. `universe_membership_check.yml`에서 obsolete input(`-f dataset=both`) 제거.
 2. Caller-Callee workflow dispatch 계약을 검증하는 CI 테스트 추가하여 input drift를 사전 차단.
+
+---
+
+### P0-4 예산 소진 실패가 종목 순환을 억제한다
+
+- **상태**: `OPEN`
+- **대상 파일**: `src/investment_agent/trading/decision/candidates.py` (`_last_attempted`)
+- **성격**: 에러 없이 조용히 틀린다. 로그도 정상으로 보인다.
+
+#### 현재 문제
+`_last_attempted()`는 판단 원장의 `status=='failed'` 행도 "마지막 분석 시각"으로 인정한다.
+의도는 한 종목의 장애가 순환을 영원히 막지 않게 하는 것이다. 그런데 실패 사유를 구분하지 않으므로
+**모델 예산 소진처럼 그 종목과 무관한 시스템 상태**까지 "최근에 분석했다"로 센다.
+
+`select_factor_candidates()`는 `older_than(ticker, refresh_days=28)`로 거르므로, 예산이 떨어져
+**시작조차 못 한 종목이 28일 동안 factor 순환에서 빠진다.**
+
+실측(`runtime.sqlite3`, 2026-09-22 기준):
+
+```text
+security_decisions 291행 → completed 57 / failed 234
+failed 사유 상위: 232건이 "ModelPoolError: no LLM model pool candidate has budget"
+
+28일 내 시도 기록이 있는 종목        : 290
+  ├ 마지막이 예산 소진 실패인 종목   : 232   ← 한 번도 판단받지 않았는데 억제 중
+  └ 마지막이 성공인 종목             :  57
+```
+
+원인이 된 설정(`AI_INVESTOR_DAILY_LIMIT=250` vs 실제 예산 20)은 `analysis_limit()`과
+`except ModelPoolError` 가드로 이미 막혔다(`b924290`). **그러나 원장에 남은 232행의 효과는 현재 진행 중이다.**
+
+#### 목표 및 해결 방안
+"판단했다"와 "시작조차 못 했다"를 코드가 구분한다.
+
+- 재분석 억제는 **실제로 모델이 답한 시도**(`completed`/`abstained`, 그리고 모델이 답한 뒤 실패한 경우)에만 적용한다.
+- 예산 소진·API 키 부재처럼 **종목과 무관한 시작 실패**는 억제에 넣지 않는다.
+- 같은 종목이 계속 실패할 때의 무한 재시도는 별도의 짧은 backoff로 막는다 — 28일 순환 게이트를 그 용도로 쓰지 않는다.
+
+---
+
+### P0-5 평가 피드백 루프가 한 번도 실행되지 않았다
+
+- **상태**: `OPEN`
+- **대상 파일**: `src/investment_agent/operations/commands/evaluate_decisions.py`(진입점은 있음),
+  `src/investment_agent/trading/performance/attribution.py`(production 호출자 없음),
+  `src/investment_agent/operations/harness/` (job 미등록)
+
+#### 현재 문제
+원장 실측:
+
+```text
+decision_evaluations     0행   ← 판단이 채점된 적이 없다
+attribution_reports      0행   ← attribution이 계산된 적이 없다
+intents / orders / fills 0행   ← 실행된 적이 없다
+performance_reports     64행
+```
+
+- `build_attribution_report()`는 테스트에서만 호출된다. `update_performance`가 부르지 않아 **사실상 orphan**이다.
+- `evaluate_decisions` 명령은 존재하지만 하네스 job으로 등록돼 있지 않다.
+
+#### 왜 P0인가
+§11(Evaluation & Feedback)과 `INVESTMENT_DECISION_ENGINE_DESIGN.md` §18(LLM Reliability)·§37(Attribution)·
+§48(Ablation benchmark)은 **모두 이 표의 행을 입력으로 요구한다.** 행이 0이면:
+
+- LLM·ML·Factor의 신뢰도를 사후 검증할 수 없다.
+- Champion을 측정할 수 없으므로 **어떤 Challenger도(System-One 포함) 비교 대상이 없다.**
+
+완료된 판단 57건의 판단 시각은 2026-09-09~15이고 horizon이 20거래일이므로 결과가 확정되는 시점은
+2026-10-07~13이다. 그 전에 루프를 연결해 두지 않으면 첫 결과가 나와도 아무도 채점하지 않는다.
+
+#### 목표 및 해결 방안
+- `evaluate_decisions`를 하네스 job으로 등록해 성숙한 판단을 주기적으로 채점한다.
+- `update_performance` 경로에서 `build_attribution_report()`를 호출해 orphan을 연결한다.
+- 둘 다 읽기·기록만 하며 주문·비중에 영향을 주지 않는다(§4.2 유지).
+
+---
+
+### P0-6 LLM 비용·지연이 계측되지 않는다
+
+- **상태**: `OPEN`
+- **대상 파일**: `src/investment_agent/trading/decision/llm/client.py`
+
+#### 현재 문제
+`complete_json()`은 provider 응답에서 `choices[0].message.content`만 꺼내고 `body["usage"]`를 버린다.
+호출 소요 시간도 기록하지 않는다. 따라서 다음이 **전부 측정 불가**다:
+
+```text
+input_tokens/ticker, output_tokens/ticker, cost/ticker, latency p50/p95/p99
+```
+
+구조적으로 셀 수 있는 것은 종목당 LLM 호출 수(실측 14건, 계약 위반 시 15건)와 하루 상한(20종목)뿐이다.
+
+`INVESTMENT_DECISION_ENGINE_DESIGN.md` §50은 이 값들이 "먼저 계측 가능해야 한다"고 적지만,
+**현재는 계측 코드 자체가 없다.** 비용 근거 없이 provider를 비교하면 §16.12가 금지한 수치가 문서에 들어온다.
+
+#### 목표 및 해결 방안
+- `complete_json()`이 `usage`와 경과 시간을 반환 경로에 실어 호출부가 기록할 수 있게 한다.
+- 판단 원장(또는 case 기록)에 종목당 합계를 남긴다.
+- 계측이 30일 이상 쌓인 뒤에만 provider 비교의 비용 항목을 채운다.
 
 ---
 
@@ -370,7 +480,7 @@ Data Quality
 \[
 \alpha_{effective} = Signal \times Reliability \times Freshness \times DataQuality
 \]
-를 사용한다. 단, 실제 계산식은 `QUANT_ALGORITHM_DESIGN.md`의 challenger 검증을 거친다.
+를 사용한다. 단, 실제 계산식은 `INVESTMENT_DECISION_ENGINE_DESIGN.md`의 challenger 검증을 거친다.
 
 #### 7.4 ML Promotion Governance
 Model evaluation 당시의:
@@ -436,11 +546,34 @@ Market → Fundamental → News → Sentiment → Macro → Bull/Bear → Resear
 
 모델 가격과 이름은 시간에 민감하므로 이 Master 문서에 고정 가격표를 유지하지 않는다.
 
+### 9.1 System-One / 저비용 구조화 판단 — 연구 방향 (RESEARCH)
+
+현재 AI 판단은 Deep LLM Multi-Agent(Level 3) 경로 하나로 이뤄진다. 더 저렴한 구조화 판단 단계
+(예: Jev류 System-One 모델)를 앞에 두는 것이 실제로 비용·지연을 줄이면서 품질을 유지하는지는 **검증되지 않았다.**
+
+다만 이 절의 출발 전제 하나는 실측으로 정정한다 — **"변화가 없는 날도 전량 재판단한다"는 것은 사실이 아니다.**
+결정론적 깔때기가 이미 앞단에 있다(`trading/decision/candidates.py`·`candidate_ranker.py`):
+
+```text
+tracked universe (수백)
+  → priority lane (보유 + 신규 공시/고영향 사건이 있는 종목만)
+  → factor shortlist 60 + 재분석 주기 28일 게이트
+  → 모델 예산 상한 (실측 20종목/일)
+  → 아무것도 due가 아니면 NoCandidatesDue로 회차 전체를 건너뛴다
+```
+
+따라서 "변화 없는 종목의 반복 비용"은 현재 문제로 존재하지 않는다. System-One의 비용 근거는
+**측정된 뒤에**(P0-6) 다시 세워야 하며, 이 절이 미리 그 근거를 가정하지 않는다.
+
+- 구체 설계(Intelligence Hierarchy, Capability Router, Change Detection, Question Registry, Escalation, Verification, Champion vs Challenger 벤치마크, Provider Registry)는 `docs/INVESTMENT_DECISION_ENGINE_DESIGN.md` Part II(§41~§53)가 소유한다.
+- 이 절은 원칙만 못 박는다: **어떤 provider도 이름만으로 채택하지 않는다.** Jev를 포함한 모든 System-One 후보는 현재 Multi-Agent Champion과 동일 evidence·동일 종목·동일 기간에서 Shadow 비교를 통과해야 하며, `AI가 없는 baseline`(Factor+ML only)도 반드시 비교군에 포함한다 — AI 계층 자체가 가치를 더하는지 먼저 확인한다.
+- 자동 Production 승격 금지(§4.5)와 LLM 실행 권한 없음(§4.2)은 System-One에도 동일하게 적용된다.
+
 ---
 
 ## 10. ML / RL 전략
 
-상세 수식은 `QUANT_ALGORITHM_DESIGN.md`가 소유한다. Master 수준 원칙은 다음과 같다:
+상세 수식은 `INVESTMENT_DECISION_ENGINE_DESIGN.md`가 소유한다. Master 수준 원칙은 다음과 같다:
 
 ### ML
 현재 Regression Champion을 삭제하지 않는다.
@@ -493,10 +626,16 @@ Decision Price, Arrival Price, Submitted Limit, Fill Price, Fees, Spread, ADV, O
 날짜와 `done` 표시는 사용하지 않는다. 실제 코드 상태가 검증된 경우에만 `OPEN`, `IN_PROGRESS`, `FIXED`, `VERIFIED` 상태를 부여한다.
 
 ### Phase 0 — Operational Correctness
+순서는 "지금 조용히 틀리고 있는 것" → "앞으로의 판단 근거를 만드는 것" → "복원·재생성 계약"이다.
+
+- Workflow dispatch contract (`P0-3`)
+- 예산 소진 실패가 순환을 억제하는 문제 (`P0-4`)
+- LLM 비용·지연 계측 (`P0-6`)
+- 평가 피드백 루프 연결 (`P0-5`)
 - SQLite schema generation (`P0-1`)
 - DuckDB artifact compatibility (`P0-2`)
-- Workflow dispatch contract (`P0-3`)
-- **완료 조건**: 관련 CI green, recreate / restore / dispatch failure injection 통과
+- **완료 조건**: 관련 CI green, recreate / restore / dispatch failure injection 통과,
+  그리고 각 가드는 **위반을 주입해 실패를 먼저 확인**한 것만 인정한다(§14).
 
 ### Phase 1 — Data / Factor Correctness
 - Multi-class valuation
@@ -598,7 +737,7 @@ Manual Decision
 - **Step 2**: 이 문서의 baseline SHA 이후 변경 사항을 비교한다.
 - **Step 3**: 현재 P0/P1 항목이 이미 수정됐는지 실제 코드와 tests로 확인한다.
 - **Step 4**: 수정되지 않은 항목만 작업 후보로 남긴다.
-- **Step 5**: `QUANT_ALGORITHM_DESIGN.md`에서 해당 컴포넌트의 `Current`, `Champion`, `Challenger`, `Research`, `Validation`, `Promotion criteria`를 확인한다.
+- **Step 5**: `INVESTMENT_DECISION_ENGINE_DESIGN.md`에서 해당 컴포넌트의 `Current`, `Champion`, `Challenger`, `Research`, `Validation`, `Promotion criteria`를 확인한다(AI Decision Layer는 Part II).
 - **Step 6**: 코드를 바로 수정하지 않고 먼저 `현재 구현 / 문제 / 제안 / 변경 범위 / 검증 계획 / 예상 위험`을 사용자에게 제시한다.
 - **Step 7**: 승인 후 구현한다.
 

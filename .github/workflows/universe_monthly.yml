@@ -41,7 +41,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          gh workflow run market_backfill.yml --ref "$GITHUB_REF_NAME" -f scope=missing -f dataset=both
+          gh workflow run market_backfill.yml --ref "$GITHUB_REF_NAME" -f scope=missing
           gh workflow run fundamentals_backfill.yml --ref "$GITHUB_REF_NAME" -f scope=missing
           gh workflow run fundamentals_dimensions_backfill.yml --ref "$GITHUB_REF_NAME" -f scope=missing -f period=both
 
