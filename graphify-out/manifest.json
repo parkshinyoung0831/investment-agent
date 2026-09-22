@@ -7645,8 +7645,8 @@
   },
   "src/investment_agent/data/fundamentals/data/gaap_mappings.json": {
     "mtime": 1788779392.0205364,
-    "seen": 1790062538.1368966,
-    "ast_hash": "",
+    "seen": 1790072652.360782,
+    "ast_hash": "56d47e736c33a7ff6f01a27a7bc80c85",
     "semantic_hash": ""
   },
   "tests/investment_agent/trading/portfolio/test_contracts_hypothesis.py": {
@@ -8688,9 +8688,9 @@
     "semantic_hash": ""
   },
   "docs/superpowers/audits/2026-09-21-code-quality-overhaul.md": {
-    "mtime": 1790065800.1261368,
-    "seen": 1790066050.7187877,
-    "ast_hash": "fcfc3ec7be3301b8a30af3ea120580ca",
+    "mtime": 1790072581.7368662,
+    "seen": 1790072652.370454,
+    "ast_hash": "004fad39e53e2c904d261a021e70ccf8",
     "semantic_hash": ""
   },
   "tests/investment_agent/execution/test_planner_parity.py": {
