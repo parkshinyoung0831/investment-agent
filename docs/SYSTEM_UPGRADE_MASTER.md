@@ -476,6 +476,62 @@ input_tokens/ticker, output_tokens/ticker, cost/ticker, latency p50/p95/p99
 
 ---
 
+### P0-7 Revision factor는 한 번도 값을 가진 적이 없다
+
+- **상태**: `OPEN`
+- **대상**: `src/investment_agent/research/features/layer.py:_revisions`,
+  `src/investment_agent/research/evidence/statistics.py`(consensus 통계),
+  그리고 그 입력인 fundamentals 시장 예상치 저장 방식
+- **성격**: 에러 없이 조용히 틀린다. 6-factor 모델이 실제로는 5-factor로 돈다.
+
+#### 실측 (2026-09-22)
+research feature store의 **모든** 횡단면에서 revision 계열이 비어 있다.
+
+```text
+feature snapshot 날짜 범위 : 2021-09-03 ~ 2026-08-14 (259일)
+revision_breadth_30d 가 하나라도 있던 날 : 0일
+최신 횡단면(2026-08-14, 502종목)의 결측률
+  revision        502/502  100.0%   ← 컬럼은 있는데 값이 전부 NULL
+  balance_sheet    29/502    5.8%
+  value            20/502    4.0%
+  growth           13/502    2.6%
+  quality          12/502    2.4%
+  momentum          2/502    0.4%
+```
+
+#### 왜 조용한가
+`score_cross_section`은 결측 category를 빼고 **남은 category로 재정규화**한다. revision이
+전부 빠져도 composite은 계산되고, 점수도 순위도 정상으로 보인다. 다만 revision에 배정된
+가중치가 나머지 다섯에 조용히 재분배된다.
+
+즉 `INVESTMENT_DECISION_ENGINE_DESIGN.md`의 Master Decision Matrix가 적은
+`Factor categories | 6개 | KEEP`은 **문서가 코드를 잘못 기술한 것이 아니라,
+코드가 선언한 6개 중 하나가 데이터로 한 번도 실현된 적이 없는 것**이다.
+
+#### 원인 방향 (확정 아님)
+`_revisions()`는 `consensus_statistics`를 읽고, 그것은
+`revisions_up_30d`/`revisions_down_30d`와 **같은 회계기간의 이전 consensus 행**을 요구한다
+(`statistics.py`의 `comparable`). 시장 예상치를 현재값 한 행으로만 저장하면 비교 대상이
+없어 `eps_avg_change`가 영원히 계산되지 않는다 — 실적 서프라이즈가 발표 직전 스냅샷을
+요구하는 것과 같은 뿌리다.
+
+**이 절은 원인을 확정하지 않는다.** 확정하려면 fundamentals 예상치 저장에 기간별 이력이
+있는지부터 실측해야 한다.
+
+#### 왜 지금 factor 코드를 고치지 않는가
+- revision을 되살리는 것은 Factor 코드가 아니라 **데이터 owner의 적재 문제**다.
+- 가중치를 6→5로 다시 선언하는 것은 "없는 것을 없다고 적는" 정직한 조치지만, 되살릴
+  계획이 있다면 오히려 모델 버전을 두 번 바꾸게 된다.
+- 어느 쪽이든 **사람의 결정**이 필요하다. 그때까지 이 사실을 문서가 들고 있는다.
+
+#### 결정이 필요한 것
+1. revision 데이터를 되살릴 것인가(= 예상치 기간별 이력 적재), 아니면
+2. `FactorModel`을 5-category로 다시 선언할 것인가.
+
+둘 중 무엇이든, 바꾼 뒤에는 `FactorModel.version`을 올리고 과거 재현으로 순위 변화를 본다.
+
+---
+
 ## 7. 핵심 고도화 우선순위
 
 ### P1 — 정확성과 신뢰도
@@ -528,6 +584,54 @@ Soft constraint는 infeasible 시 전체 삭제하지 않고:
 \text{Slack variable} + \text{Violation penalty}
 \]
 를 사용한다.
+
+---
+
+### 실측으로 보류한 것 (제안했다가 근거가 무너진 것)
+
+제안이 문서에 남아 있으면 다음 세션이 그것을 근거로 삼는다. **왜 안 했는지**를 함께 남긴다.
+
+#### 구조화 출력 strict 전환 — `보류`
+`json_object`(구식) 대신 `json_schema` + `strict:true`를 쓰면 계약 위반 재요청(LLM 호출 1건)을
+없앨 수 있다고 봤다. Azure `gpt-5-mini(2025-08-07)`이 v1 엔드포인트에서 지원하는 것도 확인했다.
+
+**그런데 그 비용이 실재하지 않는다.** 원장 실측(291건):
+
+```text
+모델에 닿은 시도 59건
+  성공                         57
+  ContractError (근거 ID 인용) 1   ← 스키마 모양이 아니라 의미 위반
+  연결 오류                    1
+```
+
+관측된 유일한 계약 위반은 **허용되지 않은 evidence ID 인용**이고, strict 스키마는 그것을 막지
+못한다(막으려면 허용 ID를 enum으로 넣어야 하는데 evidence bundle은 중앙값 58KB다).
+즉 "재요청 1건을 아낀다"는 근거가 데이터로 뒷받침되지 않는다.
+
+여섯 파일의 스키마 리터럴을 전부 바꾸는 변경 폭에 비해 측정된 이득이 없으므로 하지 않는다.
+재검토 조건: 계약 위반율이 측정 가능한 수준(예: 시도의 5% 이상)으로 오르면.
+
+#### 분석가 5명 병렬화 — `보류`
+5명은 서로의 출력을 읽지 않으므로 병렬화할 수 있고 종목당 지연이 줄어든다.
+
+**그러나 지금 지연을 모른다.** 계측(P0-6)을 방금 붙였고 데이터가 0건이다. 측정 전에
+최적화하는 것은 이 문서가 다른 곳에서 금지하는 바로 그 행동이다.
+
+부작용도 있다 — 같은 모델에 동시 5요청은 TPM 한도를 건드릴 수 있고, 현재 client는 429를
+백오프로 재시도한다. 이득의 크기를 모른 채 그 위험을 들일 이유가 없다.
+
+재검토 조건: `latency_ms_p95`가 30일 이상 쌓인 뒤, 분석가 구간이 실제 병목으로 확인되면.
+
+#### Factor 품질 게이트의 balance_sheet 비대칭 — `보류 (결정 대기)`
+`quality` 결측은 게이트에서 탈락시키면서 `balance_sheet` 결측은 검사를 건너뛴다
+(`score_cross_section`). `FactorModel` 주석은 "품질·재무건전성이 모두" 기준을 넘어야 한다고
+적어 선언과 코드가 어긋난다.
+
+실측(2026-08-14 횡단면 502종목): `balance_sheet`가 결측인데 게이트를 통과하는 종목은
+18개(3.6%)다. 고치면 후보 풀이 그만큼 줄고 **포트폴리오가 바뀐다.**
+
+`_MIN_CATEGORY_COVERAGE` 주변은 이미 "감사 RR2-02, 결정 대기"로 표시돼 있다. 순위에 영향을
+주는 변경은 과거 재현 비교와 사람의 결정을 거친다 — 여기서 단독으로 바꾸지 않는다.
 
 ---
 
