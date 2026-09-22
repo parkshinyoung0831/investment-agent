@@ -35,6 +35,8 @@ from investment_agent.trading.decision.llm.client import OpenAICompatibleClient
 from investment_agent.trading.decision.memory import CaseMemory
 from investment_agent.trading.decision.model_pool import (
     DEFAULT_POOL,
+    UNSTARTED_MODEL,
+    UNSTARTED_PROVIDER,
     ModelPoolError,
     apply_candidate,
     remaining_ticker_budget,
@@ -91,6 +93,7 @@ def _select_and_run(
     조용히 다른 데이터로 대체하지 않는다.
     """
     last_exc: Exception | None = None
+    last_candidate = None
     tried: set[str] = set()
     while True:
         candidate = select_model_for_ticker(
@@ -98,6 +101,10 @@ def _select_and_run(
         )
         if candidate is None:
             if last_exc is not None:
+                # 어떤 후보가 실제로 관여했는지 호출부가 알아야 원장이 정직해진다.
+                # 이것을 버리면 모델이 답한 뒤의 실패까지 "예산 소진"으로 기록되고,
+                # 후보 선정이 그 행을 보고 잘못된 억제 판정을 한다.
+                last_exc.model_candidate = last_candidate
                 raise last_exc
             raise ModelPoolError(
                 "no LLM model pool candidate has budget or a configured API key"
@@ -109,6 +116,7 @@ def _select_and_run(
             return result, candidate
         except Exception as exc:  # noqa: BLE001 - 다음 후보로 넘어가려면 여기서 잡는다
             last_exc = exc
+            last_candidate = candidate
             log.warning(
                 "model pool candidate failed ticker=%s candidate=%s: %s",
                 getattr(bundle, "ticker", "?"), candidate.name, type(exc).__name__,
@@ -118,10 +126,12 @@ def _select_and_run(
 def failure_model(candidate) -> tuple[str, str]:
     """실패한 사례에 남길 (provider, model). 모델이 답한 뒤(제안 검증·저장)에 실패했다면 그 모델이다.
 
-    풀에서 후보를 하나도 못 얻었거나 전부 실패했을 때만 모델이 없어 `exhausted`로 적는다.
+    후보를 하나도 얻지 못했을 때만 `UNSTARTED_PROVIDER/UNSTARTED_MODEL`로 적는다 — 그 표식은
+    "이 종목은 판단을 받은 적이 없다"는 뜻이고, 후보 선정이 재분석 억제에서 그 행을 빼는 근거다
+    (`decision.candidates._last_attempted`). 모델이 관여한 실패를 여기에 섞으면 그 구분이 무너진다.
     """
     if candidate is None:
-        return "model_pool", "exhausted"
+        return UNSTARTED_PROVIDER, UNSTARTED_MODEL
     return candidate.provider, candidate.name
 
 
@@ -381,7 +391,11 @@ def main(argv: list[str] | None = None) -> int:
                 **bundle.to_dict(),
                 "external_evidence": list(external_evidence),
             }
-            failed_provider, failed_model = failure_model(candidate)
+            # `_select_and_run`이 도중에 실패하면 candidate는 아직 None이다. 그때 실제로
+            # 관여한 후보는 예외가 들고 온다 — 없으면 정말로 모델에 닿지 못한 것이다.
+            failed_provider, failed_model = failure_model(
+                candidate if candidate is not None else getattr(exc, "model_candidate", None)
+            )
             archived = archive_case_evidence(
                 case_key=case_key,
                 evidence_bundle=failed_evidence_bundle,

@@ -8,8 +8,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
-from investment_agent.trading.decision.analysis import _select_and_run
-from investment_agent.trading.decision.model_pool import CALLS_PER_TICKER_ESTIMATE, ModelCandidate, ModelPoolError
+from investment_agent.trading.decision.analysis import _select_and_run, failure_model
+from investment_agent.trading.decision.model_pool import (
+    CALLS_PER_TICKER_ESTIMATE, UNSTARTED_MODEL, UNSTARTED_PROVIDER,
+    ModelCandidate, ModelPoolError, never_reached_a_model,
+)
 
 NOW = datetime(2026, 9, 3, 12, 0, tzinfo=timezone.utc)
 
@@ -325,13 +328,66 @@ class FailureModelTest(unittest.TestCase):
         self.assertEqual(("model_pool", "exhausted"), failure_model(None))
 
     def test_main_records_failures_through_failure_model(self):
+        """main이 (provider, model)을 직접 짓지 않고 failure_model을 거치는가."""
         import inspect
         from investment_agent.trading.decision import analysis
 
         source = inspect.getsource(analysis.main)
-        self.assertIn("failure_model(candidate)", source)
+        self.assertIn("failure_model(", source)
         self.assertNotIn('"exhausted"', source)
 
+    def test_main_falls_back_to_the_candidate_the_exception_carries(self):
+        """`_select_and_run`이 도중에 실패하면 지역 candidate는 None이다.
+
+        그 경우까지 `failure_model(None)`로 보내면 모델이 답한 실패도 '시작 못 함'으로
+        기록되고, 후보 선정이 그 행을 보고 잘못된 억제 판정을 한다.
+        """
+        import inspect
+        from investment_agent.trading.decision import analysis
+
+        source = inspect.getsource(analysis.main)
+        self.assertIn('getattr(exc, "model_candidate", None)', source)
+
+
+
+class FailureAttributionTest(unittest.TestCase):
+    """실패를 원장에 적을 때 어떤 모델이 관여했는지가 정확해야 한다.
+
+    `failure_model`이 모두 `exhausted`로 적으면 후보 선정이 "판단을 받은 적 없는 종목"과
+    "모델이 답한 뒤 실패한 종목"을 구분하지 못한다. 실측(2026-09-22)에서 모델이 제안까지
+    만든 ContractError 실패도 `exhausted`로 기록돼 있었다.
+    """
+
+    def test_a_failure_after_a_model_answered_names_that_model(self):
+        with tempfile.TemporaryDirectory() as temp,              mock.patch.dict(os.environ, {"KEY_A": "a"}, clear=False):
+            pool = (_candidate("a", api_key_env="KEY_A"),)
+
+            def boom(bundle, memory_text, runner):
+                raise RuntimeError("proposal cites unknown evidence")
+
+            with self.assertRaises(RuntimeError) as caught:
+                _select_and_run(
+                    object(), memory_text="", pool=pool,
+                    ledger_path=Path(temp) / "ledger.sqlite3", runner=object(), attempt=boom,
+                )
+            self.assertEqual("a", caught.exception.model_candidate.name)
+            self.assertEqual(
+                ("openai_compatible", "a"), failure_model(caught.exception.model_candidate)
+            )
+
+    def test_never_getting_a_candidate_is_recorded_as_unstarted(self):
+        """키가 없어 후보를 못 얻으면 모델에 닿지 못한 것이다 — 그 종목을 억제하면 안 된다."""
+        with tempfile.TemporaryDirectory() as temp,              mock.patch.dict(os.environ, {}, clear=True):
+            pool = (_candidate("a", api_key_env="MISSING_KEY"),)
+            with self.assertRaises(ModelPoolError):
+                _select_and_run(
+                    object(), memory_text="", pool=pool,
+                    ledger_path=Path(temp) / "ledger.sqlite3", runner=object(),
+                    attempt=lambda bundle, memory_text, runner: "ok",
+                )
+        self.assertEqual((UNSTARTED_PROVIDER, UNSTARTED_MODEL), failure_model(None))
+        self.assertTrue(never_reached_a_model(UNSTARTED_PROVIDER, UNSTARTED_MODEL))
+        self.assertFalse(never_reached_a_model("openai_compatible", "azure-gpt-5-mini"))
 
 if __name__ == "__main__":
     unittest.main()

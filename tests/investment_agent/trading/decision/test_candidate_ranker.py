@@ -13,6 +13,7 @@ from investment_agent.trading.decision.candidate_ranker import (
 )
 from investment_agent.research.evidence.reader import guru_candidate_signals
 from investment_agent.trading.decision.candidates import _segment_candidate_signals
+from investment_agent.trading.decision.model_pool import UNSTARTED_MODEL, UNSTARTED_PROVIDER
 from investment_agent.trading.supabase_repository import SupabaseRepository
 from investment_agent.trading.decision import analysis
 
@@ -322,7 +323,9 @@ class CandidateCoverageRepositoryTest(unittest.TestCase):
     @classmethod
     def _repository_with(cls, rows, *, identities=None):
         """Trading 원장 읽기와 Data 신원 해석, 두 경계만 대신한다."""
-        ledger = [{"security_id": cls._IDS[row["ticker"]], "status": row["status"], "as_of_at": row["as_of_at"]}
+        ledger = [{"security_id": cls._IDS[row["ticker"]], "status": row["status"], "as_of_at": row["as_of_at"],
+                   "model_provider": row.get("model_provider", "openai_compatible"),
+                   "model_name": row.get("model_name", "azure-gpt-5-mini")}
                   for row in rows]
         reverse = {value: key for key, value in cls._IDS.items()} if identities is None else identities
         trading = mock.Mock()
@@ -369,6 +372,31 @@ class CandidateCoverageRepositoryTest(unittest.TestCase):
 
     def test_failed_attempts_count_for_rotation_but_not_for_coverage(self):
         rows = [{"case_key": "bad", "ticker": "NVDA", "as_of_at": "2026-08-20T21:00:00+00:00", "status": "failed"}]
+        trading, identity = self._repository_with(rows)
+        with trading, identity:
+            attempted = SupabaseRepository()._last_attempted(["NVDA"], as_of_at=_AS_OF)
+        self.assertEqual(datetime(2026, 8, 20, 21, tzinfo=timezone.utc), attempted["NVDA"])
+
+    def test_an_attempt_that_never_reached_a_model_does_not_suppress_the_ticker(self):
+        """예산 소진은 그 종목의 장애가 아니다. 억제하면 판단받은 적 없는 종목이 순환에서 빠진다.
+
+        실측(2026-09-22): 원장 290종목 중 232종목이 이 이유로 28일 동안 억제돼 있었다.
+        오류도 경고도 없이 후보 명단에서만 사라진다.
+        """
+        rows = [{"case_key": "never-ran", "ticker": "NVDA", "as_of_at": "2026-08-20T21:00:00+00:00",
+                 "status": "failed", "model_provider": UNSTARTED_PROVIDER, "model_name": UNSTARTED_MODEL}]
+        trading, identity = self._repository_with(rows)
+        with trading, identity:
+            attempted = SupabaseRepository()._last_attempted(["NVDA"], as_of_at=_AS_OF)
+        self.assertEqual({}, attempted)
+
+    def test_a_failure_after_the_model_answered_still_suppresses_the_ticker(self):
+        """모델이 답한 뒤의 실패는 그 종목에서 실제로 일어난 일이라 센다.
+
+        세지 않으면 계약을 계속 어기는 종목 하나가 예산을 영원히 되풀이해 태운다.
+        """
+        rows = [{"case_key": "bad-proposal", "ticker": "NVDA", "as_of_at": "2026-08-20T21:00:00+00:00",
+                 "status": "failed", "model_provider": "openai_compatible", "model_name": "azure-gpt-5-mini"}]
         trading, identity = self._repository_with(rows)
         with trading, identity:
             attempted = SupabaseRepository()._last_attempted(["NVDA"], as_of_at=_AS_OF)

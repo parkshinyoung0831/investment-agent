@@ -199,14 +199,18 @@ class TradingRepository:
         )
 
     def security_decision_attempts(self) -> list[dict[str, Any]]:
-        """저장된 모든 판단 시도의 security_id·status·as_of_at을 읽는다.
+        """저장된 모든 판단 시도의 security_id·status·as_of_at과 관여한 모델을 읽는다.
 
         후보 선정이 "마지막으로 분석한 시각"과 "마지막으로 시도한 시각"을 계산하는 입력이다.
         원장은 ticker가 아니라 security_id를 저장하므로 ticker 해석은 Data owner가 한다.
+
+        model_provider·model_name도 함께 읽는다 — 실패한 시도가 **모델에 닿은 실패**인지
+        예산이 없어 시작조차 못 한 것인지를 후보 선정이 구분해야 하기 때문이다
+        (`decision.model_pool.never_reached_a_model`).
         """
         return list(
             self._db.table(SCHEMA, T_SECURITY_DECISIONS)
-            .select("security_id,status,as_of_at")
+            .select("security_id,status,as_of_at,model_provider,model_name")
             .execute()
             .data
             or []

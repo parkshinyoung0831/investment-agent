@@ -44,6 +44,26 @@ class ModelPoolError(RuntimeError):
     """풀 후보를 안전하게 적용할 수 없을 때 발생한다."""
 
 
+# 모델을 한 번도 부르지 못한 시도를 원장에 적을 때 쓰는 (provider, model) 짝.
+# 예산 소진·API 키 부재처럼 **그 종목과 무관한 이유**로 시작조차 못 한 경우다.
+# 쓰는 쪽(`decision.analysis.failure_model`)과 읽는 쪽(`decision.candidates._last_attempted`)이
+# 같은 값을 봐야 하므로 문자열을 양쪽에 흩뿌리지 않고 여기서 소유한다.
+UNSTARTED_PROVIDER = "model_pool"
+UNSTARTED_MODEL = "exhausted"
+
+
+def never_reached_a_model(provider: object, model: object) -> bool:
+    """이 판단 시도가 모델에 닿기 전에 끝났는가.
+
+    참이면 그 종목에 대해 아무것도 판단하지 않은 것이다 — 재분석 주기 계산에서
+    "분석했다"로 세면 안 된다.
+    """
+    return (
+        str(provider or "").strip() == UNSTARTED_PROVIDER
+        and str(model or "").strip() == UNSTARTED_MODEL
+    )
+
+
 @dataclass(frozen=True)
 class ModelCandidate:
     """회전 풀의 항목 하나 — 어떤 provider의 어떤 모델을 어떤 키로 부르는가."""
@@ -248,6 +268,9 @@ def apply_candidate(candidate: ModelCandidate) -> Iterator[None]:
 
 __all__ = [
     "remaining_ticker_budget",
+    "UNSTARTED_MODEL",
+    "UNSTARTED_PROVIDER",
+    "never_reached_a_model",
     "CALLS_PER_TICKER_ESTIMATE",
     "DEFAULT_POOL",
     "GROQ_BASE_URL",

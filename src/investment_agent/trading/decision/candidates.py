@@ -23,6 +23,7 @@ from investment_agent.trading.decision.candidate_ranker import (
 from investment_agent.trading.contracts import ContractError, parse_datetime
 from investment_agent.trading.repository import LedgerAccess
 from investment_agent.research.adapters.trading import (guru_candidate_signals, latest_cross_section, score_cross_section, technical_features_since)
+from investment_agent.trading.decision.model_pool import never_reached_a_model
 from investment_agent.trading.decision.universe import normalize_ticker
 from investment_agent.trading.decision.event_impact import PROXY_BY_THEME, global_event_priorities
 from investment_agent.trading.portfolio.market_risk import estimate_betas
@@ -308,14 +309,28 @@ class CandidateSelection(LedgerAccess):
         return selected
 
     def _last_attempted(self, tickers: list[str], *, as_of_at: datetime) -> dict[str, datetime]:
-        """마지막 분석 시각. 실패한 시도도 포함한다 — 한 종목의 장애가 순환·재분석을 막지 않게."""
+        """마지막 분석 시각. **모델이 실제로 관여한** 시도만 센다.
+
+        모델이 답한 뒤의 실패는 포함한다 — 그건 그 종목에서 실제로 일어난 일이고,
+        세지 않으면 고장난 종목 하나가 순환을 영원히 붙잡는다.
+
+        모델에 닿기도 전에 끝난 시도(예산 소진·API 키 부재)는 세지 않는다. 그것은 그
+        종목과 무관한 시스템 상태다. 이것을 "분석했다"로 세면 해당 종목이
+        `FACTOR_REFRESH_DAYS`(28일) 동안 factor 순환에서 빠진다 — 판단을 받은 적이
+        없는데도. 실측(2026-09-22): 원장의 290종목 중 232종목이 그렇게 억제돼 있었고,
+        원인이 된 예산 초과 설정은 이미 막혔는데 원장에 남은 행의 효과만 계속됐다.
+        """
         last_analyzed = self._candidate_last_analyzed(tickers, as_of_at=as_of_at)
+        members = set(tickers)
         for row in self._decision_attempts():
-            ticker=normalize_ticker(row.get('ticker'))
-            if ticker in tickers and row.get('status')=='failed' and row.get('as_of_at'):
-                attempted=parse_datetime(row['as_of_at'])
-                if attempted <= as_of_at and (ticker not in last_analyzed or attempted > last_analyzed[ticker]):
-                    last_analyzed[ticker]=attempted
+            ticker = normalize_ticker(row.get("ticker"))
+            if ticker not in members or row.get("status") != "failed" or not row.get("as_of_at"):
+                continue
+            if never_reached_a_model(row.get("model_provider"), row.get("model_name")):
+                continue
+            attempted = parse_datetime(row["as_of_at"])
+            if attempted <= as_of_at and (ticker not in last_analyzed or attempted > last_analyzed[ticker]):
+                last_analyzed[ticker] = attempted
         return last_analyzed
 
     def event_reanalysis_priorities(
