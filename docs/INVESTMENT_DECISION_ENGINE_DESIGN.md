@@ -32,7 +32,7 @@
 
 | 영역 | 현재 | 판정 | 우선 후보 |
 |---|---|---|---|
-| Factor categories | 선언은 6개이나 **Revision은 259일 전체에서 값이 0건** — 실제로는 5개로 돈다 | REFINE | 데이터 복구 또는 5-category 재선언 (`SYSTEM_UPGRADE_MASTER.md` P0-7) |
+| Factor categories | 6개 (Quality, Balance Sheet, Growth, Value, Revision, Momentum). Revision의 입력(관측 컨센서스)은 2026-09-13부터 들어오므로 그 이전 feature 스냅샷에서는 비어 있다 | KEEP | feature store 재적재 (`SYSTEM_UPGRADE_MASTER.md` P0-7) |
 | Factor missingness | available category renormalization (`quality` 결측은 이미 탈락, `balance_sheet`는 결측 시 검사를 건너뜀) | REFINE | coverage-aware penalty + balance_sheet 구멍 |
 | Factor weights | equal weight | CHALLENGER | shrunken IC / ICIR weight |
 | Factor orthogonalization | 없음 | RESEARCH | residualization / PCA ablation |

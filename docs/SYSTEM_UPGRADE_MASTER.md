@@ -476,114 +476,109 @@ input_tokens/ticker, output_tokens/ticker, cost/ticker, latency p50/p95/p99
 
 ---
 
-### P0-7 Revision factor는 한 번도 값을 가진 적이 없다
+### P0-7 feature store가 40일 낡아 factor 경로가 통째로 fallback 중이었다
 
-- **상태**: `OPEN`
-- **대상**: `src/investment_agent/research/features/layer.py:_revisions`,
-  `src/investment_agent/research/evidence/statistics.py`(consensus 통계),
-  그리고 그 입력인 fundamentals 시장 예상치 저장 방식
-- **성격**: 에러 없이 조용히 틀린다. 6-factor 모델이 실제로는 5-factor로 돈다.
+- **상태**: `FIXED` (적재 완료. 재발 감지는 기존 하네스 health·dead-man이 소유)
+- **대상**: research feature store 적재(`feature_store` job), `research/features/layer.py`
+- **성격**: 에러 없이 조용히 다른 경로로 돈다.
 
-#### 실측 (2026-09-22)
-research feature store의 **모든** 횡단면에서 revision 계열이 비어 있다.
+#### 이 절의 앞선 판정은 틀렸다
+처음에는 "Revision factor가 한 번도 값을 가진 적이 없다 — 6-factor가 5-factor로 돈다"고 적었다.
+증상(259일 전체에서 revision 0건)은 맞지만 **원인이 틀렸다.** 추적 결과:
 
 ```text
-feature snapshot 날짜 범위 : 2021-09-03 ~ 2026-08-14 (259일)
-revision_breadth_30d 가 하나라도 있던 날 : 0일
-최신 횡단면(2026-08-14, 502종목)의 결측률
-  revision        502/502  100.0%   ← 컬럼은 있는데 값이 전부 NULL
-  balance_sheet    29/502    5.8%
-  value            20/502    4.0%
-  growth           13/502    2.6%
-  quality          12/502    2.4%
-  momentum          2/502    0.4%
+captured_live 컨센서스 최초 수집 : 2026-09-13   (collected_at 최솟값)
+feature store 최신 스냅샷        : 2026-08-14
 ```
 
-#### 왜 조용한가
-`score_cross_section`은 결측 category를 빼고 **남은 category로 재정규화**한다. revision이
-전부 빠져도 composite은 계산되고, 점수도 순위도 정상으로 보인다. 다만 revision에 배정된
-가중치가 나머지 다섯에 조용히 재분배된다.
+revision feature의 입력인 관측 컨센서스가 **마지막 feature 빌드보다 한 달 뒤에 들어오기
+시작했다.** 그래서 모든 과거 스냅샷에서 revision이 비어 있는 것은 정상이다 — 그때는 입력이
+없었다. `observed_consensus_as_of`가 `snapshot_kind='captured_live'`만 읽는 것도 설계대로다
+(reconstructed 행은 PIT가 아니다).
 
-즉 `INVESTMENT_DECISION_ENGINE_DESIGN.md`의 Master Decision Matrix가 적은
-`Factor categories | 6개 | KEEP`은 **문서가 코드를 잘못 기술한 것이 아니라,
-코드가 선언한 6개 중 하나가 데이터로 한 번도 실현된 적이 없는 것**이다.
+**오늘 기준으로는 계산된다.** 실측(2026-09-23, 10종목 표본):
 
-#### 원인 방향 (확정 아님)
-`_revisions()`는 `consensus_statistics`를 읽고, 그것은
-`revisions_up_30d`/`revisions_down_30d`와 **같은 회계기간의 이전 consensus 행**을 요구한다
-(`statistics.py`의 `comparable`). 시장 예상치를 현재값 한 행으로만 저장하면 비교 대상이
-없어 `eps_avg_change`가 영원히 계산되지 않는다 — 실적 서프라이즈가 발표 직전 스냅샷을
-요구하는 것과 같은 뿌리다.
-
-**이 절은 원인을 확정하지 않는다.** 확정하려면 fundamentals 예상치 저장에 기간별 이력이
-있는지부터 실측해야 한다.
-
-#### 왜 지금 factor 코드를 고치지 않는가
-- revision을 되살리는 것은 Factor 코드가 아니라 **데이터 owner의 적재 문제**다.
-- 가중치를 6→5로 다시 선언하는 것은 "없는 것을 없다고 적는" 정직한 조치지만, 되살릴
-  계획이 있다면 오히려 모델 버전을 두 번 바꾸게 된다.
-- 어느 쪽이든 **사람의 결정**이 필요하다. 그때까지 이 사실을 문서가 들고 있는다.
-
-#### 결정이 필요한 것
-1. revision 데이터를 되살릴 것인가(= 예상치 기간별 이력 적재), 아니면
-2. `FactorModel`을 5-category로 다시 선언할 것인가.
-
-둘 중 무엇이든, 바꾼 뒤에는 `FactorModel.version`을 올리고 과거 재현으로 순위 변화를 본다.
-
----
-
-## 7. 핵심 고도화 우선순위
-
-### P1 — 정확성과 신뢰도
-
-#### 7.1 Multi-class valuation
-회사의 경제적 시가총액은:
-\[
-MarketCap_{issuer} = \sum_c Shares_c \times Price_c
-\]
-로 계산하는 것을 목표로 한다.
-현재 class share 총합 개선은 존재하지만 BRK.A/B처럼 economic value가 다른 share class는 별도 검증이 필요하다.
-
-#### 7.2 Factor Missingness
-현재 available category만 재정규화하면 coverage가 낮은 종목이 불합리하게 높은 점수를 받을 가능성이 있다.
-Production에 특정 해법을 바로 넣지 않고 다음 challenger를 비교한다:
-- Neutral Missing
-- Coverage Penalty
-- Mandatory Core Categories
-- Bayesian shrinkage toward neutral
-
-판정 기준: OOS Rank IC, ICIR, Turnover, Stability, Coverage bias.
-
-#### 7.3 Signal Reliability Layer
-현재 Factor·ML·LLM confidence는 서로 다른 의미를 가진다.
-이를:
 ```text
-Signal
-Reliability
-Uncertainty
-Freshness
-Data Quality
+AAPL MSFT NVDA JPM XOM WMT PG KO CAT GM  →  10/10에서 revision feature 산출
+예: NVDA revision_breadth_30d=0.95, GM revision_eps_change=0.0108
 ```
-로 분리한다. 개념적으로:
-\[
-\alpha_{effective} = Signal \times Reliability \times Freshness \times DataQuality
-\]
-를 사용한다. 단, 실제 계산식은 `INVESTMENT_DECISION_ENGINE_DESIGN.md`의 challenger 검증을 거친다.
 
-#### 7.4 ML Promotion Governance
-Model evaluation 당시의:
-- candidate count, evaluation ID, dataset hash, required t-stat, multiple-comparison setting
-을 artifact에 immutable하게 남긴다. Adoption 단계에서 동일 context를 다시 검증한다.
+즉 `FactorModel`을 5-category로 다시 선언할 이유가 없고, 코드를 고칠 것도 없다.
+**feature store를 다시 빌드하면 revision이 채워진다.**
 
-#### 7.5 Optimizer constraint hierarchy
-Constraint를 구분한다:
-- **Hard**: Position cap, Sector cap, Cash floor, Long-only, Forced exit, Crisis safety
-- **Soft**: Quality target, Momentum target, Value target
-Soft constraint는 infeasible 시 전체 삭제하지 않고:
-\[
-\text{Slack variable} + \text{Violation penalty}
-\]
-를 사용한다.
+#### 진짜 문제
+feature store가 **40일 낡았다**(2026-08-14 → 2026-09-23). 그 결과가 조용하다:
+
+```text
+FACTOR_SNAPSHOT_MAX_AGE_DAYS = 4
+최근 4일 창의 feature snapshot 행 = 0
+→ factor_cross_section()이 None을 돌려준다
+   · 후보 선정이 legacy_rotation 경로로 떨어진다 (경고 로그는 남는다)
+   · System 목표는 factor 횡단면이 없어 갱신되지 않는다
+```
+
+`candidates.py`의 fallback은 의도된 것이다("분석 대상 선정은 주문이 아니므로 fail-open").
+문제는 **그 fallback이 40일째 상시 경로가 돼 있다는 것**이다. 설계 문서가 기술하는
+factor 기반 후보 선정·System 목표는 지금 돌고 있지 않다.
+
+#### 조치 결과 (2026-09-22, `FIXED`)
+선언된 순서대로 적재했다. 과거 백필은 하지 않았다 — 그때는 입력이 없었으므로 backfill해도
+revision은 여전히 빈다.
+
+```text
+build_valuations : 503종목 upsert (with_market_cap 497, meaningful_pe 463)
+build_features   : 503종목 upsert (with_valuation 503, failed 0)
+```
+
+적재 전후 category 결측률:
+
+```text                        전      후
+  revision            100.0%  →   2.0%
+  balance_sheet         5.8%  →   5.8%
+  value                 4.0%  →   4.4%
+  growth                2.6%  →   3.0%
+  quality               2.4%  →   2.2%
+  momentum              0.4%  →   1.0%
+```
+
+6개 category를 모두 가진 종목 446/503. 품질 게이트 통과 347/503.
+`factor_cross_section()`이 다시 값을 돌려주므로 후보 선정이 legacy_rotation fallback에서
+정상 경로로 돌아왔다.
+
+#### 재발 감지 — 새 가드를 만들지 않았다
+처음에는 일일 ops 카드에 feature store 신선도 카운터를 넣으려 했다. **잘못된 자리였다.**
+기존 가드 둘이 그것을 바로 잡았다:
+
+- `ops_heartbeat`는 GitHub Actions에서 돈다. research DuckDB는 **로컬 전용 저장소**라 그 러너에
+  파일 자체가 없다. 읽으려 하면 항상 "비어 있음"이 되어 거짓 경보가 된다.
+- 그 진입점의 dependency group에 `duckdb`가 없어 import부터 죽는다.
+
+원인을 다시 보면 feature store 신선도는 **증상이지 원인이 아니다.** 실제 상태:
+
+```text
+하네스 실행 상태 : 정지됨 (STOPPED)
+feature_store job : succeeded (= 마지막으로 돌았을 때의 결과)
+```
+
+하네스가 멈춰 있어서 daily job이 돌지 않았을 뿐이다. `feature_store: succeeded`는 현재
+신선도가 아니라 **마지막 실행 결과**다 — 상태 단어를 신선도로 읽으면 안 된다.
+
+이 경우를 잡는 장치는 이미 있다:
+
+- `operations/harness/health.py:inspect_health`가 `process_status`를 `running/stale/stopped/
+  never_started`로 판정하고 `healthy`는 `running`일 때만 참이다.
+- `operations/monitoring/counters.py:ping()`이 외부 dead-man switch에 생존을 알린다.
+
+따라서 새 카운터를 만들지 않는다. **필요한 것은 코드가 아니라 하네스를 다시 띄우는 것**이고,
+그것이 멈췄을 때 알리는 경로는 이미 선언돼 있다.
+
+남는 것은 운영 질문 하나다 — 로컬 하네스가 멈췄을 때 그 dead-man ping이 실제로 사람에게
+닿는지는 이 세션에서 확인하지 않았다.
+
+#### 남는 질문 (결정 필요 없음, 관찰만)
+revision이 채워지기 시작하면 factor composite의 분모가 5에서 6으로 바뀌어
+**모든 종목의 종합 점수가 재정규화된다.** 순위가 얼마나 흔들리는지는 적재 직후
+과거 재현으로 한 번 보는 것이 좋다 — 판단이 아니라 관찰이다.
 
 ---
 
