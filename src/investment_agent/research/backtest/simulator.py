@@ -113,7 +113,10 @@ class SimulatedBroker:
         ))
 
     def apply_actions(self, session_date: str, actions: Sequence[CorporateAction]) -> None:
-        """같은 날의 split, 지급일 현금배당 순서로 장 시작 전에 적용한다."""
+        """같은 날의 split, 지급일 현금배당 순서로 장 시작 전에 적용한다.
+
+        `config.price_basis == "split_adjusted"`면 가격이 이미 분할을 반영하고 있으므로
+        split 이벤트가 수량을 바꾸지 않는다 — 수량까지 곱하면 시가총액이 이중으로 뛴다."""
         for action in sorted(
             actions,
             key=lambda item: (item.symbol, item.kind != "split", item.action_id),
@@ -122,7 +125,7 @@ class SimulatedBroker:
             before = position.quantity
             cash_amount = 0.0
             if action.kind == "split":
-                if before > _EPSILON:
+                if before > _EPSILON and self.config.price_basis != "split_adjusted":
                     position.quantity *= action.value
                     self.positions[action.symbol] = position
             elif action.kind == "dividend" and before > _EPSILON:

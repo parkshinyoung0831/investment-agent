@@ -37,6 +37,15 @@ class ReconciliationRepository(Protocol):
         *,
         expected_status: str | None = None,
     ) -> None: ...
+    def begin_reconciliation_run(self, *, started_at: datetime | None = None) -> int: ...
+    def finish_reconciliation_run(
+        self,
+        reconciliation_id: int,
+        *,
+        status: str,
+        payload: dict,
+        finished_at: datetime | None = None,
+    ) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -287,7 +296,32 @@ class TossReconciliationWorker:
         return changed or remote_status != local_status
 
     def run_once(self, *, now: datetime | None = None) -> ReconciliationSummary:
+        """`reconciliation_runs`에 시작·종료를 남긴다 — 화면의 "대사 실행" 패널이 이 기록을 읽는다."""
         current = parse_datetime(now or datetime.now(timezone.utc))
+        reconciliation_id = self.repository.begin_reconciliation_run(started_at=current)
+        try:
+            summary = self._run_once(current)
+        except Exception:
+            self.repository.finish_reconciliation_run(
+                reconciliation_id, status="failed", payload={}, finished_at=datetime.now(timezone.utc),
+            )
+            raise
+        self.repository.finish_reconciliation_run(
+            reconciliation_id,
+            status="mismatch" if summary.position_mismatches else "ok",
+            payload={
+                "inspected": summary.inspected,
+                "updated": summary.updated,
+                "unresolved_unknown": list(summary.unresolved_unknown),
+                "external_open_order_ids": list(summary.external_open_order_ids),
+                "position_check": summary.position_check,
+                "position_mismatches": len(summary.position_mismatches),
+            },
+            finished_at=datetime.now(timezone.utc),
+        )
+        return summary
+
+    def _run_once(self, current: datetime) -> ReconciliationSummary:
         local = self.repository.reconcilable_orders(account_seq=self.account_seq)
         known_ids = {
             str(row["broker_order_id"])

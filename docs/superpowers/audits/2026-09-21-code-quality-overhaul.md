@@ -77,7 +77,7 @@ research·reporting 20 (`RR2-*`) · 워크플로·시각·그 밖 4 (`AU-*`).
 | RR2-05 | `revision_eps_change`에 비교 기간이 없다 — 하루 전과 반년 전이 같은 열에 섞인다 | 확정 | 낮음 | 보고만 |
 | RR2-06 | **총수익률이 분할을 두 번 반영한다** (사후평가·RL 보상) | 확정(운영 대조) | 높음 | 수정됨 |
 | RR2-06a | 그 결함을 가리던 테스트 픽스처 2개(미조정 종가) | 확정(운영 대조) | 높음 | 수정됨 |
-| RR2-07 | 백테스트 시뮬레이터가 분할을 수량에 적용한다 — 저장소 가격은 이미 조정됨 | 확정 | 중간 | 잠복(생산자 없음) |
+| RR2-07 | 백테스트 시뮬레이터가 분할을 수량에 적용한다 — 저장소 가격은 이미 조정됨 | 확정 | 중간 | 수정됨(9.7절) |
 | RR2-08 | 순부채가 같은 카드 안에서 두 정의로 계산된다(단기투자자산 차감 여부) | 확정 | 중간 | 수정됨 |
 | RR2-09 | `total_debt` 정의가 reporting과 research에서 다르다(운용리스 포함 여부) | 확정 | 중간 | 수정됨(재적재 진행 중) |
 | RR2-10 | EBITDA가 음수면 `net_debt_to_ebitda`가 음수로 나와 "건전해 보인다" | 확정 | 중간 | 수정됨 |
@@ -129,7 +129,7 @@ research·reporting 20 (`RR2-*`) · 워크플로·시각·그 밖 4 (`AU-*`).
 | EX2-08 | 어댑터 문서는 "재시도 없음"인데 `_request`가 401에서 POST를 다시 보낸다 | 의심 | 중간 | 보고만(사용자 결정) |
 | EX2-09 | 매수 현금 여유가 세 숫자로 흩어져 서로 모순되는지 아무도 검사하지 않는다 | 확정 | 중간 | 수정됨 |
 | EX2-10 | `commissionRate` 단위에 상·하한 검증이 없다 — 퍼센트 단위면 필요 현금 100배 | 의심 | 중간 | 수정됨 |
-| EX2-12 | `reconciliation_runs`에 쓰는 코드가 없어 "대사 실행" 패널이 항상 비어 있다 | 확정 | 중간 | 보고만 |
+| EX2-12 | `reconciliation_runs`에 쓰는 코드가 없어 "대사 실행" 패널이 항상 비어 있다 | 확정 | 중간 | 수정됨(9.7절) |
 | EX2-13 | `expire_due_approvals`를 아무도 부르지 않아 만료 승인이 `pending`으로 남는다 | 확정 | 중간 | 수정됨 |
 | EX2-14 | src 참조 0건인 실행 경계 정의 4개(TE-14 목록 밖) | 확정 | 낮음 | 보고만 |
 | EX2-15 | `LifecyclePromotionGate`의 최대낙폭 비교 부호가 거꾸로 — 어떤 낙폭도 위반이 아니다 | 확정 | 낮음 | 수정됨 |
@@ -256,8 +256,9 @@ SEC 접수를 기다리는 구조상 불가피하다.
   준비를 창 밖으로 뺄지), EX2-08(401 재전송 허용 여부), EX2-16(거절·결과불명 주문의 한도 소진 규칙),
   OP2-06(실주문 플래그·킬스위치 변경에 확인 문구를 요구할지).
 - **설계 결정**: EX2-11(`fills`를 브로커 집계 스냅샷에서 파생할지, 소비자를 `orders`의 체결 수량으로
-  옮길지 — 개별 체결 id가 없다), EX2-12(`reconciliation_runs` 생산자), TR2-15(Dossier 계층 삭제 vs 연결),
-  RR2-07(백테스트 `price_basis` 계약), TR2-14(시나리오별 스트레스 한도 값), RR2-15(최대낙폭 부호 규약 통일).
+  옮길지 — 개별 체결 id가 없다), TR2-15(Dossier 계층 삭제 vs 연결), TR2-14(시나리오별 스트레스 한도 값),
+  RR2-15(최대낙폭 부호 규약 통일). EX2-12·RR2-07은 9.7절에서 코드로 정리됐다(값 결정이 아니라
+  누락된 배선·미지원 계약이었다).
 - **재적재**: RR2-01·RR2-02·RR2-03이 feature 값을 바꾼다 → 저장된 feature snapshot·label·학습 표본을 지우고 다시 적재한다(`scripts/reset_feature_version_stores.py`, 버전 컬럼은 이후 제거됨).
   RR2-06 수정은 이미 저장된 `decision_experiences`·평가 원장의 분할 구간 행을 오염 상태로 남긴다 →
   재계산 대상. **실행은 사용자가 한다.**
@@ -410,6 +411,15 @@ SQL Editor(HTTPS, 5432 무관)로 옮겨 사용자가 직접 실행했다 — �
 사용자 실행 원칙을 그대로 지켰다. 유령 발표 이벤트 67건(FED_NET_LIQUIDITY 19·US_CONTINUING_CLAIMS 24·
 US_INITIAL_CLAIMS 24) 삭제를 확인했다. own_model 예상값은 `econ_calendar_daily`가 매일 자동으로
 다시 채운다(미래 발표분만 — 이미 지난 발표는 실제값이 있어 다시 만들 필요가 없다).
+
+### 9.7 다섯 번째 묶음 — 실측 후 판정이 가능했던 항목 (같은 날, 사용자 지시로 계속)
+
+| ID | 고친 것 | 파일 | 검증 |
+|---|---|---|---|
+| RR2-07 | 백테스트 엔진이 항상 "raw 가격 + split을 수량에 적용" 규약만 지원해, 저장소의 split-adjusted 가격을 넣으면 시가총액이 이중 반영됐다(현재 연결된 생산자는 없어 사용자에게 간 숫자는 없다) → `BacktestConfig.price_basis`("raw"\|"split_adjusted")를 추가하고, `split_adjusted`면 split이 수량을 바꾸지 않게 했다 | `research/backtest/contracts.py`, `research/backtest/simulator.py` | 테스트 3개(4:1 split 재현 시나리오로 수량·평가액 불변 확인, 잘못된 값 거부). 조건 제거 시 수량이 5→20으로 틀어짐을 확인 |
+| EX2-12 | `reconciliation_runs`에 쓰는 코드가 없어 실행 화면의 "대사 실행" 패널이 항상 비어 있었다 → `run_once`가 시작 시각에 `running` 행을 만들고, 종료 시 `ok`/`mismatch`/`failed`와 inspected·updated·position_check 등을 채워 넣는다(읽기 쪽은 이미 배선돼 있었다) | `execution/reconciliation/repository.py`(신규 `begin_reconciliation_run`/`finish_reconciliation_run`), `execution/reconciliation/worker.py` | 테스트 2개(정상 종료 기록, 예외 시 `failed` 기록). 배선 제거 시 2건 실패 확인 |
+| FD3-02 | `fy`를 못 읽으면 `period_end.year`로 채우던 것(의심 단계였다) → **실측**: 로컬에 캐시된 SEC FSDS 70개 분기(2009q1~2026q2, sub.txt 433,717행)를 직접 세어 보니 2.84%(12,303행)가 `fy` 결측/파싱 불가였다 — 무시할 수 없는 비율이고, 이 파일의 다른 필드(`qtrs` 등, FD3-01)와 이미 정해둔 규약("못 읽으면 행을 버린다")과도 어긋나 있었다. 같은 규약으로 통일해 `continue`(행 버림)로 바꿨다 | `data/fundamentals/domain/services/normalize_segment_facts.py` | 테스트 2개(정상 fy는 그대로, 결측 fy는 빈 결과). `period_end.year` 대체로 되돌리면 실패 확인 |
+| TR3-02 | 전역 사건 조회(`_recent_global_events`)가 저장소를 전 기간 읽고 파이썬에서 48시간만 남기는 것 — **실측**: 로컬 research DuckDB의 실제 사건 2,082건을 직접 조회했다. `occurred_at`↔`available_at` 격차는 티커 사건 전체로는 41%가 48시간을 넘지만(최대 6,133시간), 이 함수가 실제로 읽는 대상인 **전역 사건**(ticker 없음, 222건)만 보면 격차가 0~13.2시간으로 48시간 window 안에 전부 들어온다. 다만 저장소 쓰기 경로를 확인해 보니 `Event`가 애초에 `as_of_at` 필드를 갖지 않아 `records()`의 `start_as_of` 파라미터로 거르면 물리 컬럼이 전부 NULL이라 **0건이 조용히 반환된다** — 지금 "전 기간 읽기"는 비효율이 아니라 이 스키마에서 유일하게 안전한 방법이었다. 그래서 좁히지 않았다 | (수정 없음, 조사만) | — |
 
 ## 10. 인계 — 다음 세션이 이어서 할 일
 

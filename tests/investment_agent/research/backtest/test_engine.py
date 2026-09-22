@@ -155,6 +155,28 @@ class BacktestEngineTest(unittest.TestCase):
         self.assertEqual(result.nav[-1].nav, 1_060.0)
         self.assertEqual([item.kind for item in result.corporate_actions], ["split", "dividend"])
 
+    def test_split_adjusted_basis_does_not_double_count_the_split(self):
+        # 저장소 가격은 이미 조정돼 있다 — split 이벤트가 수량까지 곱하면 시가총액이 이중 반영된다.
+        actions = (CorporateAction("AAPL", "2026-01-04", "split", 4.0),)
+        request_obj = BacktestRequest(
+            sessions=("2026-01-02", "2026-01-03", "2026-01-04"),
+            bars=(
+                market_bar("2026-01-02"),
+                market_bar("2026-01-03", open_price=100.0),
+                market_bar("2026-01-04", open_price=100.0, close_price=100.0),
+            ),
+            weight_points=(weight_point(),),
+            universe_snapshots=(UniverseSnapshot("2026-01-01", ("AAPL",), "membership"),),
+            corporate_actions=actions,
+            config=BacktestConfig(initial_cash=1_000.0, price_basis="split_adjusted"),
+        )
+        result = run_backtest(request_obj, costs=ZERO_COST)
+        final_position = result.positions[-1]
+        self.assertEqual(final_position.quantity, 5.0)
+        self.assertEqual(final_position.market_value, 500.0)
+        self.assertEqual(result.corporate_actions[0].quantity_before, 5.0)
+        self.assertEqual(result.corporate_actions[0].quantity_after, 5.0)
+
     def test_exit_records_realized_pnl(self):
         points = (
             weight_point(),

@@ -174,7 +174,9 @@ def bulk_frames_to_filings_and_facts(
         try:
             fiscal_year = int(meta.get("fy"))
         except (TypeError, ValueError):
-            fiscal_year = period_end.year
+            # 달력 연도로 대체하지 않는다 — 비달력 회계연도 발행인에서 회계키가 어긋난다.
+            # 이 파일의 다른 필드(qtrs 등)와 같은 규약: 못 읽으면 행을 버린다.
+            continue
         fiscal_period = "FY" if period_kind == "annual" else str(meta.get("fp") or "")
         if fiscal_period not in {"FY", "Q1", "Q2", "Q3", "Q4"}:
             continue

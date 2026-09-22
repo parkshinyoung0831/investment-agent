@@ -14,6 +14,7 @@ from investment_agent.portfolio_weights import CASH_SYMBOL, validated_weights
 _TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.-]{0,14}$")
 _COHORT_MODES = {"point_in_time", "current_cohort"}
 _ACTION_KINDS = {"split", "dividend"}
+_PRICE_BASES = {"raw", "split_adjusted"}
 
 
 class BacktestSafetyError(RuntimeError):
@@ -53,7 +54,8 @@ def stable_hash(value: Any) -> str:
 
 @dataclass(frozen=True)
 class MarketBar:
-    """기업행사 장부와 함께 쓸 당시 실제 호가 기준의 비조정 OHLCV다."""
+    """`BacktestConfig.price_basis`가 밝히는 가격 규약을 따르는 OHLCV다 — 이 dataclass 스스로는
+    조정 여부를 모른다. split을 수량에 적용할지는 요청 전체의 규약(`price_basis`) 하나로 정한다."""
 
     symbol: str
     session_date: str
@@ -210,13 +212,20 @@ class WeightPoint:
 
 @dataclass(frozen=True)
 class BacktestConfig:
-    """동일 입력에서 체결 결과를 바꾸는 엔진 설정이다."""
+    """동일 입력에서 체결 결과를 바꾸는 엔진 설정이다.
+
+    `price_basis`는 `bars`에 담긴 가격이 어떤 규약인지 밝힌다 — "raw"(당시 실제 호가, split을
+    수량에 적용)면 지금까지의 동작 그대로고, "split_adjusted"(가격이 이미 조정됨)면 split
+    이벤트가 수량을 바꾸지 않는다(가격에 이미 반영돼 있으므로). 저장소 가격은 조정된 값이므로
+    거기서 만든 bars를 쓸 때는 반드시 "split_adjusted"를 명시해야 한다 — 기본값 "raw"로 두면
+    분할 수량이 이중 반영된다."""
 
     initial_cash: float = 100_000.0
     quantity_decimals: int = 6
     cohort_mode: str = "point_in_time"
     periods_per_year: int = 252
     risk_free_rate: float = 0.0
+    price_basis: str = "raw"
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "initial_cash", _finite(self.initial_cash, "initial_cash", positive=True))
@@ -224,6 +233,8 @@ class BacktestConfig:
             raise ValueError("quantity_decimals must be an integer between 0 and 8")
         if self.cohort_mode not in _COHORT_MODES:
             raise ValueError(f"invalid cohort_mode: {self.cohort_mode}")
+        if self.price_basis not in _PRICE_BASES:
+            raise ValueError(f"invalid price_basis: {self.price_basis}")
         if not isinstance(self.periods_per_year, int) or self.periods_per_year < 1:
             raise ValueError("periods_per_year must be a positive integer")
         object.__setattr__(self, "risk_free_rate", _finite(self.risk_free_rate, "risk_free_rate"))

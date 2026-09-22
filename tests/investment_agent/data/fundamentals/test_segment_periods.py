@@ -146,5 +146,47 @@ class UnreadableQuarterCountTest(unittest.TestCase):
             with self.subTest(qtrs=unreadable):
                 self.assertEqual(self._facts(unreadable), [])
 
+
+class UnreadableFiscalYearTest(unittest.TestCase):
+    """`fy`를 읽지 못한 행은 `period_end.year`로 접지 않고 버린다(감사 FD3-02).
+
+    실측(70개 분기, 433,717개 sub.txt 행): 2.84%(12,303행)가 fy 결측/파싱 불가다 —
+    무시할 수 없는 비율이라 FD3-01과 같은 규약(못 읽으면 행을 버린다)으로 맞췄다.
+    """
+
+    ACCESSION = "0000000003-26-000001"
+
+    def _frames(self, fy):
+        return SimpleNamespace(
+            sub_df=pd.DataFrame([{
+                "adsh": self.ACCESSION, "cik": 3, "form_type": "10-Q",
+                "fy": fy, "fp": "Q2", "period": 20260630, "filed": 20260801,
+            }]),
+            num_df=pd.DataFrame([{
+                "adsh": self.ACCESSION,
+                "tag": "RevenueFromContractWithCustomerExcludingAssessedTax",
+                "ddate": 20260630, "qtrs": 1, "uom": "USD",
+                "segments": ("us-gaap:StatementBusinessSegmentsAxis="
+                             "acme:CloudMember;"),
+                "coreg": "", "value": 200,
+            }]),
+        )
+
+    def _facts(self, fy):
+        _, facts_by_accession, _ = bulk_frames_to_filings_and_facts(
+            self._frames(fy), ciks={3}, period_kind="quarter",
+        )
+        return facts_by_accession.get(self.ACCESSION, [])
+
+    def test_a_readable_fiscal_year_still_produces_a_fact(self):
+        facts = self._facts(2026)
+        self.assertEqual(len(facts), 1)
+        self.assertEqual(facts[0]["fiscal_year"], 2026)
+
+    def test_an_unreadable_fiscal_year_is_dropped_not_filled_from_period_end(self):
+        for unreadable in (None, "", "N/A", float("nan")):
+            with self.subTest(fy=unreadable):
+                self.assertEqual(self._facts(unreadable), [])
+
 if __name__ == "__main__":
     unittest.main()

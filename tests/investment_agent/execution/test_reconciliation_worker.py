@@ -65,6 +65,8 @@ class FakeRepo:
         self.snapshots = []
         self.fills = []
         self.intent_status = None
+        self.reconciliation_runs = []
+        self._next_reconciliation_id = 1
 
     def reconcilable_orders(self, *, account_seq):
         return [dict(self.row)]
@@ -112,6 +114,24 @@ class FakeRepo:
     ):
         self.intent_status = status
 
+    def begin_reconciliation_run(self, *, started_at=None):
+        reconciliation_id = self._next_reconciliation_id
+        self._next_reconciliation_id += 1
+        self.reconciliation_runs.append({
+            "reconciliation_id": reconciliation_id,
+            "started_at": started_at,
+            "status": "running",
+            "finished_at": None,
+            "payload": None,
+        })
+        return reconciliation_id
+
+    def finish_reconciliation_run(self, reconciliation_id, *, status, payload, finished_at=None):
+        run = next(item for item in self.reconciliation_runs if item["reconciliation_id"] == reconciliation_id)
+        run["status"] = status
+        run["finished_at"] = finished_at
+        run["payload"] = payload
+
 
 class FakeApi:
     def __init__(self, order=None, *, external=()):
@@ -152,6 +172,33 @@ class ReconciliationWorkerTest(unittest.TestCase):
         self.assertEqual(fill["price"], 100.5)
         self.assertEqual(fill["commission"], 0.1)
         self.assertEqual(fill["tax"], 0.0)
+
+    def test_run_once_records_a_reconciliation_run(self):
+        """화면의 "대사 실행" 패널은 `reconciliation_runs`를 읽는다(감사 EX2-12) — run_once는 반드시 남긴다."""
+        repo = FakeRepo()
+        TossReconciliationWorker(
+            repository=repo,
+            api=FakeApi(remote(status="PARTIAL", filled="1")),
+            account_seq=7,
+        ).run_once(now=NOW)
+        self.assertEqual(len(repo.reconciliation_runs), 1)
+        run = repo.reconciliation_runs[0]
+        self.assertEqual(run["status"], "ok")
+        self.assertIsNotNone(run["finished_at"])
+        self.assertEqual(run["payload"]["inspected"], 1)
+        self.assertEqual(run["payload"]["updated"], 1)
+
+    def test_run_once_records_a_failed_run_when_reconciliation_raises(self):
+        repo = FakeRepo()
+        worker = TossReconciliationWorker(
+            repository=repo,
+            api=FakeApi(remote(status="PARTIAL", filled="1", quantity="99")),
+            account_seq=7,
+        )
+        with self.assertRaises(Exception):
+            worker.run_once(now=NOW)
+        self.assertEqual(len(repo.reconciliation_runs), 1)
+        self.assertEqual(repo.reconciliation_runs[0]["status"], "failed")
 
     def test_a_second_partial_fill_records_only_the_new_quantity(self):
         """1주 체결 뒤 2주로 늘면 두 번째 체결 행은 증분 1주만 담는다 — 누적 2주를 다시 세지 않는다."""

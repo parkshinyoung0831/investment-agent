@@ -86,6 +86,10 @@ class BacktestContractsTest(unittest.TestCase):
                 config=BacktestConfig(cohort_mode="current_cohort"),
             )
 
+    def test_config_rejects_unknown_price_basis(self):
+        with self.assertRaisesRegex(ValueError, "price_basis"):
+            BacktestConfig(price_basis="adjusted_close")
+
     def test_market_bar_rejects_incoherent_ohlc(self):
         with self.assertRaisesRegex(ValueError, "low"):
             MarketBar(
