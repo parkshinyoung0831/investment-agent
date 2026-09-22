@@ -438,9 +438,19 @@ input_tokens/ticker, output_tokens/ticker, cost/ticker, latency p50/p95/p99
 **현재는 계측 코드 자체가 없다.** 비용 근거 없이 provider를 비교하면 §16.12가 금지한 수치가 문서에 들어온다.
 
 #### 목표 및 해결 방안
-- `complete_json()`이 `usage`와 경과 시간을 반환 경로에 실어 호출부가 기록할 수 있게 한다.
-- 판단 원장(또는 case 기록)에 종목당 합계를 남긴다.
+- `complete_json()`의 **반환 타입은 바꾸지 않는다.** 호출부 8곳과 테스트 fake 전부가 깨진다.
+  대신 client 인스턴스가 자기가 쓴 자원을 누적한다 — client는 종목 하나의 분석 동안만
+  살아 있어 누적값이 곧 종목당 합계다.
+- provider가 `usage`를 주지 않으면 토큰을 0이 아니라 **미상(None)** 으로 둔다.
+  0으로 적으면 "안 썼다"와 "모르겠다"가 같은 값이 되어 비용을 조용히 과소 추정한다.
 - 계측이 30일 이상 쌓인 뒤에만 provider 비교의 비용 항목을 채운다.
+
+#### 진행 상태
+- `trading/decision/llm/usage.py`의 `UsageLedger`가 호출당 토큰·지연을 누적한다. **완료**
+- `AgentEngineResult.usage`로 종목당 합계가 나오고, `analysis.py`가 종목마다와 회차 끝에
+  구조화 JSON 로그로 남긴다. **완료**
+- **남은 것**: 로그는 회전한다. 종목당 합계를 durable하게 둘 자리(case 기록 artifact 또는
+  원장 컬럼)는 아직 정하지 않았다. 30일 누적 분석 전에 정한다.
 
 ---
 

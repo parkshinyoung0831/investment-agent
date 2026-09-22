@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 
 from investment_agent.platform.env import env_float
 import re
@@ -10,10 +11,15 @@ from typing import Any, Mapping, Protocol
 
 import httpx
 
+from investment_agent.trading.decision.llm.usage import CallUsage, UsageLedger
+
 
 class LLMClient(Protocol):
     provider: str
     model: str
+    # 이 client가 쓴 토큰·지연의 누적. client는 종목 하나의 분석 동안만 살아 있어
+    # 누적값이 곧 종목당 합계다(`llm/usage.py`).
+    usage: UsageLedger
 
     def complete_json(
         self,
@@ -81,6 +87,7 @@ class OpenAICompatibleClient:
         self.provider = provider
         self.api_key = api_key
         self.timeout_sec = timeout_sec
+        self.usage = UsageLedger()
 
     @classmethod
     def from_env(cls) -> "OpenAICompatibleClient":
@@ -124,7 +131,6 @@ class OpenAICompatibleClient:
         output_schema: Mapping[str, Any],
         task_name: str,
     ) -> dict[str, Any]:
-        import time
         schema_text = json.dumps(output_schema, ensure_ascii=False, separators=(",", ":"))
         headers = {"Content-Type": "application/json"}
         if self.api_key:
@@ -134,11 +140,18 @@ class OpenAICompatibleClient:
         max_attempts = 3
         last_exc: Exception | None = None
         for attempt in range(1, max_attempts + 1):
+            started = time.monotonic()
             try:
                 with httpx.Client(timeout=self.timeout_sec) as client:
                     response = client.post(self.endpoint, headers=headers, json=payload)
                     response.raise_for_status()
                     body = response.json()
+                # 재시도한 호출도 각각 한 건으로 센다 — 비용과 지연은 실제로 그만큼 들었다.
+                self.usage.record(CallUsage.from_response(
+                    task_name=task_name,
+                    latency_ms=(time.monotonic() - started) * 1000.0,
+                    body=body,
+                ))
                 try:
                     content = body["choices"][0]["message"]["content"]
                 except (KeyError, IndexError, TypeError) as exc:

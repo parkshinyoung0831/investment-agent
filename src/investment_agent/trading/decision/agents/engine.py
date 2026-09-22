@@ -103,10 +103,13 @@ class TradingAgentsDecisionEngine:
             proposal,
             missing_data=tuple(dict.fromkeys(proposal.missing_data + external_missing)),
         )
+        # 역할 호출과 구조화까지 끝난 뒤에 읽는다 — 그래야 이 종목의 전체 비용이다.
+        usage = getattr(self.client, "usage", None)
         return AgentEngineResult(
             engine=self.name,
             engine_version=self.version,
             proposal=proposal,
             role_outputs=state,
             external_evidence=external_evidence,
+            usage=usage.to_metadata() if usage is not None else None,
         )

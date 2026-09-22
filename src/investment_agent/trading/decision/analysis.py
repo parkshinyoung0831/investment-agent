@@ -162,6 +162,29 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def run_usage_total(per_ticker: list[dict]) -> dict:
+    """회차 전체의 LLM 사용량. 종목당 값을 더하고 평균을 함께 남긴다.
+
+    `tokens_are_complete`가 거짓인 종목이 하나라도 있으면 회차 합계도 하한이다 —
+    그 사실을 지우면 나중에 비용을 조용히 과소 추정한다.
+    """
+    if not per_ticker:
+        return {"tickers": 0}
+    requests = sum(int(item.get("requests") or 0) for item in per_ticker)
+    input_tokens = sum(int(item.get("input_tokens") or 0) for item in per_ticker)
+    output_tokens = sum(int(item.get("output_tokens") or 0) for item in per_ticker)
+    return {
+        "tickers": len(per_ticker),
+        "requests": requests,
+        "requests_per_ticker": round(requests / len(per_ticker), 2),
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "input_tokens_per_ticker": round(input_tokens / len(per_ticker), 1),
+        "tokens_are_complete": all(bool(item.get("tokens_are_complete")) for item in per_ticker),
+        "latency_ms_total": round(sum(float(item.get("latency_ms_total") or 0.0) for item in per_ticker), 1),
+    }
+
+
 def analysis_limit(requested: int, *, remaining_budget: int) -> int:
     """고를 종목 수 = 요청 한도와 오늘 남은 모델 예산 중 작은 쪽."""
     return max(0, min(int(requested), int(remaining_budget)))
@@ -303,6 +326,7 @@ def main(argv: list[str] | None = None) -> int:
     failures: list[str] = []
     failed_tickers: list[str] = []
     attempted: list[str] = []
+    run_usage: list[dict] = []
     started = time.monotonic()
     longest_case = 0.0
     for bundle in bundles:
@@ -375,6 +399,14 @@ def main(argv: list[str] | None = None) -> int:
                 log.warning(
                     "decision evidence artifact unavailable ticker=%s case_key=%s: %s",
                     bundle.ticker, case_key, archived.artifact_error,
+                )
+            # 비용·지연은 provider 비교의 유일한 근거다. 여기서 안 남기면 어디에도 없다
+            # (`INVESTMENT_DECISION_ENGINE_DESIGN.md` §50).
+            if result.usage is not None:
+                run_usage.append(result.usage)
+                log.info(
+                    "llm usage ticker=%s model=%s %s",
+                    bundle.ticker, candidate.name, canonical_json(result.usage),
                 )
             longest_case = max(longest_case, time.monotonic() - case_started)
         except ModelPoolError:
@@ -460,8 +492,8 @@ def main(argv: list[str] | None = None) -> int:
         status="partial" if failures else "completed",
     )
     log.info(
-        "thesis analysis done run_id=%s proposals=%d failures=%d",
-        run_id, len(proposals), len(failures),
+        "thesis analysis done run_id=%s proposals=%d failures=%d usage=%s",
+        run_id, len(proposals), len(failures), canonical_json(run_usage_total(run_usage)),
     )
     return 0
 
