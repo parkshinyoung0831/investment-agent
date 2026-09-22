@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import re
 import sqlite3
 from contextlib import contextmanager
@@ -23,18 +24,29 @@ DDL_DIR = Path("db/sqlite/runtime/v1")
 _PROJECT_ROOT = repository_root()
 
 
-# 이 프로세스가 이미 스키마를 적용한 (파일, 선언 지문). 연결마다 선언 전체를 다시 실행하고 쓰기 잠금을 두 번 잡던 것을
-# 파일당 한 번으로 줄인다. 파일이 지워졌다 다시 만들어지거나(inode 변경) 선언 파일이 바뀌면 지문이 달라져 다시 적용한다.
-_PREPARED: set[tuple] = set()
+def _declaration_fingerprint() -> int:
+    """현재 선언 파일들의 지문. `PRAGMA user_version`에 들어가므로 32비트 부호 있는 정수다.
+
+    파일 mtime이 아니라 **내용**으로 만든다. git checkout이 mtime만 바꿔도 스키마를
+    다시 적용하는 것은 낭비이고, 내용이 같으면 적용할 것이 없다.
+    """
+    digest = hashlib.sha256()
+    for path in sorted((_PROJECT_ROOT / DDL_DIR).glob("*.sql")):
+        digest.update(path.name.encode("utf-8"))
+        digest.update(path.read_bytes())
+    # user_version은 32비트다. 0은 "적용된 적 없음"으로 남겨 둔다.
+    return int.from_bytes(digest.digest()[:4], "big") & 0x7FFFFFFF or 1
 
 
-def _schema_key(database_path: Path) -> tuple:
-    stat = database_path.stat()
-    declarations = tuple(
-        (path.name, path.stat().st_mtime_ns, path.stat().st_size)
-        for path in sorted((_PROJECT_ROOT / DDL_DIR).glob("*.sql"))
-    )
-    return (str(database_path.resolve()), stat.st_dev, stat.st_ino, declarations)
+def _schema_is_current(connection: sqlite3.Connection, fingerprint: int) -> bool:
+    """이 DB가 현재 선언으로 만들어졌는가.
+
+    **진실을 파일시스템이 아니라 DB가 갖는다.** 전에는 `(경로, st_dev, st_ino, 선언 지문)`을
+    캐시 키로 썼는데, 그러면 세 가지를 못 본다 —
+    파일을 제자리에서 비운 경우(inode 그대로), 삭제 후 OS가 inode를 재사용한 경우,
+    그리고 다른 프로세스가 만든 DB. 어느 쪽이든 **빈 DB를 스키마가 있는 것으로 착각한다.**
+    """
+    return int(connection.execute("PRAGMA user_version").fetchone()[0]) == fingerprint
 
 
 class RuntimeMigrationRequired(RuntimeError):
@@ -45,7 +57,12 @@ def default_runtime_database_path() -> Path:
     return runtime_database_path()
 
 
-def _apply_schema(connection: sqlite3.Connection) -> None:
+def _apply_schema(connection: sqlite3.Connection, fingerprint: int | None = None) -> None:
+    """선언을 적용하고, 어느 선언으로 적용했는지를 DB 자신에게 새긴다.
+
+    지문을 남기지 않으면 다음 연결이 그것을 알 방법이 없어 매번 다시 적용하거나
+    (느림) 파일시스템 신원에 기대야 한다(틀림).
+    """
     connection.execute("BEGIN IMMEDIATE")
     try:
         _migrate_legacy_execution_tables(connection)
@@ -57,6 +74,9 @@ def _apply_schema(connection: sqlite3.Connection) -> None:
                 if sqlite3.complete_statement(statement):
                     connection.execute(statement)
                     statement = ""
+        if fingerprint is not None:
+            # PRAGMA는 값 바인딩을 받지 않는다. 정수임을 위에서 보장한다.
+            connection.execute(f"PRAGMA user_version = {int(fingerprint)}")
         connection.commit()
     except BaseException:
         connection.rollback()
@@ -135,10 +155,10 @@ def runtime_connection(
         if not read_only:
             connection.execute("PRAGMA journal_mode = WAL")
             connection.execute("PRAGMA synchronous = FULL")
-            key = _schema_key(database_path)
-            if key not in _PREPARED:
-                _apply_schema(connection)  # 이관이 거절되면 예외가 나므로 지문을 남기지 않는다
-                _PREPARED.add(key)
+            fingerprint = _declaration_fingerprint()
+            if not _schema_is_current(connection, fingerprint):
+                # 이관이 거절되면 예외가 나므로 지문이 새겨지지 않고, 다음 연결이 다시 시도한다.
+                _apply_schema(connection, fingerprint)
             connection.execute("BEGIN IMMEDIATE")
         yield connection
         if not read_only:

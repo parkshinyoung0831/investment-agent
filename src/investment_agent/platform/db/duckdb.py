@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import time
 from pathlib import Path
 from contextlib import contextmanager
@@ -58,14 +59,23 @@ def _open_with_retry(
     while True:
         try:
             return open_file()
-        except duckdb.IOException:
+        except duckdb.IOException as exc:
             # 잠금 메시지는 OS 언어로 번역돼 문구로 가를 수 없다. 여는 단계의 IOException만 재시도한다.
+            # 단 "유효한 DuckDB 파일이 아님"은 **DuckDB 자신이 만드는 영어 문구**라 번역되지 않고,
+            # 기다려도 풀리지 않는다. 그것까지 재시도하면 깨진 artifact 하나에 3분을 태우고 죽는다.
+            if _is_permanent_open_failure(exc):
+                raise
             attempts += 1
             if monotonic() >= deadline:
                 raise
             if attempts == 1:
                 log.warning("DuckDB file is busy; waiting file=%s", target.name)
             sleep(_OPEN_RETRY_SECONDS)
+
+
+def _is_permanent_open_failure(error: Exception) -> bool:
+    """기다려도 풀리지 않는 열기 실패인가. 잠금 경합과 구분한다."""
+    return "not a valid duckdb database" in str(error).lower()
 
 
 class DuckDBStoreError(RuntimeError):
@@ -121,6 +131,106 @@ def connect(
     return connection
 
 
+_SQL_COMMENT = re.compile(r"--[^\n]*|/\*.*?\*/", re.DOTALL)
+
+
+def _without_sql_comments(statement: str) -> str:
+    """컬럼 파싱 전에 주석을 지운다. 문자열 리터럴 안의 `--`는 이 선언들에 없다."""
+    return _SQL_COMMENT.sub(" ", statement)
+
+
+_COLUMN_DECLARATION = re.compile(
+    r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\((.*)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _declared_columns(statements: tuple[str, ...]) -> dict[str, set[str]]:
+    """선언이 만들려는 표마다 최상위 컬럼 이름을 모은다.
+
+    괄호 깊이 1의 첫 토큰만 본다 — `CHECK(...)`·`PRIMARY KEY(...)` 안의 이름을 컬럼으로
+    세면 실재하지 않는 컬럼을 요구하게 된다. 타입·제약은 보지 않는다. 여기서 잡으려는 것은
+    **표가 이미 있어 CREATE가 통째로 건너뛰어진 경우의 컬럼 부재**이지 타입 변경이 아니다.
+
+    주석을 먼저 지운다. 이 저장소의 선언은 컬럼 사이에 한국어 주석을 둔다 —
+    지우지 않으면 주석의 낱말이 컬럼으로 잡혀 있지도 않은 컬럼을 요구하게 된다.
+    """
+    result: dict[str, set[str]] = {}
+    for statement in statements:
+        match = _COLUMN_DECLARATION.search(_without_sql_comments(statement))
+        if not match:
+            continue
+        table, body = match.group(1).lower(), match.group(2)
+        columns: set[str] = set()
+        depth, token, expecting_name = 1, "", True
+        for character in body:
+            if character == "(":
+                depth += 1
+            elif character == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            if depth == 1 and character == ",":
+                expecting_name = True
+                token = ""
+                continue
+            if depth == 1 and expecting_name:
+                if character.isalnum() or character == "_":
+                    token += character
+                elif token:
+                    if token.upper() not in {"PRIMARY", "UNIQUE", "CHECK", "FOREIGN", "CONSTRAINT"}:
+                        columns.add(token.lower())
+                    expecting_name = False
+                    token = ""
+        if token and token.upper() not in {"PRIMARY", "UNIQUE", "CHECK", "FOREIGN", "CONSTRAINT"}:
+            columns.add(token.lower())
+        if columns:
+            result.setdefault(table, set()).update(columns)
+    return result
+
+
+def _assert_no_column_drift(connection: Any, statements: tuple[str, ...], *, target: Path) -> None:
+    """이미 있는 표가 현재 선언의 컬럼을 모두 갖고 있는가.
+
+    `CREATE TABLE IF NOT EXISTS`는 표가 있으면 통째로 건너뛴다. 그래서 캐시에서 복원한 옛
+    artifact는 새 컬럼 없이 살아남고, 한참 뒤 엉뚱한 INSERT가 Binder Error로 죽는다.
+    그 지점에서는 원인이 "옛 artifact"라는 것이 보이지 않으므로 여기서 먼저 말한다.
+
+    **선언과 `after_ddl` 이관이 모두 끝난 뒤에 부른다.** 이관이 옮길 옛 표를 드리프트로
+    신고하면 정상적인 이관 경로가 막힌다.
+
+    자동으로 고치지 않는다 — 컬럼 추가는 기본값·제약을 알아야 하고, 파일을 지우는 것은
+    데이터 손실이다. 무엇이 어긋났는지와 무엇을 하면 되는지만 정확히 알린다.
+    """
+    existing = {
+        str(row[0]).lower()
+        for row in connection.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema()"
+        ).fetchall()
+    }
+    drift: list[str] = []
+    for table, declared in sorted(_declared_columns(statements).items()):
+        if table not in existing:
+            continue  # 없는 표는 선언이 만든다 — 드리프트가 아니다
+        present = {
+            str(row[0]).lower()
+            for row in connection.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema = current_schema() AND lower(table_name) = ?",
+                [table],
+            ).fetchall()
+        }
+        missing = sorted(declared - present)
+        if missing:
+            drift.append(f"{table}: {', '.join(missing)}")
+    if drift:
+        raise DuckDBStoreError(
+            f"restored DuckDB artifact predates the current declarations ({target.name}); "
+            f"missing columns -> {'; '.join(drift)}. "
+            "Rebuild the store from source instead of reusing this cached artifact."
+        )
+
+
 def _prepared_key(target: Path, statements: tuple[str, ...]) -> tuple[str, int, int, str] | None:
     """파일이 아직 없으면 None — 새로 만든 파일에는 반드시 선언을 적용한다.
 
@@ -160,6 +270,10 @@ def transactional_connection(
                     connection.execute(statement)
                 if after_ddl is not None:
                     after_ddl(connection)
+                # 선언과 이관이 끝난 **뒤에** 본다. 앞에서 보면 `after_ddl`이 옮길 옛 표를
+                # 드리프트로 오인한다(예: strategy_allocations의 JSON→관계형 이관).
+                # 여기까지 와서도 없는 컬럼은 어떤 이관도 책임지지 않는 진짜 드리프트다.
+                _assert_no_column_drift(connection, statements, target=target)
             yield connection
             connection.execute("COMMIT")
             if not already_prepared and statements:

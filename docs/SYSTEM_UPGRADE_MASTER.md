@@ -283,7 +283,7 @@ Learning           ▼
 
 ### P0-1 Runtime SQLite schema cache
 
-- **상태**: `OPEN` (설계 결함 확인, 심각도는 플랫폼에 따라 다름)
+- **상태**: `FIXED`
 - **대상 파일**: `src/investment_agent/platform/db/sqlite.py`
 - **테스트**: `tests/investment_agent/platform/test_sqlite_schema_applied_once.py`
 
@@ -309,7 +309,7 @@ Schema correctness의 진실을 filesystem inode가 아니라 DB 자체가 소�
 
 ### P0-2 Research DuckDB artifact schema incompatibility
 
-- **상태**: `OPEN`
+- **상태**: `FIXED`
 - **대상 파일**: `src/investment_agent/research/storage/repository.py` 및 artifact 복원 스크립트
 - **실제 에러 로그**:
   ```text
@@ -319,18 +319,30 @@ Schema correctness의 진실을 filesystem inode가 아니라 DB 자체가 소�
 #### 현재 문제
 GitHub Actions `tech_indicators` 워크플로에서 과거 빌드된 `research.duckdb` artifact를 캐시에서 복원했을 때, 코드베이스의 최신 DDL에 추가된 컬럼(`feature_set` 등)이 과거 DB 파일에 존재하지 않아 크래시가 발생했다.
 
-#### 목표 및 해결 방안
-Artifact 복원 시 schema 호환성 계약을 추가한다.
-- Artifact 메타데이터 계약 정의: `store_type`, `schema_generation`, `code_commit`, `created_at`
-- Restore 시 검증:
-  - Compatible $\to$ 캐시 재사용
-  - Incompatible $\to$ DDL migration 수행(`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`) 또는 손상/불일치 시 fail-safe rebuild 수행.
+#### 해결 (`FIXED`)
+자동 이관도, 자동 삭제도 하지 않는다. **조용히 늦게 죽던 것을 일찍 크게 말하게** 바꿨다.
+
+- 선언과 `after_ddl` 이관이 끝난 뒤, 이미 있는 표가 현재 선언의 컬럼을 모두 갖고 있는지 본다.
+  없으면 어느 표의 어느 컬럼이 빠졌는지와 "재빌드하라"를 담아 `DuckDBStoreError`로 즉시 실패한다.
+- 검사는 **이관 뒤**에 한다. 앞에서 하면 `after_ddl`이 옮길 옛 표를 드리프트로 오인한다
+  (실제로 `strategy_allocations`의 JSON→관계형 이관이 걸렸다).
+- 컬럼 파싱은 SQL 주석을 먼저 지운다. 이 저장소의 선언은 컬럼 사이에 한국어 주석을 두는데,
+  지우지 않으면 주석의 낱말이 컬럼으로 잡혀 **멀쩡한 저장소를 옛 artifact로 신고한다**
+  (실제로 테스트 42건이 그렇게 죽었다).
+- 자동 `ALTER TABLE`이나 fail-safe rebuild는 하지 않는다 — 컬럼 추가는 기본값·제약을 알아야 하고,
+  파일을 지우는 것은 데이터 손실이다. 무엇이 어긋났고 무엇을 하면 되는지만 정확히 알린다.
+
+#### 함께 고친 것
+잠금 재시도(`_open_with_retry`)가 **영구 오류까지 삼키고 있었다.** 유효한 DuckDB 파일이 아닌
+artifact를 기본 180초 동안 다시 열다가 죽는다 — CI에서 잡마다 3분을 태운다. 잠금 메시지는 OS 언어로
+번역되지만 "not a valid DuckDB database"는 DuckDB 자신이 만드는 영어 문구라 번역되지 않는다.
+그것만 가려 즉시 올린다.
 
 ---
 
 ### P0-3 GitHub Workflow input contract mismatch
 
-- **상태**: `OPEN`
+- **상태**: `FIXED`
 - **대상 파일**: `.github/workflows/universe_membership_check.yml`, `.github/workflows/universe_monthly.yml`, `.github/workflows/market_backfill.yml`
 - **실제 에러**: GitHub Actions API `HTTP 422: Unprocessable Entity` (Unexpected input 'dataset')
 
@@ -347,7 +359,7 @@ Artifact 복원 시 schema 호환성 계약을 추가한다.
 
 ### P0-4 예산 소진 실패가 종목 순환을 억제한다
 
-- **상태**: `OPEN`
+- **상태**: `FIXED`
 - **대상 파일**: `src/investment_agent/trading/decision/candidates.py` (`_last_attempted`)
 - **성격**: 에러 없이 조용히 틀린다. 로그도 정상으로 보인다.
 
@@ -431,7 +443,7 @@ positions도 비어 있다 — **분해할 손익이 존재하지 않는다.** �
 
 ### P0-6 LLM 비용·지연이 계측되지 않는다
 
-- **상태**: `OPEN`
+- **상태**: `FIXED` (durable 저장은 남음 — 아래)
 - **대상 파일**: `src/investment_agent/trading/decision/llm/client.py`
 
 #### 현재 문제
