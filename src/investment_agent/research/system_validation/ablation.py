@@ -225,6 +225,7 @@ def _variant_result(store: SystemPortfolioStore, repository: ReplayRepository, *
             "tail_risk_bound_periods": sum(float(item.get("scale", 1.0)) < 1.0 - 1e-9 for item in tail),
             "market_risk_input_periods": sum(regime is not None for regime in regimes),
             "nav_unexplained_days": unexplained_nav_days(history)[:20],
+            "turnover_breaches": turnover_breaches(history, {target.target_id: target for target in target_rows}),
             "market_risk_tightened_periods": sum(
                 isinstance(regime, Mapping) and regime.get("risk_state") not in {None, "NORMAL"}
                 for regime in regimes
@@ -232,6 +233,33 @@ def _variant_result(store: SystemPortfolioStore, repository: ReplayRepository, *
         },
         "_history": history,
     }
+
+
+# 게이트는 재량 매매에만 turnover 한도를 걸고, 위험을 줄이는 조정(현금 하한 상향·종목/섹터 상한·최소 비중
+# 정리·강제 청산)은 그 뒤에 둔다. 이 조정이 있었던 재조정의 한도 초과는 위반이 아니라 설계다.
+_RISK_REDUCING_ADJUSTMENTS = ("CASH raised", "capped at", "below minimum position")
+_REBALANCE_TURNOVER_LIMIT = 0.25
+
+
+def turnover_breaches(history: Sequence[Any], targets: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """첫 편입 뒤 재조정 turnover가 한도를 넘은 날과, 그날 목표에 위험 축소 조정이 있었는지."""
+    breaches: list[dict[str, Any]] = []
+    seen_first = False
+    for mark in history:
+        if mark.turnover <= 0:
+            continue
+        if not seen_first:
+            seen_first = True
+            continue
+        if mark.turnover <= _REBALANCE_TURNOVER_LIMIT + 1e-9:
+            continue
+        target = targets.get(mark.applied_target_id)
+        detail = target.detail if target is not None else {}
+        adjustments = [str(item) for item in detail.get("adjustments") or ()]
+        risk_reducing = bool(detail.get("forced_exits")) or any(
+            marker in item for item in adjustments for marker in _RISK_REDUCING_ADJUSTMENTS)
+        breaches.append({"trade_date": mark.trade_date, "turnover": mark.turnover, "risk_reducing": risk_reducing})
+    return breaches
 
 
 # 하루 NAV 수익률과 보유 비중 × 가격 변화의 차이가 이보다 크면 가격으로 설명되지 않는 날이다. 배당(하루
@@ -278,7 +306,6 @@ def _rebased(history: Sequence[Any]) -> list[dict[str, Any]]:
 # 설계 §9.2의 목표 tracking error(연 6%)와 허용 폭(±50%).
 TARGET_TRACKING_ERROR = 0.06
 _TRACKING_ERROR_BAND = 0.5
-_MAX_REBALANCE_TURNOVER = 0.25
 
 
 def adoption_checks(summary: Mapping[str, Any], champion: Mapping[str, Any]) -> dict[str, Any]:
@@ -297,7 +324,7 @@ def adoption_checks(summary: Mapping[str, Any], champion: Mapping[str, Any]) -> 
         return None if value is None or benchmark is None else value <= benchmark
 
     tracking_error = summary.get("tracking_error")
-    turnover = summary.get("max_rebalance_turnover")
+    breaches = summary.get("turnover_breaches")
     checks: dict[str, Any] = {
         "excess_return_not_worse": at_least("excess_return"),
         "information_ratio_not_worse": at_least("information_ratio"),
@@ -305,8 +332,9 @@ def adoption_checks(summary: Mapping[str, Any], champion: Mapping[str, Any]) -> 
         abs(tracking_error - TARGET_TRACKING_ERROR) <= TARGET_TRACKING_ERROR * _TRACKING_ERROR_BAND,
         "drawdown_2022_not_worse_than_spy": not_worse_than_spy("max_drawdown"),
         "cvar_2022_not_worse_than_spy": not_worse_than_spy("cvar_95_5d"),
-        # 강제 청산·종목 상한 준수는 게이트 한도 밖이라 이 값이 한도를 조금 넘을 수 있다 — 넘으면 원인을 본다.
-        "rebalance_turnover_within_limit": None if turnover is None else turnover <= _MAX_REBALANCE_TURNOVER + 1e-9,
+        # 위험 축소 조정이 있었던 재조정의 초과는 설계다. 그런 조정 없이 넘은 날이 하나라도 있으면 실패다.
+        "rebalance_turnover_within_limit": None if breaches is None else
+        not any(not item["risk_reducing"] for item in breaches),
     }
     checks["all_passed"] = all(value is True for value in checks.values())
     return checks
@@ -422,6 +450,8 @@ def run_ablation(
         cash = [float(dict(mark.weights).get(CASH_SYMBOL, 0.0)) for mark in selected_history]
         row["summary"]["average_cash_weight"] = sum(cash) / len(cash) if cash else None
         row["summary"].update(active_risk_summary(_rebased(selected_history)))
+        row["summary"]["turnover_breaches"] = [item for item in row["coverage"].get("turnover_breaches") or ()
+                                               if not common_dates or item["trade_date"] in common_dates]
         row["coverage"]["common_evaluation_start"] = min(common_dates) if common_dates else None
         row["coverage"]["common_evaluation_end"] = max(common_dates) if common_dates else None
     baseline = next((row for row in results if row.get("status") == "completed"), None)
@@ -454,6 +484,7 @@ __all__ = [
     "TARGET_TRACKING_ERROR",
     "adoption_checks",
     "default_variants",
+    "turnover_breaches",
     "ml_artifact_lookahead",
     "replay_sessions",
     "run_ablation",

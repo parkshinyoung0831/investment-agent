@@ -265,7 +265,7 @@ class AdoptionChecksTest(unittest.TestCase):
 
     def _summary(self, **overrides):
         summary = {"excess_return": 0.10, "information_ratio": 0.5, "tracking_error": 0.06,
-                   "max_rebalance_turnover": 0.25,
+                   "turnover_breaches": [{"trade_date": "2022-06-15", "turnover": 0.26, "risk_reducing": True}],
                    "stress": {"2022_bear": {"max_drawdown": 0.20, "benchmark_max_drawdown": 0.25,
                                             "cvar_95_5d": 0.05, "benchmark_cvar_95_5d": 0.06}}}
         summary.update(overrides)
@@ -287,7 +287,8 @@ class AdoptionChecksTest(unittest.TestCase):
             "drawdown_2022_not_worse_than_spy": self._summary(stress={"2022_bear": {
                 "max_drawdown": 0.30, "benchmark_max_drawdown": 0.25, "cvar_95_5d": 0.05,
                 "benchmark_cvar_95_5d": 0.06}}),
-            "rebalance_turnover_within_limit": self._summary(max_rebalance_turnover=0.30),
+            "rebalance_turnover_within_limit": self._summary(turnover_breaches=[
+                {"trade_date": "2023-01-05", "turnover": 0.30, "risk_reducing": False}]),
         }
         for name, summary in cases.items():
             checks = adoption_checks(summary, champion)
@@ -300,6 +301,22 @@ class AdoptionChecksTest(unittest.TestCase):
         checks = adoption_checks(self._summary(stress={}), self._summary())
         self.assertIsNone(checks["drawdown_2022_not_worse_than_spy"])
         self.assertFalse(checks["all_passed"])
+
+
+class TurnoverBreachTest(unittest.TestCase):
+    """한도를 넘은 재조정 중 위험 축소 조정이 있었던 것만 설계로 인정한다."""
+
+    def test_breaches_are_classified_by_the_applied_target_adjustments(self):
+        from types import SimpleNamespace
+        from investment_agent.research.system_validation.ablation import turnover_breaches
+
+        history = [SimpleNamespace(trade_date=day, turnover=value, applied_target_id=target)
+                   for day, value, target in (("d1", 0.80, "t0"), ("d2", 0.0, None), ("d3", 0.30, "t1"),
+                                              ("d4", 0.20, "t2"), ("d5", 0.28, "t3"))]
+        targets = {"t1": SimpleNamespace(detail={"adjustments": ["CASH raised to 0.450000"]}),
+                   "t3": SimpleNamespace(detail={"adjustments": ["turnover scaled from 0.4 to 0.25"]})}
+        breaches = turnover_breaches(history, targets)
+        self.assertEqual([("d3", True), ("d5", False)], [(item["trade_date"], item["risk_reducing"]) for item in breaches])
 
 
 class ActiveRiskSummaryTest(unittest.TestCase):
