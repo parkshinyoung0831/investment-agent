@@ -51,8 +51,10 @@ git 의존이나 별도 설치 단계가 없다 — `uv sync --group dev`만으�
 적지 않고 배치 요청에서도 빼 다음 회차 후보로 남긴다 — 실패로 적으면 배치가 불완전해져 실행 가능한 신호가
 생기지 않는다. 예산이 없어 배치 없이 끝난 회차는 하네스가 `skipped`로 적는다.
 
-마지막 구조화 호출이 계약(없는 근거 ID 인용 등)을 어기면 역할 토론을 버리지 않고 구조화만 한 번 다시
-요청한다. 두 번째도 어기면 그 종목은 실패다. 실측으로 LLM이 근거 ID 마지막 글자를 틀리게 옮긴 사례가 있었다.
+마지막 구조화 호출은 strict json_schema로 논지·강제 제약을 enum으로, 인용 근거 ID를 이번에 허용된 ID enum으로
+묶는다. 그래도 계약(수치 범위 등)을 어기면 역할 토론을 버리지 않고 구조화만 한 번 다시 요청한다. 두 번째도
+어기면 그 종목은 실패다. 종목당 LLM 사용량(`llm usage` 로그와 판단 근거의 `llm_usage`)은 역할 호출과 구조화
+호출을 합친 값이다.
 
 처음부터 모든 연구 library와 broker key를 넣지 않는다.
 
@@ -240,7 +242,15 @@ python -m investment_agent.data.market.commands.sync_local_mirror --full
 python -m investment_agent.research.commands.backfill_research_history --start 2023-01-06 --end 2025-12-31 --every-days 7 --audit-only
 python -m investment_agent.research.commands.backfill_research_history --start 2023-01-06 --end 2025-12-31 --every-days 7
 python -m investment_agent.operations.commands.system_ablation --start 2025-01-01 --end 2025-12-31
+# 가격을 뒤늦게 백필한 과거 멤버의 feature를 다시 만든다('영구 불가'로 기록된 종목 재시도)
+python -m investment_agent.research.commands.backfill_research_history --start 2021-09-03 --end 2026-08-28 --every-days 7 --retry-unavailable
+# System 단계 진단(5·20·60·120거래일)과 판단 성적표 — 하네스 feature_store 잡이 매일 돈다
+python -m investment_agent.operations.commands.system_diagnosis
+# 최신 System artifact의 승격 증거(재현 + 운영 NAV) — 하네스 system_evaluation 잡이 매주 돈다
+python -m investment_agent.operations.commands.system_evaluations
 ```
+
+`market_backfill --scope missing`이 무엇을 대상으로 잡는지는 [market README](../src/investment_agent/data/market/README.md#실행-흐름)에 있다.
 
 과거 재현 백필은 날짜별 manifest(`historical_replay_runs`)와 실제 feature snapshot을 함께 확인한다.
 중단 뒤에는 저장되지 않은 종목만 다시 계산하며, 가격 이력이 없어 영구 불가로 판정된 종목도 manifest에

@@ -53,7 +53,8 @@ broker 중립 계약은 두지 않습니다. 두 번째 broker가 실제로 생�
 3. `TargetWeightOrderPlanner`가 whole-share sell-first manifest를 만듭니다.
 4. intent, risk, account, manifest hash를 Discord approval에 결박합니다.
 5. 본인 allowlist의 서명 button만 pending approval을 원자적으로 소비합니다.
-6. 주문 직전에 계좌·시세·공식 장시간·daily limits를 다시 확인합니다.
+6. 주문 직전에 계좌·시세·공식 장시간·daily limits를 다시 확인합니다. 이때 받은 시세(도착 가격)와 시각을
+   주문 기록(`arrival_price`·`arrival_price_at`)에 남겨, 승인 기준가·체결가와 함께 실행 비용을 잴 수 있게 합니다.
 7. client order ID와 payload hash를 DB에 먼저 예약합니다.
 8. broker에 한 번 submit하고 결과와 event를 append-only로 기록합니다.
 9. broker orders/fills/positions/cash와 reconciliation합니다.

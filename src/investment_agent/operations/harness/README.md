@@ -64,6 +64,30 @@ flowchart TD
 | **`TRADING_KILL_SWITCH=on` 시** | 분석 정상 유지 | 포트폴리오~주문 일시중지, 감시만 읽기 전용 유지 |
 | **실적 속보 수집(`earnings_watch`)** | ✅ 정상 주기 실행 | ✅ 정상 주기 실행 |
 
+### 등록되는 잡
+
+운영 adapters로 `build_registry`가 등록하는 잡 전부다. 순서는 stage 실행 순서다. 표가 코드와 어긋나면
+코드(`operations/harness/pipeline.py`, `operations/commands/investment_harness.py`)가 맞다.
+
+| 잡 | 주기 | stage | 하는 일 |
+|---|---|---|---|
+| `feature_store` | 1일 | `build_valuations` → `build_features` → `build_labels` → `build_training_samples` → `evaluate_decisions` → `diagnose_system` → `build_events` | PIT 관측값 적재, 판단 5·20·60일 채점, System 단계 진단(`system_diagnosis`) |
+| `investment_analysis` | 3시간 | `analysis` → `notify_investment` | TradingAgents 논지 분석과 보고서 |
+| `system_portfolio` | 1시간 | `run_system_portfolio` | System NAV 평가·목표 갱신 |
+| `my_portfolio_follow` | 1분 | `select_target` → `follow` → `execution_intent` → `approval_request` → `approval_worker` → `notify_trades` | 실계좌 추종(승인 모드에서만) |
+| `system_evaluation` | 7일 | `evaluate_system` → `measure_factor_ic` | 최신 System artifact의 승격 증거(`system_evaluations`), factor IC(`factor_research`) |
+| `ml_challengers` | 7일 | `train_challengers` | ML 후보 학습·비교(채택은 사람) |
+| `continuous_learning` | 7일 | `retrain` | RL 연구 후보 |
+| `decision_experience` | 1일 | `build_decision_experiences` | 원본 판단의 결과를 학습 원장에 |
+| `investment_reporting` | 5분 | `update_performance` → `notify_reports` | 성과·보고 알림 |
+| `event_reanalysis` | 10분 | `reanalyze` | 고영향 사건 재분석 |
+| `intelligence` | 1일 | `news` → `social` → `retention` | 뉴스·소셜 수집 |
+| `local_mirror` | 2시간 | `sync_local_mirror` | Supabase 계산용 사본 |
+| `earnings_watch` | 1분 | `watch` | 실적 공시 감시 |
+| `econ_release_watch` | 1분 | `watch` | 경제지표 발표 감시 |
+| `account_risk_snapshot` | 5분 | `capture` | 계좌 위험 스냅샷 |
+| `toss_reconciliation` | 1분 | `reconcile` | 브로커 체결 동기화 |
+
 `local_mirror`는 2시간마다 Supabase 원본의 계산용 Parquet 사본을 증분 동기화한다.
 사본이 없거나 오래되면 판단은 원본 Supabase로 읽는다. `continuous_learning`은 7일마다
 RL 연구 후보를 점검하고 새 성숙 비중첩 구간이 2개 미만이면 학습하지 않는다.

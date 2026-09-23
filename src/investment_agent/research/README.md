@@ -30,7 +30,7 @@ market·fundamentals·macro (Supabase)
 | `backtest/` | 목표 비중을 가격 이벤트 위에서 재생하는 결정론적 백테스트 |
 | `rl/` | PIT feature snapshot을 쓰는 RL·정책 학습 |
 | `promotion/` | challenger 승격 판정 |
-| `ablation.py` | 동일 운영 엔진으로 factor·ML·논지·시장위험·CVaR 기여를 과거 구간에서 비교 |
+| `system_validation/` | 동일 운영 엔진으로 과거 구간을 재현한다 — 변형 비교(`ablation.py`), System 승격 증거(`evaluations.py`) |
 | `valuation/` | PIT 밸류에이션 계약과 입력 조립 |
 | `strategies/` | 팩터/룰 기반 자산배분 6종 → [README](strategies/README.md) |
 | `storage/` | 로컬 DuckDB·Parquet 경계(`ResearchStore`) |
@@ -64,13 +64,25 @@ python -m investment_agent.operations.commands.system_ablation --start 2025-01-0
 python -m investment_agent.research.strategies.etl            # 월간 전략 배분
 ```
 
+수동 승격 게이트(`promotion/gate.py`)는 artifact별 `portfolio_evaluations` 행만 증거로 읽는다. System artifact의
+그 행은 `system_evaluations`가 만든다 — 운영 정책의 재현은 `backtest`·연도별 `walk_forward`로(과거 LLM 논지가
+없어 `thesis_replayed=false`로 적는다), artifact의 첫 목표 이후 운영 NAV는 `out_of_sample`(paper 승인 뒤는
+`paper`)로. 재현 시점 멤버 중 feature가 없어 빠진 비율이 5%를 넘으면 생존 편향 사고로 센다. 하네스
+`system_evaluation` 잡이 7일마다 이것과 factor IC(`factor_research`, 5·20·60·120일)를 돈다.
+
+ML 학습은 학습 구간에서 값이 변하지 않는 열을 입력에서 뺀다. 과거 재현 표본은 macro·technical·revision
+열이 시점 기준으로 비어 있어 상수인데 운영에서는 값이 들어온다 — artifact의 `feature_names`는 모델이 실제로
+받은 열이고, 뺀 열은 `excluded_constant_features`에 남는다.
+
 RL 후보 재학습은 하네스 `continuous_learning`이 7일마다 점검한다. 새 성숙 비중첩
 구간이 2개 미만이면 학습하지 않고, 후보의 System 채택은 사람이 별도로 결정한다.
 
 과거 재현 백필은 원격 재무·컨센서스·주식수·세그먼트를 날짜마다 일괄 조회하고, 종목별 계산은 그
 결과를 재사용한다. 날짜 결과는 Parquet에 한 번만 원자 저장한다. 날짜별 manifest가 실제 snapshot과
 영구 불가 ticker를 기록하므로 중단 후에는 누락 ticker만 재개한다. 먼저 `--audit-only`로 완결성을
-확인할 수 있으며, 이 모드는 어떤 연구 데이터도 쓰지 않는다.
+확인할 수 있으며, 이 모드는 어떤 연구 데이터도 쓰지 않는다. 가격이 없어 '영구 불가'였던 과거 멤버의
+가격을 뒤늦게 백필했으면 `--retry-unavailable`로 그 종목만 다시 계산한다 — 그러지 않으면 지수를 나간
+종목이 재현에서 계속 빠진다(생존 편향).
 
 `build_training_samples`는 `training_sample_runs` 로컬 매니페스트에 기준일별 feature 입력 해시,
 확정 label ID, 비용 모델의 결합 서명을 기록한다. 같은 서명은 표본 재계산과 Parquet 쓰기를 모두
