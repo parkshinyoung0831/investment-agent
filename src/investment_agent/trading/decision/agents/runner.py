@@ -60,7 +60,11 @@ def _recorded(sink: dict[str, dict[str, Any]], domain: str, fetch: Callable[[], 
 class TradingAgentsRunner:
     """분석가 5명 → Bull/Bear 토론 → Trader → Risk 3자 토론 → Portfolio Manager를 로컬로 실행한다."""
 
-    version = "0.7.1-local-graph-macro-h20-news7d"
+    version = "0.8.0-local-graph-shared-macro-h20-news7d"
+
+    def __init__(self) -> None:
+        # 한 분석 회차(이 runner의 수명) 안에서 같은 거시 근거의 요약을 공유한다. 회차가 끝나면 사라진다.
+        self._macro_reports: dict[str, str] = {}
 
     def run(self, bundle: EvidenceBundle, *, memory_text: str) -> dict[str, Any]:
         manifests_token = runtime._EXTERNAL_MANIFESTS.set([])
@@ -127,6 +131,7 @@ class TradingAgentsRunner:
                 fetch_news_evidence=_recorded(analyst_inputs, "news", fetch_news_evidence),
                 fetch_sentiment_evidence=_recorded(analyst_inputs, "sentiment", fetch_sentiment_evidence),
                 fetch_macro_evidence=_recorded(analyst_inputs, "macro", lambda: runtime._macro("", curr_date)),
+                macro_report_cache=self._macro_reports,
             )
             manifests = runtime._deduplicate_external_manifests(runtime._EXTERNAL_MANIFESTS.get())
             return {**result, "_external_evidence_manifest": manifests, "_analyst_inputs": analyst_inputs}

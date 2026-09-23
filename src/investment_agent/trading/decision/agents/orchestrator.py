@@ -27,6 +27,7 @@ def run_local_graph(
     fetch_macro_evidence: Callable[[], str],
     max_debate_rounds: int = 1,
     max_risk_discuss_rounds: int = 1,
+    macro_report_cache: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """옛 `TradingAgentsRunner.run()`이 반환하던 것과 같은 키 모양의 dict를 만든다."""
     reports = AnalystReports(
@@ -44,6 +45,7 @@ def run_local_graph(
         ),
         macro_report=analysts.run_macro_analyst(
             client, ticker=ticker, curr_date=curr_date, evidence_text=fetch_macro_evidence(),
+            cache=macro_report_cache,
         ),
     )
 

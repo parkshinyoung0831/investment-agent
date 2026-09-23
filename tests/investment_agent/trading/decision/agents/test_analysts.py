@@ -72,3 +72,33 @@ class AnalystNodeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SharedMacroReportTest(unittest.TestCase):
+    """거시 근거는 종목과 무관하다 — 같은 날 같은 근거의 요약을 종목마다 다시 만들지 않는다."""
+
+    def test_one_call_serves_every_ticker_with_the_same_evidence(self):
+        client, cache = _RecordingClient("macro regime"), {}
+        for ticker in ("AAPL", "MSFT", "XOM"):
+            self.assertEqual("macro regime", analysts.run_macro_analyst(
+                client, ticker=ticker, curr_date="2026-09-16", evidence_text='{"rate": 4.1}', cache=cache))
+        self.assertEqual(1, len(client.calls))
+
+    def test_different_evidence_or_date_is_not_shared(self):
+        client, cache = _RecordingClient(), {}
+        analysts.run_macro_analyst(client, ticker="AAPL", curr_date="2026-09-16", evidence_text="a", cache=cache)
+        analysts.run_macro_analyst(client, ticker="AAPL", curr_date="2026-09-16", evidence_text="b", cache=cache)
+        analysts.run_macro_analyst(client, ticker="AAPL", curr_date="2026-09-17", evidence_text="a", cache=cache)
+        self.assertEqual(3, len(client.calls))
+
+    def test_the_prompt_does_not_name_a_ticker(self):
+        """근거에 종목 정보가 없는데 종목을 물으면 근거 밖 사전지식으로 채운다."""
+        client = _RecordingClient()
+        analysts.run_macro_analyst(client, ticker="AAPL", curr_date="2026-09-16", evidence_text="{}")
+        self.assertNotIn("AAPL", client.calls[0]["user"])
+
+    def test_without_a_cache_every_call_reaches_the_model(self):
+        client = _RecordingClient()
+        for _ in range(2):
+            analysts.run_macro_analyst(client, ticker="AAPL", curr_date="2026-09-16", evidence_text="{}")
+        self.assertEqual(2, len(client.calls))
