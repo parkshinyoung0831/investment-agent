@@ -223,6 +223,7 @@ def _variant_result(store: SystemPortfolioStore, repository: ReplayRepository, *
             "tail_risk_enabled_periods": sum(bool(item.get("enabled")) for item in tail),
             "tail_risk_bound_periods": sum(float(item.get("scale", 1.0)) < 1.0 - 1e-9 for item in tail),
             "market_risk_input_periods": sum(regime is not None for regime in regimes),
+            "nav_unexplained_days": unexplained_nav_days(history)[:20],
             "market_risk_tightened_periods": sum(
                 isinstance(regime, Mapping) and regime.get("risk_state") not in {None, "NORMAL"}
                 for regime in regimes
@@ -230,6 +231,33 @@ def _variant_result(store: SystemPortfolioStore, repository: ReplayRepository, *
         },
         "_history": history,
     }
+
+
+# 하루 NAV 수익률과 보유 비중 × 가격 변화의 차이가 이보다 크면 가격으로 설명되지 않는 날이다. 배당(하루
+# 수 bp)과 재조정 비용은 이보다 훨씬 작다.
+_NAV_RECONCILIATION_TOLERANCE = 0.01
+
+
+def unexplained_nav_days(history: Sequence[Any]) -> list[dict[str, Any]]:
+    """NAV 수익률을 가격표로 독립 재계산해 설명되지 않는 날을 돌려준다.
+
+    분할을 이중 반영하던 회계 결함은 5년 재현에서 +553%를 만들었는데 아무 검사도 걸리지 않았다.
+    원장의 NAV를 원장 자신과 비교하면 같은 결함을 공유한다 — 가격 변화로 따로 계산해 대조한다.
+    """
+    offenders: list[dict[str, Any]] = []
+    for previous, mark in zip(history, history[1:]):
+        independent = 0.0
+        for symbol, weight in previous.weights.items():
+            if symbol == CASH_SYMBOL or weight <= 0:
+                continue
+            before, after = previous.closes.get(symbol), mark.closes.get(symbol)
+            if before and after:
+                independent += float(weight) * (float(after) / float(before) - 1.0)
+        gap = float(mark.daily_return) - independent
+        if abs(gap) > _NAV_RECONCILIATION_TOLERANCE:
+            offenders.append({"trade_date": mark.trade_date, "daily_return": mark.daily_return,
+                              "price_explained": independent, "gap": gap})
+    return offenders
 
 
 def _rebased(history: Sequence[Any]) -> list[dict[str, Any]]:
@@ -248,6 +276,8 @@ def _rebased(history: Sequence[Any]) -> list[dict[str, Any]]:
 
 def _coverage_reason(row: Mapping[str, Any], variant: AblationVariant) -> str | None:
     coverage = row["coverage"]
+    if coverage.get("nav_unexplained_days"):
+        return "nav_not_explained_by_prices"
     if not row.get("targets") or not coverage["factor_snapshot_periods"]:
         return "factor_target_never_built"
     if variant.alpha.use_ml and not coverage["ml_forecasts_applied"]:
@@ -376,4 +406,5 @@ __all__ = [
     "ml_artifact_lookahead",
     "replay_sessions",
     "run_ablation",
+    "unexplained_nav_days",
 ]

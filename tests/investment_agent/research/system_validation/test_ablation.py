@@ -222,3 +222,31 @@ class RebasedCommonWindowTest(unittest.TestCase):
         self.assertAlmostEqual(first["benchmark_return"], second["benchmark_return"])
         self.assertAlmostEqual(0.10, first["benchmark_return"])
         self.assertAlmostEqual(0.10, first["total_return"])
+
+
+class NavReconciliationTest(unittest.TestCase):
+    """원장 NAV를 가격표로 따로 계산해 대조한다 — 분할 이중 반영 같은 회계 결함이 +553%를 만들었다."""
+
+    @staticmethod
+    def _mark(day, nav, daily_return, weights, closes):
+        from investment_agent.trading.system.accounting import DailyMark
+
+        return DailyMark(day, nav, daily_return, weights, closes, 100.0, 100.0)
+
+    def test_a_split_double_count_is_flagged(self):
+        from investment_agent.research.system_validation.ablation import unexplained_nav_days
+
+        history = [
+            self._mark("2022-07-15", 100.0, 0.0, {"GOOGL": 0.05, "CASH": 0.95}, {"GOOGL": 111.78}),
+            self._mark("2022-07-18", 192.0, 0.92, {"GOOGL": 0.5, "CASH": 0.5}, {"GOOGL": 109.03}),
+        ]
+        self.assertEqual(["2022-07-18"], [row["trade_date"] for row in unexplained_nav_days(history)])
+
+    def test_price_moves_explain_a_normal_day(self):
+        from investment_agent.research.system_validation.ablation import unexplained_nav_days
+
+        history = [
+            self._mark("d1", 100.0, 0.0, {"AAA": 0.5, "CASH": 0.5}, {"AAA": 100.0}),
+            self._mark("d2", 105.0, 0.05, {"AAA": 0.52, "CASH": 0.48}, {"AAA": 110.0}),
+        ]
+        self.assertEqual([], unexplained_nav_days(history))
