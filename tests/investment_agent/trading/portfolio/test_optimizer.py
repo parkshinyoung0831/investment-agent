@@ -109,6 +109,27 @@ class BenchmarkRelativeRiskTest(unittest.TestCase):
                             optimizer.optimize(**inputs, benchmark_covariance=self._BENCH).input_hash)
 
 
+class FixedHoldingCovarianceTest(unittest.TestCase):
+    """움직일 수 없는 보유와 같은 방향으로 움직이는 종목은 더 담을수록 위험이 커진다(w'Σ_wf·f 항)."""
+
+    def test_a_name_correlated_with_a_fixed_holding_gets_less_weight(self):
+        policy = OptimizerPolicy(max_symbol_weight=0.5, max_turnover=1.0, turnover_penalty=0.0)
+        cov = [[0.0050, 0.0010], [0.0010, 0.0050]]
+
+        def weights(**extra):
+            return RiskAwareOptimizer(policy).optimize(
+                (_signal("AAPL", 0.004), _signal("MSFT", 0.004)),
+                current_weights={"CASH": 0.8, "FIX": 0.2}, covariance=cov, fixed_weights={"FIX": 0.2}, **extra,
+            ).weights
+
+        without = weights()
+        # FIX는 AAPL과 공분산 0.0045(거의 같은 종목), MSFT와는 0 — 보유 20%면 AAPL 쪽 항은 0.0009다.
+        with_cross = weights(fixed_covariance={"AAPL": 0.2 * 0.0045, "MSFT": 0.0})
+        self.assertAlmostEqual(without["AAPL"], without["MSFT"], places=6)
+        self.assertLess(with_cross["AAPL"], without["AAPL"] - 0.01)
+        self.assertAlmostEqual(with_cross["FIX"], 0.2)
+
+
 class ConstraintTest(unittest.TestCase):
     def test_force_exit_is_full_liquidation_even_when_turnover_is_expensive(self):
         # 기대수익을 양수로 둬도(잘못된 입력) 청산 제약은 비중을 남기지 않는다.

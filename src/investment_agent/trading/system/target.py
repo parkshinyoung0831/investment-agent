@@ -418,14 +418,23 @@ def build_system_target(
         {symbol: covariance.matrix[index[symbol]][index[BENCHMARK_SYMBOL]] for symbol in signal_symbols}
         if with_benchmark else None
     )
+    # 움직일 수 없는 보유와 신호 종목의 공분산. 없으면 같은 방향의 종목을 더 담는 위험이 보이지 않는다.
+    fixed_covariance = {
+        symbol: math.fsum(covariance.matrix[index[symbol]][index[held_symbol]] * weight
+                          for held_symbol, weight in fixed.items() if held_symbol in index)
+        for symbol in signal_symbols
+    } if fixed else None
     optimizer_inputs = dict(
         current_weights=current, covariance=matrix, sector_by_symbol=repository.sp500_sector_map(list(universe)),
         fixed_weights=fixed, trading_costs=trading_costs, betas=betas, benchmark_covariance=benchmark_covariance,
+        fixed_covariance=fixed_covariance,
     )
     exposure_limits_relaxed = None
 
     def solve(signals: Sequence[ExpectedReturnSignal]):
         nonlocal exposure_limits_relaxed
+        # optimizer는 종목을 정렬해 공분산 행과 맞춘다. 부분 행렬도 같은 순서로 만든다.
+        signals = tuple(sorted(signals, key=lambda signal: signal.symbol))
         positions = [signal_symbols.index(signal.symbol) for signal in signals]
         inputs = {**optimizer_inputs, "covariance": [[matrix[row][column] for column in positions] for row in positions]}
         try:

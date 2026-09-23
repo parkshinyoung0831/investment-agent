@@ -197,6 +197,7 @@ class RiskAwareOptimizer:
         betas: Mapping[str, float] | None = None,
         factor_exposures: Mapping[str, "FactorExposureLimit"] | None = None,
         benchmark_covariance: Mapping[str, float] | None = None,
+        fixed_covariance: Mapping[str, float] | None = None,
     ) -> OptimizationResult:
         """`benchmark_covariance`(종목별 벤치마크와의 보유기간 공분산)가 있으면 위험을 벤치마크 대비로 잰다.
 
@@ -205,6 +206,10 @@ class RiskAwareOptimizer:
         없기 때문이다. 벤치마크를 투자 가능 노출 E만큼 든 포트폴리오 대비 위험
         `(w − E·e_b)ᵀΣ̃(w − E·e_b) = wᵀΣw − 2E·c_bᵀw + 상수`로 재면 선형항 하나가 더해지고,
         얼마나 주식을 들지는 한도(최소 현금·regime)가 정한다.
+
+        `fixed_covariance`는 신호 종목마다 움직일 수 없는 보유(f)와의 공분산 합 `(Σ_wf·f)_i`다. 전체 위험
+        `wᵀΣw + 2wᵀΣ_wf·f + fᵀΣ_ff·f`에서 마지막 항은 상수라 선형항 `2λ·Σ_wf·f`만 더한다. 없으면 고정 보유와
+        같은 방향으로 움직이는 종목을 더 담아도 위험이 늘지 않는 것처럼 보인다.
         """
         if not signals:
             raise ContractError("optimizer requires at least one signal")
@@ -276,6 +281,13 @@ class RiskAwareOptimizer:
             if not np.isfinite(benchmark_covariances).all():
                 raise ContractError("benchmark covariance must be finite")
             benchmark_term = 2.0 * self.policy.risk_aversion * available_risky * benchmark_covariances
+        fixed_term = np.zeros(len(symbols))
+        if fixed_covariance:
+            normalized_fixed = {str(key).upper(): float(value) for key, value in fixed_covariance.items()}
+            fixed_term = np.array([normalized_fixed.get(symbol, 0.0) for symbol in symbols], dtype=float)
+            if not np.isfinite(fixed_term).all():
+                raise ContractError("fixed-holding covariance must be finite")
+            benchmark_term = benchmark_term - 2.0 * self.policy.risk_aversion * fixed_term
         current_risky = np.array([float(current.get(symbol, 0.0)) for symbol in symbols])
         exit_symbols = frozenset(
             symbol for symbol in symbols if by_symbol[symbol].constraint == CONSTRAINT_FORCE_EXIT
@@ -407,6 +419,8 @@ class RiskAwareOptimizer:
         if benchmark_covariances is not None:
             # 벤치마크 대비 위험을 쓴 판단의 재현 입력. 쓰지 않은 판단의 hash는 이 필드가 생기기 전과 같다.
             inputs["benchmark_covariance"] = dict(zip(symbols, benchmark_covariances.tolist()))
+        if fixed_covariance:
+            inputs["fixed_covariance"] = dict(zip(symbols, fixed_term.tolist()))
         return OptimizationResult(
             weights=result_weights,
             expected_return=expected_return_component,
