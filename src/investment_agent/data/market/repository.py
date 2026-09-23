@@ -200,5 +200,21 @@ class MarketRepository:
         )
         return {int(row["security_id"]) for row in rows}
 
+    def security_ids_with_prices_between(self, security_ids: Sequence[int], *, start: date, end: date) -> set[int]:
+        """주어진 종목 중 [start, end] 거래일에 가격이 하나라도 있는 종목. 이력 길이를 가볍게 가르는 데 쓴다."""
+        wanted = sorted({int(value) for value in security_ids})
+        if not wanted:
+            return set()
+        rows = self._db.select_in_chunks(
+            schema=SCHEMA,
+            table=T_PRICES,
+            columns="security_id",
+            filter_column="security_id",
+            values=wanted,
+            configure=lambda query: query.gte("trade_date", start.isoformat()).lte("trade_date", end.isoformat()),
+            order_by="security_id",
+        )
+        return {int(row["security_id"]) for row in rows}
+
 
 __all__ = ["MarketRepository", "RPC_MERGE_ACTIONS", "SCHEMA", "T_ACTIONS", "T_PRICES"]

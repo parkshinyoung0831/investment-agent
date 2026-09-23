@@ -130,6 +130,19 @@ class MarketWideQueriesTest(unittest.TestCase):
         self.assertEqual([], db.executed)
 
 
+class ShortHistoryTest(unittest.TestCase):
+    def test_a_security_with_only_recent_rows_is_not_present_in_the_year_ago_window(self) -> None:
+        """새 편입 종목은 일일 적재가 먼저 최근 며칠을 넣는다 — 행이 있어도 1년 전 가격은 없다."""
+        db = FakeDatabase()
+        db.put(SCHEMA, T_PRICES, [
+            {**_row(2), "security_id": 1, "trade_date": "2025-09-10"},
+            {**_row(2), "security_id": 2, "trade_date": "2026-09-14"},
+        ])
+        present = MarketRepository(db).security_ids_with_prices_between(
+            [1, 2], start=date(2025, 9, 7), end=date(2025, 9, 21))
+        self.assertEqual({1}, present)
+
+
 class BadRowTest(unittest.TestCase):
     def test_an_incoherent_bar_is_refused(self) -> None:
         """high가 다른 값보다 낮은 봉은 어떤 계산에도 쓸 수 없다."""

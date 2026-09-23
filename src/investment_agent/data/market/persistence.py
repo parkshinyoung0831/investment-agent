@@ -107,10 +107,25 @@ def price_targets() -> list[PriceTarget]:
     return sorted(targets.values(), key=lambda target: target.symbol)
 
 
-def missing_price_targets() -> list[PriceTarget]:
-    """가격이 한 행도 없는 수집 대상."""
+# 이 창(약 1년 전 2주)에 가격이 없으면 이력이 1년보다 짧다고 본다. 공분산·변동성·모멘텀이 1년 창을 쓴다.
+_HISTORY_PROBE_DAYS = (380, 366)
+
+
+def missing_price_targets(*, today: date | None = None) -> list[PriceTarget]:
+    """과거 이력이 없는 수집 대상 — 가격이 한 행도 없거나 약 1년 전 가격이 없는 종목.
+
+    "행이 하나도 없음"만 보면 새로 편입된 종목을 놓친다. 멤버십 점검이 백필을 띄우기 전에 일일 적재가
+    먼저 최근 며칠을 넣으면 그 종목은 행이 있어 백필 대상에서 빠지고, 이력이 며칠뿐인 채로 남는다
+    (BE·ILMN 편입, PSTG→P 개명에서 실측). 그런 종목 하나가 System 목표 전체의 공분산을 막았다.
+    최근 분사처럼 실제로 이력이 짧은 종목도 대상이 되지만 다시 받아도 같은 값이라 무해하다.
+    """
     targets = price_targets()
-    present = MarketRepository(_db()).security_ids_with_prices([t.security_id for t in targets])
+    reference = today or us_market_today()
+    old, recent = _HISTORY_PROBE_DAYS
+    present = MarketRepository(_db()).security_ids_with_prices_between(
+        [t.security_id for t in targets],
+        start=reference - timedelta(days=old), end=reference - timedelta(days=recent),
+    )
     return [target for target in targets if target.security_id not in present]
 
 
