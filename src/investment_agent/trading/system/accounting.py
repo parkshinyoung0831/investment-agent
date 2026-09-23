@@ -58,6 +58,8 @@ class SessionPrice:
     close: float | None
     dividend: float = 0.0
     split_ratio: float = 1.0
+    # 같은 조회에서 읽은 직전 평가일의 종가. 있으면 수익률을 이것으로 잰다(아래 `_gross`).
+    previous_close: float | None = None
 
 
 def first_session_after(decided_at: datetime, trade_dates: Sequence[str]) -> str | None:
@@ -75,8 +77,12 @@ def session_price(rows: Sequence[Mapping], *, after: str | None, on: str) -> Ses
     close: float | None = None
     dividend = 0.0
     split = 1.0
+    previous_close: float | None = None
+    previous_date = ""
     for row in rows:
         trade_date = str(row["trade_date"])[:10]
+        if after is not None and trade_date == after and row.get("close"):
+            previous_close, previous_date = float(row["close"]), trade_date
         if trade_date > on or (after is not None and trade_date <= after):
             continue
         if row.get("div_amount"):
@@ -85,12 +91,21 @@ def session_price(rows: Sequence[Mapping], *, after: str | None, on: str) -> Ses
             split *= float(row["split_ratio"])
         if trade_date == on and row.get("close"):
             close = float(row["close"])
-    return SessionPrice(close, dividend, split)
+    return SessionPrice(close, dividend, split, previous_close if previous_date else None)
 
 
 def _gross(previous_close: float, price: SessionPrice) -> float:
+    """하루(또는 정지 뒤 첫날까지)의 총수익 배수.
+
+    `market.prices_daily.close`는 **분할 조정** 가격이다(배당은 미조정). 같은 조회에서 읽은 직전 종가가
+    있으면 두 값이 같은 조정 기준이라 분할 비율을 곱하면 안 된다 — 곱하면 분할일(GOOGL 20:1)에 그 종목
+    수익이 20배가 된다. 직전 종가를 표에서 못 읽었을 때만 저장해 둔 종가를 쓰는데, 그 값은 분할이 반영되기
+    전에 기록됐을 수 있으므로 그때만 분할 비율로 맞춘다.
+    """
     if price.close is None:
         return 1.0
+    if price.previous_close is not None and price.previous_close > 0:
+        return (price.close + price.dividend) / price.previous_close
     return (price.close + price.dividend) * price.split_ratio / previous_close
 
 

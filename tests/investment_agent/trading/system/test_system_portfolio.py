@@ -84,6 +84,19 @@ class AccountingTest(unittest.TestCase):
         price = session_price(rows, after="2026-09-15", on="2026-09-17")
         self.assertEqual((price.close, price.dividend, price.split_ratio), (26.0, 0.2, 4.0))
 
+    def test_a_split_on_split_adjusted_prices_is_not_counted_twice(self):
+        """`market.prices_daily.close`는 분할 조정 가격이다. GOOGL 20:1 분할일(실제 값)에 수익이 20배가 되면 안 된다."""
+        rows = [
+            {"trade_date": "2022-07-15", "close": 111.777496337891},
+            {"trade_date": "2022-07-18", "close": 109.029998779297, "split_ratio": 20.0},
+        ]
+        price = session_price(rows, after="2022-07-15", on="2022-07-18")
+        start = advance(None, trade_date="2022-07-15", prices={"GOOGL": SessionPrice(111.777496337891)},
+                        benchmark=SessionPrice(385.13), target={"GOOGL": 0.05, "CASH": 0.95},
+                        cost_rates={"GOOGL": 0.0})
+        after = advance(start, trade_date="2022-07-18", prices={"GOOGL": price}, benchmark=SessionPrice(381.95))
+        self.assertAlmostEqual(after.daily_return, 0.05 * (109.029998779297 / 111.777496337891 - 1.0))
+
     def test_a_target_applies_from_the_first_session_that_opens_after_the_decision(self):
         dates = ["2026-09-14", "2026-09-15"]
         self.assertEqual(first_session_after(datetime(2026, 9, 14, 20, tzinfo=UTC), dates), "2026-09-15")  # 16:00 ET
