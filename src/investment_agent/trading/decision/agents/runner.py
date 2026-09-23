@@ -135,7 +135,9 @@ class TradingAgentsRunner:
                 macro_report_cache=self._macro_reports,
             )
             manifests = runtime._deduplicate_external_manifests(runtime._EXTERNAL_MANIFESTS.get())
-            return {**result, "_external_evidence_manifest": manifests, "_analyst_inputs": analyst_inputs}
+            # 역할 호출은 이 client로 나간다. 사용량을 넘기지 않으면 종목당 비용이 구조화 호출 1건만 남는다.
+            return {**result, "_external_evidence_manifest": manifests, "_analyst_inputs": analyst_inputs,
+                    "_role_usage": client.usage}
         except Exception as exc:
             manifests = runtime._deduplicate_external_manifests(runtime._EXTERNAL_MANIFESTS.get())
             raise runtime.TradingAgentsRunError(

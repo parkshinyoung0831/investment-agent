@@ -11,6 +11,7 @@ from investment_agent.trading.decision.agents.base import AgentEngineResult
 from investment_agent.trading.decision.agents.runner import TradingAgentsRunner
 from investment_agent.forecasting import SIGNAL_HORIZON_DAYS
 from investment_agent.trading.decision.llm.client import LLMClient
+from investment_agent.trading.decision.llm.usage import UsageLedger
 from investment_agent.trading.decision.llm.runtime import _deduplicate_external_manifests
 from investment_agent.trading.portfolio.contracts import HARD_CONSTRAINTS, THESES, SecurityProposal
 
@@ -112,6 +113,7 @@ class TradingAgentsDecisionEngine:
         state = self.runner.run(bundle, memory_text=memory_text)
         # 분석가 입력은 기록용이다. 구조화 호출에 실으면 그만큼 토큰이 는다.
         analyst_inputs = state.pop("_analyst_inputs", None)
+        role_usage = state.pop("_role_usage", None)
         external_evidence = _deduplicate_external_manifests(
             state.pop("_external_evidence_manifest", ())
         )
@@ -176,8 +178,10 @@ class TradingAgentsDecisionEngine:
             proposal,
             missing_data=tuple(dict.fromkeys(proposal.missing_data + external_missing)),
         )
-        # 역할 호출과 구조화까지 끝난 뒤에 읽는다 — 그래야 이 종목의 전체 비용이다.
+        # 역할 호출(runner의 client)과 구조화(이 client)를 합친다 — 그래야 이 종목의 전체 비용이다.
         usage = getattr(self.client, "usage", None)
+        if isinstance(role_usage, UsageLedger):
+            usage = UsageLedger(calls=[*role_usage.calls, *(usage.calls if usage is not None else [])])
         return AgentEngineResult(
             engine=self.name,
             engine_version=self.version,

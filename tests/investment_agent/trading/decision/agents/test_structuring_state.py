@@ -114,6 +114,49 @@ class EngineSendsTheCompactStateTest(unittest.TestCase):
 
 
 
+class RoleUsageIsCountedTest(unittest.TestCase):
+    def test_role_calls_from_the_runner_client_are_added_to_the_structuring_usage(self):
+        """역할 토론은 runner가 만든 client로 나간다. 그 사용량이 빠지면 종목당 비용이 구조화 1건만 남는다."""
+        import json
+
+        from investment_agent.research.evidence.contracts import EvidenceBundle, EvidenceItem
+        from investment_agent.trading.decision.agents.engine import TradingAgentsDecisionEngine
+        from investment_agent.trading.decision.llm.usage import CallUsage, UsageLedger
+
+        def call(task, tokens):
+            return CallUsage(task_name=task, latency_ms=10.0, input_tokens=tokens, output_tokens=1)
+
+        role_usage = UsageLedger(calls=[call("market_analyst", 100), call("bull_researcher", 200)])
+
+        class _Runner:
+            version = "test-v1"
+
+            def run(self, bundle, *, memory_text):
+                return {**_state(), "_role_usage": role_usage}
+
+        class _Client:
+            usage = UsageLedger(calls=[call("tradingagents_security_proposal", 50)])
+
+            def complete_json(self, **kwargs):
+                payload = json.loads(kwargs["user"])
+                return {"ticker": payload["ticker"], "as_of_at": payload["as_of_at"], "thesis": "neutral",
+                        "hard_constraint": "none", "key_risks": [], "probability_up": 0.5, "confidence": 0.5,
+                        "expected_excess_return": 0.0, "reasoning": ["r"], "evidence_ids": ["EV-1"],
+                        "missing_data": []}
+
+        bundle = EvidenceBundle(
+            ticker="AAPL", as_of_at="2026-08-21T00:00:00+00:00", source_kind="live_shadow",
+            evidence=(EvidenceItem(
+                evidence_id="EV-1", domain="market", source="market.prices_daily", observed_at="2026-08-20",
+                available_at="2026-08-20T23:00:00+00:00", timing_status="known", payload={"close": 1.0},
+            ),),
+        )
+        result = TradingAgentsDecisionEngine(_Client(), _Runner()).run(bundle, memory_text="")
+        self.assertEqual(3, result.usage["requests"])
+        self.assertEqual(350, result.usage["input_tokens"])
+        self.assertNotIn("_role_usage", result.role_outputs)
+
+
 class StrictStructuringSchemaTest(unittest.TestCase):
     """재현에서 본 계약 문제 두 종류(thesis 칸의 설명문, 허용 밖 evidence ID)는 모양의 문제라 strict가 막는다."""
 
