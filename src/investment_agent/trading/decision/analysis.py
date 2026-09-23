@@ -32,6 +32,7 @@ from investment_agent.platform.serialization import canonical_json
 from investment_agent.trading.supabase_repository import SupabaseRepository
 from investment_agent.trading.evidence.artifacts import archive_case_evidence
 from investment_agent.trading.decision.llm.client import OpenAICompatibleClient
+from investment_agent.trading.decision.escalation import refresh_shadow
 from investment_agent.trading.decision.memory import CaseMemory
 from investment_agent.trading.decision.model_pool import (
     DEFAULT_POOL,
@@ -191,6 +192,35 @@ def run_usage_total(per_ticker: list[dict]) -> dict:
     }
 
 
+def _held_tickers(repository) -> list[str]:
+    """shadow 판정용 보유 종목. 읽지 못해도 분석은 멈추지 않는다 — 모르면 보유로 보지 않는 대신 기록에 남는다."""
+    try:
+        return list(repository._candidate_held_tickers())
+    except Exception as exc:  # noqa: BLE001 - shadow 입력이 분석을 멈추게 두지 않는다
+        log.warning("held tickers unavailable for escalation shadow: %s", type(exc).__name__)
+        return []
+
+
+def _escalation_shadow(repository, bundle, *, as_of: datetime, is_held: bool) -> dict | None:
+    """이 재분석을 건너뛰었어도 됐을지(설계 §55.1). 기록만 한다 — 판단 경로에 영향이 없다."""
+    try:
+        row = repository.previous_decision(bundle.ticker, as_of_at=as_of) if hasattr(
+            repository, "previous_decision") else None
+        decision = (row or {}).get("final_decision")
+        previous = ({"case_key": row["case_key"], "as_of_at": row["as_of_at"],
+                     "thesis": decision.get("thesis"), "hard_constraint": decision.get("hard_constraint")}
+                    if isinstance(decision, dict) else None)
+        filed = [str(filing.get("filed_at")) for item in bundle.evidence if item.domain == "fundamentals"
+                 for filing in (item.payload.get("filings") or ()) if filing.get("filed_at")]
+        bars = next((list(item.payload.get("latest_bars") or ()) for item in bundle.evidence
+                     if item.domain == "market"), [])
+        return refresh_shadow(as_of_at=as_of, is_held=is_held, previous=previous,
+                              latest_filed_at=max(filed) if filed else None, bars_desc=bars).to_metadata()
+    except Exception as exc:  # noqa: BLE001 - shadow가 분석을 멈추게 두지 않는다
+        log.warning("escalation shadow failed ticker=%s: %s", bundle.ticker, type(exc).__name__)
+        return {"error": type(exc).__name__}
+
+
 def analysis_limit(requested: int, *, remaining_budget: int) -> int:
     """고를 종목 수 = 요청 한도와 오늘 남은 모델 예산 중 작은 쪽."""
     return max(0, min(int(requested), int(remaining_budget)))
@@ -327,6 +357,7 @@ def main(argv: list[str] | None = None) -> int:
         "failure_reason": None,
     })
     memory = CaseMemory(repository)
+    held_now = set(_held_tickers(repository))
     proposals = []
     successful_case_keys: list[str] = []
     failures: list[str] = []
@@ -356,6 +387,8 @@ def main(argv: list[str] | None = None) -> int:
             "source_kind": "live_shadow",
         }
         candidate = None
+        # 새 판단을 보기 전에 내린다 — 결과를 본 뒤의 판정은 규칙이 결과를 엿보는 것이다.
+        shadow = _escalation_shadow(repository, bundle, as_of=as_of, is_held=bundle.ticker in held_now)
         try:
             result, candidate = _select_and_run(
                 bundle,
@@ -391,6 +424,7 @@ def main(argv: list[str] | None = None) -> int:
                 code_commit=os.environ.get("GITHUB_SHA"),
                 llm_usage=result.usage,
                 analyst_inputs=result.analyst_inputs,
+                escalation_shadow=shadow,
             )
             repository.save_case({
                 **base,

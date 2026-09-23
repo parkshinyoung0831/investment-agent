@@ -154,6 +154,7 @@ class EvidenceArtifactStore:
         role_analyses: Any,
         llm_usage: Mapping[str, Any] | None = None,
         analyst_inputs: Mapping[str, Any] | None = None,
+        escalation_shadow: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not str(case_key).strip():
             raise EvidenceArtifactError("case_key is required")
@@ -170,6 +171,8 @@ class EvidenceArtifactStore:
             payload["llm_usage"] = json_value(dict(llm_usage))
         if analyst_inputs is not None:
             payload["analyst_inputs"] = json_value(dict(analyst_inputs))
+        if escalation_shadow is not None:
+            payload["escalation_shadow"] = json_value(dict(escalation_shadow))
         return payload
 
     def write_case(
@@ -181,6 +184,7 @@ class EvidenceArtifactStore:
         code_commit: str | None = None,
         llm_usage: Mapping[str, Any] | None = None,
         analyst_inputs: Mapping[str, Any] | None = None,
+        escalation_shadow: Mapping[str, Any] | None = None,
     ) -> EvidenceArtifactManifest:
         payload = self._payload(
             case_key=case_key,
@@ -188,6 +192,7 @@ class EvidenceArtifactStore:
             role_analyses=role_analyses,
             llm_usage=llm_usage,
             analyst_inputs=analyst_inputs,
+            escalation_shadow=escalation_shadow,
         )
         raw = canonical_json(payload).encode("utf-8")
         digest = hashlib.sha256(raw).hexdigest()
@@ -259,6 +264,7 @@ def archive_case_evidence(
     code_commit: str | None = None,
     llm_usage: Mapping[str, Any] | None = None,
     analyst_inputs: Mapping[str, Any] | None = None,
+    escalation_shadow: Mapping[str, Any] | None = None,
 ) -> ArchivedCaseEvidence:
     """artifact를 먼저 쓰고 DB에는 manifest와 digest만 남긴다."""
 
@@ -274,6 +280,7 @@ def archive_case_evidence(
             code_commit=code_commit,
             llm_usage=llm_usage,
             analyst_inputs=analyst_inputs,
+            escalation_shadow=escalation_shadow,
         )
     except EvidenceArtifactError as exc:
         error = f"{type(exc).__name__}: {exc}"[:500]
