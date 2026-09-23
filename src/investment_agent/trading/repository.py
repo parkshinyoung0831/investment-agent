@@ -25,7 +25,7 @@ decision_runs  →  security_decisions  →  portfolio_proposals
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from contextlib import nullcontext
 
@@ -63,6 +63,21 @@ _DECISION_COLUMNS = (
     "failure_reason, created_at"
 )
 
+
+
+def evaluation_calendar_days(horizon: int) -> int:
+    """H거래일이 확실히 지났다고 볼 달력 일수. 주말(7/5)과 연휴 여유 3일."""
+    return -(-horizon * 7 // 5) + 3
+
+
+def has_matured_gap(as_of_at: Any, evaluated: set[int], horizons: Sequence[int], *, now: datetime) -> bool:
+    """아직 채점하지 않은 기간 중 달력상 이미 지났을 기간이 있는가."""
+    decided = as_of_at if isinstance(as_of_at, datetime) else datetime.fromisoformat(str(as_of_at).replace("Z", "+00:00"))
+    if decided.tzinfo is None:
+        decided = decided.replace(tzinfo=timezone.utc)
+    age = now - decided
+    return any(horizon not in evaluated and age >= timedelta(days=evaluation_calendar_days(horizon))
+               for horizon in horizons)
 
 class TradingRepository:
     def __init__(self, db: Database | None = None) -> None:
@@ -336,38 +351,51 @@ class TradingRepository:
         return dict(rows[0]) if rows else None
 
     # ── 사후 평가 ─────────────────────────────────────────────────────────
-    def evaluation_candidates(self, limit: int = 200) -> list[dict[str, Any]]:
+    def evaluation_candidates(self, limit: int = 200, *, now: datetime | None = None) -> list[dict[str, Any]]:
+        """채점할 수 있는 기간이 하나라도 새로 찬 판단만, 오래된 것부터.
+
+        아직 끝나지 않은 기간만 남은 판단(60일을 기다리는 것)까지 후보로 세면, 가장 오래된 `limit`건이 그런
+        판단으로 차서 최근 판단의 5·20일 채점이 그 판단들이 60일을 채울 때까지 밀린다.
+        """
         if limit < 1:
             raise ValueError("limit must be positive")
         from investment_agent.research.adapters.trading import EVALUATION_HORIZONS
         from investment_agent.trading.local_store import LocalTradingDatabase
+        moment = now or utc_now()
         if isinstance(self._db, LocalTradingDatabase):
-            # PK(case_key,horizon_days) 반조회로 완료 행은 LIMIT 이전에 제외한다.
             placeholders = ",".join("?" for _ in EVALUATION_HORIZONS)
             with self._db.transaction(read_only=True) as connection:
                 cursor = connection.execute(
-                    f"SELECT d.* FROM {T_SECURITY_DECISIONS} d "
+                    f"SELECT d.*, (SELECT group_concat(e.horizon_days) FROM {T_EVALUATIONS} e "
+                    "WHERE e.case_key=d.case_key) AS _evaluated "
+                    f"FROM {T_SECURITY_DECISIONS} d "
                     "WHERE d.status IN ('completed','abstained') AND "
                     f"(SELECT count(*) FROM {T_EVALUATIONS} e WHERE e.case_key=d.case_key "
                     f"AND e.horizon_days IN ({placeholders})) < ? "
-                    "ORDER BY d.as_of_at,d.case_key LIMIT ?",
-                    [*EVALUATION_HORIZONS, len(EVALUATION_HORIZONS), limit],
+                    "ORDER BY d.as_of_at,d.case_key",
+                    [*EVALUATION_HORIZONS, len(EVALUATION_HORIZONS)],
                 )
                 columns = self._db.columns(connection, T_SECURITY_DECISIONS)
                 names = [item[0] for item in cursor.description]
-                return [self._db.decode(dict(zip(names, row)), columns) for row in cursor.fetchall()]
-        rows = self.decision_cases()
-        completed = self._db.select_in_chunks(
-            schema=SCHEMA, table=T_EVALUATIONS, columns="case_key,horizon_days",
-            filter_column="case_key", values=[str(row["case_key"]) for row in rows],
-            order_by="case_key,horizon_days",
-        ) if rows else []
-        horizons: dict[str, set[int]] = {}
-        for row in completed:
-            horizons.setdefault(str(row["case_key"]), set()).add(int(row["horizon_days"]))
-        return [{**row, "evaluated_horizons": sorted(horizons.get(str(row["case_key"]), set()))}
-                for row in rows if not set(EVALUATION_HORIZONS).issubset(
-                    horizons.get(str(row["case_key"]), set()))][:limit]
+                rows = []
+                for raw in cursor.fetchall():
+                    row = dict(zip(names, raw))
+                    evaluated = sorted({int(value) for value in str(row.pop("_evaluated") or "").split(",") if value})
+                    rows.append({**self._db.decode(row, columns), "evaluated_horizons": evaluated})
+        else:
+            cases = self.decision_cases()
+            completed = self._db.select_in_chunks(
+                schema=SCHEMA, table=T_EVALUATIONS, columns="case_key,horizon_days",
+                filter_column="case_key", values=[str(row["case_key"]) for row in cases],
+                order_by="case_key,horizon_days",
+            ) if cases else []
+            horizons: dict[str, set[int]] = {}
+            for row in completed:
+                horizons.setdefault(str(row["case_key"]), set()).add(int(row["horizon_days"]))
+            rows = [{**row, "evaluated_horizons": sorted(horizons.get(str(row["case_key"]), set()))} for row in cases]
+        return [row for row in rows
+                if has_matured_gap(row["as_of_at"], set(row["evaluated_horizons"]), EVALUATION_HORIZONS, now=moment)
+                ][:limit]
 
     def decision_cases(self) -> list[dict[str, Any]]:
         """승인·매수 여부와 무관한 원본 완료 판단을 읽는다."""

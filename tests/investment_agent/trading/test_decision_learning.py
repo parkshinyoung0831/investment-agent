@@ -26,6 +26,23 @@ class QueueTest(unittest.TestCase):
             rows=TradingRepository(LocalTradingDatabase(path)).evaluation_candidates(200)
             self.assertEqual(["c200"],[row["case_key"] for row in rows])
 
+    def test_cases_waiting_only_for_long_horizons_do_not_starve_recent_cases(self):
+        """60일을 기다리는 오래된 판단이 limit을 채워도 5일이 찬 최근 판단이 먼저 나온다."""
+        from datetime import datetime, timezone
+        db=FakeDatabase(); repo=TradingRepository(db)
+        waiting=[dict(case_key=f"old{i:03}",security_id=1,as_of_at="2026-08-01T00:00:00+00:00",status="completed") for i in range(250)]
+        db.put(SCHEMA,T_SECURITY_DECISIONS,[*waiting,dict(case_key="recent",security_id=1,as_of_at="2026-09-10T00:00:00+00:00",status="completed")])
+        db.put(SCHEMA,T_EVALUATIONS,[dict(case_key=row["case_key"],horizon_days=h) for row in waiting for h in (5,20)])
+        rows=repo.evaluation_candidates(200, now=datetime(2026,9,23,tzinfo=timezone.utc))
+        self.assertEqual(["recent"],[r["case_key"] for r in rows])
+
+    def test_a_case_whose_horizon_has_not_passed_is_not_a_candidate(self):
+        from datetime import datetime, timezone
+        db=FakeDatabase(); repo=TradingRepository(db)
+        db.put(SCHEMA,T_SECURITY_DECISIONS,[dict(case_key="fresh",security_id=1,as_of_at="2026-09-20T00:00:00+00:00",status="completed")])
+        db.put(SCHEMA,T_EVALUATIONS,[])
+        self.assertEqual([],repo.evaluation_candidates(200, now=datetime(2026,9,23,tzinfo=timezone.utc)))
+
 class ExperienceTest(unittest.TestCase):
     def test_unbought_original_and_flat_actions_and_future_exclusion(self):
         from copy import deepcopy
