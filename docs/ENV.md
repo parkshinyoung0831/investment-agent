@@ -55,6 +55,7 @@ Actions secrets/variables(CI)에 주입하며, 이 파일에는 이름·용도·
 | `AI_INVESTOR_AZURE_DAILY_REQUESTS` | Azure provider에 적용할 프로젝트별 일일 지출·호출 가드 |
 | `AI_INVESTOR_GEMINI_API_KEY`, `GROQ_API_KEY` | 선택적인 provider credential. 각 provider의 현재 요금·rate limit·약관을 직접 확인 |
 | `AI_INVESTOR_API_KEY`, `AI_INVESTOR_PROVIDER`, `AI_INVESTOR_TIMEOUT_SEC`, `AI_INVESTOR_DAILY_LIMIT` | 선택 API 키·공급자 라벨·호출 제한·하루 종목 한도 |
+| `AI_INVESTOR_TYPESAFE_API_KEY`, `AI_INVESTOR_TYPESAFE_BASE_URL`, `AI_INVESTOR_TYPESAFE_MODEL`, `AI_INVESTOR_TYPESAFE_TIMEOUT_SEC` | System-One(Jev) shadow provider. **키가 없으면 그 provider는 호출되지 않는다** — 채택이 아니라 비교 레일이다 (`INVESTMENT_DECISION_ENGINE_DESIGN.md` §49.2) |
 | `AI_INVESTOR_EXTERNAL_MAX_AGE_HOURS`, `AI_INVESTOR_EXTERNAL_MAX_CHARS` | 판단 입력에 넣는 외부 뉴스의 최대 나이(기본 24시간)와 최대 글자 수(기본 12000) |
 | `AI_INVESTOR_SIGNAL_TTL_HOURS` | 판단 신호의 유효 시간(기본 24) |
 | `AI_INVESTOR_MODEL_POOL_LEDGER_PATH` | 모델 풀 원장 경로. 비어 있으면 기본 위치 |
