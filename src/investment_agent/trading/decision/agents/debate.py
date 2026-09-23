@@ -13,6 +13,7 @@ from investment_agent.trading.decision.agents.graph_state import (
     AnalystReports,
     InvestDebateState,
     debate_next_speaker,
+    shared_context,
 )
 from investment_agent.trading.decision.llm.client import LLMClient
 
@@ -30,15 +31,6 @@ _ENTRY_LABELS = {"bull": "Bull", "bear": "Bear"}
 _TASK_NAMES = {"bull": "tradingagents_bull_researcher", "bear": "tradingagents_bear_researcher"}
 
 
-def _reports_payload(reports: AnalystReports) -> dict[str, str]:
-    return {
-        "market_report": reports.market_report,
-        "sentiment_report": reports.sentiment_report,
-        "news_report": reports.news_report,
-        "fundamentals_report": reports.fundamentals_report,
-        "macro_report": reports.macro_report,
-    }
-
 
 def _debate_turn(
     client: LLMClient, *, speaker: str, reports: AnalystReports, state: InvestDebateState,
@@ -51,11 +43,11 @@ def _debate_turn(
     )
     opponent_last = state.bear_history if speaker == "bull" else state.bull_history
     user = canonical_json({
-        "reports": _reports_payload(reports),
         "debate_history": state.history,
         "opponent_last_argument": opponent_last,
     })
     result = client.complete_json(
+        context=shared_context(reports),
         system=system, user=user, output_schema=_ARGUMENT_SCHEMA, task_name=_TASK_NAMES[speaker],
     )
     return str(result["argument"])
@@ -92,10 +84,10 @@ def run_research_manager(
         "매수·매도·비중은 정하지 않는다 — 그건 포트폴리오 엔진의 몫이다."
     )
     user = canonical_json({
-        "reports": _reports_payload(reports),
         "debate_history": state.history,
     })
     result = client.complete_json(
+        context=shared_context(reports),
         system=system, user=user, output_schema=_RESEARCH_PLAN_SCHEMA,
         task_name="tradingagents_research_manager",
     )

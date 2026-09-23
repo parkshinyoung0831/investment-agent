@@ -14,6 +14,7 @@ from investment_agent.trading.decision.agents.graph_state import (
     AnalystReports,
     RiskDebateState,
     risk_next_speaker,
+    shared_context,
 )
 from investment_agent.trading.decision.llm.client import LLMClient
 
@@ -49,15 +50,6 @@ _CURRENT_ATTR = {
 }
 
 
-def _reports_payload(reports: AnalystReports) -> dict[str, str]:
-    return {
-        "market_report": reports.market_report,
-        "sentiment_report": reports.sentiment_report,
-        "news_report": reports.news_report,
-        "fundamentals_report": reports.fundamentals_report,
-        "macro_report": reports.macro_report,
-    }
-
 
 def _risk_turn(
     client: LLMClient, *, speaker: str, reports: AnalystReports, trader_plan: str, state: RiskDebateState,
@@ -69,11 +61,11 @@ def _risk_turn(
         f"않는다 — 판단 지평은 {SIGNAL_HORIZON_DAYS}거래일 초과수익 하나뿐이다."
     )
     user = canonical_json({
-        "reports": _reports_payload(reports),
         "trader_plan": trader_plan,
         "risk_debate_history": state.history,
     })
     result = client.complete_json(
+        context=shared_context(reports),
         system=system, user=user, output_schema=_ARGUMENT_SCHEMA, task_name=_TASK_NAMES[speaker],
     )
     return str(result["argument"])
@@ -109,11 +101,11 @@ def run_portfolio_manager(
         "정리하라. 매수·매도·비중은 정하지 않는다 — 그건 포트폴리오 엔진과 리스크 게이트의 몫이다."
     )
     user = canonical_json({
-        "reports": _reports_payload(reports),
         "trader_plan": trader_plan,
         "risk_debate_history": state.history,
     })
     result = client.complete_json(
+        context=shared_context(reports),
         system=system, user=user, output_schema=_PORTFOLIO_DECISION_SCHEMA,
         task_name="tradingagents_portfolio_manager",
     )

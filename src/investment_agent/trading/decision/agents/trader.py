@@ -5,7 +5,7 @@ from typing import Any
 
 from investment_agent.platform.serialization import canonical_json
 from investment_agent.forecasting import SIGNAL_HORIZON_DAYS
-from investment_agent.trading.decision.agents.graph_state import AnalystReports, InvestDebateState
+from investment_agent.trading.decision.agents.graph_state import AnalystReports, InvestDebateState, shared_context
 from investment_agent.trading.decision.llm.client import LLMClient
 
 _TRADER_PLAN_SCHEMA: dict[str, Any] = {
@@ -13,15 +13,6 @@ _TRADER_PLAN_SCHEMA: dict[str, Any] = {
     f"{SIGNAL_HORIZON_DAYS} trading days, no options/stop-loss/sizing talk",
 }
 
-
-def _reports_payload(reports: AnalystReports) -> dict[str, str]:
-    return {
-        "market_report": reports.market_report,
-        "sentiment_report": reports.sentiment_report,
-        "news_report": reports.news_report,
-        "fundamentals_report": reports.fundamentals_report,
-        "macro_report": reports.macro_report,
-    }
 
 
 def run_trader(
@@ -34,10 +25,10 @@ def run_trader(
         "손절가는 말하지 않는다 — 그건 포트폴리오 엔진과 리스크 게이트의 몫이다."
     )
     user = canonical_json({
-        "reports": _reports_payload(reports),
         "research_manager_decision": debate_state.judge_decision,
     })
     result = client.complete_json(
+        context=shared_context(reports),
         system=system, user=user, output_schema=_TRADER_PLAN_SCHEMA, task_name="tradingagents_trader",
     )
     return str(result["plan"])

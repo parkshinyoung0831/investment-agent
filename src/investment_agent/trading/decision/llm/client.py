@@ -28,6 +28,7 @@ class LLMClient(Protocol):
         user: str,
         output_schema: Mapping[str, Any],
         task_name: str,
+        context: str | None = None,
     ) -> dict[str, Any]: ...
 
 
@@ -109,14 +110,27 @@ class OpenAICompatibleClient:
             return self.base_url + "/chat/completions"
         return self.base_url + "/v1/chat/completions"
 
-    def build_payload(self, *, system: str, user: str, schema_text: str) -> dict[str, Any]:
-        """모델이 실제로 받는 모양으로 요청 본문을 만든다."""
-        payload: dict[str, Any] = {
-            "model": self.model,
-            "messages": [
+    def build_payload(
+        self, *, system: str, user: str, schema_text: str, context: str | None = None,
+    ) -> dict[str, Any]:
+        """모델이 실제로 받는 모양으로 요청 본문을 만든다.
+
+        `context`는 여러 호출이 똑같이 공유하는 접두부다. 있으면 그것을 첫 메시지로 두고 호출별 지시
+        (`system`)는 뒤로 보낸다 — prompt cache는 요청의 첫 토큰부터 같은 접두부에만 걸린다.
+        """
+        if context is None:
+            messages = [
                 {"role": "system", "content": system},
                 {"role": "user", "content": f"{user}\n\n반환 JSON 모양:\n{schema_text}"},
-            ],
+            ]
+        else:
+            messages = [
+                {"role": "system", "content": context},
+                {"role": "user", "content": f"{system}\n\n{user}\n\n반환 JSON 모양:\n{schema_text}"},
+            ]
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
             "response_format": {"type": "json_object"},
         }
         if supports_custom_temperature(self.model):
@@ -130,12 +144,13 @@ class OpenAICompatibleClient:
         user: str,
         output_schema: Mapping[str, Any],
         task_name: str,
+        context: str | None = None,
     ) -> dict[str, Any]:
         schema_text = json.dumps(output_schema, ensure_ascii=False, separators=(",", ":"))
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        payload = self.build_payload(system=system, user=user, schema_text=schema_text)
+        payload = self.build_payload(system=system, user=user, schema_text=schema_text, context=context)
 
         max_attempts = 3
         last_exc: Exception | None = None
