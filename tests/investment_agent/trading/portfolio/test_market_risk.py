@@ -269,3 +269,47 @@ class BetaParsingReuseTest(unittest.TestCase):
             for symbol in held:
                 self.assertAlmostEqual(shared_betas[proxy][symbol], isolated[symbol], places=12)
 
+
+
+class RedundantSymbolsTest(unittest.TestCase):
+    """같은 회사의 두 주식 클래스는 RiskGate의 쌍 상관 한도로 목표 전체를 거절시킨다(GOOG·GOOGL)."""
+
+    @staticmethod
+    def _rows(returns):
+        from datetime import date, timedelta
+
+        price, rows, day = 100.0, [], date(2025, 1, 1)
+        for value in (0.0, *returns):
+            price *= 1.0 + value
+            rows.append({"trade_date": day.isoformat(), "close": price})
+            day += timedelta(days=1)
+        return rows
+
+    def _universe(self):
+        import random
+
+        rng = random.Random(3)
+        base = [rng.gauss(0, 0.02) for _ in range(120)]
+        twin = [value + rng.gauss(0, 0.0005) for value in base]
+        other = [rng.gauss(0, 0.02) for _ in range(120)]
+        return {"GOOGL": self._rows(base), "GOOG": self._rows(twin), "XOM": self._rows(other)}
+
+    def test_the_lower_scored_twin_is_dropped(self):
+        from investment_agent.trading.portfolio.market_risk import redundant_symbols
+
+        dropped = redundant_symbols(self._universe(), ("GOOGL", "GOOG", "XOM"), max_correlation=0.95,
+                                    priority={"GOOGL": 0.9, "GOOG": 0.8, "XOM": 0.7})
+        self.assertEqual({"GOOG": "GOOGL"}, dropped)
+
+    def test_a_held_twin_is_kept_even_with_a_lower_score(self):
+        from investment_agent.trading.portfolio.market_risk import redundant_symbols
+
+        dropped = redundant_symbols(self._universe(), ("GOOGL", "GOOG", "XOM"), max_correlation=0.95,
+                                    priority={"GOOGL": 0.9, "GOOG": 0.8}, keep=frozenset({"GOOG"}))
+        self.assertEqual({"GOOGL": "GOOG"}, dropped)
+
+    def test_nothing_is_dropped_below_the_limit(self):
+        from investment_agent.trading.portfolio.market_risk import redundant_symbols
+
+        self.assertEqual({}, redundant_symbols(self._universe(), ("GOOGL", "GOOG", "XOM"), max_correlation=0.9999,
+                                                priority={}))

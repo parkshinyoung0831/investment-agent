@@ -65,6 +65,50 @@ def _signal(symbol: str, expected: float, constraint: str | None = None) -> Expe
     return ExpectedReturnSignal(symbol, expected, 1.0, 0.1, 5, "test", _AT, "v1", constraint=constraint)
 
 
+class BenchmarkRelativeRiskTest(unittest.TestCase):
+    """기대수익이 SPY 대비 초과수익이면 위험도 SPY 대비로 재야 한다(설계 §9.2)."""
+
+    # 20거래일 기준. 두 종목 모두 연 변동성 약 25%, SPY와 상관 약 0.7.
+    _COV = [[0.0050, 0.0020], [0.0020, 0.0050]]
+    _BENCH = {"AAPL": 0.0023, "MSFT": 0.0023}
+
+    def _invested(self, **extra) -> float:
+        policy = OptimizerPolicy(max_symbol_weight=0.5, max_turnover=1.0, turnover_penalty=0.0)
+        result = RiskAwareOptimizer(policy).optimize(
+            (_signal("AAPL", 0.003), _signal("MSFT", 0.003)), current_weights={"CASH": 1.0},
+            covariance=self._COV, **extra,
+        )
+        return 1.0 - result.weights["CASH"]
+
+    def test_absolute_variance_leaves_most_of_the_book_in_cash(self):
+        """작은 초과수익과 시장 위험 전체를 맞바꾸면 현금이 이긴다 — 고치려는 편향 그 자체다."""
+        self.assertLess(self._invested(), 0.2)
+
+    def test_benchmark_relative_risk_holds_the_market_like_exposure(self):
+        """최적은 SPY 노출을 복제하는 비중이다. 두 종목이 SPY보다 변동성이 커서 그 비중은 E(0.95)보다 작다:
+        대칭 1계 조건 w·(σ² + σ_ij) = E·c_b + α/(2λ) → w ≈ 0.355, 합 ≈ 0.71."""
+        invested = self._invested(benchmark_covariance=self._BENCH)
+        self.assertAlmostEqual(invested, 2 * (0.95 * 0.0023 + 0.003 / 10.0) / 0.007, places=3)
+        self.assertGreater(invested, 3 * self._invested())
+
+    def test_minimum_cash_still_binds(self):
+        """더 강한 시장 공분산이면 한도(1 − 최소 현금)에 닿고 넘지 않는다."""
+        invested = self._invested(benchmark_covariance={"AAPL": 0.0060, "MSFT": 0.0060})
+        self.assertAlmostEqual(invested, 0.95, places=4)
+
+    def test_missing_benchmark_covariance_is_refused(self):
+        with self.assertRaises(Exception):
+            self._invested(benchmark_covariance={"AAPL": 0.0023})
+
+    def test_benchmark_inputs_change_the_audit_hash(self):
+        policy = OptimizerPolicy(max_symbol_weight=0.5, max_turnover=1.0)
+        optimizer = RiskAwareOptimizer(policy)
+        inputs = dict(signals=(_signal("AAPL", 0.003), _signal("MSFT", 0.003)),
+                      current_weights={"CASH": 1.0}, covariance=self._COV)
+        self.assertNotEqual(optimizer.optimize(**inputs).input_hash,
+                            optimizer.optimize(**inputs, benchmark_covariance=self._BENCH).input_hash)
+
+
 class ConstraintTest(unittest.TestCase):
     def test_force_exit_is_full_liquidation_even_when_turnover_is_expensive(self):
         # 기대수익을 양수로 둬도(잘못된 입력) 청산 제약은 비중을 남기지 않는다.

@@ -451,6 +451,56 @@ class BuildSystemTargetTest(unittest.TestCase):
         self.assertEqual(target.proposal.metadata["forced_exits"], ["FFF"])
         self.assertEqual(target.proposal.metadata["trade_reasons"]["FFF"]["code"], "THESIS_EXIT")
 
+    def test_a_share_class_twin_does_not_get_the_whole_target_rejected(self):
+        """GOOG·GOOGL처럼 상관 0.99인 두 종목을 다 사면 게이트가 목표 전체를 거절하고 현금이 그대로 남는다."""
+        from investment_agent.trading.risk.stress import STRESS_PROXIES
+        from investment_agent.trading.system.target import SystemPortfolioPolicy, build_system_target
+
+        rng = random.Random(11)
+        names = sorted({"AAA", "BBB", "CCC", "DDD", "SPY", *STRESS_PROXIES})
+        market = [0.0005 + rng.gauss(0, 0.01) for _ in range(300)]
+        own = [rng.gauss(0, 0.012) for _ in range(300)]
+        history: dict[str, list[dict]] = {}
+        for name in names:
+            price, rows = 100.0, []
+            for offset in range(300):
+                # BBB는 AAA의 다른 주식 클래스 — 같은 고유 충격에 아주 작은 잡음만 더한다.
+                idio = own[offset] + (rng.gauss(0, 0.0003) if name == "BBB" else 0.0) \
+                    if name in {"AAA", "BBB"} else rng.gauss(0, 0.012)
+                # SPY는 완만한 상승 — 낙폭이 커지면 CRISIS regime이 신규 매수를 막아 이 테스트가 묻는 것을 가린다.
+                step = 0.0008 + 0.2 * market[offset] if name == "SPY" else 0.9 * market[offset] + idio
+                price *= 1 + step
+                day = date(2025, 7, 1) + timedelta(days=offset)
+                rows.append({"trade_date": day.isoformat(), "open": price, "close": price, "volume": 5_000_000})
+            history[name] = rows
+        now = datetime.combine(date(2025, 7, 1) + timedelta(days=299), datetime.min.time(), tzinfo=UTC) + timedelta(hours=23)
+
+        class Repository:
+            def market_prices(self, ticker, as_of_at, limit=260):
+                return history.get(ticker, [])[-limit:]
+
+            def sp500_sector_map(self, tickers):
+                return {ticker: f"s-{ticker}" for ticker in tickers}
+
+            def current_tracked_tickers(self):
+                return ["AAA", "BBB", "CCC", "DDD"]
+
+            def macro_histories(self, series_ids, *, as_of_at, lookback_days=120):
+                return {}
+
+        views = {ticker: ThesisView(ticker, now - timedelta(days=2), "open", 0.03, 0.65, 0.8)
+                 for ticker in ("AAA", "BBB", "CCC", "DDD")}
+        scores = {ticker: FactorScore(ticker, {"quality": 0.8}, value, True, None)
+                  for ticker, value in dict(AAA=0.95, BBB=0.94, CCC=0.9, DDD=0.85).items()}
+        target = build_system_target(
+            Repository(), current_weights={"CASH": 1.0}, as_of_at=now, scores=scores, snapshot_as_of="S1",
+            run_id="run_1", model_artifact_id=None, views=views, policy=SystemPortfolioPolicy(),
+        )
+        self.assertTrue(target.risk.is_approved, target.risk.violations)
+        self.assertEqual({"BBB": "AAA"}, target.proposal.metadata["redundant_exposure_blocked"])
+        self.assertAlmostEqual(target.risk.approved_weights.get("BBB", 0.0), 0.0)
+        self.assertGreater(target.risk.approved_weights.get("AAA", 0.0), 0.0)
+
     def test_tail_risk_above_the_limit_scales_risky_assets_into_cash_instead_of_rejecting(self):
         import random
         from investment_agent.trading.system.target import fit_tail_risk

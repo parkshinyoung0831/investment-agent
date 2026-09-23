@@ -7,6 +7,7 @@
   ├ factor_ml_thesis        + TradingAgents 논지(운영 구성)
   ├ no_tail_risk            운영 구성에서 CVaR 축소만 끔
   ├ no_market_risk          운영 구성에서 시장위험 예산만 끔
+  ├ benchmark_relative      위험을 SPY 대비로 잼(현금 편향 교정)
   └ cvar_5 / cvar_12        CVaR 한도만 바꿈(운영 기본 8%)
 → 변형마다 System 엔진을 그대로 돌려 NAV·초과수익·낙폭·회전율을 기록
 ```
@@ -39,7 +40,7 @@ from investment_agent.research.datasets.universe import research_universe
 from investment_agent.research.ml_serving import NO_FORECAST, champion_forecast
 from investment_agent.trading.decision.alpha import AlphaPolicy
 from investment_agent.trading.risk.budget import BENCHMARK_SYMBOL
-from investment_agent.trading.system.accounting import performance_summary
+from investment_agent.trading.system.accounting import INITIAL_NAV, performance_summary
 from investment_agent.trading.system.engine import run_system
 from investment_agent.trading.system.store import SystemPortfolioStore
 from investment_agent.trading.system.target import SystemPortfolioPolicy
@@ -73,6 +74,8 @@ def default_variants(*, cvar_limits: Sequence[float] = (0.05, 0.12)) -> tuple[Ab
         AblationVariant("factor_ml_thesis", base_alpha, base_system, "factor + ML + TradingAgents(운영 구성)"),
         AblationVariant("no_tail_risk", risk_alpha, replace(base_system, use_tail_risk=False), "factor 입력에서 CVaR 축소만 끔"),
         AblationVariant("no_market_risk", risk_alpha, replace(base_system, use_market_risk=False), "factor 입력에서 시장위험 예산만 끔"),
+        AblationVariant("benchmark_relative", risk_alpha, replace(base_system, benchmark_relative_risk=True),
+                        "factor 입력에서 위험을 SPY 대비로 잼(현금 편향 교정)"),
     ]
     variants += [
         AblationVariant(f"cvar_{round(limit * 100)}", risk_alpha, replace(base_system, max_cvar_95_5d=limit),
@@ -219,6 +222,20 @@ def _variant_result(store: SystemPortfolioStore, repository: ReplayRepository, *
     }
 
 
+def _rebased(history: Sequence[Any]) -> list[dict[str, Any]]:
+    """공통 평가 구간의 첫날을 NAV·벤치마크 모두 `INITIAL_NAV`로 다시 맞춘다.
+
+    변형마다 원장은 자기 첫 기록일부터 NAV를 쌓는다. 공통 날짜만 잘라도 다시 맞추지 않으면 변형마다 다른
+    출발점의 누적 수익을 비교하게 된다 — 같은 날짜를 보는데 SPY 수익률이 변형마다 달라지는 것이 그 증상이다.
+    """
+    if not history:
+        return []
+    first = history[0]
+    nav_scale, benchmark_scale = INITIAL_NAV / first.nav, INITIAL_NAV / first.benchmark_nav
+    return [{**mark.__dict__, "nav": mark.nav * nav_scale, "benchmark_nav": mark.benchmark_nav * benchmark_scale}
+            for mark in history]
+
+
 def _coverage_reason(row: Mapping[str, Any], variant: AblationVariant) -> str | None:
     coverage = row["coverage"]
     if not row.get("targets") or not coverage["factor_snapshot_periods"]:
@@ -235,6 +252,7 @@ def _coverage_reason(row: Mapping[str, Any], variant: AblationVariant) -> str | 
         variant.system.use_tail_risk != baseline.use_tail_risk
         or variant.system.use_market_risk != baseline.use_market_risk
         or variant.system.max_cvar_95_5d != baseline.max_cvar_95_5d
+        or variant.system.benchmark_relative_risk != baseline.benchmark_relative_risk
     )
     if changes_risk_policy and not coverage["risky_target_count"]:
         return "risk_policy_never_exercised"
@@ -312,7 +330,10 @@ def run_ablation(
         if history is None:
             continue
         selected_history = [mark for mark in history if mark.trade_date in common_dates] if common_dates else history
-        row["summary"] = performance_summary(selected_history)
+        row["summary"] = performance_summary(_rebased(selected_history))
+        # performance_summary의 cash_weight는 마지막 날 값이다. 현금 편향은 기간 평균으로 본다.
+        cash = [float(dict(mark.weights).get(CASH_SYMBOL, 0.0)) for mark in selected_history]
+        row["summary"]["average_cash_weight"] = sum(cash) / len(cash) if cash else None
         row["coverage"]["common_evaluation_start"] = min(common_dates) if common_dates else None
         row["coverage"]["common_evaluation_end"] = max(common_dates) if common_dates else None
     baseline = next((row for row in results if row.get("status") == "completed"), None)
@@ -323,7 +344,8 @@ def run_ablation(
         row["versus_baseline"] = {
             key: (summary[key] - base_summary[key])
             if isinstance(summary.get(key), (int, float)) and isinstance(base_summary.get(key), (int, float)) else None
-            for key in ("total_return", "excess_return", "max_drawdown", "annualized_volatility", "annualized_turnover")
+            for key in ("total_return", "excess_return", "max_drawdown", "annualized_volatility", "annualized_turnover",
+                        "average_cash_weight")
         }
     return {
         "version": ABLATION_VERSION,

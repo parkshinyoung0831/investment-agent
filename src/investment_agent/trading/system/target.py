@@ -37,6 +37,7 @@ from investment_agent.trading.portfolio.market_risk import (
     calculate_market_risk,
     estimate_betas,
     estimate_trading_costs,
+    redundant_symbols,
 )
 from investment_agent.trading.portfolio.optimizer import (
     CONSTRAINT_BLOCK_INCREASE,
@@ -78,6 +79,9 @@ class SystemPortfolioPolicy:
     # Ablation 스위치. 운영 기본값은 둘 다 켜짐이다.
     use_tail_risk: bool = True
     use_market_risk: bool = True
+    # 위험을 SPY 대비(active)로 잰다. 끄면 절대 분산 — 기대수익이 SPY 대비 초과수익인데 대안이 현금이라
+    # 주식 위험 프리미엄이 목적함수에 없고 현금으로 치우친다(설계 §9.2, Master P0-8).
+    benchmark_relative_risk: bool = False
 
     def __post_init__(self) -> None:
         if not 0 <= self.no_trade_band < 0.2 or self.rebalance_days < 1:
@@ -340,8 +344,12 @@ def build_system_target(
     held = tuple(sorted(symbol for symbol, weight in current.items() if symbol != CASH_SYMBOL and weight > 0))
     universe = alpha_universe(scores, held_symbols=held, policy=alpha)
     rows = _price_rows(repository, (*universe, BENCHMARK_SYMBOL), as_of_at)
+    # 벤치마크 대비 위험을 쓰면 SPY와의 공분산이 필요하다. 같은 수축 추정 안에서 함께 구해 두 값이 서로 맞게 한다.
+    with_benchmark = selected.benchmark_relative_risk and BENCHMARK_SYMBOL not in universe
+    covariance_symbols = (*universe, BENCHMARK_SYMBOL) if with_benchmark else universe
     covariance = calculate_market_covariance(
-        {symbol: rows[symbol] for symbol in universe}, symbols=universe, horizon_days=SIGNAL_HORIZON_DAYS,
+        {symbol: rows[symbol] for symbol in covariance_symbols}, symbols=covariance_symbols,
+        horizon_days=SIGNAL_HORIZON_DAYS,
     )
     sigma = {symbol: math.sqrt(max(0.0, covariance.matrix[index][index]))
              for index, symbol in enumerate(covariance.symbols)}
@@ -361,13 +369,30 @@ def build_system_target(
         repository, as_of_at=as_of_at, base_policy=base_risk_policy,
         market_policy=selected.market_risk_policy, use_market_risk=selected.use_market_risk,
     )
+    redundant = redundant_symbols(
+        rows, signal_symbols, max_correlation=risk_policy.max_pairwise_correlation,
+        priority={symbol: float(scores[symbol].composite) for symbol in signal_symbols
+                  if symbol in scores and scores[symbol].composite is not None},
+        keep=frozenset(held),
+    )
+    if redundant:
+        # 게이트가 목표 전체를 거절할 쌍이다. 점수가 낮은 쪽을 새로 담지 않는다(보유 중이면 그대로 둔다).
+        plan = replace(plan, signals=tuple(
+            replace(signal, constraint=CONSTRAINT_BLOCK_INCREASE)
+            if signal.symbol in redundant and signal.constraint is None else signal
+            for signal in plan.signals
+        ))
     fixed = {symbol: current[symbol] for symbol in plan.fixed_symbols}
     optimizer_policy = _optimizer_policy_for(risk_policy, fixed_weight=math.fsum(fixed.values()))
     betas = estimate_betas({symbol: rows[symbol] for symbol in (*signal_symbols, *fixed, BENCHMARK_SYMBOL)},
                            symbols=tuple(sorted({*signal_symbols, *fixed})))
+    benchmark_covariance = (
+        {symbol: covariance.matrix[index[symbol]][index[BENCHMARK_SYMBOL]] for symbol in signal_symbols}
+        if with_benchmark else None
+    )
     optimizer_inputs = dict(
         current_weights=current, covariance=matrix, sector_by_symbol=repository.sp500_sector_map(list(universe)),
-        fixed_weights=fixed, trading_costs=trading_costs, betas=betas,
+        fixed_weights=fixed, trading_costs=trading_costs, betas=betas, benchmark_covariance=benchmark_covariance,
     )
     exposure_limits_relaxed = None
     try:
@@ -414,6 +439,7 @@ def build_system_target(
             "tail_risk": tail_risk,
             "ml_forecast": ml_forecast.to_metadata(),
             "exposure_limits_relaxed": exposure_limits_relaxed,
+            "redundant_exposure_blocked": redundant,
             "optimizer": {
                 "policy_hash": optimizer_policy.hash, "input_hash": result.input_hash,
                 "expected_return": result.expected_return, "estimated_variance": result.estimated_variance,

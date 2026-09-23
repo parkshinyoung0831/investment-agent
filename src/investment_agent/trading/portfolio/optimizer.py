@@ -196,7 +196,16 @@ class RiskAwareOptimizer:
         trading_costs: Mapping[str, TradingCostInputs] | None = None,
         betas: Mapping[str, float] | None = None,
         factor_exposures: Mapping[str, "FactorExposureLimit"] | None = None,
+        benchmark_covariance: Mapping[str, float] | None = None,
     ) -> OptimizationResult:
+        """`benchmark_covariance`(종목별 벤치마크와의 보유기간 공분산)가 있으면 위험을 벤치마크 대비로 잰다.
+
+        기대수익은 벤치마크 대비 초과수익이다. 위험을 절대 분산 `wᵀΣw`로 재면 주식은 "초과수익만 벌고
+        시장 위험 전체를 지는" 자산이 되어 현금이 합리적 선택이 된다 — 주식 위험 프리미엄이 목적함수에
+        없기 때문이다. 벤치마크를 투자 가능 노출 E만큼 든 포트폴리오 대비 위험
+        `(w − E·e_b)ᵀΣ̃(w − E·e_b) = wᵀΣw − 2E·c_bᵀw + 상수`로 재면 선형항 하나가 더해지고,
+        얼마나 주식을 들지는 한도(최소 현금·regime)가 정한다.
+        """
         if not signals:
             raise ContractError("optimizer requires at least one signal")
         symbols = tuple(sorted(signal.symbol for signal in signals))
@@ -256,6 +265,17 @@ class RiskAwareOptimizer:
                 if abs(bounded_expected[index] - raw_expected[index]) > 1e-12:
                     capped[symbol] = {"raw": float(raw_expected[index]), "capped": float(bounded_expected[index])}
         expected = bounded_expected * np.array([by_symbol[symbol].confidence for symbol in symbols], dtype=float)
+        benchmark_term = np.zeros(len(symbols))
+        benchmark_covariances: np.ndarray | None = None
+        if benchmark_covariance is not None:
+            normalized_cov = {str(key).upper(): value for key, value in benchmark_covariance.items()}
+            missing_cov = sorted(set(symbols) - set(normalized_cov))
+            if missing_cov:
+                raise ContractError("benchmark covariance is missing: " + ", ".join(missing_cov))
+            benchmark_covariances = np.array([float(normalized_cov[symbol]) for symbol in symbols], dtype=float)
+            if not np.isfinite(benchmark_covariances).all():
+                raise ContractError("benchmark covariance must be finite")
+            benchmark_term = 2.0 * self.policy.risk_aversion * available_risky * benchmark_covariances
         current_risky = np.array([float(current.get(symbol, 0.0)) for symbol in symbols])
         exit_symbols = frozenset(
             symbol for symbol in symbols if by_symbol[symbol].constraint == CONSTRAINT_FORCE_EXIT
@@ -285,6 +305,7 @@ class RiskAwareOptimizer:
             cost_expression = half_spread @ cp.abs(trade)
         objective = cp.Maximize(
             expected @ weights
+            + benchmark_term @ weights
             - self.policy.risk_aversion * cp.quad_form(weights, cov)
             - self.policy.turnover_penalty * cp.norm1(trade)
             - cost_expression
@@ -383,6 +404,9 @@ class RiskAwareOptimizer:
                        "loadings": {symbol: limit.loading(symbol) for symbol in symbols}}
                 for name, limit in sorted(factor_exposures.items())
             }
+        if benchmark_covariances is not None:
+            # 벤치마크 대비 위험을 쓴 판단의 재현 입력. 쓰지 않은 판단의 hash는 이 필드가 생기기 전과 같다.
+            inputs["benchmark_covariance"] = dict(zip(symbols, benchmark_covariances.tolist()))
         return OptimizationResult(
             weights=result_weights,
             expected_return=expected_return_component,

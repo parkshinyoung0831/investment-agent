@@ -403,6 +403,41 @@ def calculate_market_risk(
     )
 
 
+def redundant_symbols(
+    price_rows_by_symbol: Mapping[str, Sequence[Mapping[str, Any]]],
+    symbols: Sequence[str],
+    *,
+    max_correlation: float,
+    priority: Mapping[str, float],
+    keep: frozenset[str] = frozenset(),
+    minimum_observations: int = 60,
+) -> dict[str, str]:
+    """표본 상관이 한도를 넘는 쌍에서 뺄 종목 → 남기는 짝. RiskGate와 같은 표본 상관으로 판정한다.
+
+    같은 회사의 두 주식 클래스(GOOG·GOOGL, FOX·FOXA)는 재무가 같아 factor 점수가 거의 같고 둘 다
+    상위에 든다. optimizer가 둘 다 사면 RiskGate의 쌍 상관 한도가 목표 **전체**를 거절하고, 그 주는
+    현금이 그대로 남는다. optimizer는 수축 공분산을 보므로 이 쌍을 모른다 — 게이트의 규칙을 미리 적용한다.
+    남기는 쪽은 `keep`(보유)이 먼저, 그다음 `priority`(factor 점수)가 높은 쪽, 같으면 ticker 순이다.
+    """
+    selected = tuple(dict.fromkeys(str(symbol).upper() for symbol in symbols))
+    if len(selected) < 2:
+        return {}
+    aligned, _, returns = _aligned_returns(price_rows_by_symbol, selected, minimum_observations=minimum_observations)
+    correlation = np.corrcoef(returns, rowvar=False)
+    rank = {symbol: (symbol in keep, float(priority.get(symbol, float("-inf"))), symbol) for symbol in aligned}
+    dropped: dict[str, str] = {}
+    for first in sorted(aligned, key=lambda symbol: rank[symbol], reverse=True):
+        if first in dropped:
+            continue
+        i = aligned.index(first)
+        for j, second in enumerate(aligned):
+            if second == first or second in dropped or second in keep:
+                continue
+            if rank[second] < rank[first] and correlation[i, j] > max_correlation:
+                dropped[second] = first
+    return dropped
+
+
 def historical_tail_losses(daily_returns: Sequence[float] | np.ndarray) -> dict[str, float | None]:
     """겹치는 5·20거래일 누적수익으로 과거 최악 구간과 5일 CVaR95를 계산한다.
 
@@ -435,5 +470,5 @@ def historical_tail_losses(daily_returns: Sequence[float] | np.ndarray) -> dict[
 __all__ = [
     "MarketCovariance", "MarketRiskMetrics", "calculate_market_covariance", "calculate_market_risk",
     "ledoit_wolf_constant_correlation", "TradingCostInputs", "estimate_trading_costs", "historical_tail_losses",
-    "estimate_betas",
+    "estimate_betas", "redundant_symbols",
 ]

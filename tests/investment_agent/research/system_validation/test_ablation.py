@@ -203,3 +203,22 @@ class CoverageHonestyTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RebasedCommonWindowTest(unittest.TestCase):
+    """공통 구간을 다시 100으로 맞추지 않으면 같은 날짜를 보는데 SPY 수익률이 변형마다 달라진다."""
+
+    def test_variants_starting_on_different_days_share_one_benchmark_return(self):
+        from investment_agent.research.system_validation.ablation import _rebased
+        from investment_agent.trading.system.accounting import DailyMark, performance_summary
+
+        def mark(day, nav, bench):
+            return DailyMark(day, nav, 0.0, {"CASH": 1.0}, {}, bench, bench)
+
+        early = [mark("2025-01-02", 110.0, 120.0), mark("2025-01-03", 121.0, 132.0)]   # 앞서 시작한 원장
+        late = [mark("2025-01-02", 100.0, 100.0), mark("2025-01-03", 105.0, 110.0)]    # 늦게 시작한 원장
+        first = performance_summary(_rebased(early))
+        second = performance_summary(_rebased(late))
+        self.assertAlmostEqual(first["benchmark_return"], second["benchmark_return"])
+        self.assertAlmostEqual(0.10, first["benchmark_return"])
+        self.assertAlmostEqual(0.10, first["total_return"])
