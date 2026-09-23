@@ -71,13 +71,22 @@ class UniverseMissingPricesTest(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def test_only_tracked_securities_with_zero_price_rows_are_returned(self) -> None:
-        self.fake.put(SCHEMA, T_PRICES, [_price(1, "2026-09-02")])
-        self.assertEqual(["MSFT"], db.universe_missing_prices())
+    def _missing(self) -> list[str]:
+        with mock.patch.object(db, "us_market_today", return_value=date(2026, 9, 23)):
+            return db.universe_missing_prices()
 
-    def test_empty_when_everyone_has_a_price(self) -> None:
-        self.fake.put(SCHEMA, T_PRICES, [_price(1, "2026-09-02"), _price(2, "2026-09-02")])
-        self.assertEqual([], db.universe_missing_prices())
+    def test_a_security_with_no_price_rows_is_returned(self) -> None:
+        self.fake.put(SCHEMA, T_PRICES, [_price(1, "2025-09-15"), _price(1, "2026-09-02")])
+        self.assertEqual(["MSFT"], self._missing())
+
+    def test_a_security_with_only_recent_rows_is_returned(self) -> None:
+        """일일 적재가 백필보다 먼저 최근 며칠을 넣은 새 편입 종목 — 행은 있지만 1년 전 가격이 없다."""
+        self.fake.put(SCHEMA, T_PRICES, [_price(1, "2025-09-15"), _price(2, "2026-09-14"), _price(2, "2026-09-22")])
+        self.assertEqual(["MSFT"], self._missing())
+
+    def test_empty_when_everyone_has_a_year_of_history(self) -> None:
+        self.fake.put(SCHEMA, T_PRICES, [_price(1, "2025-09-15"), _price(2, "2025-09-12")])
+        self.assertEqual([], self._missing())
 
 
 if __name__ == "__main__":
