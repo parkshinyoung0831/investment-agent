@@ -26,8 +26,10 @@ class BaselineTrainingResult:
     test_indexes: tuple[int, ...]
     # OOS 구간의 날짜별 단면 IC. 종목 수가 모자라 계산할 수 없으면 None이다.
     oos_alpha: CrossSectionalAlphaScore | None = None
-    # 학습 구간에서 값이 하나뿐인 열(전부 결측이라 대체값 하나로 채워진 열 포함). 모델은 이 열에서 아무것도 배우지 못한다.
+    # 학습 구간에서 값이 하나뿐인 열(전부 결측이라 대체값 하나로 채워진 열 포함). 입력에서 뺐다.
     constant_features: tuple[str, ...] = ()
+    # 모델이 실제로 받는 열. artifact의 feature_names이고 서빙이 이 순서로 벡터를 만든다.
+    feature_names: tuple[str, ...] = ()
 
 
 def _indexes(dataset: ResearchDataset, split: tuple[int, int]) -> tuple[int, ...]:
@@ -105,13 +107,26 @@ def train_baseline_dataset(
     test = _indexes(dataset, test_split)
     if set(train) & set(validation) or set(train) & set(test) or set(validation) & set(test):
         raise ValueError("train, validation, and test splits must not overlap")
+    # 과거 재현 표본에서 늘 비어 있던 열(macro·technical·revision)은 학습 구간에서 상수다. 모델은 그 열에서
+    # 아무것도 배우지 못하는데 운영에서는 값이 들어온다 — 입력에서 빼서 artifact가 쓰지 않는 열을 쓴다고
+    # 적지 않게 한다(train/serve 불일치의 기록 쪽). 남는 열이 없으면 학습하지 않는다.
+    constant = constant_feature_names(dataset, train)
+    kept = [index for index, name in enumerate(dataset.feature_names) if name not in set(constant)]
+    if not kept:
+        raise ValueError("every feature is constant in the training window")
+    if constant:
+        log.warning(
+            "학습 구간에서 값이 변하지 않는 feature %d/%d개를 입력에서 뺀다: %s",
+            len(constant), len(dataset.feature_names), ", ".join(constant[:8]) + (" …" if len(constant) > 8 else ""),
+        )
+    features = dataset.features[:, kept]
     return_model, artifact = fit_baseline(
         model_kind,
-        train_features=dataset.features[list(train)],
+        train_features=features[list(train)],
         train_labels=dataset.targets[list(train)],
-        validation_features=dataset.features[list(validation)],
+        validation_features=features[list(validation)],
         validation_labels=dataset.targets[list(validation)],
-        oos_features=dataset.features[list(test)],
+        oos_features=features[list(test)],
         oos_labels=dataset.targets[list(test)],
         horizon_days=horizon_days,
         train_period=_period_for_indexes(dataset, train),
@@ -121,16 +136,11 @@ def train_baseline_dataset(
         random_seed=random_seed,
         code_version=code_version,
     )
-    constant = constant_feature_names(dataset, train)
-    if constant:
-        log.warning(
-            "학습 구간에서 값이 변하지 않는 feature %d/%d개 — 이 열에서는 아무것도 배우지 못한다: %s",
-            len(constant), len(dataset.feature_names), ", ".join(constant[:8]) + (" …" if len(constant) > 8 else ""),
-        )
     return BaselineTrainingResult(
         return_model, artifact, train, validation, test,
-        oos_alpha=_oos_alpha(dataset, test, return_model),
+        oos_alpha=_oos_alpha(dataset, test, return_model, features=features),
         constant_features=constant,
+        feature_names=tuple(dataset.feature_names[index] for index in kept),
     )
 
 
@@ -138,9 +148,11 @@ def _oos_alpha(
     dataset: ResearchDataset,
     test: tuple[int, ...],
     model: ExpectedReturnModel,
+    *,
+    features: Any,
 ) -> CrossSectionalAlphaScore | None:
     """OOS 예측이 같은 날짜 안에서 종목 순위를 맞혔는지. 모델 신뢰도의 근거가 된다."""
-    predicted = model.predict(dataset.features[list(test)])
+    predicted = model.predict(features[list(test)])
     dates = [dataset.rows[index].as_of_at for index in test]
     try:
         return cross_sectional_alpha_metrics(

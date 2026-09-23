@@ -58,7 +58,9 @@ def artifact_document(result, dataset: ResearchDataset) -> dict:
         "model_state": getattr(result.model, "state", lambda: {})(),
         "out_of_sample_alpha": result.oos_alpha.to_dict() if result.oos_alpha is not None else None,
         "dataset_manifest": dataset.manifest.to_dict(),
-        "feature_names": list(dataset.feature_names),
+        # 모델이 실제로 받은 열. 학습 구간에서 상수라 뺀 열은 들어가지 않는다.
+        "feature_names": list(result.feature_names or dataset.feature_names),
+        "excluded_constant_features": list(result.constant_features),
         "splits": {
             "train": list(result.train_indexes),
             "validation": list(result.validation_indexes),

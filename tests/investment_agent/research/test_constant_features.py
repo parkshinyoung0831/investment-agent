@@ -58,6 +58,13 @@ class ConstantFeatureTest(unittest.TestCase):
         with mock.patch.object(baseline.log, "warning") as warning:
             result = _train(_dataset(dead_column=True))
         self.assertEqual(result.constant_features, ("technical_rsi14",))
+        # 모델 입력과 artifact의 열 목록에서 빠진다 — 쓰지 않는 열을 쓴다고 적지 않는다.
+        self.assertEqual(("x",), result.feature_names)
+        from investment_agent.research.commands.train_baseline import artifact_document
+        document = artifact_document(result, _dataset(dead_column=True))
+        self.assertEqual(["x"], document["feature_names"])
+        self.assertEqual(["technical_rsi14"], document["excluded_constant_features"])
+        self.assertEqual(1, len(document["model_state"]["coefficients"]))
         warning.assert_called_once()
         self.assertIn("technical_rsi14", warning.call_args.args[-1])
 
