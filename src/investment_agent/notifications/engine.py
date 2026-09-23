@@ -90,6 +90,8 @@ class PublishReport:
     suppressed: int = 0
     unchanged: int = 0
     failed: int = 0
+    # 원장이 맡기지 않은 건 — 같은 revision을 이미 보냈거나, 고칠 수 없는 topic이라 새 revision을 기록만 했다.
+    already_recorded: int = 0
 
     @property
     def delivered(self) -> int:
@@ -154,6 +156,7 @@ def publish(topic: Topic, notices: Sequence[Notice], render: Renderer, *,
             owner=context.owner, lease_seconds=LEASE_SECONDS, revisable=topic.is_revisable,
         ))
     report.suppressed = sum(1 for r in reservations if r.action == "suppressed")
+    report.already_recorded = len(pending) - len(reservations)
     creates = sorted((r for r in reservations if r.action == "create"), key=lambda r: r.key)
     edits = [r for r in reservations if r.action == "edit"]
     groups = [creates[i:i + topic.batch_size] for i in range(0, len(creates), topic.batch_size)]
@@ -161,9 +164,10 @@ def publish(topic: Topic, notices: Sequence[Notice], render: Renderer, *,
     for group in groups:
         _deliver(topic, group, by_key, render, context, target, report)
     log.info(
-        "notification publish topic=%s candidates=%d created=%d edited=%d suppressed=%d unchanged=%d failed=%d",
+        "notification publish topic=%s candidates=%d created=%d edited=%d suppressed=%d unchanged=%d failed=%d "
+        "already_recorded=%d",
         report.topic, report.candidates, report.created, report.edited,
-        report.suppressed, report.unchanged, report.failed,
+        report.suppressed, report.unchanged, report.failed, report.already_recorded,
     )
     return report
 

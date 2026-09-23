@@ -87,6 +87,8 @@ class PublishEngineTest(unittest.TestCase):
         self.assertEqual(first.created, 2)  # A,B 한 메시지 + C 한 메시지
         self.assertEqual([c["message"]["content"] for c in self.channel.created], ["A=1,B=1", "C=1"])
         self.assertEqual([report.delivered for report in again], [0, 0, 0])
+        # 보내지 않은 이유가 보고에 남는다 — 후보가 어느 칸에도 안 세지면 "사라진 알림"처럼 읽힌다.
+        self.assertEqual([report.already_recorded for report in again], [3, 3, 3])
         self.assertEqual(take_problems(), ())
 
     def test_a_topic_without_a_baseline_refuses_to_send(self) -> None:
