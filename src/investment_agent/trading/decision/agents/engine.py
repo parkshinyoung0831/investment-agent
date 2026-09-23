@@ -12,7 +12,7 @@ from investment_agent.trading.decision.agents.runner import TradingAgentsRunner
 from investment_agent.forecasting import SIGNAL_HORIZON_DAYS
 from investment_agent.trading.decision.llm.client import LLMClient
 from investment_agent.trading.decision.llm.runtime import _deduplicate_external_manifests
-from investment_agent.trading.portfolio.contracts import SecurityProposal
+from investment_agent.trading.portfolio.contracts import HARD_CONSTRAINTS, THESES, SecurityProposal
 
 
 SECURITY_PROPOSAL_SCHEMA: dict[str, Any] = {
@@ -28,6 +28,35 @@ SECURITY_PROPOSAL_SCHEMA: dict[str, Any] = {
     "evidence_ids": ["EV-... or EXT-..."],
     "missing_data": ["string"],
 }
+
+
+def security_proposal_json_schema(allowed_evidence_ids: set[str]) -> dict[str, Any]:
+    """구조화 호출의 strict 스키마. 논지·제약은 enum, 인용은 이번에 허용된 evidence ID만 고를 수 있다.
+
+    재현(구조화 171호출)에서 계약 문제의 두 종류가 `thesis` 칸의 설명문과 허용 밖 evidence ID였다. 둘 다
+    모양의 문제라 디코딩 단계에서 막을 수 있다. 수치 범위(0..1 등)는 strict가 지원하지 않아 Python 계약이
+    계속 검사한다.
+    """
+    strings = {"type": "array", "items": {"type": "string"}}
+    # 허용 ID가 없으면 enum을 만들 수 없다(빈 enum은 스키마 오류). 그때는 Python 계약이 인용을 거른다.
+    items: dict[str, Any] = {"type": "string"}
+    if allowed_evidence_ids:
+        items["enum"] = sorted(allowed_evidence_ids)
+    evidence = {"type": "array", "items": items}
+    properties = {
+        "ticker": {"type": "string"},
+        "as_of_at": {"type": "string"},
+        "thesis": {"type": "string", "enum": list(THESES)},
+        "hard_constraint": {"type": "string", "enum": list(HARD_CONSTRAINTS)},
+        "key_risks": strings,
+        "probability_up": {"type": "number"},
+        "confidence": {"type": "number"},
+        "expected_excess_return": {"type": "number"},
+        "reasoning": strings,
+        "evidence_ids": evidence,
+        "missing_data": strings,
+    }
+    return {"type": "object", "properties": properties, "required": list(properties), "additionalProperties": False}
 
 
 # 토론 상태에서 구조화 호출에 싣지 않는 사본 필드. 발언 전체는 `history`에, 결론은 `judge_decision`에 있다.
@@ -120,9 +149,10 @@ class TradingAgentsDecisionEngine:
             "evaluated_case_memory": memory_text,
         })
         allowed_ids = bundle.evidence_ids | external_ids
+        json_schema = security_proposal_json_schema(allowed_ids)
         raw = self.client.complete_json(
             system=system, user=user, output_schema=SECURITY_PROPOSAL_SCHEMA,
-            task_name="tradingagents_security_proposal",
+            task_name="tradingagents_security_proposal", json_schema=json_schema,
         )
         try:
             proposal = SecurityProposal.from_dict(
@@ -137,7 +167,7 @@ class TradingAgentsDecisionEngine:
                 user=user + "\n\n이전 출력이 계약을 어겼다: " + str(exc)[:500]
                 + "\n같은 판단을 계약에 맞게 다시 적어라. evidence_ids는 available_evidence_ids에서만 고른다.",
                 output_schema=SECURITY_PROPOSAL_SCHEMA,
-                task_name="tradingagents_security_proposal_repair",
+                task_name="tradingagents_security_proposal_repair", json_schema=json_schema,
             )
             proposal = SecurityProposal.from_dict(
                 raw, ticker=bundle.ticker, as_of_at=bundle.as_of_at, allowed_evidence_ids=allowed_ids,

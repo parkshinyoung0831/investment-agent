@@ -60,7 +60,8 @@ def _recorded(sink: dict[str, dict[str, Any]], domain: str, fetch: Callable[[], 
 class TradingAgentsRunner:
     """분석가 5명 → Bull/Bear 토론 → Trader → Risk 3자 토론 → Portfolio Manager를 로컬로 실행한다."""
 
-    version = "0.8.0-local-graph-shared-macro-h20-news7d"
+    # engine의 구조화 호출(strict json_schema)까지 판단 결과를 바꾸는 변경이면 이 값을 올린다 — 판단 기록의 engine_version이다.
+    version = "0.8.1-local-graph-shared-macro-h20-news7d-strict"
 
     def __init__(self) -> None:
         # 한 분석 회차(이 runner의 수명) 안에서 같은 거시 근거의 요약을 공유한다. 회차가 끝나면 사라진다.

@@ -29,6 +29,7 @@ class LLMClient(Protocol):
         output_schema: Mapping[str, Any],
         task_name: str,
         context: str | None = None,
+        json_schema: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]: ...
 
 
@@ -112,6 +113,7 @@ class OpenAICompatibleClient:
 
     def build_payload(
         self, *, system: str, user: str, schema_text: str, context: str | None = None,
+        json_schema: Mapping[str, Any] | None = None, task_name: str = "response",
     ) -> dict[str, Any]:
         """모델이 실제로 받는 모양으로 요청 본문을 만든다.
 
@@ -133,6 +135,14 @@ class OpenAICompatibleClient:
             "messages": messages,
             "response_format": {"type": "json_object"},
         }
+        if json_schema is not None:
+            # strict 스키마는 모양(enum·필수 필드)을 디코딩 단계에서 강제한다. 수치 범위는 strict가 지원하지
+            # 않으므로 Python 계약(`SecurityProposal.from_dict`)이 계속 검사한다.
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": re.sub(r"[^A-Za-z0-9_-]", "_", task_name)[:64], "strict": True,
+                                "schema": dict(json_schema)},
+            }
         if supports_custom_temperature(self.model):
             payload["temperature"] = DEFAULT_TEMPERATURE
         return payload
@@ -145,12 +155,14 @@ class OpenAICompatibleClient:
         output_schema: Mapping[str, Any],
         task_name: str,
         context: str | None = None,
+        json_schema: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         schema_text = json.dumps(output_schema, ensure_ascii=False, separators=(",", ":"))
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        payload = self.build_payload(system=system, user=user, schema_text=schema_text, context=context)
+        payload = self.build_payload(system=system, user=user, schema_text=schema_text, context=context,
+                                     json_schema=json_schema, task_name=task_name)
 
         max_attempts = 3
         last_exc: Exception | None = None

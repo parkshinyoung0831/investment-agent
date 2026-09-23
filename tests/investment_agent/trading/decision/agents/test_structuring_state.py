@@ -113,5 +113,72 @@ class EngineSendsTheCompactStateTest(unittest.TestCase):
         self.assertIn("bull_history", result.role_outputs["investment_debate_state"])
 
 
+
+class StrictStructuringSchemaTest(unittest.TestCase):
+    """재현에서 본 계약 문제 두 종류(thesis 칸의 설명문, 허용 밖 evidence ID)는 모양의 문제라 strict가 막는다."""
+
+    def test_the_schema_pins_enums_and_allowed_evidence(self):
+        from investment_agent.trading.decision.agents.engine import security_proposal_json_schema
+
+        schema = security_proposal_json_schema({"EV-2", "EV-1"})
+        properties = schema["properties"]
+        self.assertEqual(["positive", "neutral", "negative"], properties["thesis"]["enum"])
+        self.assertIn("force_exit", properties["hard_constraint"]["enum"])
+        self.assertEqual(["EV-1", "EV-2"], properties["evidence_ids"]["items"]["enum"])
+        self.assertEqual(sorted(properties), sorted(schema["required"]))
+        self.assertFalse(schema["additionalProperties"])
+
+    def test_no_allowed_ids_does_not_emit_an_empty_enum(self):
+        from investment_agent.trading.decision.agents.engine import security_proposal_json_schema
+
+        self.assertNotIn("enum", security_proposal_json_schema(set())["properties"]["evidence_ids"]["items"])
+
+    def test_the_client_sends_a_strict_json_schema_when_given(self):
+        from investment_agent.trading.decision.llm.client import OpenAICompatibleClient
+
+        client = OpenAICompatibleClient(base_url="https://example.com/v1", model="gpt-5-mini")
+        payload = client.build_payload(system="s", user="u", schema_text="{}", json_schema={"type": "object"},
+                                       task_name="tradingagents_security_proposal")
+        response_format = payload["response_format"]
+        self.assertEqual("json_schema", response_format["type"])
+        self.assertTrue(response_format["json_schema"]["strict"])
+        self.assertEqual({"type": "json_object"},
+                         client.build_payload(system="s", user="u", schema_text="{}")["response_format"])
+
+    def test_the_engine_sends_the_strict_schema_on_the_structuring_call(self):
+        import json
+
+        from investment_agent.research.evidence.contracts import EvidenceBundle, EvidenceItem
+        from investment_agent.trading.decision.agents.engine import TradingAgentsDecisionEngine
+
+        class _Runner:
+            version = "test-v1"
+
+            def run(self, bundle, *, memory_text):
+                return _state()
+
+        class _Client:
+            schemas: list = []
+
+            def complete_json(self, **kwargs):
+                self.schemas.append(kwargs.get("json_schema"))
+                payload = json.loads(kwargs["user"])
+                return {"ticker": payload["ticker"], "as_of_at": payload["as_of_at"], "thesis": "neutral",
+                        "hard_constraint": "none", "key_risks": [], "probability_up": 0.5, "confidence": 0.5,
+                        "expected_excess_return": 0.0, "reasoning": ["r"], "evidence_ids": ["EV-1"],
+                        "missing_data": []}
+
+        bundle = EvidenceBundle(
+            ticker="AAPL", as_of_at="2026-08-21T00:00:00+00:00", source_kind="live_shadow",
+            evidence=(EvidenceItem(
+                evidence_id="EV-1", domain="market", source="market.prices_daily", observed_at="2026-08-20",
+                available_at="2026-08-20T23:00:00+00:00", timing_status="known", payload={"close": 1.0},
+            ),),
+        )
+        client = _Client()
+        TradingAgentsDecisionEngine(client, _Runner()).run(bundle, memory_text="")
+        self.assertEqual(["EV-1"], client.schemas[0]["properties"]["evidence_ids"]["items"]["enum"])
+
+
 if __name__ == "__main__":
     unittest.main()
