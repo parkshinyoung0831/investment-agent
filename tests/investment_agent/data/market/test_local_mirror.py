@@ -169,6 +169,16 @@ class LocalMirrorTest(unittest.TestCase):
         sync_local_mirror(mirror=self.mirror, source=source, now=NOW)
         self.assertTrue(self.mirror.price_history_as_of("OLD", datetime(2022, 1, 5, 23, tzinfo=UTC), limit=5))
 
+    def test_a_renamed_former_member_gets_the_prices_of_its_current_symbol(self):
+        """멤버십에는 옛 표기(GPS)만 있다. 재현 유니버스는 현재 표기(GAP)로 풀므로 그 가격이 사본에 있어야 한다."""
+        self.world.securities.append({"security_id": 7, "ticker": "GAP", "cik": "7", "is_active_listing": True,
+                                      "is_identity_verified": True, "is_tracked": False})
+        self.world.bars[7] = _bars(7, date(2021, 1, 1), date(2026, 9, 15))
+        memberships = [{"security_id": 8, "ticker": "GPS", "valid_from": "2015-01-01", "valid_to": "2024-08-01"}]
+        source = MirrorSource(**{**self.world.source().__dict__, "memberships": lambda: memberships})
+        sync_local_mirror(mirror=self.mirror, source=source, now=NOW)
+        self.assertTrue(self.mirror.price_history_as_of("GAP", datetime(2022, 1, 5, 23, tzinfo=UTC), limit=5))
+
     def test_membership_snapshots_use_the_same_rule_as_supabase(self):
         rows = [{"security_id": index, "ticker": f"T{index}", "valid_from": "2020-01-01",
                  "valid_to": "2026-03-01" if index == 0 else None} for index in range(501)]

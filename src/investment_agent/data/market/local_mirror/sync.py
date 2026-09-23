@@ -28,6 +28,7 @@ from investment_agent.data.market.local_mirror.store import (
     LocalMirror,
     MirrorManifest,
 )
+from investment_agent.data.universe.domain.ticker_renames import current_symbols
 from investment_agent.platform.logging import get_logger
 
 log = get_logger(__name__)
@@ -122,8 +123,9 @@ def sync_local_mirror(
     # 멤버십 행은 신원 미확인 자리표시 종목(같은 ticker)을 가리킬 수 있다. 가격은 확인된 종목에 쌓이고 ticker
     # 조회도 확인된 종목으로 풀리므로, 멤버의 ticker를 확인된 종목으로도 풀어 그 가격을 복사한다. 빠뜨리면
     # 지수에서 나간 과거 멤버의 가격이 사본에 없어 재현이 그 종목들을 조용히 뺀다(생존 편향).
-    member_ticker_ids = set(_preferred_ids(securities, sorted({str(row["ticker"]).upper() for row in memberships
-                                                                 if row.get("ticker")})).values())
+    member_tickers = {str(row["ticker"]).upper() for row in memberships if row.get("ticker")}
+    # 개명된 과거 멤버는 현재 표기의 증권에 가격이 있다(재현 유니버스가 같은 catalog로 푼다).
+    member_ticker_ids = set(_preferred_ids(securities, sorted(set(current_symbols(member_tickers)) | member_tickers)).values())
     reference_ids = set(_preferred_ids(securities, origin.reference_tickers).values())
     price_ids = sorted(tracked_ids | member_ids | member_ticker_ids | reference_ids)
     by_id = {int(row["security_id"]): row for row in securities}
