@@ -95,6 +95,18 @@ class DecompositionTest(unittest.TestCase):
         self.assertEqual(0.0, row["information"]["thesis_ic_delta"])
 
 
+class ThesisIncrementTest(unittest.TestCase):
+    def test_a_quality_clamp_before_the_thesis_is_not_counted_as_the_thesis_effect(self):
+        """품질 탈락으로 0에 묶인 값은 논지 전 단계의 결과다. 논지가 없으면 논지 증분은 0이어야 한다."""
+        daily = {"SPY": 0.0, **{f"S{index}": 0.001 * index for index in range(10)}}
+        securities = {f"S{index}": {**_security(0.001 * index, 0.05), "pre_thesis": 0.001 * index}
+                      for index in range(10)}
+        securities["S9"].update(alpha=0.0, pre_thesis=0.0, reason="FACTOR_BREAKDOWN")
+        row = diagnose_target(_trace(securities, cash=0.5), _prices(daily), decided_on="2026-01-01", horizon=5)
+        self.assertEqual(0.0, row["information"]["thesis_ic_delta"])
+        self.assertLess(row["information"]["alpha_ic"], row["information"]["factor_ic"])
+
+
 class GateVerdictTest(unittest.TestCase):
     def test_a_gate_that_keeps_blocking_winners_is_judged_as_hurting(self):
         """검증 전 편입 차단에 걸린 종목이 매번 후보 평균보다 더 벌었다면 그 차단은 기회를 버린 것이다."""

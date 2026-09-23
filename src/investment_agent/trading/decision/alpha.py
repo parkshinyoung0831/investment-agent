@@ -270,6 +270,8 @@ def expected_return_signals(
             expected = min(0.0, expected)
             constraint = CONSTRAINT_BLOCK_INCREASE
             reason = "FACTOR_BREAKDOWN"
+        # 논지 단계 직전 값. 사후 진단이 "논지가 순위 정보를 더했나"를 이 값과 최종값의 차이로 잰다.
+        pre_thesis = expected
         view = views.get(symbol) if policy.use_thesis else None
         valid = is_valid_view(view, as_of_at=as_of_at, policy=policy)
         state = view.thesis_state if valid else None
@@ -301,6 +303,7 @@ def expected_return_signals(
             "factor_prior": round(prior, 6),
             "ml_expected_excess_return": round(ml_return, 6) if ml_return is not None else None,
             "ml_share": round(ml_share, 6) if ml_return is not None else 0.0,
+            "pre_thesis_expected": round(float(pre_thesis), 6),
             "expected_excess_return": round(float(expected), 6), "confidence": round(confidence, 6),
             "constraint": constraint, "reason": reason,
             "thesis_state": state, "thesis_at": view.as_of_at.isoformat() if valid else None,

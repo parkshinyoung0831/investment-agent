@@ -73,6 +73,7 @@ def stage_trace(
             "prior": _round(detail.get("factor_prior")),
             "ml": _round(detail.get("ml_expected_excess_return")),
             "ml_share": _round(detail.get("ml_share")),
+            "pre_thesis": _round(detail.get("pre_thesis_expected")),
             "alpha": _round(detail.get("expected_excess_return")),
             "confidence": _round(detail.get("confidence"), 4),
             "thesis": detail.get("thesis_state"),
@@ -158,6 +159,10 @@ def rank_ic(pairs: Sequence[tuple[float, float]]) -> float | None:
 
 
 def _pre_thesis(row: Mapping[str, Any]) -> float | None:
+    """논지 단계 직전의 기대수익. 기록이 있으면 그 값이다 — 품질 탈락의 0 묶음처럼 논지 전 단계가 바꾼 값을
+    논지의 효과로 세지 않기 위해서다. 기록이 없는 옛 trace만 factor·ML로 다시 만든다."""
+    if row.get("pre_thesis") is not None:
+        return float(row["pre_thesis"])
     prior = row.get("prior")
     if prior is None:
         return None
