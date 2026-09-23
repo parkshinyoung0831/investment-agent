@@ -2,8 +2,8 @@
 
 > **문서 역할**: 전체 투자 시스템의 현재 상태, 불변 원칙, 확인된 문제, 목표 아키텍처, 구현 우선순위와 검증 절차를 정의하는 **고도화 계획의 단일 기준 문서(SSOT)**  
 > **기준 브랜치**: `main`  
-> **분석 기준 SHA**: `494de6b217384369c33b612d17d02bb49df6f80f`  
-> **기준일**: 2026-09-22  
+> **분석 기준 SHA**: `d9bb5a3` (main)  
+> **기준일**: 2026-09-23  
 > **중요**: 이 문서는 “현재 구현”과 “제안된 개선”을 명확히 구분한다. 제안된 알고리즘이 문서에 존재한다는 이유만으로 Production에 채택된 것으로 간주하지 않는다. 새 세션은 이 SHA 이후 `main`이 얼마나 이동했는지부터 다시 확인한다 — SHA는 출발점이지 현재 상태의 보증이 아니다.
 
 ---
@@ -425,7 +425,8 @@ attribution은 체결 결과를 분해한다. 그런데 `fills`가 0행이고 `p
 positions도 비어 있다 — **분해할 손익이 존재하지 않는다.** 이 상태에서 분해식을 짜 넣으면
 검증할 수 없는 계산을 Production에 넣는 것이고, §16.10·§14의 검증 절차를 건너뛰는 것이다.
 
-`INVESTMENT_DECISION_ENGINE_DESIGN.md` §37이 요구하는 Factor/ML/LLM 기여 분해도 마찬가지다.
+`INVESTMENT_DECISION_ENGINE_DESIGN.md` §16이 요구하는 Factor/ML/LLM 기여 분해도 마찬가지다
+(단, **재현 수익**의 출처별 귀속은 `system_ablation` 사다리 차분으로 지금도 가능하다 — 설계 §16.2).
 현재 `AttributionReport`의 성분은 market/selection/allocation/timing/risk_overlay/slippage/fees이고
 신호 출처별 분해가 없다. 둘 다 **실제 체결이 쌓인 뒤에** 설계한다.
 
@@ -471,8 +472,9 @@ input_tokens/ticker, output_tokens/ticker, cost/ticker, latency p50/p95/p99
 - `trading/decision/llm/usage.py`의 `UsageLedger`가 호출당 토큰·지연을 누적한다. **완료**
 - `AgentEngineResult.usage`로 종목당 합계가 나오고, `analysis.py`가 종목마다와 회차 끝에
   구조화 JSON 로그로 남긴다. **완료**
-- **남은 것**: 로그는 회전한다. 종목당 합계를 durable하게 둘 자리(case 기록 artifact 또는
-  원장 컬럼)는 아직 정하지 않았다. 30일 누적 분석 전에 정한다.
+- **남은 것 (2026-09-23 재검토로 확대)**: 계측이 비용의 내역을 버린다 — P0-10 참고.
+  로그는 회전하고, reasoning 토큰·cached 토큰·역할별 토큰·분석가 입력 원문이 기록되지 않는다.
+  **하네스를 다시 띄우기 전에** 닫는다.
 
 ---
 
@@ -582,6 +584,79 @@ revision이 채워지기 시작하면 factor composite의 분모가 5에서 6으
 
 ---
 
+### P0-8 System Portfolio가 구조적으로 현금에 치우친다
+
+- **상태**: `OPEN` (결정 필요 — 설계 §9.2)
+- **대상**: `trading/portfolio/optimizer.py`, `trading/system/target.py`
+- **성격**: 에러 없이 조용히 틀린다. 모든 한도를 지키면서 벤치마크에 크게 뒤진다.
+
+#### 현재 문제
+optimizer의 기대수익 μ는 **SPY 대비 초과수익**인데, 주식의 대안은 **현금**이다. 주식 위험
+프리미엄이 목적함수 어디에도 없으므로 시장 위험이 "보상받지 못한 위험"으로 보이고, λ=5와
+confidence 곱이 겹쳐 현금이 합리적 해가 된다.
+
+2025년 재현 실측(`artifacts/research/ablation/latest.json`, factor 스냅샷이 있는 51개 재조정):
+
+```text
+factor_only       평균 현금 59.4%   수익 +9.44%   SPY +17.21%   초과 −7.77%p   연변동성 4.9%
+                  market_risk 조임 29/51회   tail 한도 발동 0/51회
+factor_ml_thesis  현금 100% (그 기간에 논지 0건 → 전 종목 UNVERIFIED_ENTRY_BLOCKED)
+```
+
+평균 약 40% 투자로 SPY의 약 0.4배 노출이면 시장 몫이 약 +7%이고 선택 몫은 약 +2.4%p다(베타≈1
+가정의 추정). **초과수익 부족의 대부분은 종목 선택이 아니라 이 결함이다.**
+
+#### 목표 및 해결 방안
+노출(얼마나 주식을 들 것인가)과 선택(어떤 주식을)을 분리한다. 노출 E_t는 regime/overlay가
+결정론으로 정하고, optimizer는 `Σw = E_t` 안에서 SPY 대비 active 위험으로 종목을 고른다.
+hard limit은 하나도 완화하지 않는다. 투자 가능 종목이 부족한 날의 fallback(현금 vs SPY)은
+사람의 결정이다. 식과 검증 표는 설계 §9.2.
+
+---
+
+### P0-9 채택된 ML 모델이 없다 — 운영 alpha에서 ML 몫은 0이다
+
+- **상태**: `OPEN` (고칠 결함이 아니라 알아야 할 사실. 채택은 사람의 행위)
+- `artifacts/trading/ml_models/active_ml_model.json`이 존재하지 않는다. `champion_forecast`는
+  "no adopted ML model artifact"를 돌려주고 ML 몫 c = 0이다. 2025 재현도 `ml_forecasts_applied=0`.
+- 따라서 문서가 기술하는 "factor + ML 결합"은 **현재 운영에서 factor 사전값 + LLM 논지**다.
+  ML 신뢰도식(`min(0.8, 10·IC)`) 개선은 운영에 영향이 없고, 채택 결정의 근거를 만드는 작업이다
+  (설계 §6, §7.4).
+
+---
+
+### P0-10 현재 LLM 엔진은 한 번도 완료되지 않았고, 계측이 비용의 내역을 버린다
+
+- **상태**: `OPEN` (하네스 재기동 전에 닫는다 — 설계 §50, §57 단계 1)
+- 완료된 판단 57건은 전부 옛 엔진(`0.5.0` 20건, `0.6.0` 37건)이다. 현재 엔진
+  `0.7.1-local-graph-macro-h20-news7d`(macro 분석가, `thesis`·`hard_constraint` 계약)의 완료 판단은
+  **0건**이다. 모든 토큰·payload 수치는 옛 엔진으로 재구성한 근사치다.
+- `UsageLedger`는 `prompt_tokens`·`completion_tokens`만 읽는다. 다음을 **버린다**:
+  - `completion_tokens_details.reasoning_tokens` — gpt-5-mini는 reasoning 토큰을 output으로
+    과금한다. output이 단가 8배인데 그 내역을 모른다.
+  - `prompt_tokens_details.cached_tokens` — 캐시 최적화의 효과를 확인할 수 없다.
+  - 역할별 토큰 — 역할별로는 호출 **수**만 센다.
+- 분석가 5명의 입력 원문이 저장되지 않아 분석가 단계를 재현·벤치마크할 수 없다.
+- **재기동 뒤 첫 1~2주가 공짜 계측 기간이다.** 계측이 불완전한 채 재기동하면 그 기간을 잃는다.
+
+---
+
+### P0-11 balance_sheet 결측은 게이트 비대칭이 아니라 feature 정의 문제다
+
+- **상태**: `OPEN` (아래 "보류" 항목의 원인 정정 — 설계 §5.4)
+- 2026-09-22 횡단면에서 balance_sheet 결측이면서 게이트를 통과한 18종목은 은행이 아니다:
+
+  ```text
+  AES AMP ANET AZO CAT CPRT ERIE GM HCA ISRG MNST MO NVR PCAR PM SBAC TDG YUM
+  ```
+
+  무차입(이자보상배율 정의 불가 — 건전성 최상위)과 음(-)의 자기자본(D/E 정의 불가 — 건전성
+  불확실)이 섞여 있다. 게이트를 어떻게 바꿔도 두 부류를 같은 값으로 다룬다.
+- 해결은 feature owner에서: 이자비용 0 → 상위 cap, 자기자본 ≤ 0 → net debt/EBITDA로 대체.
+  순위를 바꾸므로 재현과 사람의 결정을 거친다.
+
+---
+
 ### 실측으로 보류한 것 (제안했다가 근거가 무너진 것)
 
 제안이 문서에 남아 있으면 다음 세션이 그것을 근거로 삼는다. **왜 안 했는지**를 함께 남긴다.
@@ -604,7 +679,9 @@ revision이 채워지기 시작하면 factor composite의 분모가 5에서 6으
 즉 "재요청 1건을 아낀다"는 근거가 데이터로 뒷받침되지 않는다.
 
 여섯 파일의 스키마 리터럴을 전부 바꾸는 변경 폭에 비해 측정된 이득이 없으므로 하지 않는다.
-재검토 조건: 계약 위반율이 측정 가능한 수준(예: 시도의 5% 이상)으로 오르면.
+재검토 조건: **현재 엔진에서** 계약 위반율이 측정 가능한 수준(예: 시도의 5% 이상)으로 오르면.
+(정정: 허용 ID enum의 크기는 bundle 문자 수가 아니라 evidence ID 개수에 비례한다 — 불가능하지는
+않다. 보류 이유는 이득 부족이다. 설계 §55.3)
 
 #### 분석가 5명 병렬화 — `보류`
 5명은 서로의 출력을 읽지 않으므로 병렬화할 수 있고 종목당 지연이 줄어든다.
@@ -617,7 +694,10 @@ revision이 채워지기 시작하면 factor composite의 분모가 5에서 6으
 
 재검토 조건: `latency_ms_p95`가 30일 이상 쌓인 뒤, 분석가 구간이 실제 병목으로 확인되면.
 
-#### Factor 품질 게이트의 balance_sheet 비대칭 — `보류 (결정 대기)`
+#### Factor 품질 게이트의 balance_sheet 비대칭 — `원인 정정됨 → P0-11`
+
+아래는 처음 판단이다. 18종목의 정체를 확인한 결과 고칠 곳은 게이트가 아니라 feature 정의였다(P0-11).
+
 `quality` 결측은 게이트에서 탈락시키면서 `balance_sheet` 결측은 검사를 건너뛴다
 (`score_cross_section`). `FactorModel` 주석은 "품질·재무건전성이 모두" 기준을 넘어야 한다고
 적어 선언과 코드가 어긋난다.
@@ -627,6 +707,31 @@ revision이 채워지기 시작하면 factor composite의 분모가 5에서 6으
 
 `_MIN_CATEGORY_COVERAGE` 주변은 이미 "감사 RR2-02, 결정 대기"로 표시돼 있다. 순위에 영향을
 주는 변경은 과거 재현 비교와 사람의 결정을 거친다 — 여기서 단독으로 바꾸지 않는다.
+
+---
+
+## 7. 단계별 재설계 요약
+
+13단계 각각의 현재 수식(코드 대조)·비평·대체 수식·검증 설계는
+[INVESTMENT_DECISION_ENGINE_DESIGN.md](INVESTMENT_DECISION_ENGINE_DESIGN.md)가 소유한다. 여기는 판정만 둔다.
+
+| 단계 | 판정 | 설계 절 | 검증 가능 시점 |
+|---|---|---|---|
+| 1 Factor 결측·가중 | REFINE(신뢰도 가중 중립 수축) / CHALLENGER(수축 IC 가중) | §5 | 지금 (가격 7년 + 주간 스냅샷 260개) |
+| 2 ML | 운영 비활성(P0-9). 스태킹·전 창 walk-forward | §6 | 지금 |
+| 2.5 AI 판단 계층 | 구조 KEEP, payload REFINE, escalation은 shadow부터 | §41~§58 | 일부 지금, 품질은 WAIT |
+| 3 Alpha | 측정 IC·Blom z·스태킹. LLM 비대칭 유지, 자칭 confidence 제거 | §7 | factor·ML 지금, LLM WAIT(채점 200) |
+| 4 공분산 | KEEP, EWMA 수축 challenger | §8 | 지금 |
+| 5 Optimizer | **현금 편향 PARTIAL REPLACE(P0-8)**, 노출 제약 slack | §9 | 지금 |
+| 6 Regime | 연속 노출 + 느린 복구 CHALLENGER | §10 | 지금 |
+| 7 No-trade band | KEEP | §11 | 비용 실측 뒤 |
+| 8 Tail | KEEP (2025 재현 발동 0회) | §12 | — |
+| 9 RiskGate | KEEP, 완화 금지. HHI 장식은 사람 결정 | §13 | 재현 집계 |
+| 10 TCA | KEEP, IS 정의 고정 | §14 | 체결 ≈ 400건 |
+| 11 RL | overlay는 RL이 아니라 규칙으로. Offline RL 불가 | §15 | — |
+| 12 평가·귀속 | 재현 사다리 차분으로 출처 귀속 | §16 | 재현은 지금, 체결 귀속은 WAIT |
+
+**표본 없이 지금 할 수 있는 것이 Part I에 몰려 있다.** 가장 큰 것은 P0-8이다.
 
 ---
 
@@ -651,6 +756,10 @@ Exposure_t = Base \times VolScale \times DrawdownScale \times MacroScale \times 
 - Slow recovery
 
 위험 증가 시에는 **Fast Down**, 위험 감소 시에는 **Slow Up**을 기본 연구 방향으로 둔다.
+
+실측(2025 재현): regime 계단이 51회 중 29회 한도를 조였고, tail(변동성·CVaR) 축소는 한 번도
+발동하지 않았다. 두 층은 이중으로 겹치지 않는다 — regime은 시장 상태로 노출을, tail은 이
+포트폴리오 고유 꼬리의 backstop을 맡는다. P0-8을 풀면 노출 E_t의 owner가 Layer 2가 된다(설계 §10.2).
 
 ---
 
@@ -693,10 +802,23 @@ tracked universe (수백)
   → 아무것도 due가 아니면 NoCandidatesDue로 회차 전체를 건너뛴다
 ```
 
-따라서 "변화 없는 종목의 반복 비용"은 현재 문제로 존재하지 않는다. System-One의 비용 근거는
-**측정된 뒤에**(P0-6) 다시 세워야 하며, 이 절이 미리 그 근거를 가정하지 않는다.
+2026-09-23 재검토의 결론(설계 §42~§58):
 
-- 구체 설계(Intelligence Hierarchy, Capability Router, Change Detection, Question Registry, Escalation, Verification, Champion vs Challenger 벤치마크, Provider Registry)는 `docs/INVESTMENT_DECISION_ENGINE_DESIGN.md` Part II(§41~§53)가 소유한다.
+- **정상 상태 수요는 하루 20종목이 아니라 약 4~6종목이다.** 상위 60 신규 진입 주당 5.3 +
+  28일 주기 재분석 주당 15(실측·추정). 20종목 상한은 백로그 기간의 처리 속도다.
+- **종목당 비용 하한은 약 $0.10**(옛 엔진 57건 재구성, reasoning·분석가 입력 제외). 월 하한은
+  정상 상태 약 $12~18, 상한 가동 시 약 $59. 보이는 것만으로도 output이 input보다 비싸다.
+- **LLM 판단은 편입 게이트다.** 논지 없는 미보유 종목은 편입이 막히므로 Deep LLM을 건너뛰면
+  포트폴리오가 바뀐다. escalation은 "건너뛰기"가 아니라 "변화 없는 재분석의 유효기간 연장"으로
+  정의하고, 결정론 router를 shadow로 먼저 돌린다.
+- **측정 없이 지금 해도 되는 것**: structuring state의 무손실 중복 제거, 캐시 적중을 위한 메시지
+  재배치. **측정이 필요한 것**: reasoning_effort·verbosity, 요약본, 모델 등급.
+- §45의 "SystemOneDecisionProvider를 만들지 않는다"는 **틀렸다** — Jev는 `LLMClient`의 어떤
+  호출자에도 끼울 수 없다. 별도 계약을 두되, 지금은 비용 0인 결정론 부분만 복원한다.
+- Jev는 `RESEARCH`. 질문 집합은 영어로 쓰고 언어를 artifact에 남긴다(evidence 자체가 대부분
+  영어·숫자다).
+
+- 구체 설계(Intelligence Hierarchy, Capability Router, Change Detection, Question Registry, Escalation, Verification, Champion vs Challenger 벤치마크, Provider Registry, 토큰 비용 구조와 레버 순위)는 `docs/INVESTMENT_DECISION_ENGINE_DESIGN.md` Part II(§41~§58)가 소유한다.
 - 이 절은 원칙만 못 박는다: **어떤 provider도 이름만으로 채택하지 않는다.** Jev를 포함한 모든 System-One 후보는 현재 Multi-Agent Champion과 동일 evidence·동일 종목·동일 기간에서 Shadow 비교를 통과해야 하며, `AI가 없는 baseline`(Factor+ML only)도 반드시 비교군에 포함한다 — AI 계층 자체가 가치를 더하는지 먼저 확인한다.
 - 자동 Production 승격 금지(§4.5)와 LLM 실행 권한 없음(§4.2)은 System-One에도 동일하게 적용된다.
 
@@ -768,10 +890,17 @@ Decision Price, Arrival Price, Submitted Limit, Fill Price, Fees, Spread, ADV, O
 - **완료 조건**: 관련 CI green, recreate / restore / dispatch failure injection 통과,
   그리고 각 가드는 **위반을 주입해 실패를 먼저 확인**한 것만 인정한다(§14).
 
-### Phase 1 — Data / Factor Correctness
-- Multi-class valuation
-- Factor missingness
-- Feature coverage
+### Phase 0.5 — 재기동 전 계측 (P0-10)
+- reasoning·cached·역할별 토큰, 분석가 입력 원문, durable 저장
+- 무손실 payload 축소(structuring 중복 제거), 캐시용 메시지 재배치
+- 그 뒤 하네스 재기동 — 판단·채점·계측이 이것 없이는 쌓이지 않는다
+
+### Phase 1 — Data / Factor / Portfolio Correctness (지금 검증 가능)
+- **P0-8 노출 분리(현금 편향)** — 재현 비교 후 사람 결정
+- RiskGate binding 한도 집계(재현 리포트)
+- 측정 IC·Blom z
+- Factor missingness(신뢰도 가중 중립 수축), balance_sheet feature 정의(P0-11)
+- Multi-class valuation, Feature coverage
 
 ### Phase 2 — Signal Reliability
 - Factor reliability
@@ -874,7 +1003,25 @@ Manual Decision
 
 ---
 
-## 18. 최종 원칙
+## 18. 다음 구현 계획 (승인 대기)
+
+문서 확정 뒤의 순서다. 각 단계는 독립 커밋이고 `git revert` 한 번으로 되돌린다. 판단·하네스 코드를
+만지는 단계는 정비 보류를 먼저 건다. 상세는 설계 §57.
+
+| 단계 | 내용 | 판단 변화 |
+|---|---|---|
+| 1 | 계측 보강 (P0-10) | 없음 |
+| 2 | structuring state 무손실 중복 제거 + 저장 state로 A/A 대 A/B 재현 | 동등해야 함 |
+| 3 | 캐시용 메시지 재배치 | 프롬프트 순서만 |
+| 4 | 하네스 재기동 (사람) | — |
+| 5 | 결정론 judge + shadow router 복원 — 판정만 기록 | 없음 |
+| 6 | `system_ablation`에 노출 분리 변형·binding 집계, 2021-09~2026-08 재현 | 연구만 |
+| 7 | 6의 결과로 P0-8 결정 (사람) | — |
+| 8 | 계측 2주 뒤 reasoning_effort·verbosity 역할별 A/B 설계 제시 | — |
+
+---
+
+## 19. 최종 원칙
 
 이 시스템의 발전 방향은:
 ```text
