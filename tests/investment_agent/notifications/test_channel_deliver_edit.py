@@ -122,7 +122,20 @@ class DeliverEditTest(unittest.TestCase):
             self._channel().deliver(target="123", message={"content": "hi"})
 
         self.assertTrue(caught.exception.is_retryable)
+        self.assertTrue(caught.exception.is_throttled)
         self.assertEqual(caught.exception.retry_after, 12.5)
+        self.assertEqual(1, len(self.posts))  # 긴 대기는 여기서 기다리지 않고 원장에 넘긴다
+
+    def test_a_short_rate_limit_is_waited_out_in_place(self) -> None:
+        self.responses = [_Response(429, {"retry_after": 0.7})]
+        waits: list[float] = []
+        channel = DiscordChannel(_config(), post=self._post, get=self._get, patch=self._patch, sleep=waits.append)
+
+        delivery = channel.deliver(target="123", message={"content": "hi"}, nonce="abc")
+
+        self.assertEqual("777", delivery.message_id)
+        self.assertEqual(2, len(self.posts))
+        self.assertGreaterEqual(waits[0], 0.7)
 
 
 if __name__ == "__main__":

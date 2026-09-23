@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 import math
+import time
 from typing import Any, Callable
 from urllib.parse import quote
 
@@ -24,6 +25,11 @@ from investment_agent.platform.endpoints import DISCORD_API_BASE
 log = get_logger(__name__)
 
 _API_BASE = DISCORD_API_BASE
+# 이보다 짧은 429 대기는 프로세스 안에서 기다린다. 길면 원장의 retry_at으로 넘긴다.
+RATE_LIMIT_INLINE_WAIT_SECONDS = 5.0
+RATE_LIMIT_INLINE_RETRIES = 2
+
+
 def validate_message(message: dict[str, Any]) -> dict[str, Any]:
     """이 어댑터의 text/embed 계약과 Discord 길이 한도를 전송 전에 검사한다."""
     if not isinstance(message, dict) or set(message) - {"content", "embeds", "allowed_mentions"}:
@@ -230,11 +236,13 @@ class DiscordChannel:
 
     def __init__(self, config: Config, *, post: Callable[..., Any] | None = None,
                  get: Callable[..., Any] | None = None,
-                 patch: Callable[..., Any] | None = None) -> None:
+                 patch: Callable[..., Any] | None = None,
+                 sleep: Callable[[float], None] | None = None) -> None:
         self._config = config
         self._post = post
         self._get = get
         self._patch = patch
+        self._sleep = sleep
         #: 채널 ID -> {스레드 제목(소문자): 스레드 ID}. 프로세스 안에서만 산다.
         self._threads: dict[str, dict[str, str]] = {}
 
@@ -314,6 +322,21 @@ class DiscordChannel:
         return self._request("post", f"{_API_BASE}/channels/{channel_id}/messages", body, attachment_path)
 
     def _request(self, method: str, url: str, body: dict[str, Any], attachment_path: str | None) -> Any:
+        """429는 Discord가 요청을 처리하지 않았다는 확답이라, 짧은 대기면 이 자리에서 기다렸다 다시 보낸다.
+
+        카드 여러 장을 연달아 보내면 채널 한도(수 초에 몇 건)에 걸린다. 그때마다 원장 재시도로 넘기면
+        같은 회차의 카드가 몇 분씩 흩어져 도착한다.
+        """
+        for _ in range(RATE_LIMIT_INLINE_RETRIES):
+            try:
+                return self._request_once(method, url, body, attachment_path)
+            except DeliveryRejected as exc:
+                if not exc.is_throttled or exc.retry_after > RATE_LIMIT_INLINE_WAIT_SECONDS:
+                    raise
+                (self._sleep or time.sleep)(exc.retry_after + 0.05)
+        return self._request_once(method, url, body, attachment_path)
+
+    def _request_once(self, method: str, url: str, body: dict[str, Any], attachment_path: str | None) -> Any:
         token, = self._config.require("DISCORD_BOT_TOKEN")
         sender = self._post if method == "post" else self._patch
         if sender is None:
@@ -351,7 +374,8 @@ class DiscordChannel:
                     raise ValueError("invalid retry interval")
             except (ValueError, TypeError, AttributeError):
                 raise DeliveryUnknown("discord_rate_limit_interval_unknown") from None
-            raise DeliveryRejected("discord_rate_limited", is_retryable=True, retry_after=retry_after)
+            raise DeliveryRejected("discord_rate_limited", is_retryable=True, retry_after=retry_after,
+                                   is_throttled=True)
         if 400 <= status < 500:
             raise DeliveryRejected(f"discord_http_{status}")
         if not 200 <= status < 300:

@@ -279,7 +279,8 @@ def _deliver(topic: Topic, group: list[Reservation], by_key: Mapping[tuple[str, 
             delivery = _create(context.channel, target, rendered, known_thread, _nonce(topic, notices))
     except DeliveryRejected as exc:
         code = str(exc)
-        outcome = "failed" if exc.is_retryable and attempts < MAX_ATTEMPTS else "abandoned"
+        outcome = ("failed" if exc.is_retryable and (exc.is_throttled or attempts < MAX_ATTEMPTS)
+                   else "abandoned")
         retry = max(int(math.ceil(exc.retry_after)), 1)
     except DeliveryUnknown as exc:
         outcome, code = "unknown", str(exc)

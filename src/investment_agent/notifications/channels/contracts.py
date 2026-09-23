@@ -11,10 +11,13 @@ NONCE_MAX_LENGTH = 25
 class DeliveryRejected(RuntimeError):
     """전송되지 않았음이 명확한 응답. 재시도 가능한 거절만 다시 예약한다."""
 
-    def __init__(self, reason: str, *, is_retryable: bool = False, retry_after: float = 60) -> None:
+    def __init__(self, reason: str, *, is_retryable: bool = False, retry_after: float = 60,
+                 is_throttled: bool = False) -> None:
         super().__init__(reason)
         self.is_retryable = is_retryable
         self.retry_after = retry_after
+        # 속도 제한은 이 알림의 결함이 아니다. 몇 번을 만나도 포기하지 않고 기다렸다 다시 보낸다.
+        self.is_throttled = is_throttled
 
 
 class DeliveryUnknown(RuntimeError):

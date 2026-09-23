@@ -190,6 +190,18 @@ class PublishEngineTest(unittest.TestCase):
         self.assertEqual((first.failed, too_soon.delivered, later.created), (1, 0, 1))
         self.assertEqual(take_problems(), ())
 
+    def test_a_rate_limit_never_uses_up_the_attempts(self) -> None:
+        """정정이 잦은 카드는 성공한 전송만으로 시도 횟수가 찬다. 속도 제한 한 번에 영구 포기하면 안 된다."""
+        topic = Topic("test.event", "econ_calendar_release")
+        for _ in range(4):
+            self.channel.failures.append(
+                DeliveryRejected("discord_rate_limited", is_retryable=True, retry_after=30, is_throttled=True))
+            self.assertEqual(1, self._publish(topic, [_notice("A")]).failed)
+            self.now += timedelta(seconds=31)
+
+        self.assertEqual(1, self._publish(topic, [_notice("A")]).created)
+        self.assertEqual(take_problems(), ())
+
     def test_a_rejection_or_unknown_outcome_is_reported_and_never_resent_automatically(self) -> None:
         topic = Topic("test.event", "econ_calendar_release")
         self.channel.failures.extend([DeliveryRejected("discord_http_403"), DeliveryUnknown("timeout"), DeliveryUnknown("timeout")])
