@@ -105,6 +105,8 @@ _TRIGGER_LABELS = {
     "initial": "첫 목표",
     "scheduled": "새 factor 횡단면 · 재조정 주기 도래",
     "broken_thesis": "보유 종목 논지 붕괴(주기를 기다리지 않음)",
+    "policy_changed": "목표 규칙 버전 변경",
+    "deploy_cash": "현금이 예산보다 많아 새 스냅샷에서 더 채움",
 }
 
 _REASON_LABELS = {

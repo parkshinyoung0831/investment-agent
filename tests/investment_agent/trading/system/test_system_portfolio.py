@@ -28,6 +28,7 @@ from investment_agent.trading.system.accounting import (
 )
 from investment_agent.trading.system.engine import run_system
 from investment_agent.trading.system.store import SystemPortfolioStore
+from investment_agent.trading.system.target import SystemPortfolioPolicy
 
 UTC = timezone.utc
 ROOT = Path(__file__).resolve().parents[4]
@@ -235,6 +236,18 @@ class EngineTest(unittest.TestCase):
         self.assertIsNotNone(self.run_at("2026-09-10").target_id)
         # 같은 스냅샷이면 새로 알 것이 없어 기다린다.
         self.assertEqual(self.run_at("2026-09-11").skipped_reason, "factor_snapshot_already_decided")
+
+    def test_a_target_from_an_older_policy_is_rebuilt_on_the_same_snapshot(self):
+        self.build = _fake_target({"AAA": 0.9, "CASH": 0.1})
+        first = self.run_at("2026-09-08")
+        self.assertEqual("initial", self.store.target(first.target_id).detail["rebalance_trigger"])
+        self.assertEqual(SystemPortfolioPolicy().version, self.store.target(first.target_id).detail["system_version"])
+        self.run_at("2026-09-09")
+        older = SystemPortfolioPolicy(version="system-target-old")
+        rebuilt = run_system(self.store, self.repository, now=_after_close("2026-09-09"), policy=older,
+                             build_target=self.build)
+        self.assertIsNotNone(rebuilt.target_id)
+        self.assertEqual("policy_changed", self.store.target(rebuilt.target_id).detail["rebalance_trigger"])
 
     def test_a_newly_broken_thesis_on_a_holding_does_not_wait_for_the_interval(self):
         self.run_at("2026-09-08")

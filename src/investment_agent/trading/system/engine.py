@@ -150,6 +150,9 @@ def rebalance_skip_reason(latest: SystemTargetRecord | None, *, snapshot_as_of: 
     """
     if latest is None or broken:
         return None
+    # 규칙이 바뀌면 같은 스냅샷이라도 답이 달라진다. 옛 규칙의 목표를 다음 스냅샷까지 들고 있지 않는다.
+    if latest.detail.get("system_version") != policy.version:
+        return None
     if latest.factor_snapshot_as_of == snapshot_as_of:
         return "factor_snapshot_already_decided"
     if excess_cash is not None and excess_cash > policy.deploy_cash_gap:
@@ -157,6 +160,20 @@ def rebalance_skip_reason(latest: SystemTargetRecord | None, *, snapshot_as_of: 
     if now - parse_datetime(latest.decided_at) < timedelta(days=policy.rebalance_days):
         return "rebalance_not_due"
     return None
+
+
+def _rebalance_trigger(latest: SystemTargetRecord | None, *, broken: list[str], policy: SystemPortfolioPolicy,
+                       excess_cash: float | None) -> str:
+    """목표를 다시 만든 이유. `rebalance_skip_reason`이 None을 돌려준 갈래와 같은 순서로 판정한다."""
+    if latest is None:
+        return "initial"
+    if broken:
+        return "broken_thesis"
+    if latest.detail.get("system_version") != policy.version:
+        return "policy_changed"
+    if excess_cash is not None and excess_cash > policy.deploy_cash_gap:
+        return "deploy_cash"
+    return "scheduled"
 
 
 def _stage_trace(target: Any, *, current: Mapping[str, float]) -> dict[str, Any]:
@@ -275,7 +292,9 @@ def run_system(
         weights=dict(risk.approved_weights or {}),
         detail={"violations": list(risk.violations), "adjustments": list(risk.adjustments),
                 "forced_exits": list(target.plan.forced_exits), "broken_thesis_trigger": broken,
-                "rebalance_trigger": "broken_thesis" if broken else ("initial" if latest is None else "scheduled"),
+                "rebalance_trigger": _rebalance_trigger(latest, broken=broken, policy=selected,
+                                                        excess_cash=excess_cash),
+                "system_version": selected.version,
                 "stage_trace": _stage_trace(target, current=current),
                 "max_positions_trimmed": list((getattr(target.proposal, "metadata", None) or {})
                                               .get("max_positions_trimmed") or ())},
