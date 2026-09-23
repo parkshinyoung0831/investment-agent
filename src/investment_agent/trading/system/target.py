@@ -55,7 +55,7 @@ from investment_agent.trading.risk.stress import STRESS_PROXIES, scenario_sensit
 
 log = get_logger(__name__)
 
-SYSTEM_TARGET_VERSION = "system-target-v4"
+SYSTEM_TARGET_VERSION = "system-target-v5"
 _PRICE_ROWS = 260
 # 보유하지 않은 후보는 벤치마크와 같은 창을 거의 다 채워야 한다(연휴·정지 며칠만 허용).
 _HISTORY_SLACK_ROWS = 5
@@ -70,6 +70,10 @@ class SystemPortfolioPolicy:
     # 비중 차이가 이보다 작으면 거래하지 않는다. 20일 기대수익 크기에서 L1 회전율 벌점은 모든 거래를 막는다.
     no_trade_band: float = 0.01
     rebalance_days: int = 7
+    # 현금이 위험 예산(최소 현금)보다 이만큼 넘게 남으면 재조정 주기를 기다리지 않는다. 전액 현금에서 출발하면
+    # turnover 한도(재조정당 0.25) 때문에 한 번에 약 25%씩만 채우는데, 주 1회면 채우는 데 한 달이 걸린다.
+    # 한도는 그대로 두고 채우는 간격만 줄인다. 위기 구간의 현금은 예산 자체가 높아 걸리지 않는다.
+    deploy_cash_gap: float = 0.20
     # 보유 비중 가중평균 category 점수(0~1, 중립 0.5)의 범위. 품질은 평균보다 나빠지지 않게 하고,
     # 모멘텀·가치는 한쪽으로 쏠린 단일 factor 베팅이 되지 않게 묶는다.
     min_quality_exposure: float = 0.55
@@ -85,6 +89,9 @@ class SystemPortfolioPolicy:
     # 주식 위험 프리미엄이 목적함수에 없고 현금으로 치우친다(설계 §9.2, Master P0-8). 5년 재현에서 채택
     # 기준을 모두 통과해 운영 기본값이다(끄면 평균 현금 60%, 켜면 15%).
     benchmark_relative_risk: bool = True
+    # optimizer가 최대 종목 수를 알게 한다(상위 종목만으로 다시 푼다). 끄면 게이트가 사후에 가장 작은 비중을
+    # 현금으로 돌린다 — 재현 비교용 스위치다.
+    cardinality_aware: bool = True
 
     def __post_init__(self) -> None:
         if not 0 <= self.no_trade_band < 0.2 or self.rebalance_days < 1:
@@ -416,16 +423,39 @@ def build_system_target(
         fixed_weights=fixed, trading_costs=trading_costs, betas=betas, benchmark_covariance=benchmark_covariance,
     )
     exposure_limits_relaxed = None
-    try:
-        result = RiskAwareOptimizer(optimizer_policy).optimize(
-            plan.signals, **optimizer_inputs, factor_exposures=selected.exposure_limits(scores),
+
+    def solve(signals: Sequence[ExpectedReturnSignal]):
+        nonlocal exposure_limits_relaxed
+        positions = [signal_symbols.index(signal.symbol) for signal in signals]
+        inputs = {**optimizer_inputs, "covariance": [[matrix[row][column] for column in positions] for row in positions]}
+        try:
+            return RiskAwareOptimizer(optimizer_policy).optimize(
+                signals, **inputs, factor_exposures=selected.exposure_limits(scores),
+            )
+        except ContractError as exc:
+            # 품질이 낮은 기존 보유가 많고 회전율 한도가 작으면 노출 범위를 한 번에 맞출 수 없다. 노출 제약 없이
+            # 풀어 위험 한도 안에서 방향을 옮기고, 그 사실을 목표에 남긴다(다음 재조정에서 다시 시도한다).
+            log.warning("factor exposure limits infeasible; solving without them: %s", exc)
+            exposure_limits_relaxed = str(exc)
+            return RiskAwareOptimizer(optimizer_policy).optimize(signals, **inputs)
+
+    result = solve(plan.signals)
+    signals_used = plan.signals
+    # 최대 종목 수는 게이트의 하드 한도다. optimizer가 그보다 많이 담으면 게이트가 가장 작은 비중을 현금으로
+    # 돌린다(5년 재현 목표의 62%) — 노출이 줄고 남은 종목은 다시 배분되지 않는다. 첫 풀이의 상위 종목만으로
+    # 한 번 더 풀어 같은 노출을 한도 안에서 다시 나눈다. 밀려난 보유 종목은 게이트가 어차피 팔았을 종목이다.
+    slots = risk_policy.max_positions - sum(1 for weight in fixed.values() if weight > 0)
+    holding = [symbol for symbol in signal_symbols if result.weights.get(symbol, 0.0) > _WEIGHT_EPSILON]
+    max_positions_trimmed: list[str] = []
+    if selected.cardinality_aware and 0 < slots < len(holding):
+        keep = set(sorted(holding, key=lambda symbol: (-result.weights[symbol], symbol))[:slots])
+        max_positions_trimmed = sorted(set(holding) - keep)
+        signals_used = tuple(
+            signal if signal.symbol in keep else replace(signal, constraint=CONSTRAINT_FORCE_EXIT)
+            for signal in plan.signals
+            if signal.symbol in keep or current.get(signal.symbol, 0.0) > 0
         )
-    except ContractError as exc:
-        # 품질이 낮은 기존 보유가 많고 회전율 한도가 작으면 노출 범위를 한 번에 맞출 수 없다. 노출 제약 없이
-        # 풀어 위험 한도 안에서 방향을 옮기고, 그 사실을 목표에 남긴다(다음 재조정에서 다시 시도한다).
-        log.warning("factor exposure limits infeasible; solving without them: %s", exc)
-        exposure_limits_relaxed = str(exc)
-        result = RiskAwareOptimizer(optimizer_policy).optimize(plan.signals, **optimizer_inputs)
+        result = solve(signals_used)
     weights, banded = apply_no_trade_band(result.weights, current, band=selected.no_trade_band)
     tail_risk: dict[str, Any] = {"scale": 1.0, "enabled": selected.use_tail_risk}
     if selected.use_tail_risk:
@@ -451,11 +481,16 @@ def build_system_target(
             "alpha_signals": dict(plan.detail),
             "alpha_reasons": dict(plan.reasons),
             "forced_exits": list(plan.forced_exits),
-            "trade_reasons": trade_reasons(
-                plan.signals, current_weights=current, target_weights=weights,
-                max_symbol_weight=optimizer_policy.max_symbol_weight, min_cash_weight=optimizer_policy.min_cash_weight,
-                capped_expected_returns=result.capped_expected_returns or {},
-            ),
+            "trade_reasons": {
+                symbol: ({**reason, "code": REASON_HARD_RISK_LIMIT} if symbol in max_positions_trimmed else reason)
+                for symbol, reason in trade_reasons(
+                    signals_used, current_weights=current, target_weights=weights,
+                    max_symbol_weight=optimizer_policy.max_symbol_weight,
+                    min_cash_weight=optimizer_policy.min_cash_weight,
+                    capped_expected_returns=result.capped_expected_returns or {},
+                ).items()
+            },
+            "max_positions_trimmed": max_positions_trimmed,
             "no_trade_band_kept": banded,
             "tail_risk": tail_risk,
             "ml_forecast": ml_forecast.to_metadata(),

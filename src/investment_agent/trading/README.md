@@ -71,6 +71,9 @@ tracked universe
 → 실행 limit (판단이 유효한 종목은 예산이 남아도 다시 보지 않음)
 ```
 
+한 회사의 여러 주식(GOOG·GOOGL, FOX·FOXA, NWS·NWSA)은 CIK로 묶어 앞선 한 종목만 분석하고, 빈 칸은 다음
+후보가 채운다. 분석하지 않은 주식은 같은 회사의 최신 논지를 자기 종목 이름으로 쓴다(`thesis_views`).
+
 factor 점수는 가장 최근의 온전한 live feature 횡단면에서 `research/features/factors.py`가 계산합니다
 (품질·재무건전성·성장·업종 내 가치·추정치 상향·12-1 모멘텀). 횡단면이 없으면 예전 coverage 우선 순환
 랭커로 고르고 `path=legacy_rotation` 경고를 남깁니다 — 그 계산은
@@ -162,7 +165,14 @@ provider를 호출하고 sanitize·dedupe·quota·DuckDB cache 경계를 통과�
 - `system/target.py`는 System 자신의 현재 비중만 입력으로 받아 목표비중을 만듭니다. 계좌 스냅샷 인자가 없습니다.
   시장위험·5일 CVaR95 한도는 optimizer의 내부 입력이며 초과 시 위험자산을 현금으로 축소합니다.
 - `system/engine.py`는 확정 종가로 NAV를 이어 기록하고, 목표는 판단 다음 정규장 종가에 적용합니다.
-  새 factor 횡단면 + 7일 경과 또는 보유 종목의 논지 붕괴가 있을 때만 목표를 다시 만듭니다.
+  새 factor 횡단면 + 7일 경과 또는 보유 종목의 논지 붕괴가 있을 때만 목표를 다시 만듭니다. 예외로 현금이
+  직전 목표의 최소 현금 예산보다 `deploy_cash_gap`(20%p) 넘게 남아 있으면(전액 현금에서 채우는 중) 새 횡단면이
+  오는 대로 다시 만듭니다 — turnover 한도는 그대로이고 채우는 간격만 줄어듭니다.
+- 벤치마크만큼의 가격 창(약 1년)이 없는 신규 후보는 목표에서 빼고 `short_history_excluded`로 남깁니다.
+  공분산은 모든 종목이 겹치는 구간만 쓰므로, 이력 며칠짜리 후보 하나가 목표 전체를 막거나 추정 창을 줄입니다.
+- 목표 기록(`system_targets.detail.stage_trace`)은 종목마다 factor 사전값·ML·논지 직전·최종 기대수익·차단
+  사유·전/제안/승인 비중을 갖습니다. `system_diagnosis`가 이것을 5·20·60·120거래일 실현 수익과 맞대어
+  후보군·선택·비중·노출(규칙이 강제한 현금 / optimizer가 남긴 현금) 효과로 나눕니다.
 - `my_portfolio.py`는 최신 승인 System 목표와 새 Toss 스냅샷의 차이를 live 제안으로 기록합니다. 목표에 없는
   보유는 0(전량 매도), 차이가 최소 주문금액 미만이면 묻지 않습니다. 같은 목표는 한 번만 묻습니다.
 - `portfolio/signal_book.py`의 `SignalBatch`·`SignalRecord`는 분석 회차의 완전성과 논지 기록 계약입니다.
@@ -173,11 +183,15 @@ provider를 호출하고 sanitize·dedupe·quota·DuckDB cache 경계를 통과�
 
 ```text
 confidence-adjusted expected return
- - risk_aversion × portfolio variance
+ - risk_aversion × active variance (SPY 대비, benchmark_relative_risk 기본값)
  - turnover_penalty × target/current difference
 ```
 
-long-only, 종목 최대 10%, 섹터 최대 30%, turnover 최대 25%, 현금 최소 5%를 기본 제약으로 사용합니다.
+기대수익이 SPY 대비 초과수익이므로 위험도 SPY 대비로 잰다. 절대 분산으로 재면 주식 위험 프리미엄이
+목적함수에 없어 현금으로 치우친다(5년 재현 평균 현금 60% → 15%). long-only, 종목 최대 10%, 섹터 최대 30%,
+turnover 최대 25%, 현금 최소 5%를 기본 제약으로 사용합니다. 첫 풀이가 RiskGate의 최대 종목 수보다 많이 담으면
+비중 상위 종목만으로 한 번 더 풀어(`cardinality_aware`) 같은 노출을 한도 안에서 다시 나눕니다 — 게이트가 사후에
+작은 비중을 현금으로 돌리면 노출이 줄기 때문입니다.
 해가 없거나 CVXPY solver가 실패하면 임의 fallback 비중을 만들지 않습니다.
 
 `DeterministicRiskGate`는 optimizer와 별도 방어선입니다. 작은 포지션, 종목/섹터 비중, 최대 종목

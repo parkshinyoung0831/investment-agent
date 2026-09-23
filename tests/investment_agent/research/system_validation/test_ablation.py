@@ -317,6 +317,11 @@ class TurnoverBreachTest(unittest.TestCase):
                    "t3": SimpleNamespace(detail={"adjustments": ["turnover scaled from 0.4 to 0.25"]})}
         breaches = turnover_breaches(history, targets)
         self.assertEqual([("d3", True), ("d5", False)], [(item["trade_date"], item["risk_reducing"]) for item in breaches])
+        # 게이트 조정 없이 optimizer가 먼저 현금을 늘리거나 종목 수 한도로 정리한 재조정도 위험 축소다.
+        targets["t3"] = SimpleNamespace(detail={"adjustments": [], "stage_trace": {"cash": {"before": 0.05, "approved": 0.15}}})
+        self.assertTrue(turnover_breaches(history, targets)[-1]["risk_reducing"])
+        targets["t3"] = SimpleNamespace(detail={"adjustments": [], "max_positions_trimmed": ["X"]})
+        self.assertTrue(turnover_breaches(history, targets)[-1]["risk_reducing"])
 
 
 class ActiveRiskSummaryTest(unittest.TestCase):

@@ -141,12 +141,19 @@ def _broken_thesis_since(views: Mapping[str, Any], *, held: tuple[str, ...], sin
 
 
 def rebalance_skip_reason(latest: SystemTargetRecord | None, *, snapshot_as_of: str, now: datetime,
-                          policy: SystemPortfolioPolicy, broken: list[str]) -> str | None:
-    """목표를 다시 만들지 않을 사유. None이면 만든다."""
+                          policy: SystemPortfolioPolicy, broken: list[str],
+                          excess_cash: float | None = None) -> str | None:
+    """목표를 다시 만들지 않을 사유. None이면 만든다.
+
+    `excess_cash`는 지금 현금에서 직전 목표의 최소 현금 예산을 뺀 값이다. 크면 채우는 중이라 주기를 기다리지
+    않는다(같은 factor 스냅샷이면 새로 알 것이 없어 기다린다).
+    """
     if latest is None or broken:
         return None
     if latest.factor_snapshot_as_of == snapshot_as_of:
         return "factor_snapshot_already_decided"
+    if excess_cash is not None and excess_cash > policy.deploy_cash_gap:
+        return None
     if now - parse_datetime(latest.decided_at) < timedelta(days=policy.rebalance_days):
         return "rebalance_not_due"
     return None
@@ -205,7 +212,10 @@ def run_system(
     latest = store.latest_target()
     broken = _broken_thesis_since(views, held=held, since=parse_datetime(latest.decided_at), as_of_at=now,
                                   policy=alpha) if latest else []
-    skip = rebalance_skip_reason(latest, snapshot_as_of=snapshot_as_of, now=now, policy=selected, broken=broken)
+    budget = ((latest.detail.get("stage_trace") or {}).get("min_cash_weight") if latest else None)
+    excess_cash = (float(current.get(CASH_SYMBOL, 0.0)) - float(budget)) if budget is not None else None
+    skip = rebalance_skip_reason(latest, snapshot_as_of=snapshot_as_of, now=now, policy=selected, broken=broken,
+                                 excess_cash=excess_cash)
     if skip is not None:
         return SystemRunResult(**base, skipped_reason=skip)
     ml = forecast(repository, universe, as_of_at=now) if alpha.use_ml else NO_FORECAST
@@ -266,7 +276,9 @@ def run_system(
         detail={"violations": list(risk.violations), "adjustments": list(risk.adjustments),
                 "forced_exits": list(target.plan.forced_exits), "broken_thesis_trigger": broken,
                 "rebalance_trigger": "broken_thesis" if broken else ("initial" if latest is None else "scheduled"),
-                "stage_trace": _stage_trace(target, current=current)},
+                "stage_trace": _stage_trace(target, current=current),
+                "max_positions_trimmed": list((getattr(target.proposal, "metadata", None) or {})
+                                              .get("max_positions_trimmed") or ())},
     )
     log.info("system target recorded id=%s approved=%s snapshot=%s", target_id, risk.is_approved, snapshot_as_of)
     return SystemRunResult(**base, target_id=target_id, is_target_approved=risk.is_approved)

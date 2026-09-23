@@ -356,6 +356,9 @@ Spearman 순위 상관(IC)을 재고, factor·category·종합 점수별 평균 
 - 기간 끝 종가가 없는 종목은 빠진다(생존 편향). 배당을 뺀 가격 수익률이다.
 - 겹침 보정 t ≥ 1.5이고 평균 IC가 양수인 category만 IC 비례 가중치를 **제안**한다. `FactorModel`에 자동 반영하지 않는다.
 
+하네스 `system_evaluation` 잡이 7일마다 기본 기간으로 다시 잰다. 정책의 IC 가정(`AlphaPolicy.information_coefficient`)과
+실측이 벌어지는지 보는 자리다.
+
 채택이 승인되면 `load_factor_model_from_ic_report(path, horizon=..., version=...)`로 특정 기간의 제안만
 명시적인 새 버전으로 읽는다. 기간과 버전을 생략할 수 없고 `FactorModel()`의 기본값은 계속
 `factor-v1-equal`이므로, `latest.json`이 갱신됐다는 이유만으로 운영 가중치가 바뀌지 않는다.
@@ -564,10 +567,16 @@ ML/RL/TradingAgents output은 다음 계약으로 정규화한다.
 
 ```text
 expected return × confidence
-- risk aversion × variance
+- risk aversion × active variance      (w − E·e_SPY)ᵀΣ(w − E·e_SPY), E = 투자 가능 위험자산 비중
 - turnover penalty (L1)
 - Σ 반스프레드·|Δw|
 ```
+
+위험을 SPY 대비(active)로 재는 것이 System 기본값이다(`SystemPortfolioPolicy.benchmark_relative_risk`). 기대수익이
+SPY 대비 초과수익이므로 위험도 같은 기준이어야 한다 — 절대 분산으로 재면 주식 위험 프리미엄이 목적함수에 없어
+현금이 합리적 해가 된다. 식을 펼치면 절대 분산 항에 `+2λ·E·cov(i, SPY)` 선형 항이 더해질 뿐이라 같은 solver로 푼다.
+첫 풀이가 RiskGate의 최대 종목 수보다 많이 담으면 비중 상위 종목만으로 한 번 더 풀어(`cardinality_aware`) 게이트가
+작은 비중을 사후에 현금으로 돌리지 않게 한다.
 
 거래비용은 반스프레드 선형 비용 하나다. 호가 이력이 없어 20일 평균 거래대금 구간(1·3·10bp)으로 근사한다.
 따라가는 계좌가 수천 달러라 시장충격·거래대금 참여 한도는 두지 않는다. 비용 재료(거래량)가 없으면 목표를 만들지 않는다. 포트폴리오 시장 베타는 RiskGate의 사후 검사와 같은 상한

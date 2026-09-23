@@ -77,6 +77,8 @@ def default_variants(*, cvar_limits: Sequence[float] = (0.05, 0.12)) -> tuple[Ab
         AblationVariant("no_market_risk", risk_alpha, replace(base_system, use_market_risk=False), "factor 입력에서 시장위험 예산만 끔"),
         AblationVariant("absolute_risk", risk_alpha, replace(base_system, benchmark_relative_risk=False),
                         "factor 입력에서 위험을 절대 분산으로 잼(현금 편향이 있던 이전 운영 구성)"),
+        AblationVariant("gate_trims_positions", risk_alpha, replace(base_system, cardinality_aware=False),
+                        "factor 입력에서 최대 종목 수를 게이트가 사후에 자름(이전 동작)"),
         AblationVariant("blom_z", replace(risk_alpha, z_score_method="blom"), base_system,
                         "factor 입력 + Blom z(상위 종목 동률 해소)"),
         AblationVariant("continuous_exposure", risk_alpha,
@@ -265,7 +267,12 @@ def turnover_breaches(history: Sequence[Any], targets: Mapping[str, Any]) -> lis
         target = targets.get(mark.applied_target_id)
         detail = target.detail if target is not None else {}
         adjustments = [str(item) for item in detail.get("adjustments") or ()]
-        risk_reducing = bool(detail.get("forced_exits")) or any(
+        cash = (detail.get("stage_trace") or {}).get("cash") or {}
+        # optimizer가 최소 현금·최대 종목 수를 먼저 지키면 게이트 조정이 없다. 그 재조정도 위험을 줄였으면
+        # 설계다 — 현금을 늘렸거나 종목 수 한도로 보유를 정리한 경우.
+        raised_cash = (cash.get("approved") is not None and cash.get("before") is not None
+                       and float(cash["approved"]) > float(cash["before"]) + 1e-6)
+        risk_reducing = bool(detail.get("forced_exits")) or bool(detail.get("max_positions_trimmed")) or raised_cash or any(
             marker in item for item in adjustments for marker in _RISK_REDUCING_ADJUSTMENTS)
         breaches.append({"trade_date": mark.trade_date, "turnover": mark.turnover, "risk_reducing": risk_reducing})
     return breaches
@@ -368,6 +375,7 @@ def _coverage_reason(row: Mapping[str, Any], variant: AblationVariant) -> str | 
         or variant.system.use_market_risk != baseline.use_market_risk
         or variant.system.max_cvar_95_5d != baseline.max_cvar_95_5d
         or variant.system.benchmark_relative_risk != baseline.benchmark_relative_risk
+        or variant.system.cardinality_aware != baseline.cardinality_aware
     )
     if changes_risk_policy and not coverage["risky_target_count"]:
         return "risk_policy_never_exercised"

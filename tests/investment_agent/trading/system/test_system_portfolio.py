@@ -220,10 +220,21 @@ class EngineTest(unittest.TestCase):
         self.assertAlmostEqual(sum(self.build.calls[-1].values()), 1.0)
 
     def test_new_snapshot_inside_the_rebalance_interval_waits(self):
+        self.build = _fake_target({"AAA": 0.9, "CASH": 0.1})  # 현금이 예산(5%) 근처 — 채우는 중이 아니다
         self.run_at("2026-09-08")
         self.run_at("2026-09-09")
         self.repository.section = ("2026-09-10T22:00:00+00:00", self.repository.section[1])
         self.assertEqual(self.run_at("2026-09-10").skipped_reason, "rebalance_not_due")
+
+    def test_a_system_still_deploying_cash_does_not_wait_a_week(self):
+        """turnover 한도로 한 번에 일부만 채운 System은 새 스냅샷이 오면 주기를 기다리지 않고 더 채운다."""
+        self.build = _fake_target({"AAA": 0.25, "CASH": 0.75})
+        self.run_at("2026-09-08")
+        self.run_at("2026-09-09")
+        self.repository.section = ("2026-09-10T22:00:00+00:00", self.repository.section[1])
+        self.assertIsNotNone(self.run_at("2026-09-10").target_id)
+        # 같은 스냅샷이면 새로 알 것이 없어 기다린다.
+        self.assertEqual(self.run_at("2026-09-11").skipped_reason, "factor_snapshot_already_decided")
 
     def test_a_newly_broken_thesis_on_a_holding_does_not_wait_for_the_interval(self):
         self.run_at("2026-09-08")
@@ -474,6 +485,57 @@ class BuildSystemTargetTest(unittest.TestCase):
         self.assertEqual((0.1, 0.0), (trace["securities"]["FFF"]["before"], trace["securities"]["FFF"]["approved"]))
         self.assertEqual("UNVERIFIED_ENTRY_BLOCKED", trace["securities"]["CCC"]["reason"])
         self.assertIsNotNone(trace["securities"]["AAA"]["prior"])
+
+    def test_the_optimizer_respects_max_positions_instead_of_the_gate_cutting_to_cash(self):
+        """게이트가 가장 작은 비중을 현금으로 돌리면 노출이 준다. 한도 안에서 다시 풀어 배분해야 한다."""
+        import functools
+        from unittest import mock
+
+        from investment_agent.trading.risk.gate import PortfolioRiskPolicy
+        from investment_agent.trading.risk.stress import STRESS_PROXIES
+        from investment_agent.trading.system.target import SystemPortfolioPolicy, build_system_target
+
+        rng = random.Random(11)
+        names = [f"N{index}" for index in range(8)]
+        history: dict[str, list[dict]] = {}
+        market = [0.0005 + rng.gauss(0, 0.01) for _ in range(300)]
+        for name in sorted({*names, "SPY", *STRESS_PROXIES}):
+            price, rows = 100.0, []
+            for offset in range(300):
+                price *= 1 + 0.9 * market[offset] + rng.gauss(0, 0.012)
+                rows.append({"trade_date": (date(2025, 7, 1) + timedelta(days=offset)).isoformat(), "open": price,
+                             "close": price, "volume": 5_000_000})
+            history[name] = rows
+        now = datetime.combine(date(2025, 7, 1) + timedelta(days=299), datetime.min.time(), tzinfo=UTC) + timedelta(hours=23)
+
+        class Repository:
+            def market_prices(self, ticker, as_of_at, limit=260):
+                return history.get(ticker, [])[-limit:]
+
+            def sp500_sector_map(self, tickers):
+                return {ticker: f"sector{index % 4}" for index, ticker in enumerate(tickers)}
+
+            def current_tracked_tickers(self):
+                return list(names)
+
+            def macro_histories(self, series_ids, *, as_of_at, lookback_days=120):
+                return {}
+
+        views = {name: ThesisView(name, now - timedelta(days=1), "open", 0.03, 0.65, 0.8) for name in names}
+        scores = {name: FactorScore(name, {"quality": 0.8}, 0.99 - index * 0.01, True, None)
+                  for index, name in enumerate(names)}
+        policy = SystemPortfolioPolicy(min_quality_exposure=0.0, max_momentum_exposure=1.0, max_value_exposure=1.0)
+        with mock.patch("investment_agent.trading.system.target.PortfolioRiskPolicy",
+                        functools.partial(PortfolioRiskPolicy, max_positions=3)):
+            target = build_system_target(
+                Repository(), current_weights={"CASH": 1.0}, as_of_at=now, scores=scores, snapshot_as_of="S1",
+                run_id="run_1", model_artifact_id=None, views=views, policy=policy,
+            )
+        held = [symbol for symbol, weight in target.risk.approved_weights.items() if symbol != "CASH" and weight > 0]
+        self.assertTrue(target.risk.is_approved, target.risk.violations)
+        self.assertLessEqual(len(held), 3)
+        self.assertFalse([item for item in target.risk.adjustments if "max_positions" in item])
+        self.assertTrue(target.proposal.metadata["max_positions_trimmed"])
 
     def test_a_new_candidate_with_a_few_days_of_prices_is_excluded_not_blocking(self):
         """새 편입 종목의 이력이 며칠뿐이면 그 후보만 빠진다. 보유 종목은 이력이 짧아도 남는다."""
