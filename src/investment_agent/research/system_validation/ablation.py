@@ -76,6 +76,16 @@ def default_variants(*, cvar_limits: Sequence[float] = (0.05, 0.12)) -> tuple[Ab
         AblationVariant("no_market_risk", risk_alpha, replace(base_system, use_market_risk=False), "factor 입력에서 시장위험 예산만 끔"),
         AblationVariant("benchmark_relative", risk_alpha, replace(base_system, benchmark_relative_risk=True),
                         "factor 입력에서 위험을 SPY 대비로 잼(현금 편향 교정)"),
+        AblationVariant("benchmark_relative_blom", replace(risk_alpha, z_score_method="blom"),
+                        replace(base_system, benchmark_relative_risk=True),
+                        "benchmark_relative + Blom z(상위 종목 동률 해소)"),
+        AblationVariant("benchmark_relative_continuous", risk_alpha,
+                        replace(base_system, benchmark_relative_risk=True,
+                                market_risk_policy=replace(base_system.market_risk_policy, continuous_exposure=True)),
+                        "benchmark_relative + 연속 노출(현금 계단 대신 변동성·낙폭 함수)"),
+        AblationVariant("benchmark_relative_ic02", replace(risk_alpha, information_coefficient=0.02),
+                        replace(base_system, benchmark_relative_risk=True),
+                        "benchmark_relative + 측정 IC 0.02(gated composite 20일 IC 0.027, t<2)"),
     ]
     variants += [
         AblationVariant(f"cvar_{round(limit * 100)}", risk_alpha, replace(base_system, max_cvar_95_5d=limit),

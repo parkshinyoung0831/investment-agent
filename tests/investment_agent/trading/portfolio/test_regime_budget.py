@@ -145,3 +145,46 @@ class NoIncreaseAndCashFloorTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ContinuousExposureTest(unittest.TestCase):
+    """계단(현금 0→15→40%) 대신 변동성·낙폭의 연속 함수. 한도를 푸는 방향으로는 절대 가지 않는다."""
+
+    def _policy(self):
+        from investment_agent.trading.risk.regime_budget import MarketRiskPolicy
+
+        return MarketRiskPolicy(continuous_exposure=True)
+
+    def test_calm_markets_keep_full_exposure(self):
+        from investment_agent.trading.risk.regime_budget import continuous_exposure
+
+        self.assertEqual(1.0, continuous_exposure(0.12, 0.02, policy=self._policy()))
+
+    def test_drawdown_interpolates_between_the_old_step_boundaries(self):
+        from investment_agent.trading.risk.regime_budget import continuous_exposure
+
+        policy = self._policy()
+        self.assertAlmostEqual(0.85, continuous_exposure(None, 0.08, policy=policy))
+        self.assertAlmostEqual(0.775, continuous_exposure(None, 0.14, policy=policy))
+        self.assertAlmostEqual(0.60, continuous_exposure(None, 0.25, policy=policy))
+
+    def test_volatility_scales_down_to_the_floor(self):
+        from investment_agent.trading.risk.regime_budget import continuous_exposure
+
+        policy = self._policy()
+        self.assertAlmostEqual(0.191 / 0.30, continuous_exposure(0.30, None, policy=policy))
+        self.assertAlmostEqual(0.60, continuous_exposure(0.90, None, policy=policy))
+
+    def test_the_result_is_never_looser_than_the_base_policy_and_the_key_carries_the_value(self):
+        from investment_agent.trading.decision.regime import build_market_regime
+        from investment_agent.trading.risk.gate import PortfolioRiskPolicy
+        from investment_agent.trading.risk.regime_budget import tighten_for_regime
+
+        base = PortfolioRiskPolicy()
+        calm = build_market_regime("2026-01-05T21:00:00+00:00", benchmark_return=0.01, volatility=0.10, drawdown=0.01)
+        stressed = build_market_regime("2026-01-05T21:00:00+00:00", benchmark_return=-0.05, volatility=0.30,
+                                       drawdown=0.14)
+        self.assertEqual(base.min_cash_weight, tighten_for_regime(base, calm, self._policy()).min_cash_weight)
+        tightened = tighten_for_regime(base, stressed, self._policy())
+        self.assertAlmostEqual(1 - 0.191 / 0.30, tightened.min_cash_weight)
+        self.assertIn("cash0.363", tightened.key)

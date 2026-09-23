@@ -208,3 +208,35 @@ class ExpectedReturnSignalsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ZScoreMethodTest(unittest.TestCase):
+    """백분위를 자르는 변환은 상위 약 2%를 모두 같은 z로 만든다. Blom은 순서를 남긴다."""
+
+    @staticmethod
+    def _scores(count: int):
+        from types import SimpleNamespace
+
+        return {f"T{index:03d}": SimpleNamespace(composite=float(index)) for index in range(count)}
+
+    def test_clipped_percentiles_tie_the_top_names(self):
+        from investment_agent.trading.decision.alpha import _z_scores
+
+        z = _z_scores(self._scores(500))
+        top = [z[f"T{index:03d}"] for index in range(499, 489, -1)]
+        self.assertEqual(1, len({round(value, 6) for value in top}))
+
+    def test_blom_keeps_the_order_and_is_centred(self):
+        from investment_agent.trading.decision.alpha import _z_scores
+
+        z = _z_scores(self._scores(500), method="blom")
+        top = [z[f"T{index:03d}"] for index in range(499, 489, -1)]
+        self.assertEqual(top, sorted(top, reverse=True))
+        self.assertEqual(10, len(set(top)))
+        self.assertAlmostEqual(0.0, sum(z.values()) / len(z), places=6)
+
+    def test_unknown_method_is_refused(self):
+        from investment_agent.trading.decision.alpha import AlphaPolicy
+
+        with self.assertRaises(ValueError):
+            AlphaPolicy(z_score_method="rank")

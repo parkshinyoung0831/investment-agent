@@ -62,6 +62,7 @@ from investment_agent.trading.portfolio.optimizer import (
 ALPHA_VERSION = "factor-ml-thesis-alpha-v2"
 # 순위 끝단의 z가 무한대로 가지 않게 백분위를 자른다(±2.05σ).
 _PERCENTILE_CLIP = 0.02
+Z_SCORE_METHODS = ("clipped_percentile", "blom")
 # 명시 논지 필드가 없는 옛 기록의 행동 단어 해석.
 _NEGATIVE_SIGNALS = frozenset({"exit", "reduce", "avoid"})
 _POSITIVE_SIGNALS = frozenset({"open", "increase", "hold"})
@@ -87,6 +88,10 @@ class AlphaPolicy:
     # Ablation 스위치. 운영 기본값은 둘 다 켜짐이다.
     use_ml: bool = True
     use_thesis: bool = True
+    # 순위 → z 변환. "clipped_percentile"은 백분위를 [0.02, 0.98]로 잘라 상위 약 2%가 모두 같은 z(2.05)가
+    # 된다 — optimizer가 가장 원하는 종목들 사이의 순서가 사라진다. "blom"은 (r − 3/8)/(N + 1/4)로 자르지
+    # 않고 끝까지 순서를 남긴다(N≈500이면 최대 약 2.88). 극단값은 optimizer의 기대수익 상한이 막는다.
+    z_score_method: str = "clipped_percentile"
 
     def __post_init__(self) -> None:
         if not 0 < self.information_coefficient < 0.5:
@@ -95,6 +100,8 @@ class AlphaPolicy:
             raise ValueError("alpha windows must be positive")
         if not 0 <= self.llm_tilt_weight <= 1:
             raise ValueError("llm_tilt_weight must be in [0, 1]")
+        if self.z_score_method not in Z_SCORE_METHODS:
+            raise ValueError(f"z_score_method must be one of {Z_SCORE_METHODS}")
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -167,9 +174,18 @@ class AlphaPlan:
         return tuple(signal.symbol for signal in self.signals if signal.constraint == CONSTRAINT_FORCE_EXIT)
 
 
-def _z_scores(scores: Mapping[str, Any]) -> dict[str, float]:
+def _z_scores(scores: Mapping[str, Any], *, method: str = "clipped_percentile") -> dict[str, float]:
     ranks = percentile_ranks({ticker: score.composite for ticker, score in scores.items()})
     normal = NormalDist()
+    if method == "blom":
+        count = len(ranks)
+        if count == 1:
+            return {ticker: 0.0 for ticker in ranks}
+        # percentile_ranks는 (순위−1)/(N−1)이다. 1-기반 순위로 되돌려 Blom 위치를 쓴다(동률은 평균 순위 그대로).
+        return {
+            ticker: normal.inv_cdf((rank * (count - 1) + 1 - 0.375) / (count + 0.25))
+            for ticker, rank in ranks.items()
+        }
     return {
         ticker: normal.inv_cdf(min(1 - _PERCENTILE_CLIP, max(_PERCENTILE_CLIP, rank)))
         for ticker, rank in ranks.items()
@@ -227,7 +243,7 @@ def expected_return_signals(
 ) -> AlphaPlan:
     """후보·보유 종목의 기대초과수익·confidence·제약을 만든다. 변동성을 모르는 종목은 신호를 만들지 않는다."""
     held = {str(symbol).upper() for symbol in held_symbols}
-    z_by_symbol = _z_scores(scores)
+    z_by_symbol = _z_scores(scores, method=policy.z_score_method)
     ml_share = float(min(1.0, max(0.0, ml_confidence))) if policy.use_ml else 0.0
     predictions = {str(key).upper(): float(value) for key, value in (ml_expected_returns or {}).items()} if ml_share else {}
     signals: list[ExpectedReturnSignal] = []
