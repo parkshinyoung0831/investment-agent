@@ -10,6 +10,7 @@ from datetime import date, datetime
 from typing import Any, Protocol, Sequence
 
 from investment_agent.data.universe import persistence as universe_data
+from investment_agent.data.universe.domain.ticker_renames import current_symbols
 from investment_agent.data.market.domain.calendar import MARKET_TIMEZONE
 from investment_agent.platform.serialization import parse_datetime
 
@@ -83,7 +84,8 @@ def research_universe(
     snapshots: Sequence[dict[str, Any]] = repository.historical_sp500_membership(start_date=day, end_date=day)
     if not snapshots:
         raise RuntimeError(f"no point-in-time S&P 500 membership for {day.isoformat()}")
-    return sorted({str(ticker).upper() for ticker in snapshots[-1]["symbols"]})
+    # 개명된 회사의 옛 표기는 가격과 이어지지 않는다 — 현재 표기로 바꿔야 재현에서 빠지지 않는다.
+    return current_symbols(snapshots[-1]["symbols"])
 
 
 def members_over_window(repository: UniverseRepository, *, start: date, end: date) -> tuple[str, ...]:
@@ -94,7 +96,7 @@ def members_over_window(repository: UniverseRepository, *, start: date, end: dat
     symbols = {str(ticker).upper() for ticker in repository.current_tracked_tickers()}
     if hasattr(repository, "historical_sp500_membership"):
         for snapshot in repository.historical_sp500_membership(start_date=start, end_date=end):
-            symbols.update(str(ticker).upper() for ticker in snapshot["symbols"])
+            symbols.update(current_symbols(snapshot["symbols"]))
     return tuple(sorted(symbols))
 
 
