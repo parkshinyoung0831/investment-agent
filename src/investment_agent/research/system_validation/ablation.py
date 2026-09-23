@@ -37,6 +37,7 @@ from investment_agent.data.market.domain.calendar import bar_available_at
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.serialization import parse_datetime
 from investment_agent.research.datasets.universe import research_universe
+from investment_agent.research.factors import FACTOR_CATEGORIES, FactorModel
 from investment_agent.research.ml_serving import NO_FORECAST, champion_forecast
 from investment_agent.trading.decision.alpha import AlphaPolicy
 from investment_agent.trading.risk.budget import BENCHMARK_SYMBOL
@@ -64,6 +65,8 @@ class AblationVariant:
     alpha: AlphaPolicy
     system: SystemPortfolioPolicy
     description: str
+    # factor 종합 점수의 category 가중치. None이면 운영 기본 모델이다.
+    factor_model: FactorModel | None = None
 
 
 def default_variants(*, cvar_limits: Sequence[float] = (0.05, 0.12)) -> tuple[AblationVariant, ...]:
@@ -79,6 +82,11 @@ def default_variants(*, cvar_limits: Sequence[float] = (0.05, 0.12)) -> tuple[Ab
                         "factor 입력에서 위험을 절대 분산으로 잼(현금 편향이 있던 이전 운영 구성)"),
         AblationVariant("gate_trims_positions", risk_alpha, replace(base_system, cardinality_aware=False),
                         "factor 입력에서 최대 종목 수를 게이트가 사후에 자름(이전 동작)"),
+        AblationVariant("quality_gate_only", risk_alpha, base_system,
+                        "factor 입력에서 quality를 종합 점수에서 빼고 품질 기준(게이트)으로만 씀(quality IC가 모든 기간 음수)",
+                        factor_model=FactorModel(version="factor-quality-gate-only",
+                                                 weights={name: (0.0 if name == "quality" else 1.0)
+                                                          for name in FACTOR_CATEGORIES})),
         AblationVariant("blom_z", replace(risk_alpha, z_score_method="blom"), base_system,
                         "factor 입력 + Blom z(상위 종목 동률 해소)"),
         AblationVariant("continuous_exposure", risk_alpha,
@@ -112,8 +120,10 @@ class ReplayRepository:
         *,
         feature_rows: Callable[[datetime, datetime], list[dict[str, Any]]] = _default_feature_rows,
         cross_section: Callable[[datetime], Any] | None = None,
+        factor_model: FactorModel | None = None,
     ) -> None:
         self._base = base
+        self._factor_model = factor_model
         self._feature_rows = feature_rows
         self._cross_section = cross_section
         self.now: datetime | None = None
@@ -152,7 +162,8 @@ class ReplayRepository:
         snapshot_as_of, features = section
         if members:
             self.member_missing_shares.append(len(members - {str(ticker).upper() for ticker in features}) / len(members))
-        result = snapshot_as_of, score_cross_section(features, groups=self._base.sp500_sector_map(list(features)))
+        result = snapshot_as_of, score_cross_section(features, model=self._factor_model,
+                                                     groups=self._base.sp500_sector_map(list(features)))
         self._record_factor_categories(result)
         return result
 
@@ -416,7 +427,8 @@ def run_ablation(
                 results.append({"name": variant.name, "description": variant.description, "status": "refused",
                                 "reason": lookahead})
                 continue
-            repository = ReplayRepository(base, feature_rows=feature_rows, cross_section=cross_section)
+            repository = ReplayRepository(base, feature_rows=feature_rows, cross_section=cross_section,
+                                          factor_model=variant.factor_model)
             store = SystemPortfolioStore(Path(scratch) / f"{variant.name}.sqlite3")
             ml_forecasts_applied = 0
 
