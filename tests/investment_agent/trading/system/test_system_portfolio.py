@@ -475,6 +475,16 @@ class BuildSystemTargetTest(unittest.TestCase):
         self.assertEqual("UNVERIFIED_ENTRY_BLOCKED", trace["securities"]["CCC"]["reason"])
         self.assertIsNotNone(trace["securities"]["AAA"]["prior"])
 
+    def test_a_new_candidate_with_a_few_days_of_prices_is_excluded_not_blocking(self):
+        """새 편입 종목의 이력이 며칠뿐이면 그 후보만 빠진다. 보유 종목은 이력이 짧아도 남는다."""
+        from investment_agent.trading.system.target import drop_short_history
+
+        full = [{"trade_date": f"d{index:03d}"} for index in range(260)]
+        rows = {"SPY": full, "AAA": full, "NEW": full[-7:], "HELD": full[-7:], "GAP": full[4:]}
+        universe, short = drop_short_history(("AAA", "NEW", "HELD", "GAP"), rows, held=("HELD",))
+        self.assertEqual(("AAA", "HELD", "GAP"), universe)
+        self.assertEqual(["NEW"], short)
+
     def test_a_share_class_twin_does_not_get_the_whole_target_rejected(self):
         """GOOG·GOOGL처럼 상관 0.99인 두 종목을 다 사면 게이트가 목표 전체를 거절하고 현금이 그대로 남는다."""
         from investment_agent.trading.risk.stress import STRESS_PROXIES

@@ -57,6 +57,8 @@ log = get_logger(__name__)
 
 SYSTEM_TARGET_VERSION = "system-target-v4"
 _PRICE_ROWS = 260
+# 보유하지 않은 후보는 벤치마크와 같은 창을 거의 다 채워야 한다(연휴·정지 며칠만 허용).
+_HISTORY_SLACK_ROWS = 5
 _WEIGHT_EPSILON = 1e-6
 
 
@@ -202,6 +204,21 @@ def trade_reasons(
     return output
 
 
+def drop_short_history(
+    universe: Sequence[str], rows: Mapping[str, Sequence[Mapping[str, Any]]], *, held: Sequence[str],
+) -> tuple[tuple[str, ...], list[str]]:
+    """벤치마크만큼의 가격 창이 없는 신규 후보를 뺀다. 보유 종목은 빼지 않는다(판단 근거 없이 팔 수 없다).
+
+    공분산은 모든 종목이 겹치는 구간만 쓴다. 이력이 며칠뿐인 후보 하나가 목표 전체를 막았고(겹침 6일 < 60),
+    막지 않을 만큼 길어도(분사 69일) 모든 종목의 추정 창을 그만큼 줄인다.
+    """
+    required = len(rows.get(BENCHMARK_SYMBOL) or ()) - _HISTORY_SLACK_ROWS
+    held_set = set(held)
+    short = sorted(symbol for symbol in universe
+                   if symbol not in held_set and len(rows.get(symbol) or ()) < required)
+    return tuple(symbol for symbol in universe if symbol not in short), short
+
+
 def _price_rows(repository: Any, symbols: Sequence[str], as_of_at: datetime) -> dict[str, list[dict]]:
     return {symbol: repository.market_prices(symbol, as_of_at, limit=_PRICE_ROWS) for symbol in symbols}
 
@@ -345,6 +362,9 @@ def build_system_target(
     held = tuple(sorted(symbol for symbol, weight in current.items() if symbol != CASH_SYMBOL and weight > 0))
     universe = alpha_universe(scores, held_symbols=held, policy=alpha)
     rows = _price_rows(repository, (*universe, BENCHMARK_SYMBOL), as_of_at)
+    universe, short_history = drop_short_history(universe, rows, held=held)
+    if short_history:
+        log.info("candidates without a full price window excluded: %s", short_history)
     # 벤치마크 대비 위험을 쓰면 SPY와의 공분산이 필요하다. 같은 수축 추정 안에서 함께 구해 두 값이 서로 맞게 한다.
     with_benchmark = selected.benchmark_relative_risk and BENCHMARK_SYMBOL not in universe
     covariance_symbols = (*universe, BENCHMARK_SYMBOL) if with_benchmark else universe
@@ -441,6 +461,7 @@ def build_system_target(
             "ml_forecast": ml_forecast.to_metadata(),
             "exposure_limits_relaxed": exposure_limits_relaxed,
             "redundant_exposure_blocked": redundant,
+            "short_history_excluded": short_history,
             "optimizer": {
                 "policy_hash": optimizer_policy.hash, "input_hash": result.input_hash,
                 "expected_return": result.expected_return, "estimated_variance": result.estimated_variance,
