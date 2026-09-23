@@ -586,7 +586,7 @@ revision이 채워지기 시작하면 factor composite의 분모가 5에서 6으
 
 ### P0-8 System Portfolio가 구조적으로 현금에 치우친다
 
-- **상태**: `OPEN` (결정 필요 — 설계 §9.2)
+- **상태**: `FIXED` (`system-target-v4`, SPY 대비 위험이 기본값 — 설계 §9.2)
 - **대상**: `trading/portfolio/optimizer.py`, `trading/system/target.py`
 - **성격**: 에러 없이 조용히 틀린다. 모든 한도를 지키면서 벤치마크에 크게 뒤진다.
 
@@ -645,8 +645,9 @@ benchmark_relative    초과 +12.4%p  IR  0.14  평균 현금 14.7%  2022 MDD 19
   남는다. 연속 노출 변형은 둘 다 판정 불가 수준이다.
 - 채택 기준표를 benchmark_relative와 연속 노출 변형이 **모두 통과한다**. turnover 한도 초과 4일은 전부 위험
   축소 재조정이었다.
-- **결정 대기(사람)**: benchmark_relative(+연속 노출 여부)를 System 기본값으로 올릴지. 기본값 변경은 정책
-  버전을 올리고 실계좌 추종의 승격 절차를 다시 거친다(자동 승격 없음).
+- **채택 (2026-09-23, 사람 결정)**: benchmark_relative를 System 기본값으로 올렸다(`system-target-v4`). 연속
+  노출은 켜지 않았다 — 차이가 판정 불가다. 정책 버전이 바뀌어 System 모델 artifact가 새로 생기므로 실계좌
+  추종은 승격 절차를 다시 거친다(자동 승격 없음). 이전 구성은 재현 변형 `absolute_risk`로 비교한다.
 
 ---
 

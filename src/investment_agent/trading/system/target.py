@@ -55,7 +55,7 @@ from investment_agent.trading.risk.stress import STRESS_PROXIES, scenario_sensit
 
 log = get_logger(__name__)
 
-SYSTEM_TARGET_VERSION = "system-target-v3"
+SYSTEM_TARGET_VERSION = "system-target-v4"
 _PRICE_ROWS = 260
 _WEIGHT_EPSILON = 1e-6
 
@@ -80,8 +80,9 @@ class SystemPortfolioPolicy:
     use_tail_risk: bool = True
     use_market_risk: bool = True
     # 위험을 SPY 대비(active)로 잰다. 끄면 절대 분산 — 기대수익이 SPY 대비 초과수익인데 대안이 현금이라
-    # 주식 위험 프리미엄이 목적함수에 없고 현금으로 치우친다(설계 §9.2, Master P0-8).
-    benchmark_relative_risk: bool = False
+    # 주식 위험 프리미엄이 목적함수에 없고 현금으로 치우친다(설계 §9.2, Master P0-8). 5년 재현에서 채택
+    # 기준을 모두 통과해 운영 기본값이다(끄면 평균 현금 60%, 켜면 15%).
+    benchmark_relative_risk: bool = True
 
     def __post_init__(self) -> None:
         if not 0 <= self.no_trade_band < 0.2 or self.rebalance_days < 1:
