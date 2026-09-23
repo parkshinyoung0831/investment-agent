@@ -181,6 +181,12 @@ def run_usage_total(per_ticker: list[dict]) -> dict:
         "output_tokens": output_tokens,
         "input_tokens_per_ticker": round(input_tokens / len(per_ticker), 1),
         "tokens_are_complete": all(bool(item.get("tokens_are_complete")) for item in per_ticker),
+        # details 블록을 준 종목만 더한다. 하나라도 빠졌으면 두 합계는 하한이다.
+        "reasoning_tokens": sum(int(item.get("reasoning_tokens") or 0) for item in per_ticker),
+        "cached_input_tokens": sum(int(item.get("cached_input_tokens") or 0) for item in per_ticker),
+        "token_details_are_complete": all(
+            item.get("requests_without_token_details") == 0 for item in per_ticker
+        ),
         "latency_ms_total": round(sum(float(item.get("latency_ms_total") or 0.0) for item in per_ticker), 1),
     }
 
@@ -383,6 +389,8 @@ def main(argv: list[str] | None = None) -> int:
                 evidence_bundle=evidence_bundle,
                 role_analyses=result.role_outputs,
                 code_commit=os.environ.get("GITHUB_SHA"),
+                llm_usage=result.usage,
+                analyst_inputs=result.analyst_inputs,
             )
             repository.save_case({
                 **base,

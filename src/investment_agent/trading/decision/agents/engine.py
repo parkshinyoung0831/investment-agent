@@ -40,6 +40,8 @@ class TradingAgentsDecisionEngine:
 
     def run(self, bundle: EvidenceBundle, *, memory_text: str) -> AgentEngineResult:
         state = self.runner.run(bundle, memory_text=memory_text)
+        # 분석가 입력은 기록용이다. 구조화 호출에 실으면 그만큼 토큰이 는다.
+        analyst_inputs = state.pop("_analyst_inputs", None)
         external_evidence = _deduplicate_external_manifests(
             state.pop("_external_evidence_manifest", ())
         )
@@ -112,4 +114,5 @@ class TradingAgentsDecisionEngine:
             role_outputs=state,
             external_evidence=external_evidence,
             usage=usage.to_metadata() if usage is not None else None,
+            analyst_inputs=analyst_inputs,
         )

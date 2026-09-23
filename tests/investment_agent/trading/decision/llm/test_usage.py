@@ -37,6 +37,34 @@ class CallUsageTest(unittest.TestCase):
                 )
                 self.assertIsNone(call.input_tokens)
 
+    def test_reasoning_and_cached_tokens_come_from_the_details_blocks(self):
+        """output이 왜 비싼지(reasoning), 캐시가 걸렸는지(cached)는 details에만 있다."""
+        call = CallUsage.from_response(
+            task_name="analyst", latency_ms=1.0,
+            body={"usage": {
+                "prompt_tokens": 1500, "completion_tokens": 300,
+                "prompt_tokens_details": {"cached_tokens": 1024},
+                "completion_tokens_details": {"reasoning_tokens": 192},
+            }},
+        )
+        self.assertEqual(192, call.reasoning_tokens)
+        self.assertEqual(1024, call.cached_input_tokens)
+
+    def test_missing_details_are_unknown_not_zero(self):
+        """cached 0은 '캐시가 안 걸렸다'이고, details가 없는 것은 '모른다'다. 둘을 섞지 않는다."""
+        call = CallUsage.from_response(
+            task_name="analyst", latency_ms=1.0,
+            body={"usage": {"prompt_tokens": 10, "completion_tokens": 1}},
+        )
+        self.assertIsNone(call.reasoning_tokens)
+        self.assertIsNone(call.cached_input_tokens)
+        zero = CallUsage.from_response(
+            task_name="analyst", latency_ms=1.0,
+            body={"usage": {"prompt_tokens": 10, "completion_tokens": 1,
+                            "prompt_tokens_details": {"cached_tokens": 0}}},
+        )
+        self.assertEqual(0, zero.cached_input_tokens)
+
     def test_latency_must_be_finite_and_non_negative(self):
         for bad in (-1.0, float("nan"), float("inf")):
             with self.subTest(latency=bad):
@@ -93,6 +121,30 @@ class UsageLedgerTest(unittest.TestCase):
         self.assertEqual({"bear": 1, "bull": 2}, ledger.to_metadata()["by_task"])
 
 
+    def test_tokens_are_broken_down_by_task(self):
+        """역할별 호출 수만으로는 어느 역할을 줄여야 하는지 모른다."""
+        ledger = self._ledger(
+            CallUsage("bull", 10.0, 100, 10, 5, 0),
+            CallUsage("bull", 10.0, 200, 20, 7, 64),
+            CallUsage("bear", 10.0, 50, 5),
+        )
+        by_task = ledger.to_metadata()["tokens_by_task"]
+        self.assertEqual({"input_tokens": 300, "output_tokens": 30, "reasoning_tokens": 12,
+                          "cached_input_tokens": 64}, by_task["bull"])
+        self.assertEqual({"input_tokens": 50, "output_tokens": 5, "reasoning_tokens": None,
+                          "cached_input_tokens": None}, by_task["bear"])
+
+    def test_detail_totals_say_when_they_are_a_lower_bound(self):
+        ledger = self._ledger(
+            CallUsage("bull", 10.0, 100, 10, 5, 0),
+            CallUsage("bear", 10.0, 50, 5),
+        )
+        metadata = ledger.to_metadata()
+        self.assertEqual(5, metadata["reasoning_tokens"])
+        self.assertEqual(1, metadata["requests_without_token_details"])
+        self.assertIsNone(UsageLedger().to_metadata()["reasoning_tokens"])
+
+
 class ClientRecordsUsageTest(unittest.TestCase):
     """client가 실제로 계측을 남기는가. 남기지 않으면 §50이 통째로 빈다."""
 
@@ -134,6 +186,19 @@ class RunTotalTest(unittest.TestCase):
         self.assertEqual(14.0, total["requests_per_ticker"])
         self.assertEqual(190, total["input_tokens"])
         self.assertFalse(total["tokens_are_complete"])
+
+    def test_the_run_total_carries_reasoning_and_cache_with_completeness(self):
+        from investment_agent.trading.decision.analysis import run_usage_total
+
+        total = run_usage_total([
+            {"requests": 14, "reasoning_tokens": 700, "cached_input_tokens": 9000,
+             "requests_without_token_details": 0, "tokens_are_complete": True},
+            {"requests": 14, "reasoning_tokens": None, "cached_input_tokens": None,
+             "requests_without_token_details": 14, "tokens_are_complete": True},
+        ])
+        self.assertEqual(700, total["reasoning_tokens"])
+        self.assertEqual(9000, total["cached_input_tokens"])
+        self.assertFalse(total["token_details_are_complete"])
 
     def test_no_tickers_is_not_a_zero_cost_claim(self):
         from investment_agent.trading.decision.analysis import run_usage_total

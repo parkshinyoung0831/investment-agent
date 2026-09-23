@@ -1,9 +1,10 @@
 """TradingAgents 역할 그래프에 LLM 런타임의 point-in-time 근거를 연결한다."""
 from __future__ import annotations
 
+import hashlib
 import os
 from datetime import timedelta
-from typing import Any
+from typing import Any, Callable
 
 from investment_agent.platform.logging import get_logger
 from investment_agent.trading.contracts import parse_datetime
@@ -31,6 +32,29 @@ from investment_agent.trading.decision.llm.vendor.yfinance_news import get_news_
 
 log = get_logger(__name__)
 NEWS_LOOKBACK_DAYS = 7
+# 외부(뉴스·소셜) 원문은 기본적으로 실행 메모리에서만 쓴다(`runtime._persist_external_raw`와 같은 규칙).
+_EXTERNAL_ANALYST_DOMAINS = frozenset({"news", "sentiment"})
+
+
+def _recorded(sink: dict[str, dict[str, Any]], domain: str, fetch: Callable[[], str]) -> Callable[[], str]:
+    """분석가가 실제로 받은 입력을 남긴다 — 분석가 단계를 같은 입력으로 다시 돌려 비교하려면 필요하다.
+
+    내부 근거는 원문을, 외부 원문은 보존 설정이 켜졌을 때만 원문을 남기고 평소에는 해시와 길이만 남긴다.
+    """
+    def run() -> str:
+        text = fetch()
+        record: dict[str, Any] = {
+            "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            "chars": len(text),
+        }
+        if domain not in _EXTERNAL_ANALYST_DOMAINS or os.environ.get(
+            "AI_INVESTOR_SAVE_EXTERNAL_RAW", "false"
+        ).lower() == "true":
+            record["text"] = text
+        sink[domain] = record
+        return text
+
+    return run
 
 
 class TradingAgentsRunner:
@@ -93,18 +117,19 @@ class TradingAgentsRunner:
                     ),
                 ))
 
+            analyst_inputs: dict[str, dict[str, Any]] = {}
             result = orchestrator.run_local_graph(
                 client,
                 ticker=bundle.ticker,
                 curr_date=curr_date,
-                fetch_market_evidence=lambda: runtime._verified_market(bundle.ticker, curr_date),
-                fetch_fundamentals_evidence=lambda: runtime._fundamentals(bundle.ticker, curr_date),
-                fetch_news_evidence=fetch_news_evidence,
-                fetch_sentiment_evidence=fetch_sentiment_evidence,
-                fetch_macro_evidence=lambda: runtime._macro("", curr_date),
+                fetch_market_evidence=_recorded(analyst_inputs, "market", lambda: runtime._verified_market(bundle.ticker, curr_date)),
+                fetch_fundamentals_evidence=_recorded(analyst_inputs, "fundamentals", lambda: runtime._fundamentals(bundle.ticker, curr_date)),
+                fetch_news_evidence=_recorded(analyst_inputs, "news", fetch_news_evidence),
+                fetch_sentiment_evidence=_recorded(analyst_inputs, "sentiment", fetch_sentiment_evidence),
+                fetch_macro_evidence=_recorded(analyst_inputs, "macro", lambda: runtime._macro("", curr_date)),
             )
             manifests = runtime._deduplicate_external_manifests(runtime._EXTERNAL_MANIFESTS.get())
-            return {**result, "_external_evidence_manifest": manifests}
+            return {**result, "_external_evidence_manifest": manifests, "_analyst_inputs": analyst_inputs}
         except Exception as exc:
             manifests = runtime._deduplicate_external_manifests(runtime._EXTERNAL_MANIFESTS.get())
             raise runtime.TradingAgentsRunError(

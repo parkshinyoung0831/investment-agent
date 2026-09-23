@@ -18,6 +18,8 @@ class AgentEngineResult:
     # 이 종목을 판단하는 데 든 LLM 토큰·지연(`llm/usage.py`). 판단의 일부가 아니라
     # 그 판단의 비용이라 결과에 싣되 proposal에는 넣지 않는다.
     usage: dict[str, Any] | None = None
+    # 분석가 5명이 실제로 받은 입력(원문 또는 해시·길이). 분석가 단계를 재현·비교하는 근거다.
+    analyst_inputs: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -27,6 +29,7 @@ class AgentEngineResult:
             "role_outputs": self.role_outputs,
             "external_evidence": list(self.external_evidence),
             "usage": self.usage,
+            "analyst_inputs": self.analyst_inputs,
         }
 
 

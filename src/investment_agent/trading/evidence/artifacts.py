@@ -152,16 +152,25 @@ class EvidenceArtifactStore:
         case_key: str,
         evidence_bundle: Mapping[str, Any],
         role_analyses: Any,
+        llm_usage: Mapping[str, Any] | None = None,
+        analyst_inputs: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not str(case_key).strip():
             raise EvidenceArtifactError("case_key is required")
-        return {
+        payload = {
             "artifact_kind": ARTIFACT_KIND,
             "schema_version": ARTIFACT_SCHEMA_VERSION,
             "case_key": str(case_key),
             "evidence_bundle": json_value(dict(evidence_bundle)),
             "role_analyses": json_value(role_analyses),
         }
+        # 판단의 비용과 분석가 입력. 로그는 회전하므로 판단 근거 옆에 둔다. 없으면 키를 만들지 않아
+        # 같은 판단 근거의 content hash가 이 필드가 생기기 전과 같다.
+        if llm_usage is not None:
+            payload["llm_usage"] = json_value(dict(llm_usage))
+        if analyst_inputs is not None:
+            payload["analyst_inputs"] = json_value(dict(analyst_inputs))
+        return payload
 
     def write_case(
         self,
@@ -170,11 +179,15 @@ class EvidenceArtifactStore:
         evidence_bundle: Mapping[str, Any],
         role_analyses: Any,
         code_commit: str | None = None,
+        llm_usage: Mapping[str, Any] | None = None,
+        analyst_inputs: Mapping[str, Any] | None = None,
     ) -> EvidenceArtifactManifest:
         payload = self._payload(
             case_key=case_key,
             evidence_bundle=evidence_bundle,
             role_analyses=role_analyses,
+            llm_usage=llm_usage,
+            analyst_inputs=analyst_inputs,
         )
         raw = canonical_json(payload).encode("utf-8")
         digest = hashlib.sha256(raw).hexdigest()
@@ -244,6 +257,8 @@ def archive_case_evidence(
     role_analyses: Any,
     store: EvidenceArtifactStore | None = None,
     code_commit: str | None = None,
+    llm_usage: Mapping[str, Any] | None = None,
+    analyst_inputs: Mapping[str, Any] | None = None,
 ) -> ArchivedCaseEvidence:
     """artifact를 먼저 쓰고 DB에는 manifest와 digest만 남긴다."""
 
@@ -257,6 +272,8 @@ def archive_case_evidence(
             evidence_bundle=raw_bundle,
             role_analyses=raw_roles,
             code_commit=code_commit,
+            llm_usage=llm_usage,
+            analyst_inputs=analyst_inputs,
         )
     except EvidenceArtifactError as exc:
         error = f"{type(exc).__name__}: {exc}"[:500]

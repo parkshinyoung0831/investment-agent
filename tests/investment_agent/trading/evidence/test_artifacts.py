@@ -49,6 +49,28 @@ def _bundle() -> dict:
 
 
 class EvidenceArtifactStoreTest(unittest.TestCase):
+    def test_cost_and_analyst_inputs_are_kept_beside_the_evidence(self) -> None:
+        """로그는 회전한다. 판단의 비용과 분석가 입력은 판단 근거 옆에 있어야 나중에 다시 잴 수 있다."""
+        with tempfile.TemporaryDirectory() as directory:
+            store = EvidenceArtifactStore(directory)
+            manifest = store.write_case(
+                case_key="case-usage", evidence_bundle=_bundle(), role_analyses={},
+                llm_usage={"requests": 14, "reasoning_tokens": 700},
+                analyst_inputs={"market": {"sha256": "x", "chars": 3, "text": "abc"}},
+            )
+            payload = store.read(manifest)
+            self.assertEqual(700, payload["llm_usage"]["reasoning_tokens"])
+            self.assertEqual("abc", payload["analyst_inputs"]["market"]["text"])
+
+    def test_absent_cost_fields_leave_the_content_hash_unchanged(self) -> None:
+        """새 필드가 없을 때도 키를 만들면, 같은 근거가 이 변경 전후로 다른 artifact가 된다."""
+        with tempfile.TemporaryDirectory() as directory:
+            store = EvidenceArtifactStore(directory)
+            manifest = store.write_case(case_key="case-plain", evidence_bundle=_bundle(), role_analyses={})
+            payload = store.read(manifest)
+            self.assertNotIn("llm_usage", payload)
+            self.assertNotIn("analyst_inputs", payload)
+
     def test_write_is_content_addressed_idempotent_and_verified_on_read(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = EvidenceArtifactStore(directory)

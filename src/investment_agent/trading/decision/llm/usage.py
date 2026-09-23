@@ -13,6 +13,13 @@ OpenAI 호환 엔드포인트는 대부분 `usage`를 주지만 계약은 아니
 적지 않고 `None`으로 두고 `requests_without_usage`로 센다 — 0으로 적으면 "토큰을 안 썼다"와
 "모르겠다"가 같은 값이 되어, 나중에 비용을 계산할 때 조용히 과소 추정한다.
 
+## 합계만으로는 비용의 내역을 모른다
+
+reasoning 모델은 보이지 않는 reasoning 토큰을 output으로 과금하고, 같은 접두부를 다시 보낸
+입력은 캐시로 싸게 과금된다. 둘은 `usage`의 details 블록에만 있다. 버리면 "output이 왜
+비싼가"와 "캐시가 걸렸나"에 답할 수 없다. 역할별 토큰도 같은 이유로 따로 남긴다 — 역할별
+호출 수만으로는 어느 역할을 줄여야 하는지 모른다.
+
 ## 이 값으로 무엇을 하나
 
 `INVESTMENT_DECISION_ENGINE_DESIGN.md` §50이 요구하는 계측 항목의 입력이다. 이것이 쌓이기
@@ -22,7 +29,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 
 def _positive_int(value: Any) -> int | None:
@@ -44,6 +51,9 @@ class CallUsage:
     latency_ms: float
     input_tokens: int | None = None
     output_tokens: int | None = None
+    # output_tokens 안의 reasoning 몫, input_tokens 안의 캐시 적중 몫. details 블록이 없으면 None.
+    reasoning_tokens: int | None = None
+    cached_input_tokens: int | None = None
 
     def __post_init__(self) -> None:
         if not str(self.task_name).strip():
@@ -63,12 +73,24 @@ class CallUsage:
         usage = body.get("usage") if isinstance(body, Mapping) else None
         if not isinstance(usage, Mapping):
             return cls(task_name=task_name, latency_ms=latency_ms)
+        completion = usage.get("completion_tokens_details")
+        prompt = usage.get("prompt_tokens_details")
         return cls(
             task_name=task_name,
             latency_ms=latency_ms,
             input_tokens=_positive_int(usage.get("prompt_tokens")),
             output_tokens=_positive_int(usage.get("completion_tokens")),
+            reasoning_tokens=(_positive_int(completion.get("reasoning_tokens"))
+                              if isinstance(completion, Mapping) else None),
+            cached_input_tokens=(_positive_int(prompt.get("cached_tokens"))
+                                 if isinstance(prompt, Mapping) else None),
         )
+
+
+def _known_sum(values: Iterable[int | None]) -> int | None:
+    """알려진 값만 더한다. 하나도 알려지지 않았으면 0이 아니라 None이다."""
+    known = [value for value in values if value is not None]
+    return sum(known) if known else None
 
 
 def _percentile(values: Sequence[float], fraction: float) -> float:
@@ -107,6 +129,21 @@ class UsageLedger:
         return sum(call.output_tokens or 0 for call in self.calls)
 
     @property
+    def reasoning_tokens(self) -> int | None:
+        """알려진 reasoning 토큰 합. 한 호출도 details를 주지 않았으면 None."""
+        return _known_sum(call.reasoning_tokens for call in self.calls)
+
+    @property
+    def cached_input_tokens(self) -> int | None:
+        return _known_sum(call.cached_input_tokens for call in self.calls)
+
+    @property
+    def requests_without_token_details(self) -> int:
+        """reasoning·cached 중 하나라도 모르는 호출 수. 0이 아니면 두 합계는 하한이다."""
+        return sum(1 for call in self.calls
+                   if call.reasoning_tokens is None or call.cached_input_tokens is None)
+
+    @property
     def latency_ms_total(self) -> float:
         return math.fsum(call.latency_ms for call in self.calls)
 
@@ -128,6 +165,9 @@ class UsageLedger:
             "output_tokens": self.output_tokens,
             "tokens_are_complete": self.is_complete,
             "requests_without_usage": self.requests_without_usage,
+            "reasoning_tokens": self.reasoning_tokens,
+            "cached_input_tokens": self.cached_input_tokens,
+            "requests_without_token_details": self.requests_without_token_details,
             "latency_ms_total": round(self.latency_ms_total, 1),
             "latency_ms_p50": round(self.latency_ms_percentile(0.50), 1),
             "latency_ms_p95": round(self.latency_ms_percentile(0.95), 1),
@@ -136,6 +176,22 @@ class UsageLedger:
                 task: count
                 for task, count in sorted(self._counts_by_task().items())
             },
+            "tokens_by_task": self._tokens_by_task(),
+        }
+
+    def _tokens_by_task(self) -> dict[str, dict[str, int | None]]:
+        """역할(task_name)별 토큰 합. 모르는 값은 합에서 빠지고, 전부 모르면 None이다."""
+        grouped: dict[str, list[CallUsage]] = {}
+        for call in self.calls:
+            grouped.setdefault(call.task_name, []).append(call)
+        return {
+            task: {
+                "input_tokens": _known_sum(call.input_tokens for call in calls),
+                "output_tokens": _known_sum(call.output_tokens for call in calls),
+                "reasoning_tokens": _known_sum(call.reasoning_tokens for call in calls),
+                "cached_input_tokens": _known_sum(call.cached_input_tokens for call in calls),
+            }
+            for task, calls in sorted(grouped.items())
         }
 
     def _counts_by_task(self) -> dict[str, int]:
