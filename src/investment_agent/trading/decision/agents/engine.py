@@ -30,6 +30,47 @@ SECURITY_PROPOSAL_SCHEMA: dict[str, Any] = {
 }
 
 
+# 토론 상태에서 구조화 호출에 싣지 않는 사본 필드. 발언 전체는 `history`에, 결론은 `judge_decision`에 있다.
+_DEBATE_COPY_FIELDS = (
+    "bull_history", "bear_history", "current_response",
+    "aggressive_history", "conservative_history", "neutral_history",
+    "current_aggressive_response", "current_conservative_response", "current_neutral_response",
+)
+# 최상위의 결론 사본: investment_plan == 투자 토론 judge_decision, final_trade_decision ⊂ 리스크 토론 judge_decision.
+_TOP_LEVEL_COPY_FIELDS = {
+    "investment_plan": "investment_debate_state",
+    "final_trade_decision": "risk_debate_state",
+}
+
+
+def structuring_state(state: dict[str, Any]) -> dict[str, Any]:
+    """구조화 호출에 싣는 토론 상태. 같은 텍스트의 사본만 빼고 정보는 하나도 빼지 않는다.
+
+    역할 그래프의 상태는 한 발언을 `*_history`·`history`·`current_*`로 2~3번 들고 있다. 구조화에
+    필요한 것은 발언 한 번씩과 결론이다(저장된 판단 57건 재구성에서 state 토큰이 약 절반으로 준다).
+    무손실은 규칙이 아니라 검사로 지킨다 — 빼려는 필드의 텍스트가 남기는 텍스트 안에 없으면 빼지 않는다.
+    """
+    compact = dict(state)
+    for key, parent in _TOP_LEVEL_COPY_FIELDS.items():
+        container = compact.get(parent)
+        kept = str(container.get("judge_decision") or "") if isinstance(container, dict) else ""
+        value = compact.get(key)
+        if isinstance(value, str) and value and value in kept:
+            compact.pop(key)
+    for parent in ("investment_debate_state", "risk_debate_state"):
+        debate = compact.get(parent)
+        if not isinstance(debate, dict):
+            continue
+        kept_text = f"{debate.get('history') or ''}\n{debate.get('judge_decision') or ''}"
+        slim = dict(debate)
+        for field in _DEBATE_COPY_FIELDS:
+            value = slim.get(field)
+            if isinstance(value, str) and value in kept_text:
+                slim.pop(field)
+        compact[parent] = slim
+    return compact
+
+
 class TradingAgentsDecisionEngine:
     name = "tradingagents"
 
@@ -75,7 +116,7 @@ class TradingAgentsDecisionEngine:
             "bundle_missing_data": list(bundle.missing_data),
             "external_evidence_manifest": list(external_evidence),
             "external_missing_data": list(external_missing),
-            "tradingagents_state": state,
+            "tradingagents_state": structuring_state(state),
             "evaluated_case_memory": memory_text,
         })
         allowed_ids = bundle.evidence_ids | external_ids
