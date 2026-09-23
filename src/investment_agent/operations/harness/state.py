@@ -171,10 +171,18 @@ class JsonStateStore:
     def load(self) -> HarnessState:
         if not self.path.exists():
             return HarnessState()
-        try:
-            payload = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise StateCorruptionError(f"cannot read harness state: {exc}") from exc
+        # 다른 프로세스(실행 중인 하네스)가 이 파일을 교체하는 찰나에 Windows는 읽기를 PermissionError로
+        # 거절한다. 쓰기와 같이 잠깐 기다린다 — 그러지 않으면 기동한 하네스를 "시작 실패"로 보고한다.
+        for attempt in range(6):
+            try:
+                payload = json.loads(self.path.read_text(encoding="utf-8"))
+                break
+            except PermissionError as exc:
+                if attempt == 5:
+                    raise StateCorruptionError(f"cannot read harness state: {exc}") from exc
+                time.sleep(0.02 * (2 ** attempt))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise StateCorruptionError(f"cannot read harness state: {exc}") from exc
         if not isinstance(payload, dict):
             raise StateCorruptionError("harness state root must be an object")
         return HarnessState.from_dict(payload)

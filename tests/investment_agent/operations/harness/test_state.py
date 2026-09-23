@@ -95,6 +95,33 @@ class HarnessStateTest(unittest.TestCase):
             self.assertEqual(len(attempts), 3)
             self.assertEqual(store.load().jobs["investment_pipeline"].run_id, "run_one")
 
+    def test_a_read_during_another_process_replace_waits_instead_of_failing(self):
+        """실행 중인 하네스가 파일을 교체하는 찰나의 읽기 거절 때문에 기동이 "시작 실패"로 보고됐다."""
+        with tempfile.TemporaryDirectory() as temp:
+            store = JsonStateStore(Path(temp) / "state.json")
+            store.save(running_state())
+            read_text = Path.read_text
+            attempts = []
+
+            def temporarily_locked(path, *args, **kwargs):
+                attempts.append(path)
+                if len(attempts) < 3:
+                    raise PermissionError(13, "Permission denied")
+                return read_text(path, *args, **kwargs)
+
+            with patch.object(Path, "read_text", temporarily_locked):
+                loaded = store.load()
+            self.assertEqual(3, len(attempts))
+            self.assertEqual("run_one", loaded.jobs["investment_pipeline"].run_id)
+
+    def test_a_persistent_read_permission_error_is_still_reported(self):
+        with tempfile.TemporaryDirectory() as temp:
+            store = JsonStateStore(Path(temp) / "state.json")
+            store.save(running_state())
+            with patch.object(Path, "read_text", side_effect=PermissionError(13, "Permission denied")):
+                with self.assertRaises(StateCorruptionError):
+                    store.load()
+
     def test_persistent_replace_permission_error_preserves_checkpoint(self):
         with tempfile.TemporaryDirectory() as temp:
             store = JsonStateStore(Path(temp) / "state.json")
