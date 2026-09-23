@@ -553,6 +553,10 @@ class TossLiveExecutionWorker:
                 "quantity": float(command.quantity or 0),
                 "reference_price": ticket.reference_price,
                 "notional": ticket.estimated_notional,
+                # 제출 직전에 다시 받은 시세(도착 가격). 승인 시점 기준가·체결가와 나란히 두어야 나중에 실행
+                # 비용(implementation shortfall)을 잴 수 있다 — 지금 남기지 않으면 되살릴 수 없다.
+                "arrival_price": float(fresh.prices[command.symbol]) if command.symbol in fresh.prices else None,
+                "arrival_price_at": fresh.price_timestamps.get(command.symbol),
                 "status": "planned",
             })
             attempt = OrderAttempt.create(

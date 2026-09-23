@@ -400,6 +400,10 @@ class LiveWorkerTest(unittest.TestCase):
         self.assertLess(repository.trace.index("reserve"), repository.trace.index("event:submitting"))
         self.assertLess(repository.trace.index("event:submitting"), repository.trace.index("event:submitted"))
         self.assertIn("order:submitted", repository.trace)
+        # 실행 비용을 나중에 재려면 제출 직전 시세(도착 가격)와 그 시각이 주문 기록에 있어야 한다.
+        order = next(iter(repository.orders.values()))
+        self.assertIsNotNone(order["arrival_price"])
+        self.assertEqual(NOW.isoformat(), order["arrival_price_at"])
 
     def test_changed_order_quantity_requires_new_approval_before_consumption(self):
         repository = FakeRepository()
