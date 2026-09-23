@@ -90,6 +90,20 @@ class ResearchAdapters:
             stop_event=context.stop_event,
         )
         return StageOutcome.succeeded({"evaluated_at": self.now().isoformat()})
+    def diagnose_system(self, context: StageContext) -> StageOutcome:
+        """System 목표를 5·20·60·120거래일 실현 수익으로 채점해 어느 단계가 틀렸는지 남긴다.
+
+        읽기 전용 채점이라 거래 kill switch와 무관하다. 판정은 기록만 하고 정책을 바꾸지 않는다.
+        """
+        self.command_runner.run(
+            PythonModuleCommand(
+                "investment_agent.operations.commands.system_diagnosis",
+                (),
+                self.timeouts.get("diagnose_system", 30 * 60),
+            ),
+            stop_event=context.stop_event,
+        )
+        return StageOutcome.succeeded({"diagnosed_at": self.now().isoformat()})
     def build_events(self, context: StageContext) -> StageOutcome:
         """로컬 뉴스·소셜 원문을 사건과 event feature로 압축해 원장에 남긴다.
 

@@ -105,6 +105,7 @@ def build_registry(
         build_training_samples=selected.build_training_samples,
         evaluate_decisions=selected.evaluate_decisions,
         build_events=selected.build_events,
+        diagnose_system=getattr(selected, "diagnose_system", None),
         interval_seconds=feature_store_interval_seconds,
     ))
     registry.register(system_portfolio_job(run_system_portfolio=selected.run_system_portfolio))

@@ -179,6 +179,7 @@ def feature_store_job(
     build_training_samples: StageHandler,
     evaluate_decisions: StageHandler,
     build_events: StageHandler,
+    diagnose_system: StageHandler | None = None,
     interval_seconds: float = 24 * 60 * 60,
     stale_after_seconds: float = 30 * 60 * 60,
 ) -> JobDefinition:
@@ -232,6 +233,14 @@ def feature_store_job(
                 max_attempts=2,
                 retry_delay_seconds=10 * 60,
             ),
+            # System 목표의 단계별 채점. 판단 채점과 같은 성격(사후·읽기 전용·재실행 안전)이다.
+            *((StageDefinition(
+                "diagnose_system",
+                diagnose_system,
+                approval_workflow_only=False,
+                max_attempts=2,
+                retry_delay_seconds=10 * 60,
+            ),) if diagnose_system is not None else ()),
             # 맨 뒤다. 원천이 90일치 로컬 DuckDB라 실패해도 나중에 다시 만들 수 있고,
             # 앞 단계의 PIT 관측값은 그날을 놓치면 되살릴 수 없다.
             StageDefinition(

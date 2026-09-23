@@ -33,6 +33,7 @@ _MODULES = frozenset({
     "investment_agent.research.commands.build_training_samples",
     "investment_agent.research.commands.build_events",
     "investment_agent.operations.commands.evaluate_decisions",
+    "investment_agent.operations.commands.system_diagnosis",
     "investment_agent.operations.commands.notify",
     "investment_agent.research.commands.continuous_retrain",
     "investment_agent.operations.commands.watch_earnings",
@@ -123,6 +124,7 @@ _BACKGROUND_STAGE_TIMEOUT_KEYS: dict[str, str | None] = {
     "build_training_samples": "build_training_samples",
     "build_events": "build_events",
     "evaluate_decisions": "evaluate_decisions",
+    "diagnose_system": "diagnose_system",
     "build_decision_experiences": "build_decision_experiences",
     "continuous_learning": "continuous_learning",
     "run_system_portfolio": "system_portfolio",
@@ -253,6 +255,10 @@ class ProductionInvestmentAdapters(
             # 성숙한 판단만 채점하므로 하루치 증분은 작다.
             "evaluate_decisions": _positive_float(
                 values, "HARNESS_EVALUATE_DECISIONS_TIMEOUT_SEC", 30 * 60, maximum=2 * 60 * 60,
+            ),
+            # 목표마다 가격 경로를 읽는다. 종목 수백 개의 가격 조회가 대부분이다.
+            "diagnose_system": _positive_float(
+                values, "HARNESS_DIAGNOSE_SYSTEM_TIMEOUT_SEC", 30 * 60, maximum=2 * 60 * 60,
             ),
             # embed 몇 장을 올릴 뿐이라 짧다. rate limit 대기까지만 감안한다.
             "notify_investment": _positive_float(
