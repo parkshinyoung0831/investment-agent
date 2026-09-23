@@ -163,6 +163,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-dates", type=int, help="이번 실행에서 새로 만들 시점 수 상한")
     parser.add_argument("--skip-labels", action="store_true", help="label·표본 단계를 건너뛴다")
     parser.add_argument("--audit-only", action="store_true", help="날짜별 완결성만 JSON으로 출력하고 쓰지 않는다")
+    parser.add_argument(
+        "--retry-unavailable", action="store_true",
+        help="'영구 불가'로 기록된 종목을 다시 계산한다. 가격을 뒤늦게 백필한 과거 멤버가 재현에서 빠지지 않게 한다",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
 
@@ -198,7 +202,9 @@ def main(argv: list[str] | None = None) -> int:
         matching = next((row for row in reversed(manifests)
                          if row.get("definition_hash") == definition_hash
                          and row.get("universe_hash") == expected_hash), None)
-        unavailable = {
+        # 가격이 없어 불가였던 과거 멤버는 가격을 백필한 뒤 다시 계산할 수 있다. 지워 두지 않으면 영원히 빠진 채
+        # 남아 재현에 생존 편향이 생긴다(2021-09 시점 멤버 505 중 82가 빠져 있었다).
+        unavailable = set() if args.retry_unavailable else {
             str(ticker).upper() for ticker in (matching or {}).get("unavailable_tickers", [])
         }
         state = BackfillDateState(

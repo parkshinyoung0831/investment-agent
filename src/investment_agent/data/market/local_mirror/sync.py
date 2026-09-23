@@ -119,8 +119,13 @@ def sync_local_mirror(
     memberships = [dict(row) for row in origin.memberships()]
     tracked_ids = {int(row["security_id"]) for row in securities if row.get("is_tracked")}
     member_ids = {int(row["security_id"]) for row in memberships}
+    # 멤버십 행은 신원 미확인 자리표시 종목(같은 ticker)을 가리킬 수 있다. 가격은 확인된 종목에 쌓이고 ticker
+    # 조회도 확인된 종목으로 풀리므로, 멤버의 ticker를 확인된 종목으로도 풀어 그 가격을 복사한다. 빠뜨리면
+    # 지수에서 나간 과거 멤버의 가격이 사본에 없어 재현이 그 종목들을 조용히 뺀다(생존 편향).
+    member_ticker_ids = set(_preferred_ids(securities, sorted({str(row["ticker"]).upper() for row in memberships
+                                                                 if row.get("ticker")})).values())
     reference_ids = set(_preferred_ids(securities, origin.reference_tickers).values())
-    price_ids = sorted(tracked_ids | member_ids | reference_ids)
+    price_ids = sorted(tracked_ids | member_ids | member_ticker_ids | reference_ids)
     by_id = {int(row["security_id"]): row for row in securities}
     profile_tickers = sorted({str(by_id[security_id]["ticker"]).upper() for security_id in price_ids if security_id in by_id})
     sectors = {str(row["ticker"]).upper(): row.get("sic_division") for row in origin.profiles(profile_tickers)}

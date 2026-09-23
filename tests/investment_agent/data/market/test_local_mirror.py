@@ -155,6 +155,20 @@ class LocalMirrorTest(unittest.TestCase):
         self.assertFalse(self.sync(now=NOW + timedelta(days=1)).is_full)
         self.assertTrue(self.sync(now=NOW + timedelta(days=8)).is_full)
 
+    def test_a_former_member_on_a_placeholder_row_still_gets_its_real_prices(self):
+        """멤버십이 자리표시 증권을 가리켜도 ticker 조회는 확인된 증권으로 풀린다 — 그 가격이 사본에 있어야 한다."""
+        self.world.securities += [
+            {"security_id": 5, "ticker": "OLD", "cik": "5", "is_active_listing": True, "is_identity_verified": True,
+             "is_tracked": False},
+            {"security_id": 6, "ticker": "OLD", "cik": None, "is_active_listing": False, "is_identity_verified": False,
+             "is_tracked": False},
+        ]
+        self.world.bars[5] = _bars(5, date(2021, 1, 1), date(2026, 9, 15))
+        memberships = [{"security_id": 6, "ticker": "OLD", "valid_from": "2015-01-01", "valid_to": "2024-09-23"}]
+        source = MirrorSource(**{**self.world.source().__dict__, "memberships": lambda: memberships})
+        sync_local_mirror(mirror=self.mirror, source=source, now=NOW)
+        self.assertTrue(self.mirror.price_history_as_of("OLD", datetime(2022, 1, 5, 23, tzinfo=UTC), limit=5))
+
     def test_membership_snapshots_use_the_same_rule_as_supabase(self):
         rows = [{"security_id": index, "ticker": f"T{index}", "valid_from": "2020-01-01",
                  "valid_to": "2026-03-01" if index == 0 else None} for index in range(501)]
