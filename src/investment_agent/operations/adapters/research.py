@@ -90,6 +90,17 @@ class ResearchAdapters:
             stop_event=context.stop_event,
         )
         return StageOutcome.succeeded({"evaluated_at": self.now().isoformat()})
+    def evaluate_system(self, context: StageContext) -> StageOutcome:
+        """최신 System artifact의 승격 증거를 만든다(5년 재현 + 운영 NAV). 읽기와 평가 원장 쓰기뿐이다."""
+        self.command_runner.run(
+            PythonModuleCommand(
+                "investment_agent.operations.commands.system_evaluations",
+                (),
+                self.timeouts.get("evaluate_system", 90 * 60),
+            ),
+            stop_event=context.stop_event,
+        )
+        return StageOutcome.succeeded({"evaluated_at": self.now().isoformat()})
     def diagnose_system(self, context: StageContext) -> StageOutcome:
         """System 목표를 5·20·60·120거래일 실현 수익으로 채점해 어느 단계가 틀렸는지 남긴다.
 

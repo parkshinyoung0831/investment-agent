@@ -325,6 +325,32 @@ def continuous_learning_job(
     )
 
 
+def system_evaluation_job(
+    *,
+    evaluate_system: StageHandler,
+    interval_seconds: float = 7 * 24 * 60 * 60,
+    stale_after_seconds: float = 8 * 24 * 60 * 60,
+) -> JobDefinition:
+    """최신 System artifact의 승격 증거(재현·운영 NAV)를 평가 원장에 쓴다. 승격은 사람이 한다.
+
+    수동 승격 게이트는 이 증거만 읽는다. 돌지 않으면 실계좌 추종이 영구히 막힌다.
+    """
+    return JobDefinition(
+        job_id="system_evaluation",
+        interval_seconds=interval_seconds,
+        stale_after_seconds=stale_after_seconds,
+        stages=(
+            StageDefinition(
+                "evaluate_system",
+                evaluate_system,
+                approval_workflow_only=False,
+                max_attempts=2,
+                retry_delay_seconds=30 * 60,
+            ),
+        ),
+    )
+
+
 def investment_reporting_job(*, update_performance: StageHandler, notify_reports: StageHandler) -> JobDefinition:
     """분석과 주문 실패에도 성과·늦은 체결·누락 알림을 독립적으로 갱신한다."""
     return JobDefinition(job_id="investment_reporting", interval_seconds=300, stale_after_seconds=1800,

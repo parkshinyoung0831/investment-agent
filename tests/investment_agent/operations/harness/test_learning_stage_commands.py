@@ -24,6 +24,7 @@ LEARNING_STAGES = (
     ("build_training_samples", "investment_agent.research.commands.build_training_samples"),
     ("evaluate_decisions", "investment_agent.operations.commands.evaluate_decisions"),
     ("diagnose_system", "investment_agent.operations.commands.system_diagnosis"),
+    ("evaluate_system", "investment_agent.operations.commands.system_evaluations"),
     ("build_events", "investment_agent.research.commands.build_events"),
     ("build_decision_experiences", "investment_agent.operations.commands.build_decision_experiences"),
     ("update_performance", "investment_agent.operations.commands.update_performance"),
@@ -101,6 +102,13 @@ class LearningStageCommandTest(unittest.TestCase):
         definitions = {definition.job_id: definition for definition in build_registry(adapters=self.adapters).definitions()}
         stages = [stage.stage_id for stage in definitions["feature_store"].stages]
         self.assertEqual(stages.index("evaluate_decisions") + 1, stages.index("diagnose_system"))
+
+    def test_production_harness_produces_promotion_evidence_weekly(self):
+        """승격 게이트가 읽는 증거를 만드는 job이 운영 adapters로 등록된다 — 없으면 실계좌 추종이 영구히 막힌다."""
+        from investment_agent.operations.commands.investment_harness import build_registry
+
+        definitions = {definition.job_id: definition for definition in build_registry(adapters=self.adapters).definitions()}
+        self.assertEqual(7 * 24 * 60 * 60, definitions["system_evaluation"].interval_seconds)
 
     def test_unready_learning_is_not_reported_as_trained(self):
         import json

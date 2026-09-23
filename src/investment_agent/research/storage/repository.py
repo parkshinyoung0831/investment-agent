@@ -967,6 +967,10 @@ class ResearchStore:
             if as_of_at is None or parse_datetime(str(row["available_at"])) <= as_of_at
         ]
 
+    def save_portfolio_evaluations(self, rows: Sequence[dict[str, Any]]) -> int:
+        """승격 게이트가 읽는 artifact 평가 행. 같은 artifact·종류·창이면 다시 써서 갱신한다."""
+        return self.upsert_records("portfolio_evaluations", rows, key="record_key")
+
     def model_evaluation_rows(self, artifact_id: str) -> list[dict[str, Any]]:
         artifact_id = str(artifact_id).strip()
         if not artifact_id:

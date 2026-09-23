@@ -118,6 +118,8 @@ class ReplayRepository:
         self.thesis_view_count = 0
         self.factor_category_periods: dict[str, set[str]] = {}
         self.proposals: list[dict[str, Any]] = []
+        # 판단 시각 멤버 중 feature가 없어 점수를 못 받은 비율. 크면 재현이 생존 편향을 갖는다.
+        self.member_missing_shares: list[float] = []
 
     def __getattr__(self, name: str) -> Any:
         if name in _LEDGER_WRITES:
@@ -146,6 +148,8 @@ class ReplayRepository:
         if section is None:
             return None
         snapshot_as_of, features = section
+        if members:
+            self.member_missing_shares.append(len(members - {str(ticker).upper() for ticker in features}) / len(members))
         result = snapshot_as_of, score_cross_section(features, groups=self._base.sp500_sector_map(list(features)))
         self._record_factor_categories(result)
         return result
@@ -223,6 +227,8 @@ def _variant_result(store: SystemPortfolioStore, repository: ReplayRepository, *
             "tail_risk_bound_periods": sum(float(item.get("scale", 1.0)) < 1.0 - 1e-9 for item in tail),
             "market_risk_input_periods": sum(regime is not None for regime in regimes),
             "nav_unexplained_days": unexplained_nav_days(history)[:20],
+            # 평균이 아니라 최악의 시점을 적는다 — 한 해만 멤버가 크게 빠져도 그해 결과가 치우친다.
+            "survivorship_missing_share": max(repository.member_missing_shares, default=None),
             "turnover_breaches": turnover_breaches(history, {target.target_id: target for target in target_rows}),
             # RISK_ON은 한도를 조이지 않는다(배율 1.0, 현금 하한 0) — 조인 것은 RISK_OFF·CRISIS뿐이다.
             "market_risk_tightened_periods": sum(
@@ -449,6 +455,8 @@ def run_ablation(
             continue
         selected_history = [mark for mark in history if mark.trade_date in common_dates] if common_dates else history
         row["summary"] = performance_summary(_rebased(selected_history))
+        row["history"] = [{key: mark.__dict__[key] for key in ("trade_date", "nav", "benchmark_nav", "turnover")}
+                          for mark in selected_history]
         # performance_summary의 cash_weight는 마지막 날 값이다. 현금 편향은 기간 평균으로 본다.
         cash = [float(dict(mark.weights).get(CASH_SYMBOL, 0.0)) for mark in selected_history]
         row["summary"]["average_cash_weight"] = sum(cash) / len(cash) if cash else None
