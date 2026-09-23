@@ -78,8 +78,8 @@ producer는 `discord_target(kind)`로 채널 하나를 받아 발송 목적지�
 | `fundamentals_calendar` | `src/investment_agent/notifications/earnings_calendar/run.py` | **PNG 대시보드** | `#실적-캘린더` (매주 월 KST 08:30) | 이번 주 실적 발표 예정 기업 캘린더 및 10-K/10-Q 구분 표기 |
 | `gurus_13f` | `src/investment_agent/notifications/institutional/run.py` | **Embed + QuickChart** | `#13f-요약` (`DISCORD_CHANNEL_GURUS`) | 버핏 등 거장 7인 13F 신규매수/추가/축소/전량매도 델타 및 컨센서스 |
 | `strategy` / `strategy_summary` | `src/investment_agent/notifications/strategy/service.py` | **Embed + QuickChart** | `#전략-아카이브` 포럼 · `#월간-전략-요약` (`DISCORD_CHANNEL_STRATEGY_FORUM`·`_MONTHLY`) | 퀀트 자산배분 6종(GEM, HAA 등) 목표 비중 도넛 차트 & 리밸런싱 근거 |
-| `investment_portfolio` | `src/investment_agent/notifications/investment/run_portfolio.py` | **Discord Embed** | `#투자-리포트` (`DISCORD_CHANNEL_AI_REPORTS`) | 하루 1장 종합 — RiskGate 승인/거절과 위반 사유, 목표 비중, 분석 성공 비율 |
-| `investment_candidates` | `src/investment_agent/notifications/investment/run_candidates.py` | **Discord Embed** | `#투자-리포트` (`DISCORD_CHANNEL_AI_REPORTS`) | 신뢰도 상위 N종목 심층 — 신호·기대 초과수익·근거, **확보하지 못한 근거**까지 |
+| `investment_portfolio` | `src/investment_agent/notifications/investment/run_portfolio.py` | **Discord Embed** | `#투자-리포트` (`DISCORD_CHANNEL_AI_REPORTS`) | System 목표 1장 — 첫 줄에 주식·현금·최소 현금·시장 상태·RiskGate 판정, 현금이 예산보다 많으면 원장에서 센 이유, 비중 변경 사유, 목표 보유 |
+| `investment_candidates` | `src/investment_agent/notifications/investment/run_candidates.py` | **Discord Embed** | `#투자-리포트` (`DISCORD_CHANNEL_AI_REPORTS`) | 신뢰도 상위 N종목 심층 — 논지·강제 제약·핵심 위험·근거(LLM 수치는 'LLM 추정'으로 표시), **확보하지 못한 근거**까지 |
 | `investment_trades` | `src/investment_agent/notifications/investment/run_trades.py` | **Discord Embed** | `#매매-기록` (`DISCORD_CHANNEL_AI_TRADES`) | 실제 주문·체결 수량/평균가, 승인 ID로 판단까지 역추적 |
 | `investment_performance` | `src/investment_agent/notifications/investment/run_performance.py` | **Discord Embed** | `#투자-리포트` (`DISCORD_CHANNEL_AI_REPORTS`) | 실계좌·모의계좌 성과와 별도 가상 판단 결과. 수수료 배분·원가 미확인 같은 **품질 단서를 함께 적어** 숫자를 그대로 믿지 않게 한다. topic `ai.performance`는 `on_revision="edit"` — 값이 바뀌면 원 메시지를 고친다 |
 

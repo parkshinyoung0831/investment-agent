@@ -138,7 +138,8 @@ class TradingAgentsDecisionEngine:
             "probability_up과 expected_excess_return은 "
             f"모두 앞으로 {SIGNAL_HORIZON_DAYS}거래일 동안 벤치마크 대비 기준이다 — 하루·일주일 수익이나 연간 수익으로 "
             "적지 않는다. evidence_ids에는 available_evidence_ids에 있는 값만 쓴다 — 과거 판단 기억에 적힌 ID는 "
-            "이번 근거가 아니다."
+            "이번 근거가 아니다. reasoning·key_risks·missing_data 문장은 한국어로 쓴다 — ticker·지표명·근거 ID는 "
+            "원문 그대로 둔다."
         )
         user = canonical_json({
             "ticker": bundle.ticker,
