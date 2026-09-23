@@ -102,11 +102,11 @@ class ResearchAdapters:
         )
         return StageOutcome.succeeded({"evaluated_at": self.now().isoformat()})
     def measure_factor_ic(self, context: StageContext) -> StageOutcome:
-        """factor별 5·20·60·120거래일 IC를 다시 잰다. 결과는 artifacts/research/factor_ic에 쌓인다."""
+        """factor별 IC를 명령의 기본 기간(5·20·60·126거래일)으로 다시 잰다. 결과는 artifacts/research/factor_ic에 쌓인다."""
         self.command_runner.run(
             PythonModuleCommand(
                 "investment_agent.research.commands.factor_research",
-                ("--horizons", "5", "20", "60", "120"),
+                (),
                 self.timeouts.get("measure_factor_ic", 30 * 60),
             ),
             stop_event=context.stop_event,
