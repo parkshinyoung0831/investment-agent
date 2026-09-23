@@ -233,7 +233,11 @@ def diagnose_target(
         "sizing_effect": math.fsum(weight * (excess[symbol] - held_mean) for symbol, weight in held.items()),
         "exposure_effect": -cash * benchmark_return,
     }
+    # 노출 효과를 둘로 나눈다: 시장 위험 예산이 강제한 현금 하한과, 그 위에 optimizer가 남긴 현금.
+    floor = min(cash, float(trace.get("min_cash_weight") or 0.0))
     result.update({
+        "exposure_split": {"required_cash_effect": -floor * benchmark_return,
+                           "discretionary_cash_effect": -(cash - floor) * benchmark_return},
         "components": components,
         "active_return": math.fsum(components.values()),
         "cash_weight": cash,
@@ -299,6 +303,10 @@ def summarize(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
                  "names_blocked": sum(row["gates"][reason]["count"] for row in rows if reason in row["gates"])}
         for reason in GATE_REASONS
     }
+    exposure_split = {
+        name: _verdict([row["exposure_split"][name] for row in portfolio_independent if "exposure_split" in row])
+        for name in ("required_cash_effect", "discretionary_cash_effect")
+    }
     judged = [(name, item["mean"]) for name, item in components.items() if item["mean"] is not None]
     worst = min(judged, key=lambda item: item[1]) if judged else None
     return {
@@ -307,6 +315,7 @@ def summarize(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         "rejected_targets": sum(not row.get("is_approved") for row in rows),
         "active_return": _verdict([row["active_return"] for row in portfolio_independent]),
         "components": components,
+        "exposure_split": exposure_split,
         "information": information,
         "gates": gates,
         # 평균적으로 SPY 대비 가장 많이 깎은 단계. 판정(t)과 함께 읽는다.

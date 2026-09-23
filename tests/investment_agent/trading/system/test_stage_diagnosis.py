@@ -76,6 +76,15 @@ class DecompositionTest(unittest.TestCase):
         self.assertAlmostEqual(row["active_return"], math.fsum(row["components"].values()), places=12)
         self.assertAlmostEqual(-0.40 * benchmark, row["components"]["exposure_effect"], places=12)
 
+    def test_exposure_splits_into_required_and_discretionary_cash(self):
+        """시장 위험 예산이 강제한 현금(하한)과 optimizer가 그 위에 남긴 현금을 나눈다."""
+        trace = {**_trace({"A": _security(0.01, 0.6)}, cash=0.40), "min_cash_weight": 0.15}
+        row = diagnose_target(trace, _prices({"SPY": 0.001, "A": 0.001}), decided_on="2026-01-01", horizon=10)
+        benchmark = (1.001) ** 10 - 1
+        self.assertAlmostEqual(-0.15 * benchmark, row["exposure_split"]["required_cash_effect"], places=12)
+        self.assertAlmostEqual(-0.25 * benchmark, row["exposure_split"]["discretionary_cash_effect"], places=12)
+        self.assertAlmostEqual(row["components"]["exposure_effect"], sum(row["exposure_split"].values()), places=12)
+
     def test_a_name_whose_path_ends_on_a_different_day_is_not_scored(self):
         """거래 정지로 H거래일째가 SPY와 다른 날이면 같은 기간이 아니다."""
         gappy = [day for day in DATES if day not in {"2026-01-03", "2026-01-04"}]

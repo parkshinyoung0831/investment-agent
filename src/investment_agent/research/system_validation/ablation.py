@@ -226,10 +226,15 @@ def _variant_result(store: SystemPortfolioStore, repository: ReplayRepository, *
             "market_risk_input_periods": sum(regime is not None for regime in regimes),
             "nav_unexplained_days": unexplained_nav_days(history)[:20],
             "turnover_breaches": turnover_breaches(history, {target.target_id: target for target in target_rows}),
+            # RISK_ON은 한도를 조이지 않는다(배율 1.0, 현금 하한 0) — 조인 것은 RISK_OFF·CRISIS뿐이다.
             "market_risk_tightened_periods": sum(
-                isinstance(regime, Mapping) and regime.get("risk_state") not in {None, "NORMAL"}
+                isinstance(regime, Mapping) and regime.get("risk_state") in {"RISK_OFF", "CRISIS"}
                 for regime in regimes
             ),
+            "market_regime_periods": {
+                state: sum(isinstance(regime, Mapping) and regime.get("risk_state") == state for regime in regimes)
+                for state in ("RISK_ON", "NORMAL", "RISK_OFF", "CRISIS")
+            },
         },
         "_history": history,
     }
