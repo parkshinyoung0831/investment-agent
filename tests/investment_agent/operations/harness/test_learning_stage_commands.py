@@ -25,6 +25,7 @@ LEARNING_STAGES = (
     ("evaluate_decisions", "investment_agent.operations.commands.evaluate_decisions"),
     ("diagnose_system", "investment_agent.operations.commands.system_diagnosis"),
     ("evaluate_system", "investment_agent.operations.commands.system_evaluations"),
+    ("measure_factor_ic", "investment_agent.research.commands.factor_research"),
     ("build_events", "investment_agent.research.commands.build_events"),
     ("build_decision_experiences", "investment_agent.operations.commands.build_decision_experiences"),
     ("update_performance", "investment_agent.operations.commands.update_performance"),
@@ -109,6 +110,8 @@ class LearningStageCommandTest(unittest.TestCase):
 
         definitions = {definition.job_id: definition for definition in build_registry(adapters=self.adapters).definitions()}
         self.assertEqual(7 * 24 * 60 * 60, definitions["system_evaluation"].interval_seconds)
+        self.assertEqual(["evaluate_system", "measure_factor_ic"],
+                         [stage.stage_id for stage in definitions["system_evaluation"].stages])
 
     def test_unready_learning_is_not_reported_as_trained(self):
         import json

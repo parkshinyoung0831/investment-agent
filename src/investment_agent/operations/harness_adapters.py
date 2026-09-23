@@ -24,6 +24,7 @@ _MODULES = frozenset({
     "investment_agent.operations.commands.system_portfolio",
     "investment_agent.operations.commands.event_reanalysis",
     "investment_agent.research.commands.ml_challengers",
+    "investment_agent.research.commands.factor_research",
     "investment_agent.operations.commands.build_decision_experiences",
     "investment_agent.operations.commands.update_performance",
     "investment_agent.trading.decision.analysis",
@@ -127,6 +128,7 @@ _BACKGROUND_STAGE_TIMEOUT_KEYS: dict[str, str | None] = {
     "evaluate_decisions": "evaluate_decisions",
     "diagnose_system": "diagnose_system",
     "evaluate_system": "evaluate_system",
+    "measure_factor_ic": "measure_factor_ic",
     "build_decision_experiences": "build_decision_experiences",
     "continuous_learning": "continuous_learning",
     "run_system_portfolio": "system_portfolio",
@@ -269,6 +271,10 @@ class ProductionInvestmentAdapters(
             # 아래 여섯은 handler 안의 `self.timeouts.get(key, 기본값)` 기본값과 같다 — 예전에는
             # 이 dict에 없어서(값은 있었지만) background wrap의 타임아웃 근거가 없었다(감사 OP2-03).
             # 5년 재현 한 변형(약 15분)과 운영 NAV 집계다.
+            # 주간 스냅샷 약 260개의 횡단면 IC. 몇 분이다.
+            "measure_factor_ic": _positive_float(
+                values, "HARNESS_MEASURE_FACTOR_IC_TIMEOUT_SEC", 30 * 60, maximum=2 * 60 * 60,
+            ),
             "evaluate_system": _positive_float(
                 values, "HARNESS_EVALUATE_SYSTEM_TIMEOUT_SEC", 90 * 60, maximum=4 * 60 * 60,
             ),

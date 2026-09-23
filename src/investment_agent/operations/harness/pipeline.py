@@ -328,6 +328,7 @@ def continuous_learning_job(
 def system_evaluation_job(
     *,
     evaluate_system: StageHandler,
+    measure_factor_ic: StageHandler | None = None,
     interval_seconds: float = 7 * 24 * 60 * 60,
     stale_after_seconds: float = 8 * 24 * 60 * 60,
 ) -> JobDefinition:
@@ -347,6 +348,14 @@ def system_evaluation_job(
                 max_attempts=2,
                 retry_delay_seconds=30 * 60,
             ),
+            # factor별 5·20·60·120일 IC. 정책의 IC 가정(0.04)이 실측과 멀어지는지 매주 본다.
+            *((StageDefinition(
+                "measure_factor_ic",
+                measure_factor_ic,
+                approval_workflow_only=False,
+                max_attempts=2,
+                retry_delay_seconds=30 * 60,
+            ),) if measure_factor_ic is not None else ()),
         ),
     )
 

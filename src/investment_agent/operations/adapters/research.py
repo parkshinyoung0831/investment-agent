@@ -101,6 +101,17 @@ class ResearchAdapters:
             stop_event=context.stop_event,
         )
         return StageOutcome.succeeded({"evaluated_at": self.now().isoformat()})
+    def measure_factor_ic(self, context: StageContext) -> StageOutcome:
+        """factor별 5·20·60·120거래일 IC를 다시 잰다. 결과는 artifacts/research/factor_ic에 쌓인다."""
+        self.command_runner.run(
+            PythonModuleCommand(
+                "investment_agent.research.commands.factor_research",
+                ("--horizons", "5", "20", "60", "120"),
+                self.timeouts.get("measure_factor_ic", 30 * 60),
+            ),
+            stop_event=context.stop_event,
+        )
+        return StageOutcome.succeeded({"measured_at": self.now().isoformat()})
     def diagnose_system(self, context: StageContext) -> StageOutcome:
         """System 목표를 5·20·60·120거래일 실현 수익으로 채점해 어느 단계가 틀렸는지 남긴다.
 
