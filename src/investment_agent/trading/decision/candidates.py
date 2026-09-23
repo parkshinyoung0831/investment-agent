@@ -15,9 +15,11 @@ from investment_agent.trading.decision.candidate_ranker import (
     select_factor_candidates,
     PriorityCandidate,
     assemble_candidate_features,
+    collapse_share_classes,
     merge_priority_lane,
     priority_candidates,
     rank_candidate_features,
+    share_twin_views,
     validate_live_candidate_as_of,
 )
 from investment_agent.trading.contracts import ContractError, parse_datetime
@@ -30,7 +32,10 @@ from investment_agent.trading.portfolio.market_risk import estimate_betas
 from investment_agent.platform.logging import get_logger
 from investment_agent.data.fundamentals.infrastructure.supabase import expectations as fundamentals_expectations, segment_metrics as fundamentals_segments
 from investment_agent.data.market import persistence as market_db
-from investment_agent.data.universe.persistence import select_tickers_by_security_id
+from investment_agent.data.universe.persistence import (
+    select_common_stock_tickers_by_cik,
+    select_tickers_by_security_id,
+)
 
 log = get_logger(__name__)
 
@@ -276,7 +281,12 @@ class CandidateSelection(LedgerAccess):
                 {ticker: score for ticker, score in scores.items() if ticker in set(tickers)},
                 held_tickers=held, last_analyzed_at=last_analyzed, as_of_at=as_of_at,
             )
-            selected = merge_priority_lane(priority, [row.ticker for row in factor_ranked], limit=limit)
+            ordered = merge_priority_lane(priority, [row.ticker for row in factor_ranked],
+                                          limit=len(priority) + len(factor_ranked) or 1)
+            collapsed, twins = collapse_share_classes(ordered, self._company_by_ticker())
+            selected = collapsed[:limit]
+            if twins:
+                log.info("ai investor candidate share classes collapsed dropped_to_kept=%s", twins)
             log.info(
                 "ai investor candidate ranking path=factor as_of=%s snapshot=%s universe=%d selected=%s "
                 "priority=%s factor=%s",
@@ -296,7 +306,9 @@ class CandidateSelection(LedgerAccess):
             guru_signals=self._candidate_guru_signals(tickers, as_of_at),
         )
         ranking = rank_candidate_features(features, as_of_at=as_of_at, limit=limit + len(priority))
-        selected = merge_priority_lane(priority, [row.ticker for row in ranking], limit=limit)
+        ordered = merge_priority_lane(priority, [row.ticker for row in ranking],
+                                      limit=len(priority) + len(ranking) or 1)
+        selected = collapse_share_classes(ordered, self._company_by_ticker())[0][:limit]
         log.warning(
             "ai investor candidate ranking path=legacy_rotation (factor cross-section unavailable) "
             "as_of=%s universe=%d selected=%s priority=%s scores=%s",
@@ -450,8 +462,24 @@ class CandidateSelection(LedgerAccess):
         from investment_agent.trading.system.store import SystemPortfolioStore
         return SystemPortfolioStore().held_tickers()
 
+    def _company_by_ticker(self) -> dict[str, str]:
+        """보통주 ticker → CIK. 같은 회사의 다른 주식(GOOG·GOOGL)을 한 회사로 묶는 기준이다.
+
+        종목 마스터 전체를 읽으므로 저장소 인스턴스마다 한 번만 읽는다(재현은 판단 시각마다 논지를 조회한다).
+        주식 종류의 묶음은 거의 바뀌지 않아 현재 마스터를 과거 재현에도 쓴다.
+        """
+        cached = self.__dict__.get("_company_by_ticker_cache")
+        if cached is None:
+            cached = {normalize_ticker(ticker): cik
+                      for cik, tickers in select_common_stock_tickers_by_cik().items() for ticker in tickers}
+            self.__dict__["_company_by_ticker_cache"] = cached
+        return cached
+
     def thesis_views(self, tickers: Sequence[str], *, as_of_at: datetime, valid_days: int) -> dict[str, Any]:
-        """종목별 최신 TradingAgents 논지(채택된 ML 보정 반영). 판단 시점 이전에 기록된 것만 읽는다."""
+        """종목별 최신 TradingAgents 논지(채택된 ML 보정 반영). 판단 시점 이전에 기록된 것만 읽는다.
+
+        분석 후보는 회사당 한 주식만 LLM에 보낸다. 나머지 주식은 같은 회사의 논지를 쓴다.
+        """
         from investment_agent.trading.decision.alpha import ThesisView
 
         wanted = {normalize_ticker(ticker) for ticker in tickers}
@@ -464,16 +492,19 @@ class CandidateSelection(LedgerAccess):
             for row in repository.signal_batches(as_of_at=as_of_at, lookback_days=min(365, valid_days + 1))
         }
         tickers_by_id = select_tickers_by_security_id([int(row["security_id"]) for row in rows])
+        company_of = self._company_by_ticker()
+        wanted_companies = {company_of[ticker] for ticker in wanted if ticker in company_of}
         views: dict[str, Any] = {}
         for row in rows:
             ticker = normalize_ticker(tickers_by_id.get(int(row["security_id"])))
-            if ticker not in wanted:
+            if ticker not in wanted and company_of.get(ticker) not in wanted_companies:
                 continue
             view = ThesisView.from_proposal({**dict(row["proposal"]), "ticker": ticker},
                                             model_artifact_id=artifacts.get(str(row["batch_id"])))
             if view is not None and view.as_of_at <= as_of_at and (ticker not in views or view.as_of_at >= views[ticker].as_of_at):
                 views[ticker] = view
-        return views
+        shared = share_twin_views(views, sorted(wanted), company_of)
+        return {ticker: view for ticker, view in shared.items() if ticker in wanted}
 
     def _candidate_event_features(self, as_of_at: datetime) -> list[dict[str, Any]]:
         """최근 7일 사건 요약. 로컬 research 저장소가 없으면 빈 목록이다."""

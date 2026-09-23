@@ -12,9 +12,11 @@ from investment_agent.trading.supabase_repository import SupabaseRepository
 AS_OF = datetime.now(timezone.utc) - timedelta(minutes=1)
 
 
-def _repository(factor_scores):
+def _repository(factor_scores, *, companies=None):
     repository = object.__new__(SupabaseRepository)
-    repository.current_tracked_tickers = lambda: ["AAA", "BBB", "CCC", "EVT"]
+    extra = sorted(factor_scores[1]) if factor_scores else []
+    repository.current_tracked_tickers = lambda: sorted({"AAA", "BBB", "CCC", "EVT", *extra})
+    repository._company_by_ticker = lambda: dict(companies or {})
     repository._last_attempted = lambda tickers, as_of_at: {}
     repository._candidate_fundamental_rows = lambda tickers, as_of_at: []
     repository._candidate_held_tickers = lambda: []
@@ -38,6 +40,16 @@ class CandidateSelectionPathTest(unittest.TestCase):
         with mock.patch("investment_agent.trading.decision.candidates.priority_candidates", return_value=priority):
             selected = _repository(("2026-09-14T22:00:00+00:00", scores)).candidate_tickers(10, as_of_at=AS_OF)
         self.assertEqual(selected, ["EVT", "BBB", "AAA"])
+
+    def test_one_company_takes_one_slot_and_the_freed_slot_goes_to_the_next_candidate(self):
+        """GOOG·GOOGL은 한 회사다. 둘 다 LLM에 보내면 같은 근거를 두 번 분석하고 칸 하나를 버린다."""
+        scores = {ticker: FactorScore(ticker, {"quality": 0.9}, value, True, None)
+                  for ticker, value in dict(GOOGL=0.9, GOOG=0.89, AAA=0.5, BBB=0.4).items()}
+        with mock.patch("investment_agent.trading.decision.candidates.priority_candidates", return_value=()):
+            selected = _repository(("2026-09-14T22:00:00+00:00", scores),
+                                   companies={"GOOGL": "0001652044", "GOOG": "0001652044"}).candidate_tickers(
+                3, as_of_at=AS_OF)
+        self.assertEqual(["GOOGL", "AAA", "BBB"], selected)
 
     def test_missing_cross_section_falls_back_to_the_rotation_ranker(self):
         with mock.patch("investment_agent.trading.decision.candidates.priority_candidates", return_value=()):

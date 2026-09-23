@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from statistics import median
 from typing import Any, Mapping, Sequence
@@ -522,8 +522,53 @@ def merge_priority_lane(
     return selected[:limit]
 
 
+def collapse_share_classes(
+    tickers: Sequence[str], company_of: Mapping[str, str],
+) -> tuple[list[str], dict[str, str]]:
+    """같은 회사의 다른 주식(GOOG·GOOGL)은 앞선 한 종목만 남긴다. 빠진 종목 → 남긴 종목도 돌려준다.
+
+    사업·공시·뉴스 논지는 회사 단위라 두 번 분석하면 같은 근거에 LLM을 두 번 부르고, 분석 칸 하나를
+    다른 후보에게서 빼앗는다. 빠진 종목의 논지는 `share_twin_views`가 남긴 종목의 것으로 채운다.
+    """
+    kept: list[str] = []
+    dropped: dict[str, str] = {}
+    first_of: dict[str, str] = {}
+    for ticker in tickers:
+        company = company_of.get(ticker)
+        if company is None:
+            kept.append(ticker)
+        elif company in first_of:
+            dropped[ticker] = first_of[company]
+        else:
+            first_of[company] = ticker
+            kept.append(ticker)
+    return kept, dropped
+
+
+def share_twin_views(
+    views: Mapping[str, Any], wanted: Sequence[str], company_of: Mapping[str, str],
+) -> dict[str, Any]:
+    """논지가 없는 종목에 같은 회사 다른 주식의 최신 논지를 쓴다(종목 이름만 바꾼다).
+
+    자기 논지가 있으면 그대로 둔다. 같은 회사에 논지가 여럿이면 가장 최근 것을 쓴다.
+    """
+    latest: dict[str, Any] = {}
+    for ticker, view in views.items():
+        company = company_of.get(ticker)
+        if company is not None and (company not in latest or view.as_of_at > latest[company].as_of_at):
+            latest[company] = view
+    shared = dict(views)
+    for ticker in wanted:
+        company = company_of.get(ticker)
+        if ticker not in shared and company in latest:
+            shared[ticker] = replace(latest[company], ticker=ticker)
+    return shared
+
+
 __all__ = [
     "CandidateFeatures",
+    "collapse_share_classes",
+    "share_twin_views",
     "CandidateRank",
     "FACTOR_SNAPSHOT_MAX_AGE_DAYS",
     "FactorCandidate",
