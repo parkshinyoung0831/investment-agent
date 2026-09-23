@@ -405,6 +405,14 @@ class TradingRepository:
             order_by="as_of_at,case_key",
         )
 
+    def evaluation_rows(self) -> list[dict[str, Any]]:
+        """채점 원장 전체. 판단 성적표가 기간·엔진 버전별로 묶는 입력이다."""
+        return self._db.select_paged(
+            lambda: self._db.table(SCHEMA, T_EVALUATIONS)
+            .select("case_key,horizon_days,excess_return,direction_correct,brier_score"),
+            order_by="case_key,horizon_days",
+        )
+
     def evaluation_horizons(self, case_key: str) -> set[int]:
         rows = self._db.select_paged(
             lambda: self._db.table(SCHEMA, T_EVALUATIONS)

@@ -2,8 +2,9 @@
 
     python -m investment_agent.operations.commands.system_diagnosis
 
-읽기 전용이다. System 원장(`system_targets`의 `stage_trace`)과 가격만 읽고, 결과는
-`artifacts/research/stage_diagnosis/`에 시각별 파일과 `latest.json`으로 쓴다. 판정은 기록일 뿐 정책을
+읽기 전용이다. System 원장(`system_targets`의 `stage_trace`)과 가격, 판단 채점 원장만 읽는다. 결과는
+`artifacts/research/stage_diagnosis/`에 시각별 파일과 `latest.json`으로 쓴다 — System 단계 진단과
+TradingAgents 판단 성적표(논지 적중·확률 보정·기대수익 순위)가 한 파일에 있다. 판정은 기록일 뿐 정책을
 바꾸지 않는다 — 규칙을 고치는 것은 사람이 결과를 보고 코드 리뷰로 한다.
 """
 from __future__ import annotations
@@ -31,7 +32,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-dir", type=Path, default=None)
     args = parser.parse_args(argv)
 
+    from investment_agent.trading.performance.decision_scorecard import decision_scorecard
     from investment_agent.trading.performance.stage_diagnosis import DIAGNOSIS_HORIZONS, PricePaths, diagnose
+    from investment_agent.trading.repository import TradingRepository
     from investment_agent.trading.supabase_repository import SupabaseRepository
     from investment_agent.trading.system.store import SystemPortfolioStore
 
@@ -47,6 +50,8 @@ def main(argv: list[str] | None = None) -> int:
         "generated_at": now.isoformat(),
         **diagnose([(target.decided_at[:10], target.detail.get("stage_trace")) for target in targets], prices),
     }
+    ledger = TradingRepository()
+    report["decision_scorecard"] = decision_scorecard(ledger.decision_cases(), ledger.evaluation_rows())
     directory = args.output_dir or default_output_dir()
     directory.mkdir(parents=True, exist_ok=True)
     payload = canonical_json(report)
@@ -55,6 +60,7 @@ def main(argv: list[str] | None = None) -> int:
     log.info("system stage diagnosis done %s", canonical_json({
         "traced_targets": report["traced_targets"],
         "untraced_targets": report["untraced_targets"],
+        "scored_decisions": report["decision_scorecard"]["scored"],
         "largest_drag": {horizon: row.get("largest_drag") for horizon, row in report["horizons"].items()},
     }))
     return 0
