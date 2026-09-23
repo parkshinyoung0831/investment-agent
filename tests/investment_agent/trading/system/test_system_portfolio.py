@@ -200,6 +200,10 @@ class EngineTest(unittest.TestCase):
         self.assertEqual([mark.trade_date for mark in self.store.history()], ["2026-09-09"])
         self.assertEqual(self.store.target(decided.target_id).applied_session, "2026-09-09")
         self.assertEqual(self.build.calls[0], {"CASH": 1.0})
+        # 단계 진단의 입력: 목표를 만든 단계별 값이 목표 기록에 함께 남는다.
+        trace = self.store.target(decided.target_id).detail["stage_trace"]
+        self.assertEqual(0.5, trace["securities"]["AAA"]["approved"])
+        self.assertEqual(1.0, trace["cash"]["before"])
 
     def test_nav_keeps_marking_between_targets_and_the_next_target_sees_system_weights(self):
         self.run_at("2026-09-08")
@@ -463,6 +467,13 @@ class BuildSystemTargetTest(unittest.TestCase):
         self.assertTrue(math.isclose(sum(weights.values()), 1.0, abs_tol=1e-9))
         self.assertEqual(target.proposal.metadata["forced_exits"], ["FFF"])
         self.assertEqual(target.proposal.metadata["trade_reasons"]["FFF"]["code"], "THESIS_EXIT")
+        from investment_agent.trading.system.engine import _stage_trace
+
+        trace = _stage_trace(target, current={"FFF": 0.1, "CASH": 0.9})
+        self.assertEqual("THESIS_BROKEN", trace["securities"]["FFF"]["reason"])
+        self.assertEqual((0.1, 0.0), (trace["securities"]["FFF"]["before"], trace["securities"]["FFF"]["approved"]))
+        self.assertEqual("UNVERIFIED_ENTRY_BLOCKED", trace["securities"]["CCC"]["reason"])
+        self.assertIsNotNone(trace["securities"]["AAA"]["prior"])
 
     def test_a_share_class_twin_does_not_get_the_whole_target_rejected(self):
         """GOOG·GOOGL처럼 상관 0.99인 두 종목을 다 사면 게이트가 목표 전체를 거절하고 현금이 그대로 남는다."""

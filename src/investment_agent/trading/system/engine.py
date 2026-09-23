@@ -33,6 +33,7 @@ from investment_agent.research.adapters.trading import (
 from investment_agent.trading.contracts import ContractError
 from investment_agent.trading.decision.alpha import THESIS_BROKEN, AlphaPolicy, alpha_universe, is_valid_view
 from investment_agent.portfolio_weights import CASH_SYMBOL
+from investment_agent.trading.performance.stage_diagnosis import stage_trace
 from investment_agent.trading.portfolio.market_risk import estimate_trading_costs
 from investment_agent.trading.risk.budget import BENCHMARK_SYMBOL
 from investment_agent.trading.system.accounting import DailyMark, advance, first_session_after, session_price
@@ -151,6 +152,22 @@ def rebalance_skip_reason(latest: SystemTargetRecord | None, *, snapshot_as_of: 
     return None
 
 
+def _stage_trace(target: Any, *, current: Mapping[str, float]) -> dict[str, Any]:
+    """목표를 만든 단계별 값. 실현 수익이 나오면 어느 단계가 틀렸는지 가르는 입력이다."""
+    metadata = dict(getattr(target.proposal, "metadata", None) or {})
+    regime = metadata.get("market_regime")
+    risk = target.risk
+    return stage_trace(
+        alpha_detail=getattr(target.plan, "detail", None) or {},
+        alpha_reasons=getattr(target.plan, "reasons", None) or {},
+        current_weights=current, proposed_weights=dict(target.proposal.weights),
+        approved_weights=risk.approved_weights, is_approved=risk.is_approved,
+        market_regime=regime.get("risk_state") if isinstance(regime, Mapping) else None,
+        min_cash_weight=target.risk_policy.min_cash_weight,
+        redundant_blocked=tuple(metadata.get("redundant_exposure_blocked") or ()),
+    )
+
+
 def run_system(
     store: SystemPortfolioStore,
     repository: Any,
@@ -248,7 +265,8 @@ def run_system(
         weights=dict(risk.approved_weights or {}),
         detail={"violations": list(risk.violations), "adjustments": list(risk.adjustments),
                 "forced_exits": list(target.plan.forced_exits), "broken_thesis_trigger": broken,
-                "rebalance_trigger": "broken_thesis" if broken else ("initial" if latest is None else "scheduled")},
+                "rebalance_trigger": "broken_thesis" if broken else ("initial" if latest is None else "scheduled"),
+                "stage_trace": _stage_trace(target, current=current)},
     )
     log.info("system target recorded id=%s approved=%s snapshot=%s", target_id, risk.is_approved, snapshot_as_of)
     return SystemRunResult(**base, target_id=target_id, is_target_approved=risk.is_approved)

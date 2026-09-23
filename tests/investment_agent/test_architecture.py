@@ -376,6 +376,8 @@ class LayerDirectionTest(unittest.TestCase):
     # 모듈이나 같은 폴더의 새 파일로 예외가 자동 확장되지 않는다.
     SYSTEM_VALIDATION_DEPENDENCIES = frozenset({
         "investment_agent.trading.decision.alpha",
+        # 운영 목표가 남긴 단계값을 같은 방식으로 채점해야 재현과 운영의 진단이 비교된다.
+        "investment_agent.trading.performance.stage_diagnosis",
         "investment_agent.trading.risk.budget",
         "investment_agent.trading.system.accounting",
         "investment_agent.trading.system.engine",

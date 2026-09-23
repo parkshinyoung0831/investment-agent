@@ -40,7 +40,8 @@ from investment_agent.research.datasets.universe import research_universe
 from investment_agent.research.ml_serving import NO_FORECAST, champion_forecast
 from investment_agent.trading.decision.alpha import AlphaPolicy
 from investment_agent.trading.risk.budget import BENCHMARK_SYMBOL
-from investment_agent.trading.system.accounting import INITIAL_NAV, performance_summary
+from investment_agent.trading.performance.stage_diagnosis import DIAGNOSIS_HORIZONS, PricePaths, diagnose
+from investment_agent.trading.system.accounting import INITIAL_NAV, active_risk_summary, performance_summary
 from investment_agent.trading.system.engine import run_system
 from investment_agent.trading.system.store import SystemPortfolioStore
 from investment_agent.trading.system.target import SystemPortfolioPolicy
@@ -274,6 +275,43 @@ def _rebased(history: Sequence[Any]) -> list[dict[str, Any]]:
             for mark in history]
 
 
+# 설계 §9.2의 목표 tracking error(연 6%)와 허용 폭(±50%).
+TARGET_TRACKING_ERROR = 0.06
+_TRACKING_ERROR_BAND = 0.5
+_MAX_REBALANCE_TURNOVER = 0.25
+
+
+def adoption_checks(summary: Mapping[str, Any], champion: Mapping[str, Any]) -> dict[str, Any]:
+    """설계 §9.2의 채택 기준을 숫자로 판정한다. 값이 없으면 None — 통과로 치지 않는다.
+
+    채택은 이 표가 모두 True일 때 사람이 한다. 표가 자동 승격을 하지 않는다.
+    """
+    def at_least(key: str) -> bool | None:
+        value, base = summary.get(key), champion.get(key)
+        return None if value is None or base is None else value >= base
+
+    stress = (summary.get("stress") or {}).get("2022_bear") or {}
+
+    def not_worse_than_spy(key: str) -> bool | None:
+        value, benchmark = stress.get(key), stress.get(f"benchmark_{key}")
+        return None if value is None or benchmark is None else value <= benchmark
+
+    tracking_error = summary.get("tracking_error")
+    turnover = summary.get("max_rebalance_turnover")
+    checks: dict[str, Any] = {
+        "excess_return_not_worse": at_least("excess_return"),
+        "information_ratio_not_worse": at_least("information_ratio"),
+        "tracking_error_within_target": None if tracking_error is None else
+        abs(tracking_error - TARGET_TRACKING_ERROR) <= TARGET_TRACKING_ERROR * _TRACKING_ERROR_BAND,
+        "drawdown_2022_not_worse_than_spy": not_worse_than_spy("max_drawdown"),
+        "cvar_2022_not_worse_than_spy": not_worse_than_spy("cvar_95_5d"),
+        # 강제 청산·종목 상한 준수는 게이트 한도 밖이라 이 값이 한도를 조금 넘을 수 있다 — 넘으면 원인을 본다.
+        "rebalance_turnover_within_limit": None if turnover is None else turnover <= _MAX_REBALANCE_TURNOVER + 1e-9,
+    }
+    checks["all_passed"] = all(value is True for value in checks.values())
+    return checks
+
+
 def _coverage_reason(row: Mapping[str, Any], variant: AblationVariant) -> str | None:
     coverage = row["coverage"]
     if coverage.get("nav_unexplained_days"):
@@ -318,6 +356,10 @@ def run_ablation(
     if not sessions:
         raise ValueError("no trading sessions in the replay window")
     lookahead = ml_artifact_lookahead(ml_artifact, replay_start=sessions[0]) if ml_artifact is not None else None
+    # 단계 진단은 판단 뒤의 실현 가격으로 채점한다(판단 입력이 아니라 사후 평가라 미래 가격을 읽는 것이 맞다).
+    # 재현 끝 이후 가격까지 있어야 마지막 목표들도 긴 기간으로 채점된다.
+    price_limit = len(sessions) + max(DIAGNOSIS_HORIZONS) + 90
+    prices = PricePaths(lambda symbol: base.market_prices(symbol, datetime.now(timezone.utc), limit=price_limit))
     results: list[dict[str, Any]] = []
     with tempfile.TemporaryDirectory(dir=work_dir) as scratch:
         model_path = None
@@ -357,6 +399,11 @@ def run_ablation(
             log.info("ablation variant %s done targets=%d", variant.name, targets)
             row = _variant_result(store, repository, variant=variant, targets=targets, skipped=skipped,
                                   ml_forecasts_applied=ml_forecasts_applied)
+            row["stage_diagnosis"] = diagnose(
+                [(target.decided_at[:10], target.detail.get("stage_trace"))
+                 for target in store.targets(limit=max(50, targets + 1))],
+                prices,
+            )
             reason = _coverage_reason(row, variant)
             results.append({"status": "insufficient_coverage" if reason else "completed",
                             **({"reason": reason} if reason else {}), **row})
@@ -374,6 +421,7 @@ def run_ablation(
         # performance_summary의 cash_weight는 마지막 날 값이다. 현금 편향은 기간 평균으로 본다.
         cash = [float(dict(mark.weights).get(CASH_SYMBOL, 0.0)) for mark in selected_history]
         row["summary"]["average_cash_weight"] = sum(cash) / len(cash) if cash else None
+        row["summary"].update(active_risk_summary(_rebased(selected_history)))
         row["coverage"]["common_evaluation_start"] = min(common_dates) if common_dates else None
         row["coverage"]["common_evaluation_end"] = max(common_dates) if common_dates else None
     baseline = next((row for row in results if row.get("status") == "completed"), None)
@@ -385,8 +433,9 @@ def run_ablation(
             key: (summary[key] - base_summary[key])
             if isinstance(summary.get(key), (int, float)) and isinstance(base_summary.get(key), (int, float)) else None
             for key in ("total_return", "excess_return", "max_drawdown", "annualized_volatility", "annualized_turnover",
-                        "average_cash_weight")
+                        "average_cash_weight", "tracking_error", "information_ratio")
         }
+        row["adoption_checks"] = adoption_checks(summary, base_summary)
     return {
         "version": ABLATION_VERSION,
         "start": start.isoformat(),
@@ -402,6 +451,8 @@ __all__ = [
     "ABLATION_VERSION",
     "AblationVariant",
     "ReplayRepository",
+    "TARGET_TRACKING_ERROR",
+    "adoption_checks",
     "default_variants",
     "ml_artifact_lookahead",
     "replay_sessions",

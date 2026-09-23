@@ -101,6 +101,14 @@ class AblationTest(unittest.TestCase):
             by_name["no_tail_risk"]["summary"]["start_date"],
         )
         self.assertGreater(base.membership_calls, 0)  # 종목은 판단 시각의 멤버십으로 정했다
+        # 채택 판정과 단계 진단이 결과에 같이 나온다(재현 창이 짧아 긴 기간은 채점되지 않는다).
+        row = by_name["no_tail_risk"]
+        self.assertIn("tracking_error", row["summary"])
+        self.assertIn("all_passed", row["adoption_checks"])
+        diagnosis = row["stage_diagnosis"]
+        self.assertGreater(diagnosis["traced_targets"], 0)
+        self.assertEqual(0, diagnosis["untraced_targets"])
+        self.assertGreater(diagnosis["horizons"]["5"]["targets"], 0)
 
     def test_ml_fit_on_data_after_the_replay_start_is_refused(self):
         early = {"artifact": {"train_period": ["2023-01-01T00:00:00+00:00", "2024-01-01T00:00:00+00:00"],
@@ -250,3 +258,79 @@ class NavReconciliationTest(unittest.TestCase):
             self._mark("d2", 105.0, 0.05, {"AAA": 0.52, "CASH": 0.48}, {"AAA": 110.0}),
         ]
         self.assertEqual([], unexplained_nav_days(history))
+
+
+class AdoptionChecksTest(unittest.TestCase):
+    """설계 §9.2의 기준이 숫자로 판정되고, 값이 없으면 통과로 치지 않는다."""
+
+    def _summary(self, **overrides):
+        summary = {"excess_return": 0.10, "information_ratio": 0.5, "tracking_error": 0.06,
+                   "max_rebalance_turnover": 0.25,
+                   "stress": {"2022_bear": {"max_drawdown": 0.20, "benchmark_max_drawdown": 0.25,
+                                            "cvar_95_5d": 0.05, "benchmark_cvar_95_5d": 0.06}}}
+        summary.update(overrides)
+        return summary
+
+    def test_a_challenger_meeting_every_criterion_passes(self):
+        from investment_agent.research.system_validation.ablation import adoption_checks
+
+        checks = adoption_checks(self._summary(), self._summary(excess_return=0.0, information_ratio=0.1))
+        self.assertTrue(checks["all_passed"], checks)
+
+    def test_each_criterion_can_fail_on_its_own(self):
+        from investment_agent.research.system_validation.ablation import adoption_checks
+
+        champion = self._summary(excess_return=0.0, information_ratio=0.1)
+        cases = {
+            "excess_return_not_worse": self._summary(excess_return=-0.01),
+            "tracking_error_within_target": self._summary(tracking_error=0.10),
+            "drawdown_2022_not_worse_than_spy": self._summary(stress={"2022_bear": {
+                "max_drawdown": 0.30, "benchmark_max_drawdown": 0.25, "cvar_95_5d": 0.05,
+                "benchmark_cvar_95_5d": 0.06}}),
+            "rebalance_turnover_within_limit": self._summary(max_rebalance_turnover=0.30),
+        }
+        for name, summary in cases.items():
+            checks = adoption_checks(summary, champion)
+            self.assertFalse(checks[name], name)
+            self.assertFalse(checks["all_passed"], name)
+
+    def test_a_missing_value_is_not_a_pass(self):
+        from investment_agent.research.system_validation.ablation import adoption_checks
+
+        checks = adoption_checks(self._summary(stress={}), self._summary())
+        self.assertIsNone(checks["drawdown_2022_not_worse_than_spy"])
+        self.assertFalse(checks["all_passed"])
+
+
+class ActiveRiskSummaryTest(unittest.TestCase):
+    def _rows(self, portfolio, benchmark, *, start=date(2021, 12, 1)):
+        rows, nav, bench = [], 100.0, 100.0
+        for index, (p, b) in enumerate(zip(portfolio, benchmark)):
+            nav, bench = nav * (1 + p), bench * (1 + b)
+            rows.append({"trade_date": (start + timedelta(days=index)).isoformat(), "nav": nav,
+                         "benchmark_nav": bench, "daily_return": p, "turnover": 0.5 if index == 0 else 0.1,
+                         "cost": 0.0, "weights": {"CASH": 0.1}})
+        return rows
+
+    def test_identical_paths_have_zero_tracking_error_and_equal_stress(self):
+        from investment_agent.trading.system.accounting import active_risk_summary
+
+        rng = random.Random(3)
+        path = [rng.gauss(0, 0.01) for _ in range(200)]
+        summary = active_risk_summary(self._rows(path, path))
+        self.assertAlmostEqual(0.0, summary["tracking_error"], places=12)
+        self.assertIsNone(summary["information_ratio"])
+        stress = summary["stress"]["2022_bear"]
+        self.assertAlmostEqual(stress["max_drawdown"], stress["benchmark_max_drawdown"])
+        self.assertEqual({"2021", "2022"}, set(summary["yearly"]))
+        self.assertAlmostEqual(0.1, summary["max_rebalance_turnover"])  # 첫 편입(0.5)은 빼고 본다
+
+    def test_a_half_invested_portfolio_halves_the_drawdown(self):
+        from investment_agent.trading.system.accounting import active_risk_summary
+
+        bench = [-0.01] * 60 + [0.005] * 60
+        summary = active_risk_summary(self._rows([value / 2 for value in bench], bench, start=date(2022, 1, 3)))
+        stress = summary["stress"]["2022_bear"]
+        self.assertLess(stress["max_drawdown"], stress["benchmark_max_drawdown"])
+        self.assertLess(stress["cvar_95_5d"], stress["benchmark_cvar_95_5d"])
+

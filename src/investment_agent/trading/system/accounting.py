@@ -220,8 +220,81 @@ def performance_summary(history: Sequence[DailyMark | Mapping], *, periods: Mapp
     return summary
 
 
+# 2022년은 재현 기간 안의 유일한 긴 약세장이다. 채택 기준(설계 §9.2)이 이 구간의 낙폭·CVaR를 SPY와 비교한다.
+STRESS_WINDOWS: Mapping[str, tuple[str, str]] = {"2022_bear": ("2022-01-01", "2022-12-31")}
+
+
+def _max_drawdown(values: Sequence[float]) -> float:
+    peak, worst = values[0], 0.0
+    for value in values:
+        peak = max(peak, value)
+        worst = max(worst, 1.0 - value / peak)
+    return worst
+
+
+def _cvar_95(values: Sequence[float], *, days: int = 5) -> float | None:
+    """겹치는 5거래일 수익률 중 나쁜 5%의 평균 손실(양수)."""
+    windows = [values[index + days] / values[index] - 1.0 for index in range(len(values) - days)]
+    if len(windows) < 20:
+        return None
+    worst = sorted(windows)[:max(1, math.ceil(len(windows) * 0.05))]
+    return -math.fsum(worst) / len(worst)
+
+
+def active_risk_summary(
+    history: Sequence[DailyMark | Mapping], *, stress_windows: Mapping[str, tuple[str, str]] = STRESS_WINDOWS,
+) -> dict:
+    """SPY 대비 위험: tracking error·정보비율·연도별 초과수익·스트레스 구간의 낙폭과 CVaR를 SPY와 나란히.
+
+    누적 초과수익 하나로는 "시장 노출을 늘려 번 것"과 "SPY보다 나은 것"이 구별되지 않는다.
+    """
+    rows = [row if isinstance(row, Mapping) else row.__dict__ for row in history]
+    if len(rows) < 3:
+        return {}
+    navs = [float(row["nav"]) for row in rows]
+    benchmarks = [float(row["benchmark_nav"]) for row in rows]
+    active = [navs[index] / navs[index - 1] - benchmarks[index] / benchmarks[index - 1]
+              for index in range(1, len(rows))]
+    mean = math.fsum(active) / len(active)
+    tracking_error = math.sqrt(math.fsum((value - mean) ** 2 for value in active) / (len(active) - 1)) * math.sqrt(252)
+    yearly: dict[str, dict[str, float]] = {}
+    for index, row in enumerate(rows):
+        year = str(row["trade_date"])[:4]
+        if year not in yearly:
+            base = max(index - 1, 0)
+            yearly[year] = {"_base": base}
+        yearly[year]["_end"] = index
+    years = {}
+    for year, span in yearly.items():
+        base, end = int(span["_base"]), int(span["_end"])
+        portfolio, benchmark = navs[end] / navs[base] - 1.0, benchmarks[end] / benchmarks[base] - 1.0
+        years[year] = {"return": portfolio, "benchmark_return": benchmark, "excess_return": portfolio - benchmark}
+    trades = [float(row["turnover"]) for row in rows if float(row["turnover"]) > 0]
+    stress = {}
+    for name, (start, end) in stress_windows.items():
+        inside = [index for index, row in enumerate(rows) if start <= str(row["trade_date"])[:10] <= end]
+        if len(inside) < 20:
+            continue
+        portfolio = [navs[index] for index in inside]
+        benchmark = [benchmarks[index] for index in inside]
+        stress[name] = {
+            "max_drawdown": _max_drawdown(portfolio), "benchmark_max_drawdown": _max_drawdown(benchmark),
+            "cvar_95_5d": _cvar_95(portfolio), "benchmark_cvar_95_5d": _cvar_95(benchmark),
+        }
+    return {
+        "tracking_error": tracking_error,
+        "information_ratio": mean * 252 / tracking_error if tracking_error > 0 else None,
+        # 첫 편입(현금 100%에서 시작)은 한도 대상이 아니라 뺀다. 게이트의 한도는 재량 매매에만 걸린다.
+        "max_rebalance_turnover": max(trades[1:], default=None),
+        "yearly": years,
+        "stress": stress,
+    }
+
+
 __all__ = [
     "DailyMark",
+    "STRESS_WINDOWS",
+    "active_risk_summary",
     "INITIAL_NAV",
     "SessionPrice",
     "advance",
