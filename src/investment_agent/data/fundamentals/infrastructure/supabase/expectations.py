@@ -9,9 +9,11 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
+from typing import Any
 
 from investment_agent.data.fundamentals.domain.filing import filing_available_at
 from investment_agent.data.fundamentals.domain.services.state_versions import plan_versions
+from investment_agent.data.universe.domain.predecessors import with_predecessors
 
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.db.postgres import sb, select_all_paged, select_paged_in_chunks
@@ -232,6 +234,18 @@ def _filings_for(versions: Sequence[dict]) -> dict[str, dict]:
     return {str(row["accession_no"]): row for row in rows}
 
 
+def _tickers_by_cik(securities: Sequence[Mapping[str, Any]]) -> dict[str, list[str]]:
+    """CIK → ticker들. 지주회사 재편 전 제출자의 CIK도 같은 ticker로 이어 준다(`universe.domain.predecessors`)."""
+    tickers_by_cik: dict[str, list[str]] = defaultdict(list)
+    for row in securities:
+        if row.get("cik"):
+            tickers_by_cik[str(row["cik"]).zfill(10)].append(str(row["ticker"]).upper())
+    for predecessor, current in with_predecessors(list(tickers_by_cik)).items():
+        if predecessor != current:
+            tickers_by_cik[predecessor] = list(tickers_by_cik[current])
+    return tickers_by_cik
+
+
 def _version_rows(ciks: Sequence[str]) -> list[dict]:
     return select_paged_in_chunks(
         lambda chunk: sb.schema(SCHEMA_FUNDAMENTALS).table(T_FINANCIAL_VERSIONS)
@@ -258,7 +272,7 @@ def _fundamental_rows(
     if not securities:
         return []
     security = max(securities, key=lambda row: bool(row.get("is_active_listing")))
-    versions = _version_rows([str(security["cik"]).zfill(10)])
+    versions = _version_rows(list(with_predecessors([str(security["cik"])])))
     return _project_fundamental_rows(
         ticker, versions, _filings_for(versions), as_of_at,
         include_available_at=include_available_at, limit=limit,
@@ -336,10 +350,7 @@ def securities_fundamentals_as_of(
         .select("ticker,cik").in_("ticker", chunk).eq("is_active_listing", True),
         symbols, order_by="ticker", paged_reader=select_all_paged,
     )
-    tickers_by_cik: dict[str, list[str]] = defaultdict(list)
-    for row in securities:
-        if row.get("cik"):
-            tickers_by_cik[str(row["cik"]).zfill(10)].append(str(row["ticker"]).upper())
+    tickers_by_cik = _tickers_by_cik(securities)
     if not tickers_by_cik:
         return []
     financials = _version_rows(list(tickers_by_cik))
@@ -370,10 +381,7 @@ def securities_fundamentals_filed_before(
         .select("ticker,cik").in_("ticker", chunk).eq("is_active_listing", True),
         symbols, order_by="ticker", paged_reader=select_all_paged,
     )
-    tickers_by_cik: dict[str, list[str]] = defaultdict(list)
-    for row in securities:
-        if row.get("cik"):
-            tickers_by_cik[str(row["cik"]).zfill(10)].append(str(row["ticker"]).upper())
+    tickers_by_cik = _tickers_by_cik(securities)
     if not tickers_by_cik:
         return []
     versions = _version_rows(list(tickers_by_cik))

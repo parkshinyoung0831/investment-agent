@@ -8,6 +8,7 @@ from __future__ import annotations
 import traceback
 from datetime import date
 
+from investment_agent.data.universe.domain.predecessors import with_predecessors
 from investment_agent.platform.clock import us_market_today
 from investment_agent.platform.cli.backfill import resolve_backfill_window, select_accessions
 from investment_agent.platform.logging import get_logger
@@ -90,7 +91,8 @@ def backfill_company_history(
     if scope == "missing":
         current_ciks &= missing_ciks
 
-    source_ciks = set(current_ciks)
+    # 지주회사 재편 전 제출자의 공시도 받는다. 없으면 재편 종목의 과거 재무가 통째로 빈다.
+    source_ciks = set(with_predecessors(current_ciks))
 
     processed = repository.processed_filing_accessions()
     metrics = {
