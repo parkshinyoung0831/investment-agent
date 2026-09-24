@@ -1,10 +1,15 @@
 """Execution-owner harness stage adapters."""
 from __future__ import annotations
 
+import os
+
 from investment_agent.operations.adapters._metadata import _ID_PATTERNS, metadata_id
 from investment_agent.operations.harness.commands import PythonModuleCommand
 from investment_agent.operations.harness.contracts import StageContext, StageOutcome
 from investment_agent.platform.serialization import parse_datetime
+
+# 승인 카드를 보내는 데 필요한 설정. 카드 봇과 분리된 승인 봇, 승인할 수 있는 사람.
+APPROVAL_SETTINGS = ("DISCORD_APPROVAL_BOT_TOKEN", "DISCORD_APPROVER_USER_IDS")
 
 
 class ExecutionAdapters:
@@ -45,6 +50,11 @@ class ExecutionAdapters:
         )
         if intent_id is None:
             return StageOutcome.skipped({"reason": "no_live_intent"})
+        missing = [name for name in APPROVAL_SETTINGS if not os.environ.get(name, "").strip()]
+        if missing:
+            # 승인 요청은 매번 가지만, 승인 봇·승인자가 없으면 카드를 보낼 곳이 없다. 설정 전까지 실패로 쌓지 않는다.
+            return StageOutcome.skipped({"reason": "approval_bot_not_configured", "missing": missing,
+                                         "intent_id": intent_id})
         self.command_runner.run(
             PythonModuleCommand(
                 "investment_agent.operations.commands.request_toss_approval",

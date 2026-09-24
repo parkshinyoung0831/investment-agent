@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import unittest
+from unittest import mock
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from threading import Event
@@ -128,9 +130,10 @@ class InvestmentAdaptersTest(unittest.TestCase):
             discord_message_id="123456789",
             expires_at=(OPEN + timedelta(minutes=15)).isoformat(),
         )
-        approval = self.adapters.approval_request(context(
-            "approval_request", {"execution_intent": intent.metadata},
-        ))
+        with mock.patch.dict(os.environ, {"DISCORD_APPROVAL_BOT_TOKEN": "t", "DISCORD_APPROVER_USER_IDS": "1"}):
+            approval = self.adapters.approval_request(context(
+                "approval_request", {"execution_intent": intent.metadata},
+            ))
         self.assertEqual(approval.metadata["approval_id"], APPROVAL)
         self.assertEqual(self.runner.commands[-1].module, "investment_agent.operations.commands.request_toss_approval")
 
@@ -179,6 +182,14 @@ class InvestmentAdaptersTest(unittest.TestCase):
         selected = self.adapters.select_target(context("select_target"))
         self.assertEqual(selected.status, "waiting")
         self.assertEqual(self.follow_calls, [])
+
+    def test_an_unconfigured_approval_bot_skips_the_request_without_calling_discord(self):
+        with mock.patch.dict(os.environ, {"DISCORD_APPROVAL_BOT_TOKEN": "", "DISCORD_APPROVER_USER_IDS": ""}):
+            outcome = self.adapters.approval_request(context(
+                "approval_request", {"execution_intent": {"intent_id": INTENT}},
+            ))
+        self.assertEqual(("skipped", "approval_bot_not_configured"), (outcome.status, outcome.metadata["reason"]))
+        self.assertEqual([], self.runner.commands)
 
     def test_an_unreachable_toss_skips_the_follow_instead_of_failing_it(self):
         """노트북을 들고 나가면 고정 IP가 아니라 Toss가 거절한다. 실패를 쌓지 않고 다음 회차에 다시 묻는다."""
