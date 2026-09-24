@@ -274,6 +274,11 @@ class LocalMirror:
             ]
         return output
 
+    def daily_closes(self) -> pd.DataFrame:
+        """모든 증권의 security_id · trade_date · close(긴 이력 archive 포함). 전 종목 계산(지표)용."""
+        self._indexes()
+        return self._frames[T_PRICES].loc[:, ["security_id", "trade_date", "close"]]
+
     def closes_between(self, tickers: Sequence[str], *, start: date, end: date) -> list[dict]:
         """라벨 계산용 원시 종가 창을 여러 ticker에서 한 번에 읽는다."""
         if end < start:

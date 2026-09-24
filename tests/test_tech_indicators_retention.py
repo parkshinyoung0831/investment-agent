@@ -124,12 +124,13 @@ class TechIndicatorsRetentionTest(unittest.TestCase):
             required_calendar_days,
         )
 
-    def test_deletes_rows_older_than_730_days(self):
+    def test_keeps_the_long_history_that_replay_and_ml_read(self):
+        """과거 재현·ML 학습이 2015년부터 지표를 읽는다. 2년 창으로 지우면 그 열이 다시 빈다."""
         with patch.object(retention.db, "delete_before", return_value=2) as delete:
             deleted = retention.prune_history(today=date(2026, 8, 18))
 
         self.assertEqual(deleted, 2)
-        delete.assert_called_once_with("2024-08-18")
+        delete.assert_called_once_with("2015-01-01")
 
 
 if __name__ == "__main__":
