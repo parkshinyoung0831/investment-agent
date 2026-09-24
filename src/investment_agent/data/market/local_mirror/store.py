@@ -35,8 +35,11 @@ import pandas as pd
 
 from investment_agent.data.market.domain.actions import merge_corporate_actions
 from investment_agent.data.universe.domain.memberships import membership_snapshots
+from investment_agent.platform.logging import get_logger
 from investment_agent.platform.serialization import parse_datetime
 from investment_agent.platform.storage_paths import local_mirror_root
+
+log = get_logger(__name__)
 
 MIRROR_VERSION = "local-mirror-v1"
 MANIFEST = "manifest.json"
@@ -204,7 +207,10 @@ class LocalMirror:
                 if prices is None:
                     prices = pd.read_parquet(self.root / f"{T_PRICES}.parquet", engine="pyarrow")
                     actions = pd.read_parquet(self.root / f"{T_ACTIONS}.parquet", engine="pyarrow")
-                    prices, actions = _with_long_history(prices, actions, self.history_root)
+                    try:
+                        prices, actions = _with_long_history(prices, actions, self.history_root)
+                    except Exception as exc:  # noqa: BLE001 - 긴 이력은 보조다. 운영 DB 사본만으로도 판단은 돈다
+                        log.warning("long history archive not merged: %s: %s", type(exc).__name__, exc)
                     prices = prices.sort_values(["security_id", "trade_date"]).reset_index(drop=True)
                     self._frames[T_PRICES] = prices
                     self._frames[T_ACTIONS] = actions
@@ -295,12 +301,18 @@ def _with_long_history(prices: pd.DataFrame, actions: pd.DataFrame,
     """
     if history_root is None or not history_root.is_dir():
         return prices, actions
-    files = sorted(history_root.glob("*/daily.parquet"))
+    # 디렉터리 이름이 security_id인 파일만 읽는다. 이전 세대의 ticker 경로 파일(`yahoo/AAPL/`)은 신원이 없다.
+    files = sorted(path for path in history_root.glob("*/daily.parquet") if path.parent.name.isdigit())
     if not files:
         return prices, actions
-    history = pd.concat([pd.read_parquet(path, engine="pyarrow") for path in files], ignore_index=True)
+    frames = [frame for frame in (pd.read_parquet(path, engine="pyarrow") for path in files) if not frame.empty]
+    if not frames:
+        return prices, actions
+    history = pd.concat(frames, ignore_index=True)
+    history = history.dropna(subset=["security_id", "trade_date", "close"])
     if history.empty:
         return prices, actions
+    history["security_id"] = history["security_id"].astype("int64")
     history["trade_date"] = pd.to_datetime(history["trade_date"]).dt.strftime("%Y-%m-%d")
     first = prices.groupby("security_id")["trade_date"].min()
     cutoff = history["security_id"].map(first)

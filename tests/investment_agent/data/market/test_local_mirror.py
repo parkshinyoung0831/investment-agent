@@ -131,6 +131,23 @@ class LocalMirrorTest(unittest.TestCase):
         # 임시 사본은 실제 archive를 읽지 않는다.
         self.assertIsNone(LocalMirror(self.mirror.root).history_root)
 
+    def test_legacy_ticker_folders_and_a_broken_archive_never_break_the_mirror(self):
+        """이전 세대 `yahoo/<ticker>/` 파일은 신원이 없어 읽지 않고, archive가 깨져도 운영 DB 사본으로 답한다."""
+        import pandas as pd
+
+        self.sync(now=NOW)
+        history = Path(self.tmp.name) / "history"
+        (history / "AAA").mkdir(parents=True)
+        pd.DataFrame([{"ticker": "AAA", "trade_date": date(2020, 1, 2), "close": 1.0}]).to_parquet(
+            history / "AAA" / "daily.parquet", index=False)
+        expected = self.mirror.closes_between(["AAA"], start=date(2019, 1, 1), end=date(2025, 1, 3))
+        self.assertEqual(expected, LocalMirror(self.mirror.root, history_root=history)
+                         .closes_between(["AAA"], start=date(2019, 1, 1), end=date(2025, 1, 3)))
+        (history / "1").mkdir()
+        (history / "1" / "daily.parquet").write_bytes(b"not parquet")
+        self.assertEqual(expected, LocalMirror(self.mirror.root, history_root=history)
+                         .closes_between(["AAA"], start=date(2019, 1, 1), end=date(2025, 1, 3)))
+
     def test_tickers_resolve_to_the_preferred_security_and_sector_is_for_tracked_names(self):
         self.sync(now=NOW)
         self.assertEqual(self.mirror.security_ids(["AAA", "SPY"]), {"AAA": 1, "SPY": 4})
