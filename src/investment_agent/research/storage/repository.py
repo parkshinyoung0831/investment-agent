@@ -42,6 +42,8 @@ T_ALLOCATION_ROWS = "strategy_allocations"
 T_FEATURE_SETS = "feature_sets"
 T_DATASET_RUNS = "dataset_runs"
 FEATURE_SET = "technical"
+# 연도 분할의 확정 파일 이름. 읽기는 이 이름만 본다(`_parquet_pattern`).
+_PARTITION_FILE = "data.parquet"
 _DATASET_NAME = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
 _PAYLOAD_FIELD_NAME = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
 
@@ -109,7 +111,7 @@ class ResearchStore:
                 "SELECT DISTINCT year(trade_date) FROM feature_signals_daily ORDER BY 1"
             ).fetchall()]
             for year in years:
-                target = self._feature_root / f"year={year}" / "data.parquet"
+                target = self._feature_root / f"year={year}" / _PARTITION_FILE
                 connection.execute("DROP TABLE IF EXISTS migrated_features")
                 if target.is_file():
                     connection.execute("""
@@ -158,7 +160,7 @@ class ResearchStore:
                     FROM research_records WHERE dataset=? ORDER BY 1
                 """, [dataset]).fetchall()]
                 for year in years:
-                    target = root / f"year={year}" / "data.parquet"
+                    target = root / f"year={year}" / _PARTITION_FILE
                     connection.execute("DROP TABLE IF EXISTS migrated_records")
                     year_expression = "CASE WHEN regexp_matches(coalesce(cast(as_of_at AS VARCHAR),cast(available_at AS VARCHAR),''),'^[0-9]{4}-') THEN substr(coalesce(cast(as_of_at AS VARCHAR),cast(available_at AS VARCHAR)),1,4) ELSE 'undated' END"
                     if target.is_file():
@@ -212,7 +214,12 @@ class ResearchStore:
 
     @staticmethod
     def _parquet_pattern(root: Path) -> str:
-        return (root / "**" / "*.parquet").resolve().as_posix()
+        """연도 분할마다 확정 파일은 `data.parquet` 하나다.
+
+        쓰기 도중의 임시 파일(`data.*.parquet`, DuckDB COPY의 `tmp_data.*.parquet`)은 중단되면 남는다.
+        `*.parquet`로 읽으면 그 파일의 행이 한 번 더 들어와 같은 표본이 두 벌이 된다.
+        """
+        return (root / "**" / _PARTITION_FILE).resolve().as_posix()
 
     @staticmethod
     def _write_parquet(connection: Any, table: str, target: Path) -> None:
@@ -249,7 +256,7 @@ class ResearchStore:
             temporary.unlink(missing_ok=True)
 
     def _feature_files(self) -> list[Path]:
-        return sorted(self._feature_root.glob("year=*/*.parquet"))
+        return sorted(self._feature_root.glob(f"year=*/{_PARTITION_FILE}"))
 
     def _ensure_bulk_migrated(self) -> None:
         if not self.read_only:
@@ -334,7 +341,7 @@ class ResearchStore:
             for row in normalized:
                 by_year[str(row["trade_date"])[:4]].append(row)
             for year, candidates in by_year.items():
-                target = self._feature_root / f"year={year}" / "data.parquet"
+                target = self._feature_root / f"year={year}" / _PARTITION_FILE
                 connection.execute("DROP TABLE IF EXISTS feature_partition")
                 connection.execute("""
                     CREATE TEMP TABLE feature_partition (
@@ -575,7 +582,7 @@ class ResearchStore:
         return self._parquet_root / "datasets" / str(dataset)
 
     def _dataset_files(self, dataset: str) -> list[Path]:
-        return sorted(self._dataset_root(dataset).glob("year=*/*.parquet"))
+        return sorted(self._dataset_root(dataset).glob(f"year=*/{_PARTITION_FILE}"))
 
     def upsert_records(self, dataset: str, rows: Iterable[dict[str, Any]], *, key: str, ignore_existing: bool = False) -> int:
         normalized = [dict(row) for row in rows]
@@ -630,7 +637,7 @@ class ResearchStore:
                 ).fetchall()
                 touched.update(str(row[0]) for row in previous)
             for year in sorted(touched):
-                target = root / f"year={year}" / "data.parquet"
+                target = root / f"year={year}" / _PARTITION_FILE
                 connection.execute("DROP TABLE IF EXISTS research_partition")
                 connection.execute("""
                     CREATE TEMP TABLE research_partition (

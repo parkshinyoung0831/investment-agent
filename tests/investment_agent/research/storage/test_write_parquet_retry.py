@@ -56,3 +56,16 @@ class WriteParquetRetryTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class InterruptedWriteLeftoverTest(unittest.TestCase):
+    def test_a_leftover_temporary_file_is_not_read_as_a_second_copy(self) -> None:
+        """중단된 COPY가 남긴 `tmp_data.*.parquet`를 읽으면 같은 표본이 두 벌이 돼 학습 export가 멈춘다."""
+        with tempfile.TemporaryDirectory() as directory:
+            store = ResearchStore(Path(directory) / "research.duckdb")
+            store.upsert_records("probe_rows", [{"record_key": "a", "ticker": "AAA",
+                                                  "as_of_at": "2022-01-07T23:30:00+00:00"}], key="record_key")
+            partition = next(store._dataset_root("probe_rows").glob("year=*"))
+            (partition / "tmp_data.leftover.parquet").write_bytes((partition / "data.parquet").read_bytes())
+            reader = ResearchStore(Path(directory) / "research.duckdb", read_only=True)
+            self.assertEqual(1, len(reader.records("probe_rows")))
