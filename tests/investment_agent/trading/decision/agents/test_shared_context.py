@@ -1,6 +1,6 @@
 """역할 호출들이 같은 접두부로 시작하는가 — 아니면 provider의 prompt cache가 한 번도 걸리지 않는다.
 
-cache는 요청의 첫 토큰부터 같은 접두부에만 걸린다. 역할 8개가 모두 5개 리포트를 싣는데,
+cache는 요청의 첫 토큰부터 같은 접두부에만 걸린다. 판단 역할이 5개 리포트를 싣는데,
 역할마다 다른 지시가 앞에 오면 리포트가 같아도 적중이 0이다.
 """
 from __future__ import annotations
@@ -11,11 +11,7 @@ from investment_agent.trading.decision.agents import orchestrator
 from investment_agent.trading.decision.agents.graph_state import AnalystReports, shared_context
 from investment_agent.trading.decision.llm.client import OpenAICompatibleClient
 
-_ROLE_TASKS = {
-    "tradingagents_bull_researcher", "tradingagents_bear_researcher", "tradingagents_research_manager",
-    "tradingagents_trader", "tradingagents_aggressive_debator", "tradingagents_conservative_debator",
-    "tradingagents_neutral_debator", "tradingagents_portfolio_manager",
-}
+_ROLE_TASKS = {"tradingagents_investment_committee"}
 
 
 class _RecordingClient:
@@ -27,19 +23,13 @@ class _RecordingClient:
         name = kwargs["task_name"]
         if name.endswith("_analyst"):
             return {"report": f"{name} 리포트 본문"}
-        if name in {"tradingagents_research_manager"}:
-            return {"stance": "bullish", "plan": "plan"}
-        if name == "tradingagents_portfolio_manager":
-            return {"stance": "neutral", "decision": "decision"}
-        if name == "tradingagents_trader":
-            return {"plan": "trader plan"}
-        return {"argument": f"{name} argument"}
+        return {"bull_case": "b", "bear_case": "r", "stance": "neutral", "decision": "decision"}
 
 
 class SharedPrefixTest(unittest.TestCase):
     def _graph_calls(self) -> list[dict]:
         client = _RecordingClient()
-        orchestrator.run_local_graph(
+        orchestrator.run_compact_graph(
             client, ticker="AAPL", curr_date="2026-09-16",
             fetch_market_evidence=lambda: "m", fetch_fundamentals_evidence=lambda: "f",
             fetch_news_evidence=lambda: "n", fetch_sentiment_evidence=lambda: "s",

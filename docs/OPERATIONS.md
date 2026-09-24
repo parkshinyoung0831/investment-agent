@@ -472,8 +472,7 @@ GitHub Actions = GitHub 서버의 자동 시간표
 (`harness_adapters.EXECUTION_MODULES`)만 broker·승인 비밀을 받고, LLM 판단·학습·보고 모듈은
 판단 범위로 떠서 `.env`를 다시 읽어도 그 비밀이 지워진다. System Portfolio는 계좌·시세 비밀이 필요 없다.
 
-`local_mirror` job은 2시간마다 원본 사본을 증분 동기화한다. RL 재학습(`continuous_retrain`)은
-정기 실행에 두지 않고 수동으로 돌린다.
+`local_mirror` job은 2시간마다 원본 사본을 증분 동기화한다.
 각 잡은 `HARNESS_JOB_LOCAL_MIRROR_KILL_SWITCH` 등 job ID 기반 킬스위치로 별도 차단한다.
 
 하네스는 다음을 관리한다.

@@ -326,7 +326,6 @@ python -m investment_agent.operations.commands.create_execution_intent --risk-de
 
 ```powershell
 python -m investment_agent.operations.commands.build_decision_experiences --as-of <TIMEZONE_ISO_TIMESTAMP>
-python -m investment_agent.research.commands.continuous_retrain --dry-run
 python -m investment_agent.operations.commands.update_performance
 ```
 
@@ -344,13 +343,6 @@ python -m investment_agent.operations.commands.update_performance
 내역 또는 수수료가 확인되지 않으면 해당 손익·시간가중 수익률은 미확인으로 남습니다.
 `performance_events`는 출처가 있는 초기 보유·입출금·배당·분할·자료 완전성 증거만
 수용합니다. 계좌 입출금이 없었다고 자동으로 가정하지 않습니다.
-
-PPO 학습은 겹치지 않는 기간으로 나눈 동일 holdout에서 기존 정책과 후보를 비교합니다.
-기본적으로 독립 평가 기간 20개 이상이 필요하며 부족하면 대기합니다. `--dry-run`은
-자료 준비 상태만 확인합니다. 실제 학습은 해시·종목 순서·특징 버전을 포함한 후보를
-저장하고 활성 정책을 자동으로 교체하지 않습니다. 검증된 후보의 명시적 채택은
-`continuous_retrain --adopt-candidate <CANDIDATE_JSON>`으로 수행합니다. RL 후보와 채택은
-Research에 남고, System 목표는 채택 champion ML과 결정론적 포트폴리오 엔진만 사용합니다.
 
 최초 실행 제어 원장은 `execution_controls --initialize`로 비활성 상태로 만듭니다.
 이후 `execution_controls`로 버전을 확인하고, 운영자가 `--manual on --expected-version

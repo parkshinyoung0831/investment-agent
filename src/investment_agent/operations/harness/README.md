@@ -81,6 +81,7 @@ kill switch에 무관하게 매번 돈다. 모드와 스위치가 막는 것은 
 | `my_portfolio_follow` | 1분 | `select_target` → `follow` → `execution_intent` → `approval_request` → `approval_worker` → `notify_trades` | 실계좌 추종 제안·승인 요청(매번), 승인된 주문 실행(스위치가 허락할 때만) |
 | `system_evaluation` | 7일 | `evaluate_system` → `measure_factor_ic` | 최신 System artifact의 승격 증거(`system_evaluations`), factor IC(`factor_research`) |
 | `ml_challengers` | 7일 | `train_challengers` | ML 후보 학습·비교, 기준 통과 시 자동 채택·순위 능력 상실 시 자동 해제 |
+| `decision_experience` | 1일 | `build_decision_experiences` | 판단 결과를 경험 원장에(추천 성과 보고의 원천) |
 | `investment_reporting` | 5분 | `update_performance` → `notify_reports` | 성과·보고 알림 |
 | `event_reanalysis` | 10분 | `reanalyze` | 고영향 사건 재분석 |
 | `intelligence` | 1일 | `news` → `social` → `retention` | 뉴스·소셜 수집 |
@@ -91,8 +92,8 @@ kill switch에 무관하게 매번 돈다. 모드와 스위치가 막는 것은 
 | `toss_reconciliation` | 1분 | `reconcile` | 브로커 체결 동기화 |
 
 `local_mirror`는 2시간마다 Supabase 원본의 계산용 Parquet 사본을 증분 동기화한다.
-사본이 없거나 오래되면 판단은 원본 Supabase로 읽는다. RL 연구(`research.commands.continuous_retrain`)와
-경험 원장(`operations.commands.build_decision_experiences`)은 판단 경로가 읽지 않아 하네스에 두지 않고 수동으로 돌린다.
+사본이 없거나 오래되면 판단은 원본 Supabase로 읽는다. `decision_experience`는 판단의 확정된 결과를 경험 원장에
+쌓아 추천 성과 보고(`update_performance`)가 읽게 한다.
 
 `earnings_watch`는 주문이 아니라 공시 수집이라 모드·거래 kill switch 어느 쪽으로도
 멈추지 않습니다. 창 판정은 진입점(`--session auto`)이 ET 기준으로 직접 하고, 창 밖이면

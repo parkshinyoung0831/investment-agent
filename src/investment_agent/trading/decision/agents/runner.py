@@ -57,28 +57,13 @@ def _recorded(sink: dict[str, dict[str, Any]], domain: str, fetch: Callable[[], 
     return run
 
 
-# 분석가 뒤 판단 그래프. compact(기본)는 투자위원회 호출 1번, full은 토론·Trader·Risk 토론·PM 8번이다.
-AGENT_GRAPH_ENV = "AI_INVESTOR_AGENT_GRAPH"
-_VERSIONS = {
-    "compact": "0.9.0-compact-committee-shared-macro-h20-news7d-strict-ko",
-    "full": "0.8.2-local-graph-shared-macro-h20-news7d-strict-ko",
-}
-
-
-def selected_graph() -> str:
-    value = os.environ.get(AGENT_GRAPH_ENV, "").strip().lower() or "compact"
-    if value not in _VERSIONS:
-        raise ValueError(f"{AGENT_GRAPH_ENV} must be one of {sorted(_VERSIONS)}")
-    return value
-
-
 class TradingAgentsRunner:
-    """분석가 5명 → 투자위원회(기본) 또는 전체 역할 그래프를 로컬로 실행한다."""
+    """분석가 5명 → 투자위원회 한 번을 로컬로 실행한다."""
 
-    def __init__(self, graph: str | None = None) -> None:
-        self.graph = graph or selected_graph()
-        # engine의 구조화 호출까지 판단 결과를 바꾸는 변경이면 값을 올린다 — 판단 기록의 engine_version이다.
-        self.version = _VERSIONS[self.graph]
+    # engine의 구조화 호출(strict json_schema)까지 판단 결과를 바꾸는 변경이면 이 값을 올린다 — 판단 기록의 engine_version이다.
+    version = "0.9.0-compact-committee-shared-macro-h20-news7d-strict-ko"
+
+    def __init__(self) -> None:
         # 한 분석 회차(이 runner의 수명) 안에서 같은 거시 근거의 요약을 공유한다. 회차가 끝나면 사라진다.
         self._macro_reports: dict[str, str] = {}
 
@@ -138,8 +123,7 @@ class TradingAgentsRunner:
                 ))
 
             analyst_inputs: dict[str, dict[str, Any]] = {}
-            graph = orchestrator.run_compact_graph if self.graph == "compact" else orchestrator.run_local_graph
-            result = graph(
+            result = orchestrator.run_compact_graph(
                 client,
                 ticker=bundle.ticker,
                 curr_date=curr_date,

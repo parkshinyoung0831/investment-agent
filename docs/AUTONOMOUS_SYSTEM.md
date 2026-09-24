@@ -72,20 +72,8 @@ src/investment_agent/execution/orders/market_state.py # single-node RAM quote ca
 
 ## 학습 표본과 승격
 
-- RL 재학습(`research/commands/continuous_retrain.py`)의 표본은 `rl_feature_snapshots`·
-  `rl_training_labels`와 역사 membership 원장에서만 온다. 한 갈래라도 비면 대체 표본을
-  만들지 않고 실패한다 — 합성 표본으로 학습한 정책은 성적표만 그럴듯하다.
-- 채점은 학습에 쓰지 않은 뒤쪽 구간(holdout)에서만 한다. 학습 구간에서 채점하면
-  어떤 정책이든 통과해 승격 게이트가 아무것도 거르지 못한다.
-- 승격은 샤프비율 개선·DSR 유의성에 더해 **벤치마크 대비 양수 초과수익**을 함께 요구한다.
-  샤프비율만 보면 "덜 흔들리며 더 못 버는" 정책이 챔피언이 된다.
-- 승격된 `active_policy.json`은 어떤 표본으로 학습했는지(`training.data_hash`,
-  `membership_hash`, 구간 수, 종목)를 함께 남긴다. 없으면 그 점수를 재현할 수 없다.
-
-**RL은 신호나 운영 목표비중을 고치지 않는다**: continuous_retrain은 Research 후보를 같은
-holdout·비용 가정으로 평가하고, 명시적으로 채택한 artifact도 연구 재현 기준으로만 보관한다.
-System·실계좌 경로에는 RL 추론 진입점이 없다. 비중을 기대수익으로 되돌려 TradingAgents·ML
-신호에 섞으면 이미 푼 위험·비용을 두 번 세기 때문이다.
+- RL 정책 학습 코드는 두지 않는다. System·실계좌 경로의 비중은 결정론적 optimizer가 정하고, 학습된 ML은
+  채택 조건(`check_adoptable`)을 넘을 때만 기대수익에 섞인다.
 
 ## 저장 경계
 

@@ -1,10 +1,6 @@
 """Research-owner harness stage adapters."""
 from __future__ import annotations
 
-import json
-from pathlib import Path
-from tempfile import TemporaryDirectory
-
 from investment_agent.operations.harness.commands import PythonModuleCommand
 from investment_agent.operations.harness.contracts import StageContext, StageOutcome
 
@@ -73,7 +69,7 @@ class ResearchAdapters:
         )
         return StageOutcome.succeeded({"sampled_at": self.now().isoformat()})
     def build_decision_experiences(self, context: StageContext) -> StageOutcome:
-        """승인 여부와 무관하게 원본 판단의 확정된 결과를 학습 원장에 기록한다."""
+        """승인 여부와 무관하게 원본 판단의 확정된 결과를 경험 원장에 기록한다(추천 성과 보고의 원천)."""
         self.command_runner.run(PythonModuleCommand(
             "investment_agent.operations.commands.build_decision_experiences",
             ("--as-of", context.now.isoformat()),
@@ -172,16 +168,3 @@ class ResearchAdapters:
             stop_event=context.stop_event,
         )
         return StageOutcome.succeeded({"labeled_at": self.now().isoformat()})
-    def continuous_learning(self, context: StageContext) -> StageOutcome:
-        """자료 대기와 실제 후보 학습을 구분하고 채택 여부를 과장하지 않는다."""
-        with TemporaryDirectory() as directory:
-            result_path = Path(directory) / 'learning-result.json'
-            self.command_runner.run(PythonModuleCommand(
-                "investment_agent.research.commands.continuous_retrain",
-                ("--as-of", context.now.isoformat(), '--result-path', str(result_path)),
-                self.timeouts.get("continuous_learning", 60 * 60),
-            ), stop_event=context.stop_event)
-            if not result_path.exists():
-                raise RuntimeError('learning command did not report its actual status')
-            result = json.loads(result_path.read_text(encoding='utf-8'))
-        return StageOutcome.skipped(result) if result['status'] == 'pending' else StageOutcome.succeeded(result)

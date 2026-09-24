@@ -235,8 +235,8 @@ flowchart TD
 
 저장소 소유 `decision/agents/orchestrator.py`가 Market → Fundamentals → News → Sentiment → Macro 분석가 뒤에
 투자위원회 호출 한 번(`agents/committee.py`, 강세 논거·약세 논거·결론)을 실행한다 — 분석가 포함 종목당 호출 약
-6번이다. Bull/Bear → Research Manager → Trader → Risk 3자 → Portfolio Manager 전체 그래프(약 13번)는
-`AI_INVESTOR_AGENT_GRAPH=full`로 고른다. 결과 dict 모양이 같아 구조화 호출은 그대로다.
+6번이다. 결과 dict는 토론 상태 키 모양(`investment_debate_state`·`risk_debate_state`)을 따라, 구조화 호출과
+판단 기록 화면이 그대로 읽는다.
 외부 TradingAgents/LangGraph runtime이나 설치 패키지 monkey patch는 사용하지 않는다.
 자연어 토론은 설명 자료이지 주문 계약이 아니다. 최종 parser는 다음과 같은 구조화 필드만
 허용한다.
@@ -477,31 +477,13 @@ train
 
 파일과 DB metadata/hash가 일치하지 않으면 inference와 promotion에 사용하지 않는다.
 
-## RL은 ML 다음의 Challenger다
+## RL 정책 학습은 두지 않는다
 
-`src/investment_agent/research/rl`은 Stable-Baselines3 PPO를 대표 baseline으로 사용한다. action은 주문 수량이
-아니라 target-weight policy다. environment는 transaction cost, turnover와 drawdown penalty를
-반영한다.
-
-```text
-동일 OOS PPO 결과가 ML baseline보다 우수
-→ challenger 후보
-그 외
-→ research_only
-```
-
-PPO라는 이름만으로 실전에 승격하지 않는다. 여러 walk-forward window와 Paper 무사고 조건을
-별도로 통과해야 한다. algorithm class 경계를 통해 A2C/SAC/TD3/DDPG 등을 나중에 추가할 수 있다.
-
-RL 정책은 System Portfolio를 움직이지 않는 연구 후보다. 비교는 과거 재현·walk-forward 평가로만 하고, 별도
-가상계좌를 운영하지 않는다. 비중을 "평균 대비 초과비중 × 배율"로 기대수익에 되돌려 섞으면 이미 위험·비용을
-반영한 결과를 목적함수에 다시 넣어 같은 위험을 두 번 센다.
-
-- 운영 경로(`trading`·`execution`·`operations`)는 RL 정책을 import하지 않는다(테스트 강제).
-- RL 재학습(`continuous_retrain`)은 하네스 정기 실행에 두지 않고 수동으로 돌린다. 마지막 학습 뒤 새로 성숙한 비중첩
-  구간이 2개 미만이면 학습하지 않는다(`last_training.json`). 같은 데이터로 매일 다시 학습하면 우연히 좋은 후보만 늘어난다.
-- 채택은 `continuous_retrain --adopt-candidate`로만 하고, 채택된 정책도 System 비중을 바꾸지 않는다 — 현재 비중
-  결정자(결정론적 optimizer)를 대체하려면 Ablation·OOS 근거와 코드 리뷰를 거친 새 Portfolio Engine 버전이어야 한다.
+강화학습 정책(PPO 등)을 학습·보관하는 코드는 없다. 판단 경로(`trading`·`execution`·`operations`)가 비중을
+정하는 것은 결정론적 optimizer이고, RL 비중을 기대수익으로 되돌려 섞으면 이미 반영한 위험·비용을 두 번 센다.
+`research/rl`에 남은 것은 feature snapshot·label·멤버십 계약(`contracts.py`)과, 판단 경험 원장
+(`build_decision_experiences`, 추천 성과 보고의 원천)이 쓰는 dataset·feature 조립(`decision_dataset.py`·
+`features.py`·`environment.py`)이다.
 
 ## Ablation — 모듈이 실제로 성과를 개선하는가
 

@@ -74,8 +74,7 @@ ML 학습은 학습 구간에서 값이 변하지 않는 열을 입력에서 뺀
 열이 시점 기준으로 비어 있어 상수인데 운영에서는 값이 들어온다 — artifact의 `feature_names`는 모델이 실제로
 받은 열이고, 뺀 열은 `excluded_constant_features`에 남는다.
 
-RL 후보 재학습(`continuous_retrain`)은 판단 경로가 쓰지 않아 하네스 정기 실행에서 뺐고 수동으로 돌린다.
-새 성숙 비중첩 구간이 2개 미만이면 학습하지 않는다.
+RL 정책 학습 코드는 두지 않는다. `research/rl`은 feature·label 계약과 판단 경험 원장의 dataset 조립만 갖는다.
 
 과거 재현 백필은 원격 재무·컨센서스·주식수·세그먼트를 날짜마다 일괄 조회하고, 종목별 계산은 그
 결과를 재사용한다. 날짜 결과는 Parquet에 한 번만 원자 저장한다. 날짜별 manifest가 실제 snapshot과

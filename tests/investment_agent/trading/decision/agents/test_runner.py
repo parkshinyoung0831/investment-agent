@@ -24,15 +24,3 @@ class RunnerNewsWindowTest(unittest.TestCase):
                 patch(prefix + ".runtime.fetch_external_news", return_value="no data") as fetch:
             TradingAgentsRunner().run(bundle, memory_text="")
         self.assertEqual(fetch.call_args.args, ("AAPL", "2026-09-07", "2026-09-14"))
-
-
-class RunnerGraphSelectionTest(unittest.TestCase):
-    def test_the_compact_committee_graph_is_the_default_and_full_is_opt_in(self):
-        with patch.dict("os.environ", {"AI_INVESTOR_AGENT_GRAPH": ""}):
-            default = TradingAgentsRunner()
-        self.assertEqual("compact", default.graph)
-        self.assertIn("compact", default.version)
-        with patch.dict("os.environ", {"AI_INVESTOR_AGENT_GRAPH": "full"}):
-            self.assertEqual("full", TradingAgentsRunner().graph)
-        with patch.dict("os.environ", {"AI_INVESTOR_AGENT_GRAPH": "tiny"}), self.assertRaises(ValueError):
-            TradingAgentsRunner()

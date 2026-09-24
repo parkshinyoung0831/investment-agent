@@ -309,30 +309,6 @@ def toss_reconciliation_job(
     )
 
 
-def continuous_learning_job(
-    *,
-    retrain: StageHandler,
-    job_id: str = "continuous_learning",
-    interval_seconds: float = 7 * 24 * 60 * 60,
-    stale_after_seconds: float = 8 * 24 * 60 * 60,
-) -> JobDefinition:
-    """RL 연구 후보를 만든다. 새 성숙 구간이 모자라면 학습하지 않고, 채택은 사람이 별도로 한다."""
-    return JobDefinition(
-        job_id=job_id,
-        interval_seconds=interval_seconds,
-        stale_after_seconds=stale_after_seconds,
-        stages=(
-            StageDefinition(
-                "retrain",
-                retrain,
-                approval_workflow_only=False,
-                max_attempts=2,
-                retry_delay_seconds=30 * 60,
-            ),
-        ),
-    )
-
-
 def system_evaluation_job(
     *,
     evaluate_system: StageHandler,
@@ -411,7 +387,7 @@ def ml_challengers_job(*, train_challengers: StageHandler, interval_seconds: flo
 
 
 def decision_experience_job(*, build_decision_experiences: StageHandler) -> JobDefinition:
-    """feature 수집 장애와 무관하게 이미 저장된 판단의 경험을 완성한다."""
+    """판단의 확정된 결과를 경험 원장에 쌓는다. 성과 보고의 추천 성과 비교가 이 원장을 읽는다."""
     return JobDefinition(job_id="decision_experience", interval_seconds=86400, stale_after_seconds=108000,
         stages=(StageDefinition("build_decision_experiences", build_decision_experiences,
                                 approval_workflow_only=False, max_attempts=2),))

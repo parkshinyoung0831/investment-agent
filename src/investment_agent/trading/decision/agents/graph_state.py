@@ -67,23 +67,3 @@ class RiskDebateState:
     current_neutral_response: str = ""
     judge_decision: str = ""
     count: int = 0
-
-
-_RISK_ORDER = ("aggressive", "conservative", "neutral")
-
-
-def debate_next_speaker(state: InvestDebateState, *, max_rounds: int = 1) -> str | None:
-    """다음 Bull/Bear 발언자. 라운드를 다 썼으면 None(Research Manager로 넘어간다)."""
-    if state.count >= 2 * max_rounds:
-        return None
-    return "bear" if state.last_speaker == "bull" else "bull"
-
-
-def risk_next_speaker(state: RiskDebateState, *, max_rounds: int = 1) -> str | None:
-    """다음 Risk 토론 발언자(aggressive→conservative→neutral 순환). 라운드를 다 썼으면 None(Portfolio Manager로)."""
-    if state.count >= 3 * max_rounds:
-        return None
-    if not state.latest_speaker:
-        return _RISK_ORDER[0]
-    index = _RISK_ORDER.index(state.latest_speaker)
-    return _RISK_ORDER[(index + 1) % len(_RISK_ORDER)]

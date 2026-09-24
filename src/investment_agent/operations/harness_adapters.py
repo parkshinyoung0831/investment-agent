@@ -24,8 +24,8 @@ _MODULES = frozenset({
     "investment_agent.operations.commands.system_portfolio",
     "investment_agent.operations.commands.event_reanalysis",
     "investment_agent.research.commands.ml_challengers",
-    "investment_agent.research.commands.factor_research",
     "investment_agent.operations.commands.build_decision_experiences",
+    "investment_agent.research.commands.factor_research",
     "investment_agent.operations.commands.update_performance",
     "investment_agent.trading.decision.analysis",
     "investment_agent.research.commands.build_valuations",
@@ -38,7 +38,6 @@ _MODULES = frozenset({
     "investment_agent.operations.commands.system_diagnosis",
     "investment_agent.operations.commands.system_evaluations",
     "investment_agent.operations.commands.notify",
-    "investment_agent.research.commands.continuous_retrain",
     "investment_agent.operations.commands.watch_earnings",
     "investment_agent.operations.commands.econ_calendar_watch_releases",
     "investment_agent.operations.commands.request_toss_approval",
@@ -131,9 +130,8 @@ _BACKGROUND_STAGE_TIMEOUT_KEYS: dict[str, str | None] = {
     "diagnose_system": "diagnose_system",
     "evaluate_system": "evaluate_system",
     "measure_factor_ic": "measure_factor_ic",
-    "build_decision_experiences": "build_decision_experiences",
-    "continuous_learning": "continuous_learning",
     "run_system_portfolio": "system_portfolio",
+    "build_decision_experiences": "build_decision_experiences",
     "update_performance": "update_performance",
     "notify_reports": None,
     "notify_investment": "notify_investment",
@@ -283,9 +281,6 @@ class ProductionInvestmentAdapters(
             ),
             "evaluate_system": _positive_float(
                 values, "HARNESS_EVALUATE_SYSTEM_TIMEOUT_SEC", 90 * 60, maximum=4 * 60 * 60,
-            ),
-            "continuous_learning": _positive_float(
-                values, "HARNESS_CONTINUOUS_LEARNING_TIMEOUT_SEC", 60 * 60, maximum=4 * 60 * 60,
             ),
             "build_decision_experiences": _positive_float(
                 values, "HARNESS_BUILD_DECISION_EXPERIENCES_TIMEOUT_SEC", 60 * 60, maximum=4 * 60 * 60,

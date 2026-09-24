@@ -9,10 +9,9 @@ from __future__ import annotations
 import unittest
 
 from investment_agent.dashboard import ops as dashboard_ops
-from investment_agent.dashboard.app_pages import ml_rl_lab, system
+from investment_agent.dashboard.app_pages import system
 from investment_agent.operations.paths import HARNESS_STATE_DIR
 from investment_agent.platform.storage_paths import repository_root
-from investment_agent.research.commands import continuous_retrain
 
 
 class DashboardStoragePathAgreementTest(unittest.TestCase):
@@ -21,15 +20,9 @@ class DashboardStoragePathAgreementTest(unittest.TestCase):
         self.assertEqual(dashboard_ops.DEFAULT_HARNESS_STATE, expected)
         self.assertEqual(system.STATE_PATH, expected)
 
-    def test_active_policy_path_matches_the_trainer(self) -> None:
-        self.assertEqual(
-            ml_rl_lab.ACTIVE_POLICY_PATH,
-            continuous_retrain._POLICY_DIR / continuous_retrain._ACTIVE_POLICY_NAME,
-        )
-
     def test_artifacts_live_at_repository_root_not_under_src(self) -> None:
         root = repository_root()
-        for path in (dashboard_ops.DEFAULT_HARNESS_STATE, ml_rl_lab.ACTIVE_POLICY_PATH):
+        for path in (dashboard_ops.DEFAULT_HARNESS_STATE,):
             self.assertEqual(path.relative_to(root).parts[0], "artifacts")
 
 

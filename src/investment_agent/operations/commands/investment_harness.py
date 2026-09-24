@@ -23,6 +23,7 @@ from investment_agent.operations.harness.maintenance import (
 )
 from investment_agent.operations.harness.pipeline import (
     account_risk_snapshot_job,
+    decision_experience_job,
     system_evaluation_job,
     earnings_watch_job,
     econ_release_watch_job,
@@ -123,8 +124,9 @@ def build_registry(
         interval_seconds=reconciliation_interval_seconds,
         interval_provider=reconciliation_interval_provider,
     ))
-    # RL 연구(`continuous_retrain`)와 그 경험 원장(`build_decision_experiences`)은 판단 경로가 읽지 않는다.
-    # 정기 실행에서 빼고 명령으로만 남긴다 — 필요할 때 수동으로 돌린다.
+    # 추천 성과 보고가 읽는 판단 경험 원장.
+    if hasattr(selected, "build_decision_experiences"):
+        registry.register(decision_experience_job(build_decision_experiences=selected.build_decision_experiences))
     if hasattr(selected, "evaluate_system"):
         registry.register(system_evaluation_job(evaluate_system=selected.evaluate_system,
                                                 measure_factor_ic=getattr(selected, "measure_factor_ic", None)))
