@@ -88,7 +88,8 @@ class ExpectedReturnSignalsTest(unittest.TestCase):
 
     def test_expected_return_is_ic_times_sigma_times_z_and_orders_by_score(self):
         plan = self._plan(views={}, policy=AlphaPolicy(candidate_count=5, llm_tilt_weight=0.0,
-                                                        require_verified_entry=False))
+                                                        require_verified_entry=False,
+                                                        unverified_entry_scale=1.0))
         signals = _by_symbol(plan)
         self.assertGreater(signals["TOP"].expected_return, signals["MID"].expected_return)
         self.assertAlmostEqual(signals["LOW"].expected_return, 0.0, places=12)  # 다섯 중 가운데 순위는 z=0
@@ -99,15 +100,24 @@ class ExpectedReturnSignalsTest(unittest.TestCase):
         plan = self._plan(held=["TAIL"])
         self.assertEqual(sorted(_by_symbol(plan)), ["LOW", "MID", "TAIL", "TOP"])
 
-    def test_unverified_new_names_cannot_be_bought(self):
+    def test_unverified_new_names_are_bought_at_a_reduced_expected_return(self):
+        """LLM이 아직 보지 않은 종목도 factor대로 담되 기대수익을 줄인다 — 하루 분석 수가 편입 가능 수가 되지 않게."""
         top = _by_symbol(plan := self._plan(views={}))["TOP"]
+        verified = _by_symbol(self._plan(views={}, policy=AlphaPolicy(candidate_count=3, unverified_entry_scale=1.0)))["TOP"]
+        self.assertIsNone(top.constraint)
+        self.assertAlmostEqual(top.expected_return, 0.5 * verified.expected_return)
+        self.assertEqual(plan.reasons["TOP"], "UNVERIFIED_ENTRY_SCALED")
+
+    def test_strict_mode_still_blocks_unverified_new_names(self):
+        top = _by_symbol(plan := self._plan(views={}, policy=AlphaPolicy(candidate_count=3,
+                                                                         require_verified_entry=True)))["TOP"]
         self.assertEqual(top.constraint, CONSTRAINT_BLOCK_INCREASE)
         self.assertLessEqual(top.expected_return, 0.0)
         self.assertEqual(plan.reasons["TOP"], "UNVERIFIED_ENTRY_BLOCKED")
 
     def test_expired_view_does_not_verify(self):
         plan = self._plan(views={"TOP": _view("TOP", "open", 0.02, 0.6, days_ago=40)})
-        self.assertEqual(plan.reasons["TOP"], "UNVERIFIED_ENTRY_BLOCKED")
+        self.assertEqual(plan.reasons["TOP"], "UNVERIFIED_ENTRY_SCALED")
 
     def test_broken_thesis_forces_a_held_name_out_even_with_top_factor_score(self):
         plan = self._plan(held=["TOP"], views={**self.verified, "TOP": _view("TOP", "exit", -0.03, 0.3)})
@@ -142,7 +152,7 @@ class ExpectedReturnSignalsTest(unittest.TestCase):
         self.assertLessEqual(held.expected_return, 0.0)
 
     def test_champion_ml_moves_the_factor_prior_by_its_oos_confidence(self):
-        policy = AlphaPolicy(candidate_count=5, llm_tilt_weight=0.0, require_verified_entry=False)
+        policy = AlphaPolicy(candidate_count=5, llm_tilt_weight=0.0, require_verified_entry=False, unverified_entry_scale=1.0)
         plain = _by_symbol(self._plan(views={}, policy=policy))
         blended = expected_return_signals(
             self.scores, sigma_by_symbol=self.sigma, held_symbols=[], views={}, as_of_at=AS_OF, policy=policy,
@@ -159,7 +169,7 @@ class ExpectedReturnSignalsTest(unittest.TestCase):
         self.assertAlmostEqual(signals["MID"].expected_return, plain["MID"].expected_return)
 
     def test_ml_switched_off_for_ablation_leaves_the_factor_prior(self):
-        policy = AlphaPolicy(candidate_count=5, llm_tilt_weight=0.0, require_verified_entry=False, use_ml=False)
+        policy = AlphaPolicy(candidate_count=5, llm_tilt_weight=0.0, require_verified_entry=False, unverified_entry_scale=1.0, use_ml=False)
         plain = _by_symbol(self._plan(views={}, policy=policy))
         blended = _by_symbol(expected_return_signals(
             self.scores, sigma_by_symbol=self.sigma, held_symbols=[], views={}, as_of_at=AS_OF, policy=policy,
@@ -168,7 +178,7 @@ class ExpectedReturnSignalsTest(unittest.TestCase):
         self.assertEqual(blended["LOW"].expected_return, plain["LOW"].expected_return)
 
     def test_confidence_is_the_agreement_of_the_sources_not_the_llm_self_report(self):
-        policy = AlphaPolicy(candidate_count=5, llm_tilt_weight=0.0, require_verified_entry=False)
+        policy = AlphaPolicy(candidate_count=5, llm_tilt_weight=0.0, require_verified_entry=False, unverified_entry_scale=1.0)
         plan = expected_return_signals(
             self.scores, sigma_by_symbol=self.sigma, held_symbols=[], as_of_at=AS_OF, policy=policy,
             views={"TOP": _view("TOP", "open", 0.02, 0.6, confidence=0.1)},

@@ -123,7 +123,9 @@ confidence, 논지 상태, 제약 하나, 근거(`alpha_signals` metadata)뿐이
 | positive | `thesis` = positive이고 수치도 상승 | 숫자가 양수일 때만 논지 쪽으로 `0.25 × 논지 신뢰도` 이동(±1σ 절단) |
 | neutral | 그 외 | 숫자 기대수익 그대로 |
 
-- 보유하지 않은 종목은 유효한 논지가 있어야 새로 담는다(`UNVERIFIED_ENTRY_BLOCKED`). 품질 기준에서 떨어진 종목은 늘리지 못한다.
+- 보유하지 않은 종목에 유효한 논지가 없으면 기대수익을 절반으로 줄여 담는다(`UNVERIFIED_ENTRY_SCALED`, `unverified_entry_scale`).
+  LLM은 본 종목의 거부권(부정·붕괴 논지)으로 남는다. 엄격 모드(`require_verified_entry=True`)는 편입을 막는다
+  (`UNVERIFIED_ENTRY_BLOCKED`). 품질 기준에서 떨어진 종목은 늘리지 못한다.
 - **대상은 품질 기준 통과 factor 상위 40종목(`candidate_count`) + 보유 종목**이다. 이 숫자는 투자 대상이 아니라
   공분산·비용 조회 규모를 묶는 계산 한도다. 점수·변동성을 모르는 보유는 고정한다.
 

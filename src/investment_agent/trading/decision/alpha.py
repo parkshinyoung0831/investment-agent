@@ -59,7 +59,7 @@ from investment_agent.trading.portfolio.optimizer import (
     ExpectedReturnSignal,
 )
 
-ALPHA_VERSION = "factor-ml-thesis-alpha-v2"
+ALPHA_VERSION = "factor-ml-thesis-alpha-v3"
 # 순위 끝단의 z가 무한대로 가지 않게 백분위를 자른다(±2.05σ).
 _PERCENTILE_CLIP = 0.02
 Z_SCORE_METHODS = ("clipped_percentile", "blom")
@@ -84,7 +84,10 @@ class AlphaPolicy:
     candidate_count: int = 40
     view_valid_days: int = 28
     llm_tilt_weight: float = 0.25
-    require_verified_entry: bool = True
+    # 논지가 없는 신규 편입을 막을지. 막으면 하루 LLM 예산(분석 종목 수)이 곧 편입 가능 종목 수가 돼 현금이 남는다.
+    # 기본은 막지 않고 기대수익을 `unverified_entry_scale`만큼 줄여 담는다 — LLM은 본 종목의 거부권으로 남는다.
+    require_verified_entry: bool = False
+    unverified_entry_scale: float = 0.5
     # Ablation 스위치. 운영 기본값은 둘 다 켜짐이다.
     use_ml: bool = True
     use_thesis: bool = True
@@ -100,6 +103,8 @@ class AlphaPolicy:
             raise ValueError("alpha windows must be positive")
         if not 0 <= self.llm_tilt_weight <= 1:
             raise ValueError("llm_tilt_weight must be in [0, 1]")
+        if not 0 <= self.unverified_entry_scale <= 1:
+            raise ValueError("unverified_entry_scale must be in [0, 1]")
         if self.z_score_method not in Z_SCORE_METHODS:
             raise ValueError(f"z_score_method must be one of {Z_SCORE_METHODS}")
 
@@ -287,10 +292,14 @@ def expected_return_signals(
             weight = policy.llm_tilt_weight * view.confidence
             expected = expected + weight * (view_return - expected)
             reason = "THESIS_CONFIRMED_TILT" if reason in {"FACTOR_BASE", "FACTOR_ML_BASE"} else reason
-        elif not valid and symbol not in held and policy.require_verified_entry and policy.use_thesis:
-            constraint = CONSTRAINT_BLOCK_INCREASE
-            expected = min(expected, 0.0)
-            reason = "UNVERIFIED_ENTRY_BLOCKED"
+        elif not valid and symbol not in held and policy.use_thesis:
+            if policy.require_verified_entry:
+                constraint = CONSTRAINT_BLOCK_INCREASE
+                expected = min(expected, 0.0)
+                reason = "UNVERIFIED_ENTRY_BLOCKED"
+            elif expected > 0 and policy.unverified_entry_scale < 1.0:
+                expected *= policy.unverified_entry_scale
+                reason = "UNVERIFIED_ENTRY_SCALED"
         confidence = source_agreement(expected, directions=(_direction(prior), _direction(ml_return), thesis_direction))
         signals.append(ExpectedReturnSignal(
             symbol=symbol, expected_return=float(expected), confidence=float(confidence), risk_score=0.5,

@@ -845,7 +845,7 @@ Level 3 앞에는 이미 결정론 깔때기가 있다(`candidates.py`, `candida
 
 ## 43. LLM 판단은 편입 게이트다 — 비용 절감이 포트폴리오를 바꾼다
 
-`AlphaPolicy.require_verified_entry=True`이므로 **유효한 논지가 없는 미보유 종목은 기대수익이 0 이하로 깎이고 편입이 막힌다.** 2025 재현에서 논지가 0건이었던 `factor_ml_thesis`는 1년 내내 현금 100%였다 [실측].
+운영 기본은 `require_verified_entry=False`, `unverified_entry_scale=0.5`다 — **유효한 논지가 없는 미보유 종목은 기대수익을 절반으로 줄여 담는다.** 막으면(엄격 모드) 하루 LLM 분석 수가 곧 편입 가능 종목 수가 된다: 2025 재현에서 논지가 0건이었던 `factor_ml_thesis`는 1년 내내 현금 100%였고 [실측], 첫 운영 목표도 논지 검증 전 차단으로 현금 86%였다.
 
 즉 Deep LLM 호출을 건너뛰는 것은 "비용을 아끼는 것"이 아니라 **"그 종목을 그날 편입 후보에서 빼는 것"**이다. 이것이 escalation 설계의 첫 제약이다(§55.1).
 

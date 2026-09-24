@@ -55,7 +55,7 @@ from investment_agent.trading.risk.stress import STRESS_PROXIES, scenario_sensit
 
 log = get_logger(__name__)
 
-SYSTEM_TARGET_VERSION = "system-target-v5"
+SYSTEM_TARGET_VERSION = "system-target-v6"
 _PRICE_ROWS = 260
 # 보유하지 않은 후보는 벤치마크와 같은 창을 거의 다 채워야 한다(연휴·정지 며칠만 허용).
 _HISTORY_SLACK_ROWS = 5

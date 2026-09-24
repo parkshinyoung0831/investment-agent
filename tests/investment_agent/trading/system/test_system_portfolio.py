@@ -435,7 +435,7 @@ class SchedulerTest(unittest.TestCase):
 
 # ---------------------------------------------------------------- 실제 optimizer·RiskGate
 class BuildSystemTargetTest(unittest.TestCase):
-    """실제 optimizer·RiskGate로 끝까지: 검증된 상위 종목만 사고, 논지가 깨진 보유는 팔고, 한도를 지킨다."""
+    """실제 optimizer·RiskGate로 끝까지: 검증된 상위 종목을 더 담고, 논지가 깨진 보유는 팔고, 한도를 지킨다."""
 
     def test_end_to_end_without_any_account_snapshot(self):
         from investment_agent.trading.system.target import SystemPortfolioPolicy, build_system_target
@@ -486,7 +486,8 @@ class BuildSystemTargetTest(unittest.TestCase):
         self.assertFalse(target.proposal.metadata["ml_forecast"]["is_available"])
         self.assertEqual(target.plan.reasons["FFF"], "THESIS_BROKEN")
         self.assertAlmostEqual(weights.get("FFF", 0.0), 0.0)            # 논지가 깨진 보유는 청산
-        self.assertAlmostEqual(weights.get("CCC", 0.0), 0.0)            # 검증 안 된 신규는 못 산다
+        # 검증 안 된 신규는 기대수익을 줄여 담는다 — 검증된 상위 종목보다 많이 담지 않는다.
+        self.assertLessEqual(weights.get("CCC", 0.0), weights.get("AAA", 0.0) + 1e-9)
         self.assertGreater(weights.get("AAA", 0.0), 0.0)                # 검증된 상위 종목은 산다
         self.assertTrue(all(weight <= 0.10 + 1e-6 for symbol, weight in weights.items() if symbol != "CASH"))
         self.assertTrue(math.isclose(sum(weights.values()), 1.0, abs_tol=1e-9))
@@ -497,7 +498,7 @@ class BuildSystemTargetTest(unittest.TestCase):
         trace = _stage_trace(target, current={"FFF": 0.1, "CASH": 0.9})
         self.assertEqual("THESIS_BROKEN", trace["securities"]["FFF"]["reason"])
         self.assertEqual((0.1, 0.0), (trace["securities"]["FFF"]["before"], trace["securities"]["FFF"]["approved"]))
-        self.assertEqual("UNVERIFIED_ENTRY_BLOCKED", trace["securities"]["CCC"]["reason"])
+        self.assertEqual("UNVERIFIED_ENTRY_SCALED", trace["securities"]["CCC"]["reason"])
         self.assertIsNotNone(trace["securities"]["AAA"]["prior"])
 
     def test_the_optimizer_respects_max_positions_instead_of_the_gate_cutting_to_cash(self):
