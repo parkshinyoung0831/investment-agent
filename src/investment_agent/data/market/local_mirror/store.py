@@ -9,7 +9,7 @@ data/local/mirror/
   actions.parquet      market.actions_daily (배당·분할)
 ```
 
-운영 DB는 최근 7년만 보관한다. 그보다 오래된 봉·기업행위는 `market_history/yahoo/<security_id>/daily.parquet`
+운영 DB의 가격 이력은 적재했던 백필 창만큼이다. 그보다 오래된 봉·기업행위는 `market_history/yahoo/<security_id>/daily.parquet`
 (`commands/archive_long_history`)에서 읽을 때 채운다 — 종목마다 사본의 첫 날짜보다 앞선 날만 쓰므로 두 원천이
 겹치는 날은 언제나 운영 DB 값이다. 사본 파일 자체에는 섞지 않는다(사본은 Supabase의 복사본이다).
 

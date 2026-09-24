@@ -25,6 +25,13 @@ SEC exchange master의 회사명은 새 entity를 **처음 만들 때만 쓰는 
 오늘 수집할 ticker의 gate로만 사용한다. 따라서 `historical backtest의 universe로 대체할 수`
 없고, 하류 Python reader는 `select_security_profiles()`를 통해 entity를 조인한다.
 
+코드 catalog 두 개가 저장 표로 풀 수 없는 신원 연결을 선언한다.
+
+- `domain/ticker_renames.py`: 과거 멤버십 ticker → 지금 ticker(개명). 재현이 과거 멤버의 가격을 찾는다.
+- `domain/predecessors.py`: 지주회사 재편으로 바뀐 현재 CIK → 이전 제출자 CIK. 재무 읽기와 이력 백필이
+  이전 제출자의 공시를 같은 종목으로 이어 받는다(XOM·BLK·BG·FERG·PSKY). 이전 제출자도 `entities` 행이
+  있어야 재무를 저장할 수 있다.
+
 ## 실행 흐름
 
 ```text

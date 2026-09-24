@@ -1,7 +1,8 @@
 """과거 S&P 500 멤버의 긴 일봉 이력을 로컬 archive에만 받는다.
 
-운영 DB(`market.prices_daily`)는 최근 7년만 보관한다(`domain/retention.py`). 과거 재현·ML 학습은 그보다 긴
-이력이 필요하므로, provider 원본을 `market_history/yahoo/<security_id>/daily.parquet`에 받아 두고
+운영 DB(`market.prices_daily`)의 가격 이력은 적재했던 백필 창만큼이다(지금 2019-09부터). 과거 재현·ML 학습은
+그보다 긴 이력이 필요하다. Supabase Free 용량을 쓰지 않도록 provider 원본을
+`market_history/yahoo/<security_id>/daily.parquet`에 받아 두고
 로컬 사본(`local_mirror`)이 운영 DB 창보다 오래된 날짜를 거기서 채운다. **Supabase에 쓰지 않는다.**
 
 대상은 로컬 사본의 멤버십 구간 전체(2015-03 이후 S&P 500에 한 번이라도 들었던 종목)와 참조 ETF다.

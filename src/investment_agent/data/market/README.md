@@ -37,6 +37,7 @@ python -m investment_agent.data.market.commands.market_daily
 python -m investment_agent.data.market.commands.market_backfill
 python -m investment_agent.data.market.commands.market_backfill --scope all-current
 python -m investment_agent.data.market.commands.sync_local_mirror
+python -m investment_agent.data.market.commands.archive_long_history   # 2014년~ 과거 멤버 일봉, 로컬 archive에만
 ```
 
 로컬 계산은 [local_mirror/](local_mirror/README.md)의 Parquet 사본을 먼저 읽는다. `sync_local_mirror`는
@@ -48,6 +49,11 @@ Supabase의 securities·S&P 500 멤버십·일봉·배당·분할을 읽기 전�
 행 존재만 보면 백필에서 빠져 이력이 며칠뿐인 채로 남는다. 그런 종목 하나가 System 목표 전체의 공분산 창을
 막는다. 실제로 이력이 짧은 분사 종목도 대상이 되지만 다시 받아도 같은 값이다. 지수를 나간 과거 멤버처럼
 추적 대상이 아닌 종목은 `--tickers`로 받는다.
+
+운영 DB의 가격 이력은 적재했던 백필 창만큼이다(지금 2019-09부터). 과거 재현·ML 학습이 쓰는 더 긴 이력은
+`archive_long_history`가 2015-03 이후 S&P 500 멤버 전체와 참조 ETF의 2014년부터 일봉을 archive에만 받고,
+로컬 사본이 읽을 때 종목마다 사본 첫 날짜 전의 봉·배당·분할을 거기서 채운다(겹치는 날은 운영 DB 값).
+상장폐지·인수 종목은 provider가 이력을 주지 않아 `unavailable`로 센다.
 
 로컬 사본은 추적 종목·멤버십 종목·기준 종목의 가격을 복사한다. 과거 멤버십 행은 신원 미확인 자리표시
 증권을 가리킬 수 있어(같은 ticker), 멤버의 ticker를 확인된 증권으로도 풀어 그 가격을 함께 복사한다.
