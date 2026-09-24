@@ -227,31 +227,29 @@ class ResearchStore:
     def _write_parquet(connection: Any, table: str, target: Path) -> None:
         """같은 파일시스템의 임시 파일에 쓴 뒤 원자 교체한다.
 
-        Windows에서는 방금 만든 임시 파일을 백신 실시간 검사가 짧게 잠가, DuckDB의 내부
-        rename(COPY 문 자체가 하는 것)이 "액세스가 거부되었습니다"로 실패할 때가 있다.
-        디스크 내용이 아니라 타이밍 문제라 몇 번 안에 저절로 풀린다 — 재시도한다.
+        Windows에서는 방금 만든 임시 파일을 백신 실시간 검사가 짧게 잠가 쓰기가 "액세스가
+        거부되었습니다"로 실패할 때가 있다. 타이밍 문제라 몇 번 안에 풀린다 — 재시도한다.
+        파일은 DuckDB `COPY`가 아니라 pyarrow로 쓴다. 호출자는 트랜잭션 안에 있고, 그 안에서
+        `COPY`가 한 번 실패하면 트랜잭션 전체가 중단돼 재시도가 전부 같은 오류로 죽는다.
         """
+        import pyarrow.parquet as pq
+
         target.parent.mkdir(parents=True, exist_ok=True)
+        rows = connection.execute(f"SELECT * FROM {table}").fetch_arrow_table()
         handle = tempfile.NamedTemporaryFile(
             prefix=target.stem + ".", suffix=".parquet", dir=target.parent, delete=False
         )
         temporary = Path(handle.name)
         handle.close()
-        escaped = temporary.resolve().as_posix().replace("'", "''")
         try:
             attempts = 5
             for attempt in range(1, attempts + 1):
                 try:
-                    connection.execute(
-                        f"COPY {table} TO '{escaped}' (FORMAT PARQUET, COMPRESSION ZSTD)"
-                    )
+                    pq.write_table(rows, temporary, compression="zstd")
                     break
-                except duckdb.IOException:
+                except OSError:
                     if attempt == attempts:
                         raise
-                    # 실패한 시도가 대상 경로에 부분 파일을 남겼을 수 있다 — 다음 COPY가
-                    # "파일이 이미 있다"로 다시 틀리지 않게 지운다.
-                    temporary.unlink(missing_ok=True)
                     time.sleep(0.2 * attempt)
             # Windows는 다른 프로세스(하네스의 판단·feature 읽기)가 연 파일을 교체하지 못한다. 읽기는 짧으니 기다린다.
             for attempt in range(1, _REPLACE_ATTEMPTS + 1):

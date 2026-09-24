@@ -9,26 +9,27 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import duckdb
 
 from investment_agent.research.storage.repository import ResearchStore
 
 
-class _FlakyConnection:
-    """앞 N번은 IOException을 던지고 그 뒤엔 진짜 연결에 위임한다."""
+def _flaky_writes(fail_times: int):
+    """앞 N번은 백신 잠금처럼 OSError를 던지고 그 뒤엔 진짜 쓰기에 위임한다."""
+    import pyarrow.parquet as pq
 
-    def __init__(self, real, *, fail_times: int):
-        self._real = real
-        self._fail_times = fail_times
-        self.attempts = 0
+    real = pq.write_table
+    calls = {"n": 0}
 
-    def execute(self, sql, *args, **kwargs):
-        if sql.strip().upper().startswith("COPY"):
-            self.attempts += 1
-            if self.attempts <= self._fail_times:
-                raise duckdb.IOException("IO Error: Could not move file: 액세스가 거부되었습니다.")
-        return self._real.execute(sql, *args, **kwargs)
+    def write(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] <= fail_times:
+            raise OSError(13, "액세스가 거부되었습니다")
+        return real(*args, **kwargs)
+
+    return mock.patch.object(pq, "write_table", side_effect=write), calls
 
 
 class WriteParquetRetryTest(unittest.TestCase):
@@ -38,21 +39,25 @@ class WriteParquetRetryTest(unittest.TestCase):
         self.connection = duckdb.connect(":memory:")
         self.addCleanup(self.connection.close)
         self.connection.execute("CREATE TABLE t AS SELECT 1 AS x")
+        # 운영 호출자는 모두 트랜잭션 안에서 쓴다. 실패가 트랜잭션을 중단시키면 재시도가 무의미하다.
+        self.connection.execute("BEGIN TRANSACTION")
 
-    def test_a_transient_failure_is_retried_and_succeeds(self) -> None:
+    def test_a_transient_failure_inside_a_transaction_is_retried_and_commits(self) -> None:
         target = Path(self.temp.name) / "out.parquet"
-        flaky = _FlakyConnection(self.connection, fail_times=2)
-        ResearchStore._write_parquet(flaky, "t", target)
-        self.assertTrue(target.is_file())
-        self.assertEqual(flaky.attempts, 3)
+        patcher, calls = _flaky_writes(2)
+        with patcher, mock.patch("investment_agent.research.storage.repository.time.sleep"):
+            ResearchStore._write_parquet(self.connection, "t", target)
+        self.connection.execute("COMMIT")
+        self.assertEqual(3, calls["n"])
+        self.assertEqual([(1,)], duckdb.sql(f"SELECT x FROM read_parquet('{target.as_posix()}')").fetchall())
 
     def test_it_gives_up_and_raises_after_repeated_failures(self) -> None:
         target = Path(self.temp.name) / "out.parquet"
-        flaky = _FlakyConnection(self.connection, fail_times=99)
-        with self.assertRaises(duckdb.IOException):
-            ResearchStore._write_parquet(flaky, "t", target)
+        patcher, _ = _flaky_writes(99)
+        with patcher, mock.patch("investment_agent.research.storage.repository.time.sleep"), \
+                self.assertRaises(OSError):
+            ResearchStore._write_parquet(self.connection, "t", target)
         self.assertFalse(target.exists())
-
 
 
 class InterruptedWriteLeftoverTest(unittest.TestCase):
