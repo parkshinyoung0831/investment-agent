@@ -70,6 +70,7 @@ Actions secrets/variables(CI)에 주입하며, 이 파일에는 이름·용도·
 | `SOURCE_CONCLUSION` | `workflow_failure`가 보고할 상류 워크플로 결론(기본 failure). 워크플로가 주입한다 |
 | `AI_INVESTOR_TRADINGAGENTS_PROVIDER` | TradingAgents provider 이름. Ollama는 `ollama` |
 | `AI_INVESTOR_TRADINGAGENTS_NEWS_VENDOR` | live News upstream vendor. 기본 `yfinance` |
+| `AI_INVESTOR_AGENT_GRAPH` | 분석가 뒤 판단 그래프. 기본 `compact`(투자위원회 1회, 종목당 호출 약 6번), `full`은 토론·Trader·Risk 토론·PM(약 13번) |
 | `ALPHA_VANTAGE_API_KEY` | News vendor가 `alpha_vantage`이면 필수 |
 | `AI_INVESTOR_EXTERNAL_NEWS_SOCIAL` | TradingAgents live 외부 뉴스·소셜 전체 kill switch |
 | `AI_INVESTOR_EXTERNAL_SOCIAL_VENDORS` | 사용 권한이 준비된 소셜 provider 목록. 기본 비활성; Reddit RSS는 미지원 |

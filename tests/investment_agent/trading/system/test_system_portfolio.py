@@ -417,7 +417,7 @@ class SchedulerTest(unittest.TestCase):
         stages = {stage.stage_id for definition in registry.definitions() for stage in definition.stages}
         self.assertFalse(stages & {"run_books", "select_signal", "portfolio"})
 
-    def test_local_mirror_and_weekly_rl_research_are_scheduled(self):
+    def test_local_mirror_is_scheduled_and_unread_rl_research_is_not(self):
         from types import SimpleNamespace
         from investment_agent.operations.commands.investment_harness import build_registry
 
@@ -429,7 +429,8 @@ class SchedulerTest(unittest.TestCase):
         registry = build_registry(adapters=SimpleNamespace(**{name: handler for name in names}))
         definitions = {definition.job_id: definition for definition in registry.definitions()}
         self.assertEqual(definitions["local_mirror"].interval_seconds, 2 * 60 * 60)
-        self.assertEqual(definitions["continuous_learning"].interval_seconds, 7 * 24 * 60 * 60)
+        # RL 연구는 판단 경로가 읽지 않아 정기 실행하지 않는다(명령으로만 돌린다).
+        self.assertNotIn("continuous_learning", definitions)
 
 
 # ---------------------------------------------------------------- 실제 optimizer·RiskGate

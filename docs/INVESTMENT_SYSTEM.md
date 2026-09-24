@@ -231,8 +231,10 @@ flowchart TD
 
 ## TradingAgents와 LLM의 역할
 
-저장소 소유 `decision/agents/orchestrator.py`가 Market → Fundamentals → News → Sentiment → Macro,
-Bull/Bear → Research Manager → Trader → Risk 3자 → Portfolio Manager를 실행한다.
+저장소 소유 `decision/agents/orchestrator.py`가 Market → Fundamentals → News → Sentiment → Macro 분석가 뒤에
+투자위원회 호출 한 번(`agents/committee.py`, 강세 논거·약세 논거·결론)을 실행한다 — 분석가 포함 종목당 호출 약
+6번이다. Bull/Bear → Research Manager → Trader → Risk 3자 → Portfolio Manager 전체 그래프(약 13번)는
+`AI_INVESTOR_AGENT_GRAPH=full`로 고른다. 결과 dict 모양이 같아 구조화 호출은 그대로다.
 외부 TradingAgents/LangGraph runtime이나 설치 패키지 monkey patch는 사용하지 않는다.
 자연어 토론은 설명 자료이지 주문 계약이 아니다. 최종 parser는 다음과 같은 구조화 필드만
 허용한다.

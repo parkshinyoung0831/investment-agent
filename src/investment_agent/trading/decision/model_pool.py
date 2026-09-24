@@ -24,10 +24,10 @@ from investment_agent.platform.external_usage import (
     reserve_provider_call,
 )
 
-# 실측: 한 종목이 researcher·시장/펀더멘털/거시 애널리스트·회의론자·PM에 더해
-# bull/bear 토론·트레이더·리스크 토론까지 거치면 LLM 호출이 10건을 넘는다.
-# 넉넉하게 잡아야 "예약은 됐는데 중간에 그 모델의 실제 한도가 먼저 바닥나는" 일이 줄어든다.
-CALLS_PER_TICKER_ESTIMATE = 15
+# 기본 판단 그래프(compact): 분석가 4명(거시는 회차 안에서 공유) + 투자위원회 1 + 구조화 1 = 6건.
+# 인용 재요청·재시도 여유로 2건을 더한다. 넉넉하게 잡아야 "예약은 됐는데 중간에 그 모델의 실제 한도가 먼저
+# 바닥나는" 일이 줄어든다. 전체 그래프(`AI_INVESTOR_AGENT_GRAPH=full`)는 약 13건이라 이 값으로는 모자란다.
+CALLS_PER_TICKER_ESTIMATE = 8
 
 _ENV_KEYS = (
     "AI_INVESTOR_PROVIDER",

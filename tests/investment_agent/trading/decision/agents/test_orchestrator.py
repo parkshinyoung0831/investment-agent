@@ -29,6 +29,8 @@ class _FakeClient:
             return {"plan": "trader plan text"}
         if name == "tradingagents_portfolio_manager":
             return {"stance": "bullish", "decision": "final decision text"}
+        if name == "tradingagents_investment_committee":
+            return {"bull_case": "bull text", "bear_case": "bear text", "stance": "bearish", "decision": "bear wins"}
         raise AssertionError(f"unexpected task_name {name}")
 
 
@@ -96,6 +98,40 @@ class RunLocalGraphTest(unittest.TestCase):
         )]
         self.assertEqual(len(bull_bear_calls), 4)
         self.assertEqual(len(risk_calls), 6)
+
+
+class RunCompactGraphTest(unittest.TestCase):
+    def _run(self, client):
+        counts: dict[str, int] = {}
+        return orchestrator.run_compact_graph(
+            client, ticker="AAPL", curr_date="2026-09-16",
+            fetch_market_evidence=_counting_fetcher("market evidence", counts, "market"),
+            fetch_fundamentals_evidence=_counting_fetcher("fundamentals evidence", counts, "fundamentals"),
+            fetch_news_evidence=_counting_fetcher("news evidence", counts, "news"),
+            fetch_sentiment_evidence=_counting_fetcher("sentiment evidence", counts, "sentiment"),
+            fetch_macro_evidence=_counting_fetcher("macro evidence", counts, "macro"),
+        )
+
+    def test_one_committee_call_follows_the_analysts(self):
+        """분석가 5명 뒤 판단은 호출 1번이다(전체 그래프는 8번)."""
+        client = _FakeClient()
+        self._run(client)
+        names = [call["task_name"] for call in client.calls]
+        self.assertEqual(5, sum(name.endswith("_analyst") for name in names))
+        self.assertEqual(["tradingagents_investment_committee"], [n for n in names if not n.endswith("_analyst")])
+
+    def test_the_result_keeps_the_full_graph_shape_for_structuring(self):
+        result = self._run(_FakeClient())
+        full = orchestrator.run_local_graph(
+            _FakeClient(), ticker="AAPL", curr_date="2026-09-16",
+            fetch_market_evidence=lambda: "m", fetch_fundamentals_evidence=lambda: "f",
+            fetch_news_evidence=lambda: "n", fetch_sentiment_evidence=lambda: "s", fetch_macro_evidence=lambda: "x",
+        )
+        self.assertEqual(set(full), set(result))
+        self.assertEqual("bear wins", result["final_trade_decision"])
+        self.assertEqual("bearish: bear wins", result["risk_debate_state"]["judge_decision"])
+        self.assertIn("Bull: bull text", result["investment_debate_state"]["history"])
+        self.assertIn("Bear: bear text", result["investment_debate_state"]["history"])
 
 
 if __name__ == "__main__":

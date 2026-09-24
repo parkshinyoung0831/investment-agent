@@ -206,17 +206,18 @@ class AnalysisBudgetTest(unittest.TestCase):
         from pathlib import Path
         from unittest import mock
         from investment_agent.platform.external_usage import reserve_provider_call
-        from investment_agent.trading.decision.model_pool import remaining_ticker_budget
+        from investment_agent.trading.decision.model_pool import CALLS_PER_TICKER_ESTIMATE, remaining_ticker_budget
 
         pool = (_candidate("m1", api_key_env="BUDGET_KEY", daily_request_limit=150),
                 _candidate("m2", api_key_env="BUDGET_MISSING", daily_request_limit=150))
         with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, {"BUDGET_KEY": "k"}):
             ledger = Path(directory) / "usage.sqlite3"
-            self.assertEqual(remaining_ticker_budget(pool, ledger_path=ledger), 10)
+            full = 150 // CALLS_PER_TICKER_ESTIMATE
+            self.assertEqual(remaining_ticker_budget(pool, ledger_path=ledger), full)
             for _ in range(3):
-                reserve_provider_call(ledger, provider="m1", cap=10)
-            self.assertEqual(remaining_ticker_budget(pool, ledger_path=ledger), 7)
-            self.assertEqual(remaining_ticker_budget(pool, ledger_path=ledger), 7)
+                reserve_provider_call(ledger, provider="m1", cap=full)
+            self.assertEqual(remaining_ticker_budget(pool, ledger_path=ledger), full - 3)
+            self.assertEqual(remaining_ticker_budget(pool, ledger_path=ledger), full - 3)
 
     def test_harness_passes_a_runtime_budget_below_its_timeout(self):
         from datetime import datetime, timezone
