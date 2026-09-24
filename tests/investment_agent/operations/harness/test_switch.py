@@ -155,6 +155,39 @@ class TestHarnessSwitch(unittest.TestCase):
         parsed = parse_env_file(self.root_dir)
         self.assertEqual(parsed["TOSS_LIVE_ENABLED"], "true")
 
+    def test_one_trading_switch_moves_both_gates_together(self) -> None:
+        """사람이 쓰는 스위치는 하나다. 킬스위치와 실매매 플래그가 따로 놀지 않는다."""
+        from investment_agent.operations.harness.switch import START_TRADING_CONFIRMATION, set_trading
+
+        (self.root_dir / ".env").write_text("TRADING_KILL_SWITCH=on\nTOSS_LIVE_ENABLED=false\n", encoding="utf-8")
+        refused = set_trading(True, root_dir=self.root_dir, state_dir=self.state_dir)
+        self.assertFalse(refused["success"])
+        self.assertEqual(("on", "false"), (parse_env_file(self.root_dir)["TRADING_KILL_SWITCH"],
+                                           parse_env_file(self.root_dir)["TOSS_LIVE_ENABLED"]))
+
+        armed = set_trading(True, root_dir=self.root_dir, state_dir=self.state_dir, confirm=START_TRADING_CONFIRMATION)
+        self.assertTrue(armed["success"])
+        self.assertEqual(("off", "true"), (parse_env_file(self.root_dir)["TRADING_KILL_SWITCH"],
+                                           parse_env_file(self.root_dir)["TOSS_LIVE_ENABLED"]))
+
+        disarmed = set_trading(False, root_dir=self.root_dir, state_dir=self.state_dir)
+        self.assertTrue(disarmed["success"])
+        self.assertEqual(("on", "false"), (parse_env_file(self.root_dir)["TRADING_KILL_SWITCH"],
+                                           parse_env_file(self.root_dir)["TOSS_LIVE_ENABLED"]))
+
+    def test_the_trading_switch_refuses_to_arm_during_an_emergency_lockdown(self) -> None:
+        from investment_agent.execution.safety.lockdown import get_lockdown_path
+        from investment_agent.operations.harness.switch import START_TRADING_CONFIRMATION, set_trading
+
+        (self.root_dir / ".env").write_text("TRADING_KILL_SWITCH=on\nTOSS_LIVE_ENABLED=false\n", encoding="utf-8")
+        lockdown = get_lockdown_path(self.state_dir)
+        lockdown.parent.mkdir(parents=True, exist_ok=True)
+        lockdown.write_text("{}", encoding="utf-8")
+        result = set_trading(True, root_dir=self.root_dir, state_dir=self.state_dir, confirm=START_TRADING_CONFIRMATION)
+        self.assertFalse(result["success"])
+        self.assertIn("lockdown", result["message"])
+        self.assertEqual("on", parse_env_file(self.root_dir)["TRADING_KILL_SWITCH"])
+
     def test_start_harness_service(self) -> None:
         state = HarnessState(
             process_id=None,

@@ -83,9 +83,8 @@ Actions secrets/variables(CI)에 주입하며, 이 파일에는 이름·용도·
 | `AI_INVESTOR_INTELLIGENCE_PARQUET_ROOT` | Intelligence 뉴스·소셜 본문 Parquet 루트 (기본 `data/local/intelligence/parquet`) |
 | `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` / `REDDIT_USER_AGENT` | Reddit 수집 자격증명. 없으면 소셜 수집을 건너뛴다 |
 | `AI_INVESTOR_ARTIFACT_DIR` | TradingAgents cache/report와 선택적 raw 저장 루트 |
-| `LIVE_ENABLED` | broker-independent live opt-in. DB durable control/permit와 AND 결합, 기본 `false` |
 | `TOSS_CLIENT_ID`, `TOSS_CLIENT_SECRET`, `TOSS_ACCOUNT_SEQ` | 허용 IP가 등록된 execution 전용 장비. 분석·학습 환경에는 주입 금지 |
-| `TOSS_LIVE_ENABLED` | Toss 주문 생성 전역 opt-in. 기본 `false`; 모델 승격이나 서비스 설치가 자동으로 바꾸지 않음. **켜는 쪽은 `--confirm ENABLE_TOSS_LIVE`가 있어야 `harness_switch`가 쓴다**(끄는 쪽은 문구 없이 즉시) |
+| `TOSS_LIVE_ENABLED` | Toss 주문 생성 전역 opt-in. 기본 `false`. 사람은 보통 `harness_switch --trading on/off`로 킬스위치와 함께 바꾼다; 모델 승격이나 서비스 설치가 자동으로 바꾸지 않음. **켜는 쪽은 `--confirm ENABLE_TOSS_LIVE`가 있어야 `harness_switch`가 쓴다**(끄는 쪽은 문구 없이 즉시) |
 | `TOSS_MIN_ORDER_NOTIONAL_USD`, `TOSS_MAX_ORDER_NOTIONAL_USD`, `TOSS_MAX_DAILY_NOTIONAL_USD`, `TOSS_MAX_DAILY_ORDERS` | 주문별 최소·최대와 일별 제출 한도. 승인 요청·실행 재검증·미리보기가 같은 값(`planning_notionals`)으로 주문표를 계획한다 — 배치 합계 한도는 일 한도와 같다 |
 | `TOSS_MAX_DAILY_LOSS_USD`, `TOSS_MAX_DRAWDOWN_FRACTION`, `TOSS_ALLOW_MARKET_ORDERS` | 실시간 손실·drawdown·시장가 차단. 시장가는 기본 `false` |
 | `TRADING_KILL_SWITCH` | 로컬 하네스의 신규 live 흐름 전역 차단. 미설정·오타도 `on`으로 해석. **`off`(주문 허용)로 바꾸려면 `--confirm ALLOW_TRADING_ORDERS`가 필요하다**(`on`으로 막는 쪽은 문구 없이 즉시) |

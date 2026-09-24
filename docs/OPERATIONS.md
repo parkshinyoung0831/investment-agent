@@ -80,8 +80,12 @@ SUPABASE_SERVICE_KEY=
 AI_INVESTOR_MODE=shadow
 TRADING_KILL_SWITCH=on
 TOSS_LIVE_ENABLED=false
-LIVE_ENABLED=false
 ```
+
+실매매는 스위치 하나로 켜고 끈다 — `harness_switch --trading on --confirm START_LIVE_TRADING`이
+`TRADING_KILL_SWITCH=off`와 `TOSS_LIVE_ENABLED=true`를 함께 쓰고, `--trading off`가 둘을 되돌린다. 비상 정지는
+`emergency_stop --kill`(해제 `--rearm`)이며 lockdown 중에는 `--trading on`이 거절된다. 승인 요청 카드는 두 상태 모두
+매번 가고, 꺼져 있으면 카드에 "승인해도 주문이 나가지 않음"이 적힌다.
 
 LLM Shadow에서만 provider 설정을 추가한다.
 

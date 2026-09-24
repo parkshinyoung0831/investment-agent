@@ -4,9 +4,13 @@
     # 1. 종합 상태 조회
     python -m investment_agent.operations.commands.harness_switch --status
 
-    # 2. 하네스 켜기 (기본: Shadow 모의투자, 백그라운드)
+    # 2. 하네스 켜기 (기본 approval_workflow: 분석 + 매번 승인 요청, 백그라운드)
     python -m investment_agent.operations.commands.harness_switch --on
-    python -m investment_agent.operations.commands.harness_switch --on --mode approval_workflow
+    python -m investment_agent.operations.commands.harness_switch --on --mode analysis_only
+
+    # 실매매 스위치 하나 (킬스위치·TOSS_LIVE_ENABLED를 함께 바꾼다)
+    python -m investment_agent.operations.commands.harness_switch --trading off
+    python -m investment_agent.operations.commands.harness_switch --trading on --confirm START_LIVE_TRADING
 
     # 3. 하네스 끄기 (모든 프로세스 완전 정지 + 락 정리)
     python -m investment_agent.operations.commands.harness_switch --off
@@ -39,9 +43,11 @@ from investment_agent.operations.harness.maintenance import (
 from investment_agent.operations.harness.switch import (
     ALLOW_ORDERS_CONFIRMATION,
     ENABLE_LIVE_CONFIRMATION,
+    START_TRADING_CONFIRMATION,
     get_harness_status,
     set_kill_switch,
     set_live_enabled,
+    set_trading,
     start_harness_service,
     stop_harness_service,
 )
@@ -115,14 +121,14 @@ def interactive_loop(state_dir: Path, root_dir: Path) -> int:
         _safe_print("  [1] 하네스 켜기 (분석 + 매번 Discord 승인 요청 · 실주문은 킬스위치·실매매 스위치가 결정) ⭐ 추천")
         _safe_print("  [2] 하네스 켜기 (승인된 주문도 실행하지 않음 / analysis_only)")
         _safe_print("  [3] 하네스 끄기 (OFF - 모든 프로세스 완전 정지 및 락 정리)")
-        _safe_print("  [4] 킬스위치 토글 (TRADING_KILL_SWITCH on <-> off)")
-        _safe_print("  [5] 실주문 토글 (TOSS_LIVE_ENABLED true <-> false)")
-        _safe_print("  [6] 정비 보류 토글 (걸면 하네스가 아예 기동하지 않음) 🛠")
+        _safe_print("  [4] 실매매 켜기/끄기 (킬스위치·TOSS_LIVE_ENABLED를 함께 바꾼다)")
+        _safe_print("  [5] 정비 보류 토글 (걸면 하네스가 아예 기동하지 않음) 🛠")
+        _safe_print("  비상 정지는 emergency_stop --kill (해제는 --rearm)")
         _safe_print("  [R] 새로고침")
         _safe_print("  [0] 나가기")
         _safe_print("")
         try:
-            choice = input("선택 [1/2/3/4/5/6/R/0]: ").strip()
+            choice = input("선택 [1/2/3/4/5/R/0]: ").strip()
         except (KeyboardInterrupt, EOFError):
             _safe_print("\n종료합니다.")
             return 0
@@ -144,38 +150,22 @@ def interactive_loop(state_dir: Path, root_dir: Path) -> int:
             input("\n계속하려면 Enter를 누르세요...")
         elif choice == "4":
             # 토글이 아니라 목표 상태를 받는다 — 화면을 잘못 읽으면 끄려다 켜게 된다.
-            blocked = status.trading_kill_switch in {"1", "on", "true", "yes"}
-            _safe_print(f"\n현재 킬스위치: {'ON (주문 차단)' if blocked else 'OFF (주문 허용)'}")
-            target = input("목표 상태를 입력하세요 (on=차단 / off=허용, 그 외는 취소): ").strip().lower()
+            armed = status.toss_live_enabled and status.trading_kill_switch not in {"1", "on", "true", "yes"}
+            _safe_print(f"\n현재 실매매: {'켜짐 (승인하면 주문이 나간다)' if armed else '꺼짐 (승인해도 주문이 나가지 않는다)'}")
+            target = input("목표 상태를 입력하세요 (on=켜기 / off=끄기, 그 외는 취소): ").strip().lower()
             if target not in {"on", "off"}:
                 _safe_print("취소했습니다. 바뀐 것이 없습니다.")
             else:
-                res = set_kill_switch(
-                    target, root_dir=root_dir,
+                res = set_trading(
+                    target == "on", root_dir=root_dir, state_dir=state_dir,
                     confirm=_ask_confirmation(
-                        ALLOW_ORDERS_CONFIRMATION,
-                        "신규 주문을 허용하는 변경입니다.",
-                    ) if target == "off" else None,
+                        START_TRADING_CONFIRMATION,
+                        "실제 돈으로 주문을 내는 경로를 켜는 변경입니다.",
+                    ) if target == "on" else None,
                 )
                 _safe_print(f"\n[변경] {res.get('message')}")
             input("\n계속하려면 Enter를 누르세요...")
         elif choice == "5":
-            live = status.toss_live_enabled
-            _safe_print(f"\n현재 실매매: {'TRUE (연동)' if live else 'FALSE (비활성)'}")
-            target = input("목표 상태를 입력하세요 (true=연동 / false=비활성, 그 외는 취소): ").strip().lower()
-            if target not in {"true", "false"}:
-                _safe_print("취소했습니다. 바뀐 것이 없습니다.")
-            else:
-                res = set_live_enabled(
-                    target == "true", root_dir=root_dir,
-                    confirm=_ask_confirmation(
-                        ENABLE_LIVE_CONFIRMATION,
-                        "실제 돈으로 주문을 내는 경로를 켜는 변경입니다.",
-                    ) if target == "true" else None,
-                )
-                _safe_print(f"\n[변경] {res.get('message')}")
-            input("\n계속하려면 Enter를 누르세요...")
-        elif choice == "6":
             if read_maintenance_hold(state_dir):
                 clear_maintenance_hold(state_dir=state_dir)
                 _safe_print("\n[변경] 정비 보류를 해제했습니다. 거래 킬스위치는 그대로입니다.")
@@ -230,9 +220,14 @@ def main(argv: list[str] | None = None) -> int:
         help="포그라운드 모드로 준비",
     )
     parser.add_argument(
+        "--trading",
+        choices=["on", "off"],
+        help=f"실매매 스위치 하나로 킬스위치·TOSS_LIVE_ENABLED를 함께 바꾼다. on은 --confirm {START_TRADING_CONFIRMATION}",
+    )
+    parser.add_argument(
         "--kill-switch",
         choices=["on", "off"],
-        help="TRADING_KILL_SWITCH 값 변경",
+        help="TRADING_KILL_SWITCH 값만 변경(고급). 보통은 --trading을 쓴다",
     )
     parser.add_argument(
         "--live-enabled",
@@ -309,6 +304,14 @@ def main(argv: list[str] | None = None) -> int:
         else:
             _safe_print(res["message"])
         return 0
+
+    if args.trading:
+        res = set_trading(args.trading == "on", root_dir=root_dir, confirm=args.confirm, state_dir=state_dir)
+        if args.json:
+            _safe_print(canonical_json(res))
+        else:
+            _safe_print(res.get("message", "완료"))
+        return 0 if res.get("success") else 1
 
     if args.kill_switch:
         res = set_kill_switch(args.kill_switch, root_dir=root_dir, confirm=args.confirm)

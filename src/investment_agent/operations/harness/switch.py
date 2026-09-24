@@ -451,6 +451,44 @@ def set_kill_switch(
     }
 
 
+START_TRADING_CONFIRMATION = "START_LIVE_TRADING"
+
+
+def set_trading(
+    enabled: bool, root_dir: Path | str | None = None, *, confirm: str | None = None,
+    state_dir: Path | str | None = None,
+) -> dict[str, Any]:
+    """사람이 쓰는 실매매 스위치 하나. 켜면 kill switch off + TOSS_LIVE_ENABLED=true, 끄면 그 반대다.
+
+    코드 안의 차단(kill switch·실매매 플래그·lockdown)은 그대로 여러 겹이다 — 사람이 둘을 따로 맞추다 한쪽만
+    바꾸는 일을 없앤다. 켜는 쪽은 확인 문구가 필요하고, 비상 정지(lockdown) 중이면 거절한다(해제는
+    `emergency_stop --rearm`, 사람이 따로 한다). 끄는 쪽은 문구 없이 즉시 적용된다.
+    """
+    if not enabled:
+        kill = set_kill_switch("on", root_dir=root_dir)
+        live = set_live_enabled(False, root_dir=root_dir)
+        success = bool(kill.get("success") and live.get("success"))
+        return {"success": success, "trading": False,
+                "message": "실매매를 껐습니다 (TRADING_KILL_SWITCH=on, TOSS_LIVE_ENABLED=false)."
+                if success else "실매매 끄기 일부 실패 — .env를 확인하세요."}
+    if confirm != START_TRADING_CONFIRMATION:
+        return {"success": False, "trading": False,
+                "message": f"거절: 실매매를 켜는 변경입니다. 확인 문구가 필요합니다 — --confirm {START_TRADING_CONFIRMATION}"}
+    if is_execution_locked_down(state_dir):
+        return {"success": False, "trading": False,
+                "message": "거절: 비상 정지(lockdown) 중입니다. 먼저 emergency_stop --rearm으로 해제하세요."}
+    live = set_live_enabled(True, root_dir=root_dir, confirm=ENABLE_LIVE_CONFIRMATION)
+    kill = set_kill_switch("off", root_dir=root_dir, confirm=ALLOW_ORDERS_CONFIRMATION)
+    success = bool(kill.get("success") and live.get("success"))
+    if not success:
+        # 반쯤 켜진 상태로 두지 않는다.
+        set_kill_switch("on", root_dir=root_dir)
+        set_live_enabled(False, root_dir=root_dir)
+    return {"success": success, "trading": success,
+            "message": "실매매를 켰습니다 (TRADING_KILL_SWITCH=off, TOSS_LIVE_ENABLED=true). 주문은 승인 카드마다 사람이 정합니다."
+            if success else "실매매 켜기 실패 — 두 스위치를 다시 끈 상태로 되돌렸습니다."}
+
+
 def set_live_enabled(
     enabled: bool, root_dir: Path | str | None = None, *, confirm: str | None = None,
 ) -> dict[str, Any]:

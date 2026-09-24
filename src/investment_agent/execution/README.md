@@ -123,7 +123,7 @@ Shadow와 연구용 Paper 단계는 주문 없는 분석·승격 증거에 사�
 
 - `TRADING_KILL_SWITCH=on`: 신규 live risk 차단
 - `TOSS_LIVE_ENABLED=false`: Toss live mutation 차단
-- `LIVE_ENABLED=false`: broker-independent live 차단
+- 사람은 두 값을 `harness_switch --trading on/off` 하나로 함께 바꾼다(켜기는 확인 문구, lockdown 중이면 거절).
 - 실주문은 무인 경로가 없다. `execute_toss_live`는 `--approval-id`를 반드시 받고,
   그 승인이 `approved`이고 `execution_mode='live'`일 때만 진행한다.
 - durable kill switch/lockdown: process restart 뒤에도 유지
