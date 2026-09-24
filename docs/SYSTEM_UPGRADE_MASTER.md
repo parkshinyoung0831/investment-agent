@@ -715,7 +715,7 @@ store 정체(P0-7)와 하네스 정지 때문이다. 재기동하면 이 수정�
 
 ### P0-9 채택된 ML 모델이 없다 — 운영 alpha에서 ML 몫은 0이다
 
-- **상태**: `OPEN` (고칠 결함이 아니라 알아야 할 사실. 채택은 사람의 행위)
+- **상태**: `OPEN` (고칠 결함이 아니라 알아야 할 사실. 채택·해제는 주간 `ml_challengers`가 자동으로 한다)
 - `artifacts/trading/ml_models/active_ml_model.json`이 존재하지 않는다. `champion_forecast`는
   "no adopted ML model artifact"를 돌려주고 ML 몫 c = 0이다. 2025 재현도 `ml_forecasts_applied=0`.
 - 따라서 문서가 기술하는 "factor + ML 결합"은 **현재 운영에서 factor 사전값 + LLM 논지**다.

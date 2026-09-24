@@ -76,7 +76,7 @@ flowchart TD
 | `system_portfolio` | 1시간 | `run_system_portfolio` | System NAV 평가·목표 갱신 |
 | `my_portfolio_follow` | 1분 | `select_target` → `follow` → `execution_intent` → `approval_request` → `approval_worker` → `notify_trades` | 실계좌 추종(승인 모드에서만) |
 | `system_evaluation` | 7일 | `evaluate_system` → `measure_factor_ic` | 최신 System artifact의 승격 증거(`system_evaluations`), factor IC(`factor_research`) |
-| `ml_challengers` | 7일 | `train_challengers` | ML 후보 학습·비교(채택은 사람) |
+| `ml_challengers` | 7일 | `train_challengers` | ML 후보 학습·비교, 기준 통과 시 자동 채택·순위 능력 상실 시 자동 해제 |
 | `continuous_learning` | 7일 | `retrain` | RL 연구 후보 |
 | `decision_experience` | 1일 | `build_decision_experiences` | 원본 판단의 결과를 학습 원장에 |
 | `investment_reporting` | 5분 | `update_performance` → `notify_reports` | 성과·보고 알림 |

@@ -1,8 +1,8 @@
 """학습된 ML artifact를 판단 경로가 읽는 채택 모델로 올린다.
 
 `ml_serving`은 `active_ml_model.json`이 있으면 그 모델을 TradingAgents 의견과 합친다.
-그 파일을 손으로 복사하면 검증 없이 아무 artifact나 판단에 들어가므로, 이 명령만이
-채택 경로다. 판정은 **OOS 날짜별 단면 IC** 기준이다 — RMSE가 좋아도 종목 순위를 못
+그 파일을 손으로 복사하면 검증 없이 아무 artifact나 판단에 들어가므로, 채택은 이 명령(수동)이나
+`ml_challengers`(주간 자동)가 같은 `check_adoptable`로만 한다. 판정은 **OOS 날짜별 단면 IC** 기준이다 — RMSE가 좋아도 종목 순위를 못
 맞히면 포트폴리오에는 쓸모가 없다.
 """
 from __future__ import annotations

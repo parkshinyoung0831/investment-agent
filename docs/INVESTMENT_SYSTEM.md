@@ -394,21 +394,24 @@ RMSE/MAE와 방향 정확도 외에,
 TradingAgents 논지 ─────────────────────────────────────────────────────────→ ALPHA(거부권·소폭 조정)
 ```
 
-- 채택은 `python -m investment_agent.research.commands.adopt_ml_model --artifact <json>` 하나다.
+- 채택은 주간 `ml_challengers`가 자동으로 하고, 수동 경로는
+  `python -m investment_agent.research.commands.adopt_ml_model --artifact <json>`이다. 둘 다 같은 조건이다.
   재로딩 가능한 모델(naive·ridge는 계수, LightGBM·XGBoost는 저장한 booster 원문 — 단일 스레드·deterministic
   학습이라 같은 dataset이 같은 artifact hash를 낸다)이고, 기간과 일치하는 HAC 기록, OOS 평균 IC > 0,
   IC t ≥ 2, OOS 날짜 수 > label 기간(20일), 유한한 분위 spread > 0일
   때만 `artifacts/trading/ml_models/active_ml_model.json`으로 복사된다.
 - ML과 factor를 합치는 비율은 OOS 측정치에서 계산한다. ML 몫 = min(0.8, 평균 IC × 10)이고 나머지는 factor
   사전값이다. 이 배율과 상한은 정책값이며 확률 calibration 결과는 아니다. t < 2 또는 HAC 기록이 없는 구형
-  artifact는 서빙하지 않고 factor로 되돌린다. 기존 active 파일을 자동 수정하거나 새 모델을 자동 채택하지 않는다.
+  artifact는 서빙하지 않고 factor로 되돌린다.
 - ML은 TradingAgents 의견과 섞지 않는다. 부정 논지의 거부권은 ML 예측이 좋아도 그대로다.
 - 추론 feature는 판단 시점 이전에 공개된 가장 최근 한 날짜의 **전 종목** snapshot으로 결측을 대체한다
   (학습 dataset과 같은 규칙). 분석한 몇 종목만으로 중앙값을 내면 training-serving skew가 생긴다.
-- 하네스 `ml_challengers` job(주 1회, `research/commands/ml_challengers.py`)이 최근 2년 feature·label로
-  naive·ridge·LightGBM·XGBoost를 같은 purged split에서 다시 학습한다. 채택 조건을 통과하고 현
-  champion보다 OOS ICIR이 높은 후보를 `candidates/latest_summary.json`에 추천으로 남기지만
-  **`active_ml_model.json`은 건드리지 않는다** — 채택은 `adopt_ml_model`, 사람의 행위다. 학습 dataset은
+- 하네스 `ml_challengers` job(주 1회, `research/commands/ml_challengers.py`)이 최근 5년 feature·label로
+  naive·ridge·LightGBM·XGBoost를 같은 purged split에서 다시 학습한다. 채택 조건(비교 후보 수만큼 올린 t 문턱)을
+  통과하고 현 champion보다 OOS ICIR이 높은 후보를 **자동으로 `active_ml_model.json`에 올린다.** 매주 champion을
+  이번 OOS 창으로 다시 채점해 평균 IC ≤ 0 또는 t < 1이면 내리고(`candidates/retired/`), 그때는 채택 조건만
+  넘은 후보로 바로 교체한다. 채택·해제는 운영 채널로 알린다. 사람이 결정하는 것은 실계좌 추종(Discord 승인)이다.
+  학습 dataset은
   창 안에서 한 번이라도 S&P 500이었던 종목까지 포함한다(생존 편향 방지).
 - champion이 반영되면 System 목표 artifact의 정체성(`champion_ml_artifact_id`)이 바뀌어, 실계좌 추종은 그 조합의 승격을 요구한다.
 

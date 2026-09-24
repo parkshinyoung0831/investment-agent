@@ -13,8 +13,8 @@ LLM 논지는 숫자가 놓친 위험을 말하는 자리이고, 수치 모델�
 
 ## 켜고 끄기
 
-`active_ml_model.json`(채택한 artifact 사본)이 있을 때만 예측한다. 파일을 두는 것이 사람의 채택
-행위다(`research.commands.adopt_ml_model`). challenger 학습은 이 파일을 건드리지 않는다. OOS IC가
+`active_ml_model.json`(채택한 artifact 사본)이 있을 때만 예측한다. 주간 `ml_challengers`가 채택 조건을
+넘은 더 나은 후보를 올리고 순위 능력을 잃은 champion을 내린다(수동 채택은 `adopt_ml_model`). OOS IC가
 통계적으로 0과 구별되지 않으면 신뢰도가 0이라 예측을 쓰지 않는다.
 """
 from __future__ import annotations

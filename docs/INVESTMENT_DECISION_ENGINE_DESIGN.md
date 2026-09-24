@@ -253,7 +253,7 @@ P(up|i) = direction_accuracy (예측>0) / 1 − direction_accuracy (예측<0)  �
 검증 = purged_row_splits → splits[0] 하나
 ```
 
-**채택 파일 `active_ml_model.json`이 없다** [실측]. 따라서 운영 alpha는 factor 사전값과 LLM 논지만으로 돈다. 이 절의 개선은 "ML을 켤 것인가"를 사람이 정하기 위한 **근거를 만드는 작업**이다. 채택은 `adopt_ml_model`, 사람의 행위로 남는다.
+**채택 파일 `active_ml_model.json`이 없다** [실측]. 따라서 운영 alpha는 factor 사전값과 LLM 논지만으로 돈다. 이 절의 개선은 ML이 채택 조건을 넘을 **근거를 만드는 작업**이다. 채택·해제는 주간 `ml_challengers`가 같은 조건으로 자동으로 한다.
 
 ### 6.2 비평
 

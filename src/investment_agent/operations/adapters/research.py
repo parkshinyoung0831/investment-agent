@@ -81,7 +81,7 @@ class ResearchAdapters:
         ), stop_event=context.stop_event)
         return StageOutcome.succeeded({"experiences_built_at": self.now().isoformat()})
     def run_ml_challengers(self, context: StageContext) -> StageOutcome:
-        """쌓인 feature·label로 ML 후보를 다시 학습하고 champion과 비교해 기록한다(채택은 사람)."""
+        """쌓인 feature·label로 ML 후보를 다시 학습하고, 기준을 넘으면 채택·순위 능력을 잃으면 해제한다."""
         self.command_runner.run(PythonModuleCommand(
             "investment_agent.research.commands.ml_challengers",
             ("--as-of", context.now.isoformat()),
