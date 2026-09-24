@@ -78,11 +78,9 @@ kill switch에 무관하게 매번 돈다. 모드와 스위치가 막는 것은 
 | `feature_store` | 1일 | `build_valuations` → `build_features` → `build_labels` → `build_training_samples` → `evaluate_decisions` → `diagnose_system` → `build_events` | PIT 관측값 적재, 판단 5·20·60일 채점, System 단계 진단(`system_diagnosis`) |
 | `investment_analysis` | 3시간 | `analysis` → `notify_investment` | TradingAgents 논지 분석과 보고서 |
 | `system_portfolio` | 1시간 | `run_system_portfolio` | System NAV 평가·목표 갱신 |
-| `my_portfolio_follow` | 1분 | `select_target` → `follow` → `execution_intent` → `approval_request` → `approval_worker` → `notify_trades` | 실계좌 추종(승인 모드에서만) |
+| `my_portfolio_follow` | 1분 | `select_target` → `follow` → `execution_intent` → `approval_request` → `approval_worker` → `notify_trades` | 실계좌 추종 제안·승인 요청(매번), 승인된 주문 실행(스위치가 허락할 때만) |
 | `system_evaluation` | 7일 | `evaluate_system` → `measure_factor_ic` | 최신 System artifact의 승격 증거(`system_evaluations`), factor IC(`factor_research`) |
 | `ml_challengers` | 7일 | `train_challengers` | ML 후보 학습·비교, 기준 통과 시 자동 채택·순위 능력 상실 시 자동 해제 |
-| `continuous_learning` | 7일 | `retrain` | RL 연구 후보 |
-| `decision_experience` | 1일 | `build_decision_experiences` | 원본 판단의 결과를 학습 원장에 |
 | `investment_reporting` | 5분 | `update_performance` → `notify_reports` | 성과·보고 알림 |
 | `event_reanalysis` | 10분 | `reanalyze` | 고영향 사건 재분석 |
 | `intelligence` | 1일 | `news` → `social` → `retention` | 뉴스·소셜 수집 |
@@ -93,8 +91,8 @@ kill switch에 무관하게 매번 돈다. 모드와 스위치가 막는 것은 
 | `toss_reconciliation` | 1분 | `reconcile` | 브로커 체결 동기화 |
 
 `local_mirror`는 2시간마다 Supabase 원본의 계산용 Parquet 사본을 증분 동기화한다.
-사본이 없거나 오래되면 판단은 원본 Supabase로 읽는다. `continuous_learning`은 7일마다
-RL 연구 후보를 점검하고 새 성숙 비중첩 구간이 2개 미만이면 학습하지 않는다.
+사본이 없거나 오래되면 판단은 원본 Supabase로 읽는다. RL 연구(`research.commands.continuous_retrain`)와
+경험 원장(`operations.commands.build_decision_experiences`)은 판단 경로가 읽지 않아 하네스에 두지 않고 수동으로 돌린다.
 
 `earnings_watch`는 주문이 아니라 공시 수집이라 모드·거래 kill switch 어느 쪽으로도
 멈추지 않습니다. 창 판정은 진입점(`--session auto`)이 ET 기준으로 직접 하고, 창 밖이면
@@ -136,7 +134,7 @@ stateDiagram-v2
 
 | 환경변수명 | 차단 범위 | 기본값 |
 |---|---|---|
-| `TRADING_KILL_SWITCH` | 포트폴리오 산출, Intent 발행, 승인 요청, 실주문 발주 전역 차단 | `on` (안전 차단) |
+| `TRADING_KILL_SWITCH` | 승인된 주문의 실행 전역 차단(승인 요청 카드는 계속 가고, 카드에 차단 상태가 적힌다) | `on` (안전 차단) |
 | `HARNESS_JOB_INVESTMENT_ANALYSIS_KILL_SWITCH` | TradingAgents 일일 분석 잡 차단 | `off` |
 | `HARNESS_JOB_MY_PORTFOLIO_FOLLOW_KILL_SWITCH` | My Portfolio 추종(승인 요청·실주문) 잡 차단 | `off` |
 | `HARNESS_JOB_SYSTEM_PORTFOLIO_KILL_SWITCH` | System Portfolio 평가·목표 갱신 잡 차단 | `off` |
@@ -170,11 +168,11 @@ Research 구성 요소 비교는
 # 4. analysis_only 모드로 1회 tick 즉시 실행
     python -m investment_agent.operations.commands.investment_harness --run-once
 
-# 5. analysis_only 상시 데몬 구동 — 기동 경로는 harness_switch 하나뿐이다
+# 5. 상시 데몬 구동(기본 approval_workflow) — 기동 경로는 harness_switch 하나뿐이다
     python -m investment_agent.operations.commands.harness_switch --on
 
-# 6. approval_workflow 상시 데몬 구동 (승인 연동)
-    python -m investment_agent.operations.commands.harness_switch --on --mode approval_workflow
+# 6. 승인된 주문도 실행하지 않는 모드
+    python -m investment_agent.operations.commands.harness_switch --on --mode analysis_only
 
 # 7. Discord Gateway 승인 버튼 리스너 서비스 별도 구동
     python -m investment_agent.operations.commands.approval_listener_service

@@ -23,9 +23,7 @@ from investment_agent.operations.harness.maintenance import (
 )
 from investment_agent.operations.harness.pipeline import (
     account_risk_snapshot_job,
-    continuous_learning_job,
     system_evaluation_job,
-    decision_experience_job,
     earnings_watch_job,
     econ_release_watch_job,
     event_reanalysis_job,
@@ -125,11 +123,8 @@ def build_registry(
         interval_seconds=reconciliation_interval_seconds,
         interval_provider=reconciliation_interval_provider,
     ))
-    if hasattr(selected, "continuous_learning"):
-        if hasattr(selected, "build_decision_experiences"):
-            registry.register(decision_experience_job(build_decision_experiences=selected.build_decision_experiences))
-        # 학습 자체는 새 성숙 구간이 쌓였을 때만 한다(`continuous_retrain`). 주 1회 확인이면 충분하다.
-        registry.register(continuous_learning_job(retrain=selected.continuous_learning))
+    # RL 연구(`continuous_retrain`)와 그 경험 원장(`build_decision_experiences`)은 판단 경로가 읽지 않는다.
+    # 정기 실행에서 빼고 명령으로만 남긴다 — 필요할 때 수동으로 돌린다.
     if hasattr(selected, "evaluate_system"):
         registry.register(system_evaluation_job(evaluate_system=selected.evaluate_system,
                                                 measure_factor_ic=getattr(selected, "measure_factor_ic", None)))

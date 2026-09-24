@@ -494,8 +494,8 @@ RL 정책은 System Portfolio를 움직이지 않는 연구 후보다. 비교는
 반영한 결과를 목적함수에 다시 넣어 같은 위험을 두 번 센다.
 
 - 운영 경로(`trading`·`execution`·`operations`)는 RL 정책을 import하지 않는다(테스트 강제).
-- 하네스 `continuous_learning`은 주 1회 확인하고, 마지막 학습 뒤 새로 성숙한 비중첩 구간이 2개 미만이면 학습하지
-  않는다(`last_training.json`). 같은 데이터로 매일 다시 학습하면 우연히 좋은 후보만 늘어난다.
+- RL 재학습(`continuous_retrain`)은 하네스 정기 실행에 두지 않고 수동으로 돌린다. 마지막 학습 뒤 새로 성숙한 비중첩
+  구간이 2개 미만이면 학습하지 않는다(`last_training.json`). 같은 데이터로 매일 다시 학습하면 우연히 좋은 후보만 늘어난다.
 - 채택은 `continuous_retrain --adopt-candidate`로만 하고, 채택된 정책도 System 비중을 바꾸지 않는다 — 현재 비중
   결정자(결정론적 optimizer)를 대체하려면 Ablation·OOS 근거와 코드 리뷰를 거친 새 Portfolio Engine 버전이어야 한다.
 
