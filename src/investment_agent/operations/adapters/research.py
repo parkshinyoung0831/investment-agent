@@ -10,6 +10,21 @@ from investment_agent.operations.harness.contracts import StageContext, StageOut
 
 
 class ResearchAdapters:
+    def refresh_indicators(self, context: StageContext) -> StageOutcome:
+        """이 장비의 로컬 RSI·MACD 저장소를 최신 가격까지 갱신한다.
+
+        feature snapshot과 판단 서류철이 이 저장소를 읽는다. Actions의 tech_indicators는
+        러너 artifact에만 쓰므로 로컬 사본은 이 단계가 아니면 갱신되지 않는다.
+        """
+        self.command_runner.run(
+            PythonModuleCommand(
+                "investment_agent.research.features.daily",
+                (),
+                self.timeouts.get("refresh_indicators", 20 * 60),
+            ),
+            stop_event=context.stop_event,
+        )
+        return StageOutcome.succeeded({"indicators_refreshed_at": self.now().isoformat()})
     def build_valuations(self, context: StageContext) -> StageOutcome:
         """PIT 밸류에이션 관측값을 원장에 적재한다.
 

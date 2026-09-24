@@ -180,6 +180,7 @@ def feature_store_job(
     evaluate_decisions: StageHandler,
     build_events: StageHandler,
     diagnose_system: StageHandler | None = None,
+    refresh_indicators: StageHandler | None = None,
     interval_seconds: float = 24 * 60 * 60,
     stale_after_seconds: float = 30 * 60 * 60,
 ) -> JobDefinition:
@@ -195,6 +196,15 @@ def feature_store_job(
         interval_seconds=interval_seconds,
         stale_after_seconds=stale_after_seconds,
         stages=(
+            # 맨 앞이다. feature와 판단이 읽는 RSI·MACD는 이 장비의 로컬 저장소에 있고, Actions의
+            # tech_indicators는 자기 artifact에만 쓴다 — 여기서 갱신하지 않으면 로컬 값이 멈춘다.
+            *((StageDefinition(
+                "refresh_indicators",
+                refresh_indicators,
+                approval_workflow_only=False,
+                max_attempts=2,
+                retry_delay_seconds=10 * 60,
+            ),) if refresh_indicators is not None else ()),
             StageDefinition(
                 "build_valuations",
                 build_valuations,

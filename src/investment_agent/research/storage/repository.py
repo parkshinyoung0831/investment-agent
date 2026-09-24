@@ -413,7 +413,8 @@ class ResearchStore:
                     target.unlink(missing_ok=True)
             return deleted
 
-    def latest_feature_as_of(self, ticker: str, *, trade_date: date, as_of_at: datetime) -> list[dict[str, Any]]:
+    def latest_feature_as_of(self, ticker: str, *, trade_date: date) -> list[dict[str, Any]]:
+        """`trade_date`까지의 최신 행. 가용 시각은 호출자가 봉 확정 규칙으로 정한 `trade_date`가 말한다."""
         self._ensure_bulk_migrated()
         if not self._feature_files():
             return []
@@ -422,11 +423,11 @@ class ResearchStore:
                 """
                 SELECT ticker, trade_date, rsi14, macd, macd_signal, ingested_at
                 FROM read_parquet(?, union_by_name=true)
-                WHERE ticker = ? AND trade_date <= ? AND ingested_at <= ?
+                WHERE ticker = ? AND trade_date <= ?
                 ORDER BY trade_date DESC
                 LIMIT 1
                 """,
-                [self._parquet_pattern(self._feature_root), ticker, trade_date.isoformat(), as_of_at],
+                [self._parquet_pattern(self._feature_root), ticker, trade_date.isoformat()],
             )
             rows = self._rows(connection)
         for row in rows:
@@ -434,7 +435,7 @@ class ResearchStore:
             row["ingested_at"] = _iso(row["ingested_at"])
         return rows
 
-    def latest_features_as_of_all(self, *, trade_date: date, as_of_at: datetime) -> dict[str, dict[str, Any]]:
+    def latest_features_as_of_all(self, *, trade_date: date) -> dict[str, dict[str, Any]]:
         """`latest_feature_as_of`와 같은 조건으로 전 종목의 최신 행을 한 번에 읽는다(ticker → 행)."""
         self._ensure_bulk_migrated()
         if not self._feature_files():
@@ -446,11 +447,11 @@ class ResearchStore:
                 FROM (
                     SELECT *, row_number() OVER (PARTITION BY ticker ORDER BY trade_date DESC) AS rank
                     FROM read_parquet(?, union_by_name=true)
-                    WHERE trade_date <= ? AND ingested_at <= ?
+                    WHERE trade_date <= ?
                 ) ranked
                 WHERE rank = 1
                 """,
-                [self._parquet_pattern(self._feature_root), trade_date.isoformat(), as_of_at],
+                [self._parquet_pattern(self._feature_root), trade_date.isoformat()],
             )
             rows = self._rows(connection)
         output: dict[str, dict[str, Any]] = {}

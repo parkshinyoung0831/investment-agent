@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import math
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 
+from investment_agent.data.market.domain.calendar import DAILY_BAR_FINALIZED_AT, MARKET_TIMEZONE
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.db.postgres import sb, select_all_paged
 from investment_agent.platform.cli.runtime import utc_now_iso
@@ -161,22 +162,26 @@ def delete_before(cutoff: str) -> int:
     return _store().delete_features_before(cutoff)
 
 
-def latest_signal_as_of(ticker: str, as_of_at: datetime) -> list[dict]:
-    """as_of 시점에 확정돼 있던 최신 로컬 기술지표 한 행."""
+def last_finalized_trade_date(as_of_at: datetime) -> date:
+    """as_of 시점에 종가가 확정된 마지막 날짜(`bar_available_at`의 뉴욕 18:00 규칙).
+
+    RSI·MACD는 그날까지의 종가만의 함수라 가용 시각도 봉과 같다. 계산해 저장한 시각(`ingested_at`)으로
+    거르면 뒤늦게 채운 과거 지표가 전부 "몰랐던 것"이 돼 과거 재현 학습에서 열이 통째로 빈다.
+    """
     if as_of_at.tzinfo is None:
         raise ValueError("as_of_at must include timezone")
-    return _read_store().latest_feature_as_of(
-        ticker, trade_date=as_of_at.date(), as_of_at=as_of_at.astimezone(timezone.utc)
-    )
+    local = as_of_at.astimezone(MARKET_TIMEZONE)
+    return local.date() if local.time() >= DAILY_BAR_FINALIZED_AT else local.date() - timedelta(days=1)
+
+
+def latest_signal_as_of(ticker: str, as_of_at: datetime) -> list[dict]:
+    """as_of 시점에 확정돼 있던 최신 로컬 기술지표 한 행."""
+    return _read_store().latest_feature_as_of(ticker, trade_date=last_finalized_trade_date(as_of_at))
 
 
 def latest_signals_as_of(as_of_at: datetime) -> dict[str, dict]:
     """as_of 시점에 확정돼 있던 종목별 최신 로컬 기술지표. `latest_signal_as_of`를 전 종목에 한 번에."""
-    if as_of_at.tzinfo is None:
-        raise ValueError("as_of_at must include timezone")
-    return _read_store().latest_features_as_of_all(
-        trade_date=as_of_at.date(), as_of_at=as_of_at.astimezone(timezone.utc)
-    )
+    return _read_store().latest_features_as_of_all(trade_date=last_finalized_trade_date(as_of_at))
 
 
 __all__ = [
@@ -185,6 +190,6 @@ __all__ = [
     "changed_indicators", "delete_before", "earliest_market_change_since",
     "existing_indicators_since", "latest_indicator_date", "latest_indicator_write_at",
     "features_for_ticker", "features_since",
-    "latest_market_date", "latest_signal_as_of", "load_market_prices_since",
+    "last_finalized_trade_date", "latest_market_date", "latest_signal_as_of", "load_market_prices_since",
     "upsert_indicators",
 ]

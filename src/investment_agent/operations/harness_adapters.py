@@ -29,6 +29,7 @@ _MODULES = frozenset({
     "investment_agent.operations.commands.update_performance",
     "investment_agent.trading.decision.analysis",
     "investment_agent.research.commands.build_valuations",
+    "investment_agent.research.features.daily",
     "investment_agent.research.commands.build_features",
     "investment_agent.research.commands.build_labels",
     "investment_agent.research.commands.build_training_samples",
@@ -121,6 +122,7 @@ from investment_agent.operations.adapters.trading import TradingAdapters, follow
 _BACKGROUND_STAGE_TIMEOUT_KEYS: dict[str, str | None] = {
     "analysis": "analysis",
     "build_valuations": "build_valuations",
+    "refresh_indicators": "refresh_indicators",
     "build_features": "build_features",
     "build_labels": "build_labels",
     "build_training_samples": "build_training_samples",
@@ -255,6 +257,10 @@ class ProductionInvestmentAdapters(
             # 로컬 DuckDB만 읽고 파생물만 올린다. 네트워크 호출이 없어 짧다.
             "build_events": _positive_float(
                 values, "HARNESS_BUILD_EVENTS_TIMEOUT_SEC", 15 * 60, maximum=60 * 60,
+            ),
+            # 최근 겹침 구간만 다시 계산한다. 가격 조회가 대부분이다.
+            "refresh_indicators": _positive_float(
+                values, "HARNESS_REFRESH_INDICATORS_TIMEOUT_SEC", 20 * 60, maximum=2 * 60 * 60,
             ),
             # 성숙한 판단만 채점하므로 하루치 증분은 작다.
             "evaluate_decisions": _positive_float(

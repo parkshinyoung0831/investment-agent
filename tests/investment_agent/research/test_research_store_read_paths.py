@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import ast
 import unittest
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from unittest.mock import patch
 from pathlib import Path
 
@@ -63,6 +63,15 @@ class ResearchStoreReadPathTest(unittest.TestCase):
         with patch.object(ResearchStore, "latest_feature_as_of", read_snapshot):
             rows = db.latest_signal_as_of("AAPL", datetime(2026, 9, 9, tzinfo=timezone.utc))
         self.assertEqual(rows, [{"ticker": "AAPL"}])
+
+    def test_indicators_become_available_when_the_bar_is_final(self) -> None:
+        """뉴욕 18:00 전에는 그날 지표를 쓰지 않는다. 계산해 저장한 시각은 따지지 않는다."""
+        from investment_agent.research.features.db import last_finalized_trade_date
+
+        self.assertEqual(date(2026, 9, 8), last_finalized_trade_date(datetime(2026, 9, 9, 21, 59, tzinfo=timezone.utc)))
+        self.assertEqual(date(2026, 9, 9), last_finalized_trade_date(datetime(2026, 9, 9, 22, 0, tzinfo=timezone.utc)))
+        with self.assertRaises(ValueError):
+            last_finalized_trade_date(datetime(2026, 9, 9))
 
     def test_there_are_read_calls_to_check(self) -> None:
         """호출이 없으면 아래 검사는 아무것도 보증하지 않는다."""

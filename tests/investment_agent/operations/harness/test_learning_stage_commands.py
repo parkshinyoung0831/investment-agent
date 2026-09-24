@@ -18,6 +18,7 @@ NOW = datetime(2026, 9, 4, 3, 0, tzinfo=UTC)
 
 # 학습 원장 job(`feature_store`)이 순서대로 부르는 단계와, 각 단계가 불러야 할 모듈.
 LEARNING_STAGES = (
+    ("refresh_indicators", "investment_agent.research.features.daily"),
     ("build_valuations", "investment_agent.research.commands.build_valuations"),
     ("build_features", "investment_agent.research.commands.build_features"),
     ("build_labels", "investment_agent.research.commands.build_labels"),
@@ -103,6 +104,8 @@ class LearningStageCommandTest(unittest.TestCase):
         definitions = {definition.job_id: definition for definition in build_registry(adapters=self.adapters).definitions()}
         stages = [stage.stage_id for stage in definitions["feature_store"].stages]
         self.assertEqual(stages.index("evaluate_decisions") + 1, stages.index("diagnose_system"))
+        # 로컬 RSI·MACD를 갱신한 뒤에 feature를 만든다 — 순서가 바뀌면 전날 지표로 snapshot이 찍힌다.
+        self.assertEqual("refresh_indicators", stages[0])
 
     def test_production_harness_produces_promotion_evidence_weekly(self):
         """승격 게이트가 읽는 증거를 만드는 job이 운영 adapters로 등록된다 — 없으면 실계좌 추종이 영구히 막힌다."""

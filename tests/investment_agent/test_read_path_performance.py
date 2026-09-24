@@ -166,16 +166,16 @@ class LatestFeaturesBatchTest(unittest.TestCase):
                     rows.append({"ticker": ticker, "trade_date": f"2026-09-{8 + offset:02d}",
                                  "rsi14": 40.0 + offset, "macd": 0.1, "macd_signal": 0.05})
             store.upsert_features(rows[:10], ingested_at="2026-09-13T00:00:00+00:00")
-            # CCC는 판단 시각 뒤에 적재됐다 — 두 방식 모두 보지 않아야 한다.
+            # CCC는 판단 시각 뒤에 계산됐다. 지표는 종가만의 함수라 가용 시각은 봉 날짜가 정한다.
             store.upsert_features(rows[10:], ingested_at="2026-09-20T00:00:00+00:00")
             reader = ResearchStore(Path(directory) / "research.duckdb", read_only=True)
-            trade_date, as_of = date(2026, 9, 11), datetime(2026, 9, 14, tzinfo=timezone.utc)
-            batch = reader.latest_features_as_of_all(trade_date=trade_date, as_of_at=as_of)
+            trade_date = date(2026, 9, 11)
+            batch = reader.latest_features_as_of_all(trade_date=trade_date)
             for ticker in ("AAA", "BBB", "CCC"):
-                single = reader.latest_feature_as_of(ticker, trade_date=trade_date, as_of_at=as_of)
+                single = reader.latest_feature_as_of(ticker, trade_date=trade_date)
                 self.assertEqual([batch[ticker]] if ticker in batch else [], single, ticker)
             self.assertEqual(batch["AAA"]["trade_date"], "2026-09-11")
-            self.assertNotIn("CCC", batch)
+            self.assertEqual(batch["CCC"]["trade_date"], "2026-09-11")
 
 
 class ParallelFeatureBuildTest(unittest.TestCase):
