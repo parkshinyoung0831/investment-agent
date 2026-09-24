@@ -305,7 +305,13 @@ def _with_long_history(prices: pd.DataFrame, actions: pd.DataFrame,
     files = sorted(path for path in history_root.glob("*/daily.parquet") if path.parent.name.isdigit())
     if not files:
         return prices, actions
-    frames = [frame for frame in (pd.read_parquet(path, engine="pyarrow") for path in files) if not frame.empty]
+    columns = {"security_id": "float64", "trade_date": "object", "open": "float64", "high": "float64",
+               "low": "float64", "close": "float64", "volume": "float64", "div_amount": "float64",
+               "split_ratio": "float64"}
+    frames = [
+        frame.reindex(columns=list(columns)).astype(columns)
+        for frame in (pd.read_parquet(path, engine="pyarrow") for path in files) if not frame.empty
+    ]
     if not frames:
         return prices, actions
     history = pd.concat(frames, ignore_index=True)
@@ -318,6 +324,7 @@ def _with_long_history(prices: pd.DataFrame, actions: pd.DataFrame,
     cutoff = history["security_id"].map(first)
     older = history[cutoff.isna() | (history["trade_date"] < cutoff.fillna(""))]
     bars = older.loc[:, ["security_id", "trade_date", "open", "high", "low", "close", "volume"]].copy()
+    bars["volume"] = bars["volume"].fillna(0).round().astype("int64")
     bars["is_repaired"] = False
     merged_prices = pd.concat([bars, prices], ignore_index=True)
 
