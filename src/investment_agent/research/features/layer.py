@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Iterable, Mapping, Protocol, Sequence
 
+from investment_agent.data.fundamentals.domain.services.leverage_metrics import total_debt
 from investment_agent.platform.serialization import canonical_json, parse_datetime
 from investment_agent.research.rl.contracts import FeatureSnapshot, ForwardReturnLabel, RLSafetyError
 
@@ -162,7 +163,9 @@ def _fundamental(payload: Mapping[str, Any]) -> dict[str, float | None]:
     revenue = _number(latest.get("revenue"))
     operating = _number(latest.get("operating_income_loss"))
     assets = _number(latest.get("assets"))
-    debt = _number(latest.get("total_debt_including_current"))
+    # 총차입의 정의는 하나다(`leverage_metrics.total_debt`). 총계 태그만 읽으면 그것을 내는 회사가 드물어
+    # 이 열이 15%만 찼다 — 나머지는 단기·장기·리스 부채 구성요소로만 공시한다.
+    debt = total_debt(latest)
     # 성장은 같은 회계기간의 전년 대비다. 바로 앞 공시와 비교하면 Q4 계절성과 FY·분기
     # 혼합이 성장률로 들어간다. 프롬프트용 `filings`는 최근 몇 행뿐이라 전년 행이 없으므로
     # 전체 이력으로 계산한 statistics를 쓴다.

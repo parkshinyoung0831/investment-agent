@@ -32,6 +32,20 @@ class FeatureLayerTest(unittest.TestCase):
         self.assertNotIn("forward_return", first.snapshot.features)
         self.assertFalse(first.snapshot.provenance["news_social_enabled"])
 
+    def test_debt_to_assets_sums_debt_components_when_no_total_tag_is_filed(self):
+        """대부분의 회사는 총차입 총계 태그 없이 구성요소만 낸다. 총계만 읽으면 열이 거의 빈다."""
+        original = self._bundle()
+        fundamentals = EvidenceItem(
+            evidence_id="EV-FUND-1", domain="fundamentals", source="fundamentals.financials",
+            observed_at="2026-06-30", available_at="2026-08-01T04:00:00+00:00", timing_status="known",
+            payload={"filings": [{"assets": 1000.0, "short_term_debt": 50.0, "long_term_debt": 250.0,
+                                  "revenue": 400.0, "operating_income_loss": 80.0}]},
+        )
+        bundle = EvidenceBundle(ticker=original.ticker, as_of_at=original.as_of_at,
+                                source_kind=original.source_kind, evidence=(*original.evidence, fundamentals))
+        features = FeatureLayer().build(bundle).snapshot.features
+        self.assertAlmostEqual(0.3, features["fundamental_debt_to_assets"])
+
     def test_feature_input_is_structural_not_a_trading_class(self):
         original = self._bundle()
         item = original.evidence[0]
