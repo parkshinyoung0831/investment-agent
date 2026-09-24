@@ -54,9 +54,6 @@ class WriteParquetRetryTest(unittest.TestCase):
         self.assertFalse(target.exists())
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class InterruptedWriteLeftoverTest(unittest.TestCase):
     def test_a_leftover_temporary_file_is_not_read_as_a_second_copy(self) -> None:
@@ -69,3 +66,29 @@ class InterruptedWriteLeftoverTest(unittest.TestCase):
             (partition / "tmp_data.leftover.parquet").write_bytes((partition / "data.parquet").read_bytes())
             reader = ResearchStore(Path(directory) / "research.duckdb", read_only=True)
             self.assertEqual(1, len(reader.records("probe_rows")))
+
+    def test_a_reader_holding_the_file_delays_the_swap_instead_of_failing_it(self) -> None:
+        """Windows에서 하네스가 파일을 읽는 동안 교체가 거부된다. 짧은 잠금은 기다려서 넘긴다."""
+        from unittest import mock
+
+        from investment_agent.research.storage import repository
+
+        real_replace = repository.os.replace
+        calls = {"n": 0}
+
+        def locked_twice(source, target):
+            calls["n"] += 1
+            if calls["n"] <= 2:
+                raise PermissionError(5, "액세스가 거부되었습니다")
+            return real_replace(source, target)
+
+        with tempfile.TemporaryDirectory() as directory, duckdb.connect(":memory:") as connection,                 mock.patch.object(repository.os, "replace", side_effect=locked_twice),                 mock.patch.object(repository.time, "sleep"):
+            connection.execute("CREATE TABLE t AS SELECT 1 AS x")
+            target = Path(directory) / "out.parquet"
+            ResearchStore._write_parquet(connection, "t", target)
+            self.assertTrue(target.is_file())
+        self.assertEqual(3, calls["n"])
+
+
+if __name__ == "__main__":
+    unittest.main()

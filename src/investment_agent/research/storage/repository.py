@@ -44,6 +44,8 @@ T_DATASET_RUNS = "dataset_runs"
 FEATURE_SET = "technical"
 # 연도 분할의 확정 파일 이름. 읽기는 이 이름만 본다(`_parquet_pattern`).
 _PARTITION_FILE = "data.parquet"
+# 확정 파일 교체 재시도 횟수(합계 약 1분). 읽는 쪽이 길게 붙잡으면 결국 실패로 알린다.
+_REPLACE_ATTEMPTS = 20
 _DATASET_NAME = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
 _PAYLOAD_FIELD_NAME = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
 
@@ -251,7 +253,15 @@ class ResearchStore:
                     # "파일이 이미 있다"로 다시 틀리지 않게 지운다.
                     temporary.unlink(missing_ok=True)
                     time.sleep(0.2 * attempt)
-            os.replace(temporary, target)
+            # Windows는 다른 프로세스(하네스의 판단·feature 읽기)가 연 파일을 교체하지 못한다. 읽기는 짧으니 기다린다.
+            for attempt in range(1, _REPLACE_ATTEMPTS + 1):
+                try:
+                    os.replace(temporary, target)
+                    break
+                except PermissionError:
+                    if attempt == _REPLACE_ATTEMPTS:
+                        raise
+                    time.sleep(min(0.5 * attempt, 5.0))
         finally:
             temporary.unlink(missing_ok=True)
 
