@@ -5,6 +5,7 @@ import argparse
 import time
 from datetime import date, timedelta
 
+from investment_agent.data.universe.domain.predecessors import with_predecessors
 from investment_agent.platform.cli.backfill import add_backfill_from_arg, resolve_backfill_window
 from investment_agent.platform.cli.runtime import EXIT_FAILED, EXIT_OK, EXIT_PARTIAL, elapsed_sec, notify_ops
 from investment_agent.platform.logging import get_logger
@@ -58,6 +59,11 @@ def main(argv: list[str] | None = None) -> int:
 
     # Map CIK to active tickers
     tickers_by_cik = universe_db.select_common_stock_tickers_by_cik()
+    # 지주회사 재편 전 제출자의 주식수도 지금 ticker의 증권으로 받는다. 없으면 재편 종목의 과거 시가총액이 빈다.
+    for predecessor, current in with_predecessors(tracked_ciks).items():
+        if predecessor != current and predecessor not in tracked_ciks:
+            tracked_ciks = [*tracked_ciks, predecessor]
+            tickers_by_cik[predecessor] = list(tickers_by_cik.get(current, []))
 
     log.info(
         "Common shares collection start: ciks=%d scope=%s cutoff=%s",
