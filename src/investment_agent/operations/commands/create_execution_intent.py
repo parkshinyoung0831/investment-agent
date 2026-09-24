@@ -123,11 +123,15 @@ def create_execution_intent(
         current_tracked=set(selected_repository.current_tracked_tickers()),
         now=point,
     )
-    if not selected_repository.has_approved_promotion(artifact_id, execution_mode):
+    metadata = dict(proposal.get("metadata") or {})
+    # System 추종 제안은 검증 미통과를 막지 않고 승인 카드에 경고로 싣는다(`approval_warnings`). 사람이 카드를 보고
+    # 따라갈지를 정한다. 그 밖의 경로(수동 intent 생성 등)는 승격을 계속 요구한다.
+    is_advisory = "approval_warnings" in metadata
+    if not is_advisory and not selected_repository.has_approved_promotion(artifact_id, execution_mode):
         raise RuntimeError(f"model artifact has not received manual promotion to {execution_mode}")
-    signal_artifacts = dict(proposal.get("metadata") or {}).get("signal_model_artifact_ids") or [artifact_id]
+    signal_artifacts = metadata.get("signal_model_artifact_ids") or [artifact_id]
     for art in signal_artifacts:
-        if not selected_repository.has_approved_promotion(str(art), execution_mode):
+        if not is_advisory and not selected_repository.has_approved_promotion(str(art), execution_mode):
             raise RuntimeError(f"signal model artifact {art} has not received manual promotion to {execution_mode}")
     decision = RiskDecision(
         risk_decision_id=str(row["risk_decision_id"]),

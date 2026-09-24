@@ -60,6 +60,24 @@ def save_follow_snapshot(
     return str(snapshot_id)
 
 
+def is_toss_unreachable(exc: BaseException) -> bool:
+    """이 장비에서 Toss에 닿지 못한 것인가(네트워크 오류, 허용 IP 밖이라 401·403). 응답 내용 오류는 아니다."""
+    import requests
+
+    from investment_agent.execution.brokers.toss.auth import TossAuthError
+    from investment_agent.execution.brokers.toss.client import TossExecutionError
+
+    if isinstance(exc, TossAuthError):
+        return exc.status_code in (None, 401, 403)
+    if isinstance(exc, TossExecutionError):
+        cause = exc.__cause__
+        if isinstance(cause, requests.HTTPError):
+            response = getattr(cause, "response", None)
+            return getattr(response, "status_code", None) in (401, 403)
+        return isinstance(cause, requests.RequestException)
+    return isinstance(exc, requests.RequestException)
+
+
 def follow_system_target(*, target_id: str, store: Any, repository: Any, now: datetime) -> Any:
     """System 목표 하나를 새 Toss 계좌 스냅샷과 비교해 추종 제안을 기록한다."""
     from investment_agent.execution.brokers.toss.client import resolve_account_seq
@@ -69,10 +87,12 @@ def follow_system_target(*, target_id: str, store: Any, repository: Any, now: da
     target = store.latest_target(approved_only=True)
     if target is None or target.target_id != target_id:
         raise RuntimeError("the selected System target is no longer the latest approved target")
-    if not repository.has_approved_promotion(target.model_artifact_id, "live"):
-        raise RuntimeError("System target model artifact has not been manually promoted to live")
+    # 검증(승격) 미통과는 막지 않고 승인 카드에 적는다. 따라갈지는 사람이 카드를 보고 정한다.
+    warnings = () if repository.has_approved_promotion(target.model_artifact_id, "live") else (
+        "이 System 조합은 아직 검증(승격 게이트: 가상 운용 기간·낙폭·turnover)을 통과하지 않았습니다",)
     snapshot = capture_toss_account_snapshot(account_seq=resolve_account_seq(None))
-    return plan_follow(repository, target=target, snapshot=snapshot, now=now, save_snapshot=save_follow_snapshot)
+    return plan_follow(repository, target=target, snapshot=snapshot, now=now, save_snapshot=save_follow_snapshot,
+                       warnings=warnings)
 
 
 class TradingAdapters:
@@ -122,12 +142,19 @@ class TradingAdapters:
         if session_wait is not None:
             return session_wait
         target_id = metadata_id(context, stage_id="select_target", key="target_id")
-        outcome = self.follow_target(
-            target_id=target_id,
-            store=self.system_store,
-            repository=self.decision_repository,
-            now=self.now(),
-        )
+        try:
+            outcome = self.follow_target(
+                target_id=target_id,
+                store=self.system_store,
+                repository=self.decision_repository,
+                now=self.now(),
+            )
+        except Exception as exc:  # noqa: BLE001 - 연결 불가만 건너뛰고 나머지는 그대로 올린다
+            if not is_toss_unreachable(exc):
+                raise
+            # 노트북을 들고 나가면 고정 IP가 아니라 Toss가 거절한다. 실패로 쌓지 않고 다음 회차에 다시 묻는다.
+            return StageOutcome.skipped({"target_id": target_id, "reason": "toss_unreachable",
+                                         "error": type(exc).__name__})
         metadata = {"target_id": target_id, "status": outcome.status, "reason": outcome.reason}
         if outcome.status != "planned":
             return StageOutcome.skipped(metadata)

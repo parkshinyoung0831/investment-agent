@@ -232,7 +232,9 @@ class _Workflow:
         self,
         request: ApprovalRequest,
         handoff: TossManualHandoff,
+        notes: tuple[str, ...] = (),
     ) -> ApprovalRequest:
+        self.notes = notes
         self.repository.events.append("publish_request")
         self.publish_calls += 1
         if self.timeout_on_publish:
@@ -603,3 +605,27 @@ class ExpiredApprovalReaskTest(unittest.TestCase):
 
         self.assertIn("expire_due_approvals", ExecutionApprovalRepository.__annotations__
                       or dir(ExecutionApprovalRepository))
+
+
+class ApprovalNotesTest(unittest.TestCase):
+    """승인 요청은 매번 간다. 승인해도 주문이 안 나가는 상태를 카드가 먼저 말해야 한다."""
+
+    def test_every_blocking_state_and_the_proposal_warning_are_listed(self):
+        from investment_agent.operations.commands.request_toss_approval import approval_notes
+
+        notes = approval_notes({"metadata": {"approval_warnings": ["아직 검증 미통과"]}},
+                               env={"TRADING_KILL_SWITCH": "on"}, is_locked_down=True)
+        text = " ".join(notes)
+        for expected in ("TOSS_LIVE_ENABLED", "킬스위치", "lockdown", "아직 검증 미통과"):
+            self.assertIn(expected, text)
+
+    def test_a_fully_armed_account_with_a_validated_system_has_no_notes(self):
+        from investment_agent.operations.commands.request_toss_approval import approval_notes
+
+        self.assertEqual((), approval_notes({"metadata": {"approval_warnings": []}},
+                                            env={"TOSS_LIVE_ENABLED": "true", "TRADING_KILL_SWITCH": "off"},
+                                            is_locked_down=False))
+
+
+if __name__ == "__main__":
+    unittest.main()

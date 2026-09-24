@@ -180,6 +180,29 @@ class InvestmentAdaptersTest(unittest.TestCase):
         self.assertEqual(selected.status, "waiting")
         self.assertEqual(self.follow_calls, [])
 
+    def test_an_unreachable_toss_skips_the_follow_instead_of_failing_it(self):
+        """노트북을 들고 나가면 고정 IP가 아니라 Toss가 거절한다. 실패를 쌓지 않고 다음 회차에 다시 묻는다."""
+        import requests
+
+        from investment_agent.execution.brokers.toss.auth import TossAuthError
+        from investment_agent.execution.brokers.toss.client import TossExecutionError
+
+        selected = self.adapters.select_target(context("select_target"))
+        network = TossExecutionError("network")
+        network.__cause__ = requests.ConnectionError("offline")
+        for error in (TossAuthError("forbidden", status_code=403), network):
+            def unreachable(**_kwargs):
+                raise error
+            self.adapters.follow_target = unreachable
+            outcome = self.adapters.follow(context("follow", {"select_target": selected.metadata}))
+            self.assertEqual(("skipped", "toss_unreachable"), (outcome.status, outcome.metadata["reason"]))
+
+        def broken(**_kwargs):
+            raise TossExecutionError("토스 API 응답이 객체가 아닙니다")
+        self.adapters.follow_target = broken
+        with self.assertRaises(TossExecutionError):  # 응답 내용 오류는 숨기지 않는다
+            self.adapters.follow(context("follow", {"select_target": selected.metadata}))
+
     def test_follow_without_orders_skips_every_mutating_stage(self):
         skipped = {"status": "skipped", "reason": "already_following", "risk_decision_id": RISK}
         intent = self.adapters.execution_intent(context(

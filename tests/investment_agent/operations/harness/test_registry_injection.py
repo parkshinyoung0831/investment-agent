@@ -81,8 +81,42 @@ class RegistryInjectionTest(unittest.TestCase):
         """System Portfolio는 승인 흐름 밖에서 돈다 — 분석 전용 모드에서도 불려야 한다."""
         called = self._tick_with_fakes()
         self.assertIn("run_system_portfolio", called)
-        # 같은 tick에서 실계좌 추종 단계는 분석 전용 모드라 멈춘다.
-        self.assertNotIn("follow", called)
+        # 승인 요청까지는 모드와 무관하게 돌고, 주문을 내는 단계만 분석 전용 모드에서 멈춘다.
+        self.assertIn("approval_request", called)
+        self.assertNotIn("approval_worker", called)
+
+    def test_only_the_stage_that_places_orders_sits_behind_the_trading_switches(self):
+        """승인 요청은 매번 가고, kill switch·lockdown·모드는 주문을 내는 단계 하나만 막는다."""
+        adapters = SimpleNamespace(**{name: (lambda _context: StageOutcome.succeeded()) for name in _STAGE_ADAPTERS},
+                                   **{name: (lambda _path=None: {}) for name in _COLLECTOR_ADAPTERS})
+        definitions = {item.job_id: item for item in build_registry(interval_seconds=60, adapters=adapters).definitions()}
+        sensitive = [stage.stage_id for stage in definitions["my_portfolio_follow"].stages if stage.trading_sensitive]
+        self.assertEqual(["approval_worker"], sensitive)
+
+    def test_a_kill_switch_still_stops_order_execution(self):
+        called = set()
+
+        def stage(name):
+            def handler(_context):
+                called.add(name)
+                return StageOutcome.succeeded()
+            return handler
+
+        adapters = SimpleNamespace(**{name: stage(name) for name in _STAGE_ADAPTERS},
+                                   **{name: (lambda _path=None: {}) for name in _COLLECTOR_ADAPTERS})
+        start = datetime(2026, 8, 22, tzinfo=timezone.utc)
+        with tempfile.TemporaryDirectory() as temp:
+            scheduler = HarnessScheduler(
+                registry=build_registry(interval_seconds=60, adapters=adapters),
+                store=JsonStateStore(Path(temp) / "state.json"),
+                mode=HarnessMode.APPROVAL_WORKFLOW,
+                environ={"TRADING_KILL_SWITCH": "on"},
+            )
+            scheduler.start(now=start)
+            scheduler.tick(now=start)
+            self.assertIn("approval_request", called)
+            self.assertNotIn("approval_worker", called)
+            self.assertEqual("trading_kill_switch", scheduler.state.jobs["my_portfolio_follow"].pause_reason)
 
     def test_ml_challengers_run_outside_the_approval_workflow(self):
         self.assertIn("run_ml_challengers", self._tick_with_fakes())

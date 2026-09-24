@@ -52,17 +52,21 @@ flowchart TD
 
 ## 운영 모드 비교 (`analysis_only` vs `approval_workflow`)
 
-하네스는 운영 단계에 따라 안전하게 모드를 분리하여 구동할 수 있습니다.
+사람이 결정하는 자리는 **Discord 승인 카드 하나**다. 분석·System 목표·실계좌 추종 제안·승인 요청은 모드와
+kill switch에 무관하게 매번 돈다. 모드와 스위치가 막는 것은 **승인된 주문을 실제로 내는 단계**(`approval_worker`)뿐이다.
 
-| 항목 | `analysis_only` (기본값) | `approval_workflow` |
+| 항목 | `approval_workflow` (기본값) | `analysis_only` |
 |---|---|---|
-| **용도** | 시장 분석 및 연구 신호 축적 | 실계좌 승인 및 주문 연동 |
-| **TradingAgents 분석** | ✅ 정상 주기 실행 | ✅ 정상 주기 실행 |
-| **포트폴리오 비중 산출** | ⏸ 실행 안 함 (Paused) | ✅ 실행 |
-| **Discord 승인 요청** | ⏸ 실행 안 함 (Paused) | ✅ 실행 (`#투자-승인`) |
-| **Toss 계좌 감시/체결동기화** | ⏸ 실행 안 함 (Paused) | ✅ 5분 위험 감시 / 1분 체결 동기화 |
-| **`TRADING_KILL_SWITCH=on` 시** | 분석 정상 유지 | 포트폴리오~주문 일시중지, 감시만 읽기 전용 유지 |
-| **실적 속보 수집(`earnings_watch`)** | ✅ 정상 주기 실행 | ✅ 정상 주기 실행 |
+| **TradingAgents 분석·System 목표** | ✅ | ✅ |
+| **Discord 승인 요청** | ✅ 매번 (`#투자-승인`) | ✅ 매번 |
+| **승인된 주문 실행** | kill switch off·lockdown 해제·`TOSS_LIVE_ENABLED=true`일 때만 | ⏸ 멈춤 |
+| **Toss 계좌 감시/체결동기화** | ✅ 5분 위험 감시 / 1분 체결 동기화 | ✅ |
+
+- 승인 카드 맨 앞 "⚠️ 먼저 확인할 것"이 실매매 꺼짐·kill switch·lockdown·검증(승격) 미통과를 적는다. 그 상태에서
+  승인해도 주문은 나가지 않는다.
+- System 추종 제안은 승격 게이트를 통과하지 않아도 승인 요청까지 간다 — 카드의 경고로 싣는다. 그 밖의 경로(수동
+  intent 생성)는 승격을 계속 요구한다.
+- 고정 IP가 아닌 곳(노트북을 들고 나간 경우)에서 Toss가 거절하면 추종 단계는 실패 대신 `toss_unreachable`로 건너뛴다.
 
 ### 등록되는 잡
 

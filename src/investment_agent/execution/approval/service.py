@@ -119,6 +119,7 @@ class ApprovalWorkflow:
         self,
         request: ApprovalRequest,
         handoff: TossManualHandoff,
+        notes: tuple[str, ...] = (),
     ) -> ApprovalRequest:
         """pending 행을 먼저 만든 뒤 카드를 보내고 stable message ID를 한 번만 결합한다."""
         if self._discord is None:
@@ -127,7 +128,7 @@ class ApprovalWorkflow:
             raise ExecutionSafetyError("only an unpublished pending approval can be posted")
         if self._discord.guild_id != request.discord_guild_id:
             raise ExecutionSafetyError("Discord client guild does not match approval request")
-        payload = build_approval_card(request, handoff, self._signer)
+        payload = build_approval_card(request, handoff, self._signer, notes)
         message = self._discord.post_card(
             channel_id=request.discord_channel_id,
             payload=payload,

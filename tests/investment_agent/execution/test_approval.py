@@ -248,6 +248,18 @@ class ApprovalWorkflowTest(unittest.TestCase):
         self.assertIn(request.manifest_hash, str(payload["embeds"]))
         self.assertIn("permit으로 바뀌지 않습니다", str(payload["embeds"]))
 
+    def test_card_puts_what_to_check_first_when_there_are_notes(self):
+        request = self.workflow.create_request(
+            intent=_intent(), handoff=_handoff(), proposal_hash="a" * 64,
+            risk_hash="b" * 64, discord_guild_id=_GUILD,
+            discord_channel_id=_CHANNEL, allowed_approver_user_ids=(_USER,), now=_NOW,
+        )
+        self.workflow.publish_request(request, _handoff(), ("실매매가 꺼져 있습니다",))
+        first = self.discord.payload["embeds"][0]["fields"][0]
+        self.assertEqual("⚠️ 먼저 확인할 것", first["name"])
+        self.assertIn("실매매가 꺼져 있습니다", first["value"])
+        self.assertEqual(len(self.discord.payload["components"][0]["components"]), 2)
+
     def test_card_payload_is_json_serializable_and_expiry_is_discord_timestamp(self):
         request = self._published()
         payload = json.loads(json.dumps(self.discord.payload, allow_nan=False))

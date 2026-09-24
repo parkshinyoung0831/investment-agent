@@ -74,6 +74,7 @@ def build_approval_card(
     request: ApprovalRequest,
     handoff: TossManualHandoff,
     signer: ApprovalSigner,
+    notes: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """Discord message create API에 바로 전달할 안전한 payload를 만든다."""
     handoff.validate_manifest()
@@ -133,6 +134,10 @@ def build_approval_card(
             "text": f"{request.approval_id} · 자유문장/답장/emoji는 승인되지 않습니다"
         },
     }
+    if notes:
+        # 실매매 꺼짐·검증 미통과처럼 따라갈지 정하기 전에 알아야 할 것. 맨 앞에 둔다.
+        embed["fields"].insert(0, {"name": "⚠️ 먼저 확인할 것",
+                                   "value": _fit_field([f"• {note}" for note in notes]), "inline": False})
     return {
         "embeds": [embed],
         "components": button_components(request, signer),

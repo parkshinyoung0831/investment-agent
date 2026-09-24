@@ -33,8 +33,10 @@ def my_portfolio_follow_job(
     """My Portfolio가 현재 System 목표를 따라갈지 한 번 묻고, 승인되면 실행한다.
 
     System 목표는 이 job 밖(`system_portfolio`)에서 이미 정해졌다. 여기서는 목표와 실제 계좌의 차이만
-    다룬다. ``trading_sensitive`` 단계는 ``approval_workflow`` 모드와 꺼진 전역 kill switch를 모두
-    요구한다. Discord Gateway는 이 job 안에서 기다리지 않고 별도 장기 서비스가 interaction을 원장에
+    다룬다. 목표 선택·추종 제안·intent·승인 요청은 주문을 내지 않으므로 모드·kill switch와 무관하게
+    **항상 돈다** — 사람은 매번 Discord 카드로 따라갈지를 정한다. 주문을 내는 ``approval_worker``만
+    ``trading_sensitive``라 kill switch·lockdown·모드가 막고, 실주문은 그 안에서 `TOSS_LIVE_ENABLED`가
+    다시 막는다. Discord Gateway는 이 job 안에서 기다리지 않고 별도 장기 서비스가 interaction을 원장에
     기록한다.
     """
     return JobDefinition(
@@ -46,28 +48,24 @@ def my_portfolio_follow_job(
             StageDefinition(
                 "select_target",
                 select_target,
-                trading_sensitive=True,
                 max_attempts=2,
                 retry_delay_seconds=60,
             ),
             StageDefinition(
                 "follow",
                 follow,
-                trading_sensitive=True,
                 max_attempts=2,
                 retry_delay_seconds=60,
             ),
             StageDefinition(
                 "execution_intent",
                 execution_intent,
-                trading_sensitive=True,
                 max_attempts=2,
                 retry_delay_seconds=30,
             ),
             StageDefinition(
                 "approval_request",
                 approval_request,
-                trading_sensitive=True,
                 max_attempts=1,
             ),
             StageDefinition(

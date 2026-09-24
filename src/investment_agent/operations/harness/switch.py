@@ -218,7 +218,7 @@ def get_harness_status(
 
 def start_harness_service(
     *,
-    mode: str = "analysis_only",
+    mode: str = "approval_workflow",
     state_dir: Path | str | None = None,
     root_dir: Path | str | None = None,
     background: bool = True,

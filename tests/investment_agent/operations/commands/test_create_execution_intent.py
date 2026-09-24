@@ -104,6 +104,43 @@ class CreateExecutionIntentScopeTest(unittest.TestCase):
         self.assertEqual(intent.proposal_id, "proposal-1")
         self.assertEqual(execution.rows, [intent.as_row()])
 
+    def _create(self, metadata_extra):
+        class Repository:
+            def current_tracked_tickers(self):
+                return ["AAPL"]
+
+            def has_approved_promotion(self, artifact_id, execution_mode):
+                return False
+
+        class IntentRepository:
+            rows: list = []
+
+            def risk_decision(self, risk_decision_id):
+                return {"risk_decision_id": risk_decision_id, "proposal_id": "proposal-1",
+                        "policy_key": "portfolio-risk-v1", "policy_version": 1, "policy_hash": "a" * 64,
+                        "input_hash": "b" * 64, "is_approved": True,
+                        "approved_weights": {"AAPL": 0.1, "CASH": 0.9}, "violations": [], "adjustments": [],
+                        "decided_at": "2026-08-22T00:58:00+00:00"}
+
+            def portfolio_proposal(self, proposal_id):
+                base = proposal(proposal_id=proposal_id)
+                return {**base, "metadata": {**base["metadata"], **metadata_extra}}
+
+            def save_intent(self, row):
+                self.rows.append(row)
+
+        return create_execution_intent(risk_decision_id="risk-1", execution_mode="live", confirmation="risk-1",
+                                       now=NOW, repository=Repository(), execution_repository=IntentRepository())
+
+    def test_a_follow_proposal_carries_the_missing_promotion_as_a_card_warning(self):
+        """System 추종 제안은 검증 미통과를 승인 카드 경고로 싣고 intent까지 간다 — 따라갈지는 사람이 정한다."""
+        intent = self._create({"approval_warnings": ["검증 미통과"]})
+        self.assertTrue(intent.intent_id.startswith("intent_"))
+
+    def test_any_other_live_proposal_still_requires_promotion(self):
+        with self.assertRaisesRegex(RuntimeError, "promotion"):
+            self._create({})
+
     def test_public_core_rejects_wrong_confirmation_before_lookup(self):
         with self.assertRaisesRegex(RuntimeError, "exactly match"):
             create_execution_intent(

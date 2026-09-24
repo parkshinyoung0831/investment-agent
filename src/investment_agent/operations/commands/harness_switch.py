@@ -112,8 +112,8 @@ def interactive_loop(state_dir: Path, root_dir: Path) -> int:
         status = get_harness_status(state_dir=state_dir, root_dir=root_dir)
         print_status_dashboard(status.to_dict())
         _safe_print("")
-        _safe_print("  [1] 하네스 켜기 (ON - AI 모의투자 / Shadow / analysis_only) ⭐ 추천")
-        _safe_print("  [2] 하네스 켜기 (ON - 실계좌 승인 / approval_workflow)")
+        _safe_print("  [1] 하네스 켜기 (분석 + 매번 Discord 승인 요청 · 실주문은 킬스위치·실매매 스위치가 결정) ⭐ 추천")
+        _safe_print("  [2] 하네스 켜기 (승인된 주문도 실행하지 않음 / analysis_only)")
         _safe_print("  [3] 하네스 끄기 (OFF - 모든 프로세스 완전 정지 및 락 정리)")
         _safe_print("  [4] 킬스위치 토글 (TRADING_KILL_SWITCH on <-> off)")
         _safe_print("  [5] 실주문 토글 (TOSS_LIVE_ENABLED true <-> false)")
@@ -128,13 +128,13 @@ def interactive_loop(state_dir: Path, root_dir: Path) -> int:
             return 0
 
         if choice == "1":
-            _safe_print("\n[작업] Shadow 모의투자 하네스를 백그라운드에서 시작합니다...")
-            res = start_harness_service(mode="analysis_only", state_dir=state_dir, root_dir=root_dir, background=True)
+            _safe_print("\n[작업] 하네스를 백그라운드에서 시작합니다(승인 요청 포함)...")
+            res = start_harness_service(mode="approval_workflow", state_dir=state_dir, root_dir=root_dir, background=True)
             _safe_print(f"결과: {res.get('message')}")
             input("\n계속하려면 Enter를 누르세요...")
         elif choice == "2":
-            _safe_print("\n[작업] 실계좌 승인 하네스를 백그라운드에서 시작합니다...")
-            res = start_harness_service(mode="approval_workflow", state_dir=state_dir, root_dir=root_dir, background=True)
+            _safe_print("\n[작업] 주문 실행 없이 하네스를 백그라운드에서 시작합니다...")
+            res = start_harness_service(mode="analysis_only", state_dir=state_dir, root_dir=root_dir, background=True)
             _safe_print(f"결과: {res.get('message')}")
             input("\n계속하려면 Enter를 누르세요...")
         elif choice == "3":
@@ -220,8 +220,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--mode",
         choices=["analysis_only", "approval_workflow"],
-        default="analysis_only",
-        help="하네스 가동 모드 (기본: analysis_only)",
+        default="approval_workflow",
+        help="하네스 가동 모드. 승인 요청은 두 모드 모두 매번 간다. approval_workflow(기본)는 승인된 주문을 "
+             "킬스위치·실매매 스위치가 허락할 때 실행하고, analysis_only는 실행 단계를 멈춘다",
     )
     parser.add_argument(
         "--no-background",

@@ -60,6 +60,7 @@ class ApprovalWorkflowPort(Protocol):
         self,
         request: ApprovalRequest,
         handoff: TossManualHandoff,
+        notes: tuple[str, ...] = (),
     ) -> ApprovalRequest: ...
 
 
@@ -427,7 +428,27 @@ def request_toss_approval(
 
     # POST timeout/5xx를 이 계층에서 재시도하지 않는다. 실패하면 message 미결합
     # pending 행이 남고, 다음 실행은 위의 existing gate에서 멈춘다.
-    return workflow.publish_request(request, handoff)
+    return workflow.publish_request(request, handoff, approval_notes(proposal))
+
+
+def approval_notes(proposal: Mapping[str, Any] | None, *, env: Mapping[str, str] | None = None,
+                   is_locked_down: bool | None = None) -> tuple[str, ...]:
+    """승인 카드 맨 앞에 싣는 확인 사항. 승인 요청은 매번 가므로, 승인해도 주문이 안 나가는 상태를 카드가 말한다."""
+    from investment_agent.execution.safety.lockdown import is_execution_locked_down
+    from investment_agent.platform.trading_switch import KILL_SWITCH_FLAG, LIVE_FLAG, kill_switch_on, live_enabled
+
+    values = os.environ if env is None else env
+    notes: list[str] = []
+    if not live_enabled(values.get(LIVE_FLAG)):
+        notes.append("실매매가 꺼져 있습니다(TOSS_LIVE_ENABLED) — 승인해도 주문이 나가지 않는 참고용 카드입니다")
+    if kill_switch_on(values.get(KILL_SWITCH_FLAG)):
+        notes.append("거래 킬스위치가 켜져 있습니다 — 승인해도 주문이 나가지 않습니다")
+    if is_execution_locked_down() if is_locked_down is None else is_locked_down:
+        notes.append("실행 잠금(lockdown) 중입니다 — 승인해도 주문이 나가지 않습니다")
+    metadata = (proposal or {}).get("metadata")
+    if isinstance(metadata, Mapping):
+        notes.extend(str(item) for item in metadata.get("approval_warnings") or ())
+    return tuple(notes)
 
 
 def request_toss_approval_by_id(

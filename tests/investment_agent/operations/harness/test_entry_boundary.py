@@ -126,14 +126,21 @@ class HarnessEntryBoundaryTest(unittest.TestCase):
                 ("investment_analysis", "analysis"),
                 # 판단 직후에 보고서를 보낸다. 실패해도 분석 결과를 가리지 않는다.
                 ("investment_analysis", "notify_investment"),
+                # 실계좌 추종은 주문 전 단계까지 모드와 무관하게 돈다 — 승인 요청은 매번 간다.
+                ("my_portfolio_follow", "select_target"),
+                ("my_portfolio_follow", "follow"),
+                ("my_portfolio_follow", "execution_intent"),
+                ("my_portfolio_follow", "approval_request"),
                 # 승인·실계좌와 무관하게 System Portfolio는 분석 전용 모드에서도 돈다.
                 ("system_portfolio", "run_system_portfolio"),
                 ("toss_reconciliation", "reconcile"),
             ])
+            # 주문을 내는 단계만 분석 전용 모드에서 멈춘다.
             self.assertEqual(
                 scheduler.state.jobs["my_portfolio_follow"].pause_reason,
                 "analysis_only_mode",
             )
+            self.assertEqual("approval_worker", scheduler.state.jobs["my_portfolio_follow"].stage)
             scheduler.tick(now=start + timedelta(seconds=61))
             self.assertEqual(calls, [
                 ("account_risk_snapshot", "capture"),
@@ -149,6 +156,11 @@ class HarnessEntryBoundaryTest(unittest.TestCase):
                 ("feature_store", "build_events"),
                 ("investment_analysis", "analysis"),
                 ("investment_analysis", "notify_investment"),
+                # 실계좌 추종은 주문 전 단계까지 모드와 무관하게 돈다 — 승인 요청은 매번 간다.
+                ("my_portfolio_follow", "select_target"),
+                ("my_portfolio_follow", "follow"),
+                ("my_portfolio_follow", "execution_intent"),
+                ("my_portfolio_follow", "approval_request"),
                 ("system_portfolio", "run_system_portfolio"),
                 ("toss_reconciliation", "reconcile"),
                 # 정확 시각 대상은 1분 안에 다시 확인해야 한다.

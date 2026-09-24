@@ -14,7 +14,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 from investment_agent.execution.contracts import AccountSnapshot, ExecutionLimits
 from investment_agent.platform.logging import get_logger
@@ -81,6 +81,7 @@ def plan_follow(
     now: datetime,
     save_snapshot: Callable[[AccountSnapshot], str],
     policy: FollowPolicy | None = None,
+    warnings: Sequence[str] = (),
 ) -> FollowOutcome:
     """System 목표 하나와 새 계좌 스냅샷으로 실계좌 추종 제안·결정을 기록한다. 주문은 내지 않는다."""
     selected = policy or FollowPolicy()
@@ -127,6 +128,8 @@ def plan_follow(
             "sold_outside_target": sorted(symbol for symbol, weight in weights.items()
                                           if symbol != CASH_SYMBOL and weight == 0.0),
             "order_gaps_usd": {symbol: round(value, 2) for symbol, value in sorted(gaps.items())},
+            # 승인 카드에 그대로 싣는 확인 사항(검증 미통과 등). 사람이 보고 따라갈지를 정한다.
+            "approval_warnings": list(warnings),
         },
     )
     row = proposal.to_dict()
