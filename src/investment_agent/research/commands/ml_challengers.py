@@ -37,7 +37,9 @@ from investment_agent.research.training.walk_forward import purged_row_splits
 log = get_logger(__name__)
 
 MODEL_KINDS = ("naive", "ridge", "lightgbm", "xgboost")
-DEFAULT_LOOKBACK_DAYS = 730
+# 학습 표본은 주 1회 간격이고 60/20/20으로 나눈다. 2년이면 OOS가 19주라 채택 기준(20일·HAC t)을
+# 구조적으로 넘지 못하고, 넘더라도 한 국면의 운이다. 5년이면 OOS가 약 50주다.
+DEFAULT_LOOKBACK_DAYS = 1826
 _PARAMETERS: Mapping[str, Mapping[str, Any]] = {
     "ridge": {"alpha": 1e-3},
     # 표본이 수만 행 수준이라 얕은 트리·강한 규제로 과적합을 누른다. 튜닝은 challenger 비교가 한다.
