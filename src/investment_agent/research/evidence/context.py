@@ -130,7 +130,10 @@ class ContextBuilder:
         if technical:
             items.append(_item(
                 "technical", "Research DuckDB feature_signals_daily",
-                str(technical[0]["trade_date"]), str(technical[0]["ingested_at"]),
+                # 지표는 확정 봉의 결정적 함수다. 적재 시각을 쓰면 뒤늦게 다시 계산한 과거 지표가 모든 과거 시점에서
+                # 미래 증거로 거부된다. 조회(`last_finalized_trade_date`)와 같은 봉 확정 규칙을 쓴다.
+                str(technical[0]["trade_date"]),
+                bar_available_at(str(technical[0]["trade_date"])).astimezone(timezone.utc).isoformat(),
                 {key: value for key, value in technical[0].items() if key != "ingested_at"},
             ))
             warnings.append(

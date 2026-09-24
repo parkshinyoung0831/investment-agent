@@ -75,6 +75,18 @@ class ContextPointInTimeTest(unittest.TestCase):
         market = next(item for item in bundle.evidence if item.domain == "market")
         self.assertEqual(market.available_at, "2025-01-02T23:00:00+00:00")
 
+    def test_recomputed_technical_uses_bar_finalization_not_ingestion(self):
+        repository = _Repository()
+        rows = [{"ticker": "AAPL", "trade_date": "2015-06-04", "rsi_14": 55.0,
+                 "ingested_at": "2026-09-24T00:00:00+00:00"}]
+        with patch.object(repository, "technical_snapshot", return_value=rows), \
+                patch.object(repository, "fundamentals_pit", return_value=[]):
+            bundle = ContextBuilder(repository).build(
+                "AAPL", datetime(2015, 6, 5, 23, 30, tzinfo=timezone.utc), source_kind="historical_replay",
+            )
+        technical = next(item for item in bundle.evidence if item.domain == "technical")
+        self.assertEqual(technical.available_at, "2015-06-04T22:00:00+00:00")
+
     def test_unfinished_daily_bar_is_excluded_from_statistics(self):
         repository = _Repository()
         rows = [
