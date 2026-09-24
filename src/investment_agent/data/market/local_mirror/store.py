@@ -9,6 +9,10 @@ data/local/mirror/
   actions.parquet      market.actions_daily (배당·분할)
 ```
 
+운영 DB는 최근 7년만 보관한다. 그보다 오래된 봉·기업행위는 `market_history/yahoo/<security_id>/daily.parquet`
+(`commands/archive_long_history`)에서 읽을 때 채운다 — 종목마다 사본의 첫 날짜보다 앞선 날만 쓰므로 두 원천이
+겹치는 날은 언제나 운영 DB 값이다. 사본 파일 자체에는 섞지 않는다(사본은 Supabase의 복사본이다).
+
 - 결과 모양은 Supabase 경로(`data.market.persistence.price_history_as_of`,
   `data.universe.persistence.select_sp500_membership_snapshots` 등)와 같다. 부르는 쪽은 어느 저장소에서 왔는지
   몰라도 된다(동등성은 테스트가 강제).
@@ -80,8 +84,17 @@ def _write_atomically(frame: pd.DataFrame, target: Path) -> None:
 class LocalMirror:
     """사본 한 벌. 읽기는 처음 한 번 메모리에 올리고, 같은 프로세스 안에서 재사용한다."""
 
-    def __init__(self, root: Path | str | None = None) -> None:
+    def __init__(self, root: Path | str | None = None, *, history_root: Path | str | None = None) -> None:
         self.root = Path(root) if root is not None else mirror_root()
+        # 긴 이력 archive. 기본 사본을 쓸 때만 기본 archive를 붙인다 — 임시 사본(테스트)이 실제 archive를 읽지 않게.
+        if history_root is not None:
+            self.history_root: Path | None = Path(history_root)
+        elif root is None:
+            from investment_agent.data.market.infrastructure.archive import archive_root
+
+            self.history_root = archive_root() / "yahoo"
+        else:
+            self.history_root = None
         self._lock = threading.Lock()
         self._frames: dict[str, pd.DataFrame] = {}
         self._price_index: dict[int, Any] | None = None
@@ -190,8 +203,11 @@ class LocalMirror:
                 prices = self._frames.get(T_PRICES)
                 if prices is None:
                     prices = pd.read_parquet(self.root / f"{T_PRICES}.parquet", engine="pyarrow")
+                    actions = pd.read_parquet(self.root / f"{T_ACTIONS}.parquet", engine="pyarrow")
+                    prices, actions = _with_long_history(prices, actions, self.history_root)
                     prices = prices.sort_values(["security_id", "trade_date"]).reset_index(drop=True)
                     self._frames[T_PRICES] = prices
+                    self._frames[T_ACTIONS] = actions
                 self._price_index = prices.groupby("security_id").indices
                 actions = self._frames.get(T_ACTIONS)
                 if actions is None:
@@ -268,6 +284,39 @@ class LocalMirror:
             output.extend({"ticker": ticker, "trade_date": str(row["trade_date"]), "close": float(row["close"])}
                           for row in rows.to_dict("records") if pd.notna(row.get("close")))
         return sorted(output, key=lambda row: (row["ticker"], row["trade_date"]))
+
+
+def _with_long_history(prices: pd.DataFrame, actions: pd.DataFrame,
+                       history_root: Path | None) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """사본보다 오래된 봉과 그 기간의 배당·분할을 archive에서 앞에 붙인다.
+
+    archive 종가는 사본과 같은 분할 기준(provider의 split-normalized close)이다. 종목마다 사본의 첫 날짜 전
+    봉만 쓰고, 기업행위는 사본에 없는 날짜만 더한다.
+    """
+    if history_root is None or not history_root.is_dir():
+        return prices, actions
+    files = sorted(history_root.glob("*/daily.parquet"))
+    if not files:
+        return prices, actions
+    history = pd.concat([pd.read_parquet(path, engine="pyarrow") for path in files], ignore_index=True)
+    if history.empty:
+        return prices, actions
+    history["trade_date"] = pd.to_datetime(history["trade_date"]).dt.strftime("%Y-%m-%d")
+    first = prices.groupby("security_id")["trade_date"].min()
+    cutoff = history["security_id"].map(first)
+    older = history[cutoff.isna() | (history["trade_date"] < cutoff.fillna(""))]
+    bars = older.loc[:, ["security_id", "trade_date", "open", "high", "low", "close", "volume"]].copy()
+    bars["is_repaired"] = False
+    merged_prices = pd.concat([bars, prices], ignore_index=True)
+
+    events = older.loc[older["div_amount"].notna() | older["split_ratio"].notna(),
+                       ["security_id", "trade_date", "split_ratio", "div_amount"]]
+    events = events.rename(columns={"trade_date": "action_date", "div_amount": "dividend_amount"})
+    known = set(zip(actions["security_id"], actions["action_date"]))
+    events = events[[key not in known for key in zip(events["security_id"], events["action_date"])]]
+    events = events.astype({column: actions[column].dtype for column in events.columns if column in actions})
+    merged_actions = pd.concat([actions, events], ignore_index=True) if len(events) else actions
+    return merged_prices, merged_actions
 
 
 def _python(value: Any) -> Any:

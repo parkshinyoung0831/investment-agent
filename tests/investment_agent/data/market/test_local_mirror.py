@@ -106,6 +106,31 @@ class LocalMirrorTest(unittest.TestCase):
         rows = self.mirror.price_history_as_of("BBB", datetime(2026, 1, 6, 23, tzinfo=UTC), limit=3)
         self.assertEqual(rows[-2]["split_ratio"], 2.0)
 
+    def test_bars_older_than_the_mirror_come_from_the_long_history_archive(self):
+        """운영 DB 보관 창 밖의 봉은 archive에서 채우고, 겹치는 날은 운영 DB 값을 쓴다."""
+        import pandas as pd
+
+        self.sync(now=NOW)
+        history = Path(self.tmp.name) / "history"
+        (history / "1").mkdir(parents=True)
+        pd.DataFrame([
+            {"security_id": 1, "trade_date": date(2024, 12, 30), "open": 7.0, "high": 7.0, "low": 7.0, "close": 7.0,
+             "volume": 5, "div_amount": 0.25, "split_ratio": None},
+            {"security_id": 1, "trade_date": date(2024, 12, 31), "open": 8.0, "high": 8.0, "low": 8.0, "close": 8.0,
+             "volume": 5, "div_amount": None, "split_ratio": None},
+            # 사본에도 있는 날. archive 값(999)은 쓰이지 않아야 한다.
+            {"security_id": 1, "trade_date": date(2025, 1, 1), "open": 999.0, "high": 999.0, "low": 999.0,
+             "close": 999.0, "volume": 5, "div_amount": None, "split_ratio": None},
+        ]).to_parquet(history / "1" / "daily.parquet", index=False)
+        mirror = LocalMirror(self.mirror.root, history_root=history)
+        rows = mirror.closes_between(["AAA"], start=date(2024, 12, 30), end=date(2025, 1, 1))
+        self.assertEqual([7.0, 8.0], [row["close"] for row in rows[:2]])
+        self.assertNotEqual(999.0, rows[2]["close"])
+        early = mirror.price_history_as_of("AAA", datetime(2024, 12, 31, 23, tzinfo=UTC), limit=5)
+        self.assertEqual(0.25, early[0]["div_amount"])
+        # 임시 사본은 실제 archive를 읽지 않는다.
+        self.assertIsNone(LocalMirror(self.mirror.root).history_root)
+
     def test_tickers_resolve_to_the_preferred_security_and_sector_is_for_tracked_names(self):
         self.sync(now=NOW)
         self.assertEqual(self.mirror.security_ids(["AAA", "SPY"]), {"AAA": 1, "SPY": 4})
