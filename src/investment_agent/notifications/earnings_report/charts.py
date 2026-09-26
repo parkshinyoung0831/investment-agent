@@ -13,6 +13,7 @@ from typing import Any
 from investment_agent.notifications.earnings_report import format as fmt
 from investment_agent.notifications.earnings_report import palette
 from investment_agent.reporting.services.earnings import metrics
+from investment_agent.reporting.services.financial_row import consolidated_net_income
 
 def _num(v: Any) -> float | None:
     if v is None:
@@ -666,10 +667,14 @@ def cashflow_quarters(history: list[dict], *, w: int = 440, h: int = 150) -> dic
 
 
 def _bridge_parts(row: dict | None) -> dict[str, float] | None:
-    """브릿지 한 기간분 — 순이익에서 FCF까지의 단계값."""
+    """브릿지 한 기간분 — 순이익에서 FCF까지의 단계값.
+
+    출발점은 연결 순이익이다. 영업현금흐름이 거기서 출발하므로, 모회사 귀속분에서 시작하면
+    비지배지분 몫이 '운전자본/기타'로 섞인다.
+    """
     if not row:
         return None
-    ni = _num(row.get("net_income"))
+    ni = consolidated_net_income(row)
     ocf = _num(row.get("net_cash_from_operating_activities"))
     if ni is None or ocf is None:
         return None

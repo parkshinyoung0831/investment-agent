@@ -204,6 +204,7 @@ def check_core_wide(rows: list[dict]) -> tuple[list[dict], list[dict]]:
 
     clean_rows, collisions = _reject_period_collisions(clean_rows)
     anomalies.extend(collisions)
+    _per_share_from_income(clean_rows)
     if anomalies:
         log.warning("fundamentals anomalies recorded: %d", len(anomalies))
     return clean_rows, anomalies
@@ -238,3 +239,54 @@ def _reject_period_collisions(rows: list[dict]) -> tuple[list[dict], list[dict]]
             "filed_at": row.get("filed_at"),
         })
     return kept, anomalies
+
+
+# 한 회사의 분기 가중평균 주식수는 분기마다 크게 움직이지 않는다. 중앙값에서 이 배수 넘게
+# 벗어난 분기의 주식수로는 EPS를 만들지 않는다 — 천·백만 단위 오류는 1,000배로 벌어진다.
+_SHARES_MEDIAN_FACTOR = 10.0
+
+
+def _per_share_from_income(rows: list[dict]) -> None:
+    """보고된 EPS가 없는 분기(대개 Q4)는 순이익÷같은 분기 가중평균 주식수로 만든다.
+
+    검증을 마친 뒤에 만든다. 이렇게 만든 EPS는 자기 입력과 늘 맞으므로, 주식수 단위 오류를
+    잡는 `_scale_mismatch`가 그 오류를 볼 수 없다. 그래서 같은 회사의 다른 분기 주식수 중앙값과
+    자릿수가 다른 주식수로는 만들지 않는다. 분자는 보통주 귀속 순이익(우선주 배당 차감)이 있으면
+    그것, 없으면 모회사 귀속 순이익이다.
+    """
+    shares_by_cik: dict[tuple[str, str], list[float]] = {}
+    for row in rows:
+        for column in ("shares_average", "shares_fully_diluted_average"):
+            value = row.get(column)
+            if value and value > 0:
+                shares_by_cik.setdefault((str(row["cik"]), column), []).append(float(value))
+    medians = {
+        key: sorted(values)[len(values) // 2] for key, values in shares_by_cik.items()
+    }
+    for row in rows:
+        numerator_column = (
+            "net_income_to_common_shareholders"
+            if row.get("net_income_to_common_shareholders") is not None
+            else "net_income"
+        )
+        numerator = row.get(numerator_column)
+        for eps_column, shares_column in (
+            ("eps_basic_gaap", "shares_average"),
+            ("eps_diluted_gaap", "shares_fully_diluted_average"),
+        ):
+            shares = row.get(shares_column)
+            if row.get(eps_column) is not None or numerator is None or not shares or shares <= 0:
+                continue
+            median = medians.get((str(row["cik"]), shares_column))
+            if median and not 1 / _SHARES_MEDIAN_FACTOR <= shares / median <= _SHARES_MEDIAN_FACTOR:
+                continue
+            row[eps_column] = numerator / shares
+            manifests = row.get("source_manifest") or {}
+            manifests[eps_column] = {
+                "raw_tag": None,
+                "accession_no": row.get("accession_no"),
+                "period_end": row.get("period_end"),
+                "is_derived": True,
+                "derivation": {"formula": f"{numerator_column} / {shares_column}"},
+            }
+            row["source_manifest"] = manifests

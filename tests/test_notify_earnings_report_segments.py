@@ -255,7 +255,7 @@ class EarningsCardTest(unittest.TestCase):
         row = {
             "ticker": "TEST", "fiscal_year": 2026, "fiscal_period": "Q2",
             "accession_no": "ACC", "form_type": "10-Q", "period_end": "2026-06-30",
-            "filed_at": "2026-07-30", "mapping_version": "test",
+            "filed_at": "2026-07-30",
             "revenue": 120, "operating_income_loss": 30, "net_income": 24,
             "gross_profit": 60, "shares_fully_diluted_average": 12,
             "net_cash_from_operating_activities": 28, "capital_expenses": 8,

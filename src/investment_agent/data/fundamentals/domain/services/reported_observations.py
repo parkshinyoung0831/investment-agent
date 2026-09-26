@@ -997,34 +997,6 @@ def _parent_net_income(rows: list[dict]) -> list[dict]:
     return rows
 
 
-def _per_share_from_income(rows: list[dict]) -> list[dict]:
-    """보고된 EPS가 없는 분기는 순이익÷같은 분기 가중평균 주식수로 만든다.
-
-    분자는 보통주 귀속 순이익(우선주 배당 차감)이 있으면 그것, 없으면 모회사 귀속 순이익이다.
-    """
-    for row in rows:
-        numerator_column = (
-            "net_income_to_common_shareholders"
-            if row.get("net_income_to_common_shareholders") is not None
-            else "net_income"
-        )
-        numerator = row.get(numerator_column)
-        for eps_column, shares_column in (
-            ("eps_basic_gaap", "shares_average"),
-            ("eps_diluted_gaap", "shares_fully_diluted_average"),
-        ):
-            shares = row.get(shares_column)
-            if row.get(eps_column) is not None or numerator is None or not shares or shares <= 0:
-                continue
-            row[eps_column] = numerator / shares
-            manifests = row.get("source_manifest") or {}
-            manifests[eps_column] = _derived_manifest(
-                row, f"{numerator_column} / {shares_column}", (numerator_column, shares_column)
-            )
-            row["source_manifest"] = manifests
-    return rows
-
-
 def _common_equity_from_scope(rows: list[dict]) -> list[dict]:
     """`common_equity`를 보통주 자본(모회사 주주자본 - 우선주)으로 맞춘다.
 
@@ -1133,6 +1105,6 @@ def to_wide_tables(facts: list[dict]) -> tuple[list[dict], list[dict]]:
         if str(row.get("fiscal_period") or "") != "FY"
     ]
     rows = _pivot(quarters, (*CORE_COLUMNS, "net_income_including_nci"))
-    rows = _per_share_from_income(_parent_net_income(rows))
+    rows = _parent_net_income(rows)
     rows = _common_equity_from_scope(rows)
     return _derive_missing_liabilities(rows), anomalies

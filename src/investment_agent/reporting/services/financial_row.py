@@ -12,6 +12,10 @@ reporting이고 알림 카드는 이것을 소비한다. `net_debt`·`cash_and_e
 """
 from __future__ import annotations
 
+from investment_agent.data.fundamentals.domain.services.balance_identity import (
+    consolidated_net_income as _consolidated_net_income,
+    total_book_equity as _total_book_equity,
+)
 from investment_agent.data.fundamentals.domain.services.leverage_metrics import total_debt
 
 
@@ -36,6 +40,24 @@ def cash_and_equivalents(row: dict) -> float | None:
     return (cash or 0.0) + (short_term or 0.0)
 
 
+def _numbers(row: dict, columns: tuple[str, ...]) -> dict[str, float | None]:
+    return {column: f(row.get(column)) for column in columns}
+
+
+def total_book_equity(row: dict) -> float | None:
+    """보통주 자본 + 우선주 + 비지배지분. 정의는 `balance_identity.total_book_equity`."""
+    return _total_book_equity(
+        _numbers(row, ("common_equity", "preferred_stock", "minority_interest_balance"))
+    )
+
+
+def consolidated_net_income(row: dict) -> float | None:
+    """모회사 귀속 + 비지배지분 순이익. 정의는 `balance_identity.consolidated_net_income`."""
+    return _consolidated_net_income(
+        _numbers(row, ("net_income", "minority_interest_income"))
+    )
+
+
 def net_debt(row: dict) -> float | None:
     """`total_debt` − `cash_and_equivalents`. 부채·현금 어느 쪽도 모르면 None이다."""
     debt = total_debt(row)
@@ -44,4 +66,11 @@ def net_debt(row: dict) -> float | None:
     return debt - (cash_and_equivalents(row) or 0.0)
 
 
-__all__ = ["cash_and_equivalents", "f", "net_debt", "total_debt"]
+__all__ = [
+    "cash_and_equivalents",
+    "consolidated_net_income",
+    "f",
+    "net_debt",
+    "total_book_equity",
+    "total_debt",
+]

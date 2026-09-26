@@ -7,6 +7,7 @@ from typing import Any
 
 
 from investment_agent.data.fundamentals.domain.periods import are_consecutive_quarters
+from investment_agent.data.fundamentals.domain.services.balance_identity import consolidated_net_income
 from investment_agent.data.fundamentals.domain.services.leverage_metrics import (
     total_debt as _total_debt,
 )
@@ -149,6 +150,13 @@ def quality_statistics(rows: Iterable[Mapping[str, Any]]) -> dict[str, float]:
     latest = ttm[0]
     revenue = _sum(ttm, "revenue")
     net_income = _sum(ttm, "net_income")
+    # 발생액은 영업현금흐름과 같은 범위(연결)의 순이익으로 잰다.
+    consolidated = [
+        consolidated_net_income({"net_income": _finite(row.get("net_income")),
+                                 "minority_interest_income": _finite(row.get("minority_interest_income"))})
+        for row in ttm
+    ]
+    consolidated_income = None if any(value is None for value in consolidated) else math.fsum(consolidated)  # type: ignore[arg-type]
     operating = _sum(ttm, "operating_income_loss")
     gross_values = [_gross_profit(row) for row in ttm]
     gross = None if any(value is None for value in gross_values) else math.fsum(gross_values)  # type: ignore[arg-type]
@@ -171,7 +179,9 @@ def quality_statistics(rows: Iterable[Mapping[str, Any]]) -> dict[str, float]:
         "interest_coverage_ttm": _ratio(operating, interest) if interest is not None and interest > 0 else None,
         # 이익이 현금보다 크게 앞서는 정도. 높을수록 이익의 질이 낮다.
         "accruals_ttm": _ratio(
-            net_income - cash_flow if net_income is not None and cash_flow is not None else None, assets, positive=True,
+            consolidated_income - cash_flow
+            if consolidated_income is not None and cash_flow is not None else None,
+            assets, positive=True,
         ),
         "debt_to_equity": _ratio(debt, equity, positive=True),
     }

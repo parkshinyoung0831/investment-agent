@@ -42,7 +42,7 @@
     { "from": "watcher", "to": "discord", "y": 316, "label": "매출·EPS 서프라이즈 Embed 즉시 발송", "variant": "emphasis" },
     { "from": "watcher", "to": "ledger", "y": 358, "label": "속보 발송 완료 기록", "variant": "dashed" },
     { "from": "sec", "to": "watcher", "y": 470, "label": "정식 Form 10-Q/K 공시 접수", "variant": "emphasis" },
-    { "from": "watcher", "to": "ledger", "y": 512, "label": "financial_versions 버전 적재", "variant": "emphasis" },
+    { "from": "watcher", "to": "ledger", "y": 512, "label": "financials 분기 행 적재", "variant": "emphasis" },
     { "from": "watcher", "to": "ledger", "y": 554, "label": "정밀 카드 알림 선점", "variant": "default" },
     { "from": "watcher", "to": "renderer", "y": 606, "label": "13분기 추세·현금흐름 브릿지 렌더 요청", "variant": "emphasis" },
     { "from": "renderer", "to": "watcher", "y": 668, "label": "고해상도 PNG 캡처 바이트 반환", "variant": "return" },
@@ -69,7 +69,7 @@
       "dot": "emerald",
       "title": "2단계: 고해상도 시각화 카드 (Earnings)",
       "items": [
-        "정식 10-Q/K 재무제표가 접수되면 financial_versions에 공시별 버전을 격리 보존한다",
+        "정식 10-Q/K 재무제표가 접수되면 financials에 분기마다 한 행으로 적재한다(정정 공시는 보고한 컬럼만 덮는다)",
         "Playwright Chromium이 13분기 추세와 6단계 현금흐름 브릿지 차트를 PNG로 캡처하여 포럼에 발행한다"
       ]
     }

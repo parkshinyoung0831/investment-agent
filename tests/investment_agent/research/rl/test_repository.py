@@ -144,7 +144,6 @@ class RLRepositoryTest(unittest.TestCase):
         versions = [{
             "cik": "0000320193",
             "accession_no": "0000320193-26-000001",
-            "mapping_version": "v1",
             "fiscal_year": 2026,
             "fiscal_period": "Q2",
             "period_end": "2026-06-30",

@@ -21,7 +21,13 @@ from investment_agent.data.fundamentals.domain.services.balance_identity import 
 from investment_agent.data.market.domain.actions import merge_corporate_actions
 from investment_agent.data.market.repository import MarketRepository
 from investment_agent.data.universe.repository import UniverseRepository
-from investment_agent.reporting.services.financial_row import f, net_debt, total_debt
+from investment_agent.reporting.services.financial_row import (
+    consolidated_net_income,
+    f,
+    net_debt,
+    total_book_equity,
+    total_debt,
+)
 from investment_agent.data.fundamentals.domain.services.classify_dimensions import display_member_name
 
 # --- DB 식별자 (SSOT) ---------------------------------------------------
@@ -87,7 +93,7 @@ def watchlist_members() -> list[dict]:
 
 _FINANCIAL_COLUMNS = (
     "cik,period_end,accession_no,fiscal_year,fiscal_period,revenue,"
-    "operating_income_loss,net_income,eps_diluted_gaap,assets,liabilities,"
+    "operating_income_loss,net_income,minority_interest_income,eps_diluted_gaap,assets,liabilities,"
     "is_liabilities_derived,common_equity,minority_interest_balance,"
     "mezzanine_equity,preferred_stock,net_cash_from_operating_activities,"
     "net_cash_from_investing_activities,net_cash_from_financing_activities,"
@@ -613,11 +619,15 @@ def load_earnings_quality(tickers: list[str]) -> dict[str, dict]:
     """이익의 질(TTM) — OCF/순이익·FCF/순이익·발생액.
 
     발생액은 (순이익 − 영업현금흐름) / 총자산이다. 이익이 현금으로 뒷받침되는지
-    보는 값이라 분모는 매출이 아니라 자산이다.
+    보는 값이라 분모는 매출이 아니라 자산이다. 순이익은 연결(비지배지분 포함)이다 —
+    영업현금흐름이 연결 순이익에서 출발하므로 범위를 맞춰야 비지배지분 몫이 발생액이 되지 않는다.
     """
     out: dict[str, dict] = {}
     for ticker, rows in _quarterly_by_ticker(tickers).items():
-        net_income = _ttm(rows, "net_income")
+        net_income = _ttm(
+            [{**row, "consolidated_net_income": consolidated_net_income(row)} for row in rows],
+            "consolidated_net_income",
+        )
         operating = _ttm(rows, "net_cash_from_operating_activities")
         if net_income is None or operating is None:
             continue
@@ -651,7 +661,8 @@ def _altman_z(row: dict, *, operating_ttm: float | None) -> float | None:
         # EBIT은 TTM이다. 분기 영업이익을 연간 자산과 견주면 항이 1/4로 줄어
         # 우량 기업이 위험 구간으로 내려앉는다.
         operating_ttm,
-        f(row.get("common_equity")),
+        # 자본/부채 항의 자본은 장부상 자본 총계다(보통주 몫만이 아니다).
+        total_book_equity(row),
     ]
     if any(part is None for part in parts):
         return None
