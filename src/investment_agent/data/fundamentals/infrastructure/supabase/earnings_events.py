@@ -107,14 +107,17 @@ def upsert_earnings_results(rows: list[dict[str, Any]]) -> int:
             "cik": str(row["cik"]).zfill(10),
             "form_type": row.get("form_type") or "8-K",
             "filing_date": row.get("filed_at"),
-            "report_date": row.get("period_end"),
+            "report_date": row.get("report_date"),
             "source": row.get("source") or "sec_edgar",
         }
         for row in rows
         if row.get("accession_no") and row.get("cik") and row.get("filed_at")
     ]
     if filings:
-        sb.schema(_SCHEMA).table(T_FILINGS).upsert(filings, on_conflict="accession_no").execute()
+        # 공시 행의 주인은 공시 경로다. 여기서는 FK 부모가 없을 때만 만든다.
+        sb.schema(_SCHEMA).table(T_FILINGS).upsert(
+            filings, on_conflict="accession_no", ignore_duplicates=True
+        ).execute()
     # `accession_no`는 PK의 일부이자 filings FK다. 투영에서 빠지면 NOT NULL 위반으로
     # 그 종목의 속보가 통째로 저장되지 않는다 — 실측 27종목이 그렇게 실패했다
     # (AVGO·CRM·CRWD·DELL 등). on_conflict가 그 이름을 부르고 있는데 payload에는

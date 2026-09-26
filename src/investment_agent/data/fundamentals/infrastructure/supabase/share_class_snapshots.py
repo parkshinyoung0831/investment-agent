@@ -54,12 +54,14 @@ def replace_shares_outstanding(
                 "cik": padded,
                 "form_type": row.get("form_type") or "10-Q",
                 "filing_date": row.get("filed_at") or row.get("accepted_at"),
-                "report_date": row.get("as_of_date"),
+                # 표지 주식수 기준일은 보고기간말이 아니다. 기간말은 공시 경로가 채운다.
+                "report_date": None,
                 "source": "sec_edgar",
             }
     if filings:
+        # 공시 행의 주인은 기업 재무 공시 경로다. 여기서는 FK 부모가 없을 때만 만든다.
         sb.schema(SCHEMA_FUNDAMENTALS).table(T_FILINGS).upsert(
-            list(filings.values()), on_conflict="accession_no"
+            list(filings.values()), on_conflict="accession_no", ignore_duplicates=True
         ).execute()
     existing = select_all_paged(
         lambda: sb.schema(SCHEMA_FUNDAMENTALS).table(T_SHARE_CLASS_SNAPSHOTS)

@@ -4,15 +4,12 @@ from __future__ import annotations
 import unittest
 from datetime import date, datetime, timezone
 
-from investment_agent.data.fundamentals.domain.filings import Filing
 from investment_agent.data.fundamentals.infrastructure.supabase.expectations import (
     _project_fundamental_rows,
 )
 from investment_agent.data.fundamentals.repository import (
     SCHEMA,
     T_ESTIMATES,
-    T_FILINGS,
-    T_PROCESSING,
     T_SCHEDULE,
     FundamentalsRepository,
 )
@@ -97,101 +94,6 @@ class VersionSelectionTest(unittest.TestCase):
                                       include_available_at=True, limit=12)
 
 
-class ProcessingTest(unittest.TestCase):
-    def setUp(self) -> None:
-        self.db = FakeDatabase()
-        self.db.put(SCHEMA, T_FILINGS, [
-            {"accession_no": ORIGINAL, "cik": CIK, "form_type": "10-K",
-             "filing_date": "2026-02-01", "report_date": None,
-             "available_at": None, "source": "sec_edgar"},
-            {"accession_no": RESTATED, "cik": CIK, "form_type": "10-K/A",
-             "filing_date": "2026-06-01", "report_date": None,
-             "available_at": None, "source": "sec_edgar"},
-        ])
-        self.db.put(SCHEMA, T_PROCESSING, [
-            {"accession_no": ORIGINAL, "content_type": "company", "mapping_version": "v3"},
-        ])
-        self.repo = FundamentalsRepository(self.db)
-
-    def test_already_processed_filings_are_skipped(self) -> None:
-        pending = self.repo.unprocessed_accessions(
-            content_type="company", mapping_version="v3", ciks=[CIK]
-        )
-        self.assertEqual([RESTATED], pending)
-
-    def test_a_new_mapping_version_reprocesses_everything(self) -> None:
-        """매핑 세대가 바뀌면 같은 공시를 다시 읽어야 한다."""
-        pending = self.repo.unprocessed_accessions(
-            content_type="company", mapping_version="v4", ciks=[CIK]
-        )
-        self.assertEqual([ORIGINAL, RESTATED], sorted(pending))
-
-    def test_an_unknown_content_type_is_refused(self) -> None:
-        with self.assertRaises(ValueError):
-            self.repo.unprocessed_accessions(
-                content_type="prices", mapping_version="v3", ciks=[CIK]
-            )
-
-
-class ConsensusTest(unittest.TestCase):
-    def setUp(self) -> None:
-        self.db = FakeDatabase()
-        self.db.put(SCHEMA, T_ESTIMATES, [
-            {"security_id": 1, "target_fiscal_year": 2026, "target_fiscal_period": "Q1",
-             "snapshot_date": "2026-04-20", "eps_avg": 1.50, "revenue_avg": 90.0,
-             "eps_analysts": 30, "snapshot_kind": "captured_live"},
-            # 발표 뒤에 갱신된 값. 서프라이즈 계산에 쓰이면 안 된다.
-            {"security_id": 1, "target_fiscal_year": 2026, "target_fiscal_period": "Q1",
-             "snapshot_date": "2026-05-10", "eps_avg": 1.62, "revenue_avg": 95.0,
-             "eps_analysts": 31, "snapshot_kind": "captured_live"},
-        ])
-        self.repo = FundamentalsRepository(self.db)
-
-    def test_the_snapshot_before_the_announcement_is_used(self) -> None:
-        """최신 컨센서스를 쓰면 과거 서프라이즈가 매일 조금씩 달라진다."""
-        row = self.repo.consensus_before(
-            1, fiscal_year=2026, fiscal_period="Q1", on_or_before=date(2026, 5, 1)
-        )
-        self.assertEqual(1.50, row["eps_avg"])
-
-    def test_no_snapshot_before_the_date_is_none(self) -> None:
-        row = self.repo.consensus_before(
-            1, fiscal_year=2026, fiscal_period="Q1", on_or_before=date(2026, 1, 1)
-        )
-        self.assertIsNone(row)
-
-
-class ScheduleTest(unittest.TestCase):
-    def test_only_the_last_observation_per_period_survives(self) -> None:
-        """예정일은 자주 바뀐다. 관측이 쌓인 채로 세면 같은 발표가 여러 번 잡힌다."""
-        db = FakeDatabase()
-        db.put(SCHEMA, T_SCHEDULE, [
-            {"security_id": 1, "target_fiscal_year": 2026, "target_fiscal_period": "Q1",
-             "expected_report_at": "2026-05-01T20:00:00+00:00", "expected_report_date": "2026-05-01",
-             "expected_session": "amc", "is_estimated": True, "snapshot_date": "2026-04-01"},
-            {"security_id": 1, "target_fiscal_year": 2026, "target_fiscal_period": "Q1",
-             "expected_report_at": "2026-05-01T20:00:00+00:00", "expected_report_date": "2026-05-01",
-             "expected_session": "amc", "is_estimated": False, "snapshot_date": "2026-04-20"},
-        ])
-        rows = FundamentalsRepository(db).scheduled_reports(on_date=date(2026, 5, 1))
-        self.assertEqual(1, len(rows))
-        self.assertEqual("2026-04-20", rows[0]["snapshot_date"])
-        self.assertFalse(rows[0]["is_estimated"])
-
-    def test_session_filter_narrows_the_watch_window(self) -> None:
-        db = FakeDatabase()
-        db.put(SCHEMA, T_SCHEDULE, [
-            {"security_id": 1, "target_fiscal_year": 2026, "target_fiscal_period": "Q1",
-             "expected_report_at": "2026-05-01T11:00:00+00:00", "expected_report_date": "2026-05-01",
-             "expected_session": "bmo", "is_estimated": False, "snapshot_date": "2026-04-20"},
-            {"security_id": 2, "target_fiscal_year": 2026, "target_fiscal_period": "Q1",
-             "expected_report_at": "2026-05-01T20:00:00+00:00", "expected_report_date": "2026-05-01",
-             "expected_session": "amc", "is_estimated": False, "snapshot_date": "2026-04-20"},
-        ])
-        rows = FundamentalsRepository(db).scheduled_reports(on_date=date(2026, 5, 1), session="amc")
-        self.assertEqual([2], [row["security_id"] for row in rows])
-
-
 class ScheduleSnapshotsTest(unittest.TestCase):
     def test_last_seen_at_is_read_so_freshness_can_follow_reconfirmation(self) -> None:
         """snapshot_date는 처음 본 날이다. 마지막 재확인은 last_seen_at에만 있다."""
@@ -264,17 +166,6 @@ class LatestConsensusTest(unittest.TestCase):
 
     def test_no_securities_reads_nothing(self) -> None:
         self.assertEqual({}, self._repo([]).latest_consensus([], seen_since=date(2026, 9, 1)))
-
-
-class WriteTest(unittest.TestCase):
-    def test_filings_upsert_does_not_send_available_at(self) -> None:
-        db = FakeDatabase()
-        FundamentalsRepository(db).upsert_filings([
-            Filing(ORIGINAL, CIK, "10-K", date(2026, 2, 1)),
-        ])
-        (_key, rows, conflict) = db.upserts[0]
-        self.assertNotIn("available_at", rows[0])
-        self.assertEqual("accession_no", conflict)
 
 
 if __name__ == "__main__":

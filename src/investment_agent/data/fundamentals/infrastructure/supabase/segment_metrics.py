@@ -278,11 +278,15 @@ def ciks_missing_segments(period_kind: str | None = None) -> set[str]:
     return tracked - present
 
 
-def _upsert_chunked(table: str, rows: list[dict], conflict: str) -> int:
+def _upsert_chunked(
+    table: str, rows: list[dict], conflict: str, *, ignore_duplicates: bool = False
+) -> int:
     n = 0
     for i in range(0, len(rows), _UPSERT_BATCH):
         chunk = rows[i : i + _UPSERT_BATCH]
-        sb.schema(_SCHEMA).table(table).upsert(chunk, on_conflict=conflict).execute()
+        sb.schema(_SCHEMA).table(table).upsert(
+            chunk, on_conflict=conflict, ignore_duplicates=ignore_duplicates
+        ).execute()
         n += len(chunk)
     return n
 
@@ -307,7 +311,9 @@ def upsert_filings(rows: list[dict]) -> int:
     ]
     if len(filings) != len(deduped):
         raise ValueError("segment filing rows require accession_no, cik, form_type, and filing_date")
-    _upsert_chunked(_FILINGS_TABLE, filings, "accession_no")
+    # 공시 행의 주인은 기업 재무 공시 경로다. FSDS 백필의 `period`는 월말로 반올림된
+    # 값이라 기간말을 덮어쓰면 안 된다 — 여기서는 FK 부모가 없을 때만 만든다.
+    _upsert_chunked(_FILINGS_TABLE, filings, "accession_no", ignore_duplicates=True)
     processing = [
         {
             "accession_no": row["accession_no"],
