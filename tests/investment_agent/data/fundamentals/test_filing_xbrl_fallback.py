@@ -348,6 +348,46 @@ class FilingXbrlFallbackTest(unittest.TestCase):
         )
         self.assertTrue(all(row.get("source") == "direct" for row in facts))
 
+    def test_cover_only_amendment_stays_empty_but_original_form_still_fails(self) -> None:
+        # 표지만 고친 정정 공시(XBRL에 dei 사실뿐)가 CIK 전체 재처리를 막으면 안 된다.
+        # 원 공시가 같은 모양이면 파서 결함이므로 계속 실패해야 한다.
+        for form_type, should_fail in (("10-Q/A", False), ("10-Q", True)):
+            with self.subTest(form_type=form_type):
+                filing = FilingRef(
+                    "0000773840-26-000127",
+                    "2026-07-24",
+                    "2026-06-30",
+                    form_type,
+                    cik=773840,
+                )
+                with (
+                    mock.patch.object(
+                        companyfacts,
+                        "filing_focus",
+                        return_value={filing.accession_no: (2026, "Q2")},
+                    ),
+                    mock.patch.object(
+                        filing_xbrl,
+                        "filing_to_facts",
+                        side_effect=RuntimeError(
+                            "filing XBRL has no accepted consolidated facts: "
+                            f"{filing.accession_no}"
+                        ),
+                    ),
+                ):
+                    load = lambda: companyfacts.companyfacts_to_facts(  # noqa: E731
+                        {"cik": 773840, "facts": {"us-gaap": {}}},
+                        filings=[filing],
+                        target_accessions={filing.accession_no},
+                        floor=date(2016, 8, 29),
+                        allow_filing_fallback=True,
+                    )
+                    if should_fail:
+                        with self.assertRaises(RuntimeError):
+                            load()
+                    else:
+                        self.assertEqual(load(), [])
+
 
 class XbrlParserContractTests(unittest.TestCase):
     def test_invalid_scale_fails_instead_of_changing_units_silently(self) -> None:

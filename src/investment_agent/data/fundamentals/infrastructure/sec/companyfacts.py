@@ -824,10 +824,14 @@ def companyfacts_to_facts(
                 allowed_keys=allowed_keys,
             )
         except RuntimeError as exc:
-            if filing.form_type.endswith("/A") and "no XBRL document" in str(exc):
+            # 정정 공시는 표지·첨부만 고치기도 한다. XBRL이 없거나 dei 표지 사실뿐이면 빈 공시다.
+            if filing.form_type.endswith("/A") and (
+                "no XBRL document" in str(exc)
+                or "no accepted consolidated facts" in str(exc)
+            ):
                 expected_empty_amendments.add(filing.accession_no)
                 log.warning(
-                    "CIK %010d: amendment has no XBRL and remains empty: %s",
+                    "CIK %010d: amendment has no financial XBRL and remains empty: %s",
                     cik,
                     filing.accession_no,
                 )
