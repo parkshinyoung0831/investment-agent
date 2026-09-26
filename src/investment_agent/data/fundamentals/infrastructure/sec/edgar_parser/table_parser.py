@@ -183,6 +183,44 @@ def _table_score(table_text: str, labels: set[str]) -> int:
     return score
 
 
+def _period_columns(matrix: list[list[str]]) -> tuple[set[int], set[int], bool]:
+    """머리 행에서 (분기 열, 누적 열, 표 전체가 누적인가)를 찾는다.
+
+    분기·반기·연간 열을 나란히 둔 표에서 첫 금액이 늘 이번 분기인 것은 아니다. 병합 셀은
+    `normalize_table`이 열마다 펼쳐 두므로 머리 문구가 걸린 열 번호가 곧 값의 열 번호다.
+    첫 열(행 레이블 열)의 기간 문구는 특정 값 열이 아니라 표 전체를 말한다.
+    """
+    quarter: set[int] = set()
+    cumulative: set[int] = set()
+    table_quarter = table_cumulative = False
+    for row in matrix[:4]:
+        for index, cell in enumerate(row):
+            text = _text(cell)
+            is_cumulative = bool(_CUMULATIVE_RE.search(text))
+            is_quarter = not is_cumulative and bool(_QUARTER_RE.search(text))
+            if index == 0:
+                table_quarter |= is_quarter
+                table_cumulative |= is_cumulative
+            elif is_cumulative:
+                cumulative.add(index)
+            elif is_quarter:
+                quarter.add(index)
+    quarter -= cumulative
+    only_cumulative = not quarter and not table_quarter and (bool(cumulative) or table_cumulative)
+    return quarter, cumulative, only_cumulative
+
+
+def _current_value(
+    cells: list[tuple[int, float]], quarter: set[int], only_cumulative: bool
+) -> float | None:
+    """분기 열이 보이면 그 첫 값, 누적 기간만 보이면 없음, 기간 머리가 없으면 첫 값."""
+    if quarter:
+        return next((value for index, value in cells if index in quarter), None)
+    if only_cumulative:
+        return None
+    return cells[0][1] if cells else None
+
+
 def extract_summary_financials(html: str | bytes | Any) -> dict[str, float]:
     """EX-99 요약 표에서 매출·영업익·순이익의 현재 값을 추출한다."""
     if not html:
@@ -198,7 +236,7 @@ def extract_summary_financials(html: str | bytes | Any) -> dict[str, float]:
         matrix = normalize_table(table)
         if not matrix:
             continue
-        labels: dict[str, tuple[int, list[str]]] = {}
+        labels: dict[str, tuple[int, list[tuple[int, str]]]] = {}
         for row_index, row in enumerate(matrix):
             row_labels = _labels_in_row(row)
             for label_index, key, label_score in row_labels:
@@ -206,8 +244,8 @@ def extract_summary_financials(html: str | bytes | Any) -> dict[str, float]:
                     (index for index, _key, _score in row_labels if index > label_index),
                     len(row),
                 )
-                values = row[label_index + 1:next_label]
-                if any(parse_amount(value) is not None for value in values):
+                values = [(index, row[index]) for index in range(label_index + 1, next_label)]
+                if any(parse_amount(value) is not None for _index, value in values):
                     current = labels.get(key)
                     if current is None or label_score > current[0]:
                         labels[key] = (label_score, values)
@@ -224,13 +262,17 @@ def extract_summary_financials(html: str | bytes | Any) -> dict[str, float]:
         context = " ".join(context_parts).lower()
         table_score = _table_score(context, set(labels))
         multiplier = _unit_multiplier(table)
-        for key, (label_score, values) in labels.items():
-            values = [parse_amount(value, multiplier=multiplier) for value in values]
-            values = [value for value in values if value is not None]
-            if not values:
+        quarter_columns, _cumulative_columns, only_cumulative = _period_columns(matrix)
+        for key, (label_score, cells) in labels.items():
+            amounts = [
+                (index, amount)
+                for index, cell in cells
+                if (amount := parse_amount(cell, multiplier=multiplier)) is not None
+            ]
+            value = _current_value(amounts, quarter_columns, only_cumulative)
+            # 매출은 양수다. 0·음수는 매출이 아닌 행(증감·조정)을 읽은 것이다.
+            if value is None or (key == "revenue" and value <= 0):
                 continue
-            # 병합된 첫 헤더를 건너뛰고도 현재 기간은 SEC 보도자료에서 대개 첫 금액이다.
-            value = values[0]
             rank = table_score + label_score
             current = candidates.get(key)
             if current is None or (rank, -table_index) > (current[0], current[1]):

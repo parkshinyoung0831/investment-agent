@@ -127,7 +127,7 @@ def _upsert(table: str, rows: list[dict], conflict: str) -> int:
 
 _ESTIMATE_KEY = ("security_id", "target_fiscal_year", "target_fiscal_period", "source", "snapshot_kind")
 _ESTIMATE_VALUES = (
-    "target_period_end", "eps_basis", "currency", "eps_avg", "eps_low", "eps_high", "eps_analysts",
+    "target_period_end", "eps_basis", "eps_avg", "eps_low", "eps_high", "eps_analysts",
     "revenue_avg", "revenue_low", "revenue_high", "revenue_analysts",
     "revisions_up_7d", "revisions_up_30d", "revisions_down_7d", "revisions_down_30d",
 )
@@ -175,7 +175,7 @@ def _write_versions(table: str, rows: list[dict], *, key: tuple, values: tuple, 
 def upsert_consensus(rows: list[dict]) -> int:
     """컨센서스 상태 버전. EPS 정의·통화를 원천이 말하지 않으면 unknown·NULL로 둔다."""
     return _write_versions(T_EARNINGS_ESTIMATES, rows, key=_ESTIMATE_KEY, values=_ESTIMATE_VALUES,
-                           pk=_ESTIMATE_PK, defaults={"eps_basis": "unknown", "currency": None})
+                           pk=_ESTIMATE_PK, defaults={"eps_basis": "unknown"})
 
 
 def upsert_schedules(rows: list[dict]) -> int:

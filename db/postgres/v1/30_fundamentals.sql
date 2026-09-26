@@ -396,7 +396,6 @@ CREATE TABLE IF NOT EXISTS fundamentals.earnings_results (
   eps_actual              numeric,
   eps_basis               text NOT NULL DEFAULT 'unknown'
                           CHECK (eps_basis IN ('gaap_diluted', 'gaap_basic', 'adjusted', 'unknown')),
-  currency                text CHECK (currency IS NULL OR currency ~ '^[A-Z]{3}$'),
   operating_income_actual numeric,
   net_income_actual       numeric,
   guidance_summary        text,
@@ -425,15 +424,14 @@ COMMENT ON COLUMN fundamentals.earnings_results.accession_no IS '보도자료가
 COMMENT ON COLUMN fundamentals.earnings_results.fiscal_year IS '회사 회계연도.';
 COMMENT ON COLUMN fundamentals.earnings_results.fiscal_period IS '발표 대상 기간.';
 COMMENT ON COLUMN fundamentals.earnings_results.period_end IS '대상 기간 말일.';
-COMMENT ON COLUMN fundamentals.earnings_results.revenue_actual IS '발표 매출(currency 원 단위).';
-COMMENT ON COLUMN fundamentals.earnings_results.eps_actual IS '발표 EPS(currency/주). 어떤 EPS인지는 eps_basis.';
+COMMENT ON COLUMN fundamentals.earnings_results.revenue_actual IS '보도자료 표의 이번 분기(3개월) 열에서 읽은 매출(USD). 열을 확정하지 못하면 NULL이다.';
+COMMENT ON COLUMN fundamentals.earnings_results.eps_actual IS '발표 EPS(USD/주). 8-K 제출일과 맞는 공급자(yfinance) 발표 실적에서 가져온다 — 정의는 eps_basis.';
 COMMENT ON COLUMN fundamentals.earnings_results.eps_basis IS 'EPS 정의: gaap_diluted/gaap_basic/adjusted, 보도자료에서 확정 못 하면 unknown. 서프라이즈는 같은 정의끼리만 비교한다.';
-COMMENT ON COLUMN fundamentals.earnings_results.currency IS '보고 통화(ISO 4217). 확인 못 하면 NULL.';
 COMMENT ON COLUMN fundamentals.earnings_results.operating_income_actual IS '발표 영업이익.';
 COMMENT ON COLUMN fundamentals.earnings_results.net_income_actual IS '발표 순이익.';
 COMMENT ON COLUMN fundamentals.earnings_results.guidance_summary IS '보도자료의 가이던스 한 줄 원문. 해석하지 않은 문장이다.';
 COMMENT ON COLUMN fundamentals.earnings_results.press_release_url IS '보도자료 원문 URL.';
-COMMENT ON COLUMN fundamentals.earnings_results.source IS '추출 원천(sec_8k).';
+COMMENT ON COLUMN fundamentals.earnings_results.source IS '행의 원천 공시(sec_8k). 매출·영업이익·순이익·가이던스는 그 보도자료에서, EPS는 eps_actual 설명의 공급자에서 온다.';
 COMMENT ON COLUMN fundamentals.earnings_results.collected_at IS '추출해 저장한 시각.';
 
 
@@ -451,7 +449,6 @@ CREATE TABLE IF NOT EXISTS fundamentals.earnings_estimates (
   snapshot_date        date NOT NULL,
   eps_basis            text NOT NULL DEFAULT 'unknown'
                        CHECK (eps_basis IN ('gaap_diluted', 'gaap_basic', 'adjusted', 'unknown')),
-  currency             text CHECK (currency IS NULL OR currency ~ '^[A-Z]{3}$'),
   eps_avg              numeric,
   eps_low              numeric,
   eps_high             numeric,
@@ -497,12 +494,11 @@ COMMENT ON COLUMN fundamentals.earnings_estimates.source IS '예상치 공급자
 COMMENT ON COLUMN fundamentals.earnings_estimates.snapshot_kind IS 'captured_live=그날 우리가 직접 수집, vendor_pit=공급자가 당시 값임을 보장한 과거 자료, reconstructed=현재 API의 발표 이력에서 되살린 값(발표 전 비교에 쓰지 않음), latest_history=당시 값 보장이 없는 과거 요약. 섞어 읽으면 PIT가 깨진다.';
 COMMENT ON COLUMN fundamentals.earnings_estimates.snapshot_date IS '이 상태가 유효해진 날짜(ET): captured_live는 처음 관측한 날, 과거 자료는 원천이 말하는 날.';
 COMMENT ON COLUMN fundamentals.earnings_estimates.eps_basis IS 'EPS 예상의 정의. 공급자가 밝히지 않으면 unknown.';
-COMMENT ON COLUMN fundamentals.earnings_estimates.currency IS '예상치 통화(ISO 4217). 모르면 NULL.';
-COMMENT ON COLUMN fundamentals.earnings_estimates.eps_avg IS '애널리스트 EPS 예상 평균(currency/주).';
+COMMENT ON COLUMN fundamentals.earnings_estimates.eps_avg IS '애널리스트 EPS 예상 평균(USD/주).';
 COMMENT ON COLUMN fundamentals.earnings_estimates.eps_low IS 'EPS 예상 최저.';
 COMMENT ON COLUMN fundamentals.earnings_estimates.eps_high IS 'EPS 예상 최고.';
 COMMENT ON COLUMN fundamentals.earnings_estimates.eps_analysts IS 'EPS 예상에 참여한 애널리스트 수. 매출 참여자와 다를 수 있다.';
-COMMENT ON COLUMN fundamentals.earnings_estimates.revenue_avg IS '매출 예상 평균(currency 원 단위).';
+COMMENT ON COLUMN fundamentals.earnings_estimates.revenue_avg IS '매출 예상 평균(USD).';
 COMMENT ON COLUMN fundamentals.earnings_estimates.revenue_low IS '매출 예상 최저.';
 COMMENT ON COLUMN fundamentals.earnings_estimates.revenue_high IS '매출 예상 최고.';
 COMMENT ON COLUMN fundamentals.earnings_estimates.revenue_analysts IS '매출 예상 애널리스트 수.';

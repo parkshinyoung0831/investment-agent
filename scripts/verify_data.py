@@ -129,9 +129,9 @@ CHECKS: tuple[tuple[str, str, int], ...] = (
      " ('captured_live', 'vendor_pit', 'reconstructed', 'latest_history')", 0),
     # 연속된 두 버전이 같은 상태면 변경분 저장이 깨진 것이다.
     ("fundamentals.estimate_versions_are_changes",
-     "select count(*) from (select *, lag(row(target_period_end, eps_basis, currency, eps_avg, eps_low, eps_high,"
+     "select count(*) from (select *, lag(row(target_period_end, eps_basis, eps_avg, eps_low, eps_high,"
      " eps_analysts, revenue_avg, revenue_low, revenue_high, revenue_analysts, revisions_up_7d, revisions_up_30d,"
-     " revisions_down_7d, revisions_down_30d)) over w as prev, row(target_period_end, eps_basis, currency, eps_avg,"
+     " revisions_down_7d, revisions_down_30d)) over w as prev, row(target_period_end, eps_basis, eps_avg,"
      " eps_low, eps_high, eps_analysts, revenue_avg, revenue_low, revenue_high, revenue_analysts, revisions_up_7d,"
      " revisions_up_30d, revisions_down_7d, revisions_down_30d) as cur from fundamentals.earnings_estimates"
      " window w as (partition by security_id, target_fiscal_year, target_fiscal_period, source, snapshot_kind"

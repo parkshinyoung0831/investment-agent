@@ -1986,8 +1986,7 @@ elif view == "발표 예정":
                 st.write(
                     f"매출 예상 · {display_money(selected.get('revenue_avg'))} "
                     f"[{display_money(selected.get('revenue_low'))} ~ {display_money(selected.get('revenue_high'))}] · "
-                    f"분석가 · {selected.get('revenue_analysts') if selected.get('revenue_analysts') is not None else '—'} · "
-                    f"통화 · {selected.get('currency') or '—'}"
+                    f"분석가 · {selected.get('revenue_analysts') if selected.get('revenue_analysts') is not None else '—'}"
                 )
                 st.caption(
                     f"리비전 7일 상향/하향 · {selected.get('revisions_up_7d') if selected.get('revisions_up_7d') is not None else '—'} / "

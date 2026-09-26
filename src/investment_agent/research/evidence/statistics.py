@@ -215,7 +215,7 @@ def estimate_statistics(rows_desc: Iterable[Mapping[str, Any]]) -> dict[str, Any
             "snapshot_date", "eps_avg", "eps_low", "eps_high", "eps_analysts",
             "revenue_avg", "revenue_low", "revenue_high", "revenue_analysts",
             "revisions_up_7d", "revisions_down_7d", "revisions_up_30d",
-            "revisions_down_30d", "currency",
+            "revisions_down_30d",
         )
     }
     comparable = next(
