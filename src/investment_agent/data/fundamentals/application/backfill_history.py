@@ -9,7 +9,7 @@ import traceback
 from datetime import date
 
 from investment_agent.data.universe.domain.predecessors import with_predecessors
-from investment_agent.platform.clock import us_market_today
+from investment_agent.platform.clock import us_market_today, utc_now
 from investment_agent.platform.cli.backfill import resolve_backfill_window, select_accessions
 from investment_agent.platform.logging import get_logger
 from investment_agent.data.fundamentals.application.segment_metrics import build_segment_metrics
@@ -211,6 +211,8 @@ def backfill_company_history(
             if accession_no not in loaded_accessions
         }
 
+        # 이 시각 전에 쓰인 행은 이번 재처리가 다시 쓰지 않은 기간이다(reconcile 기준).
+        written_since = utc_now()
         if facts:
             try:
                 loaded = process_company_facts(
@@ -270,6 +272,7 @@ def backfill_company_history(
                     metrics["rows_removed"] += repository.reconcile_wide_history(
                         {cik_key: max(report_dates)},
                         floor,
+                        written_since=written_since,
                     )
             except Exception as exc:  # noqa: BLE001 - 다음 CIK는 계속한다
                 reason = f"backfill reconciliation failed: {exc!r}"

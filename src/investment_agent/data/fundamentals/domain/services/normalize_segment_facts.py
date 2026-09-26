@@ -17,9 +17,6 @@ from investment_agent.data.fundamentals.domain.services.segment_periods import (
     belongs_to_report_period,
 )
 from investment_agent.data.fundamentals.domain.taxonomy import segment_concepts as concepts
-from investment_agent.data.fundamentals.domain.taxonomy.segment_axes import (
-    SEGMENT_MAPPING_VERSION as MAPPING_VERSION,
-)
 
 
 def _int_to_date(value: Any) -> date | None:
@@ -242,7 +239,6 @@ def bulk_frames_to_filings_and_facts(
             "filing_date": filed_date.isoformat() if filed_date else None,
             "report_date": report_date.isoformat() if report_date else None,
             "status": "parsed" if counts.get(accession_no, 0) else "empty",
-            "mapping_version": MAPPING_VERSION,
             "source": "backfill_fsds",
             "facts_count": counts[accession_no],
             "rows_count": 0,

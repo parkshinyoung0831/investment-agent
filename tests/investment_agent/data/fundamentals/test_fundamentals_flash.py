@@ -238,6 +238,19 @@ class TestFundamentalsFlash(unittest.TestCase):
 
         self.assertEqual(revenue, 6_264_886_000.0)
 
+    def test_the_fallback_does_not_read_cumulative_periods_as_the_quarter(self):
+        table_revenue, _ = parse_earnings_release("""
+            <table>
+              <tr><th>(in millions)</th><th>Six Months Ended June 30, 2026</th></tr>
+              <tr><th>Total revenue</th><td>$ 46,777</td></tr>
+            </table>
+        """)
+        text_revenue, _ = parse_earnings_release(
+            "<p>Revenue for the first six months was $46.8 billion.</p>"
+        )
+        self.assertIsNone(table_revenue)
+        self.assertIsNone(text_revenue)
+
     def test_does_not_treat_investment_sales_as_company_revenue(self):
         revenue, _ = parse_earnings_release(
             "Investment gains include realized gains on sales of investments of $1.8 billion."

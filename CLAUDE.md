@@ -90,7 +90,7 @@ Supabase 쿼리 빌더는 `src/investment_agent/data/fundamentals/infrastructure
 | [fundamentals](src/investment_agent/data/fundamentals/README.md) | 기업 전체·세그먼트 재무, 시장 예상치, 실적 이벤트 | `investment_agent.data.fundamentals.commands.sync_filings` | 화~토 + market 뒤 |
 | ┗ 관심종목 fast path | 같은 공시 유스케이스의 관심종목 실행 | `investment_agent.data.fundamentals.commands.sync_filings --watchlist-only` | 평일 17:30 ET |
 | ┗ 발표 세션 감시 | 예정 시각 품질별로 관심종목 8-K·10-Q/K를 좁게 훑기 | `investment_agent.operations.commands.watch_earnings` | 로컬 하네스 1분 주기 + Actions 22:00·07:00 KST |
-| ┗ 정합성 점검 | 스키마 드리프트·충전율 하락·멈춘 financial_versions 탐지 | `investment_agent.data.fundamentals.commands.verify_integrity` | 매일 18:00 KST |
+| ┗ 정합성 점검 | 스키마 드리프트·충전율 하락·멈춘 financials 탐지 | `investment_agent.data.fundamentals.commands.verify_integrity` | 매일 18:00 KST |
 | [institutional](src/investment_agent/data/institutional/README.md) | 13F 7인 레이더 | `investment_agent.data.institutional.commands.institutional_daily` | 화~토 |
 | [macro](src/investment_agent/data/macro/README.md) | 일별 시장 상태 (FRED/ECOS/yfinance/웹/내부 계산) | `investment_agent.data.macro.commands.macro_refresh` | 화~토 + 월(`macro_etl_monday`) |
 | macro releases | macro owner의 자연키 발표·일정 변경·원자료·예상값 변경; actual은 reporting view에서 계산 | `investment_agent.data.macro.commands.econ_calendar_*` | daily + 발표창(UTC 12~15시 평일) 15분 watcher + 주간 revision audit |
@@ -253,8 +253,9 @@ python -m unittest tests.test_market_splits      # 단일 모듈
    로거 이름은 항상 `__name__`. *(테스트 강제)*
 4. **`from __future__ import annotations`** 를 모든 모듈의 첫 import에 둡니다. *(테스트 강제)*
 5. **무거운 의존성은 지연 import.** Playwright(`async_playwright`)는 캡처 시점에 함수 안에서.
-6. **버전 보존 저장(fundamentals).** SEC long 데이터는 application 메모리 안에서만 다루고,
-   기업 전체 재무는 `financial_versions`에 공시별 버전으로 저장합니다. CIK가 저장 identity이며
+6. **기간별 한 행 저장(fundamentals).** SEC long 데이터는 application 메모리 안에서만 다루고,
+   기업 전체 재무는 `financials`에 회계 분기마다 한 행으로 저장합니다(정정 공시는 보고한
+   컬럼만 덮는다). `filings`의 값은 기업 재무 공시 경로만 정합니다 *(테스트 강제)*. CIK가 저장 identity이며
    ticker fan-out은 읽기 경계에서만 수행합니다. 배경은
    [src/investment_agent/data/fundamentals/README.md](src/investment_agent/data/fundamentals/README.md).
 7. **킬 스위치는 워크플로 레벨 게이트**입니다(`if: ${{ vars.FUNDAMENTALS_KILL != 'on' }}`).

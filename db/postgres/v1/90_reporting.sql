@@ -1,11 +1,9 @@
 -- reporting — 사실 스키마를 조합하는 읽기 전용 뷰.
 --
--- 두 층이 있다.
---   * 사람이 여는 6개 뷰: security_overview · financial_statements · earnings_outlook ·
---     earnings_surprises · economic_calendar · institutional_holdings. 한 행의 뜻과
---     기본 칼럼만 보여 준다.
---   * 코드 계약 뷰: 화면·알림·AI evidence가 `reporting/readers/financial.py`의 VIEWS 선언
---     그대로 읽는다. 컬럼을 바꾸면 그 선언도 함께 바꾼다.
+-- 주제마다 뷰 하나를 둔다. 코드 계약 뷰는 화면·알림·AI evidence·prompts가
+-- `reporting/readers/financial.py`의 VIEWS 선언 그대로 읽는다 — 컬럼을 바꾸면 그 선언도 함께
+-- 바꾼다. 같은 주제를 사람용으로 한 번 더 감싼 뷰는 두지 않는다(두 벌이 서로 다른 뜻으로
+-- 흘러간다). 계약 뷰가 없는 주제(실적 예상)만 사람이 여는 뷰로 둔다.
 -- 뷰는 값을 저장하지 않는다. 계산 규칙이 바뀌면 과거 행도 새 규칙으로 읽힌다.
 
 CREATE SCHEMA IF NOT EXISTS reporting;
@@ -59,16 +57,16 @@ SELECT
   f.fiscal_year,
   f.fiscal_period,
   f.accession_no,
-  f.filing_date,
-  f.form_type,
-  f.available_at,
+  fl.filing_date,
+  fl.form_type,
+  fl.available_at,
   f.revenue,
   f.operating_income_loss,
   f.net_income,
-  f.eps_diluted_gaap,
-  f.mapping_version
-FROM fundamentals.financials f;
-COMMENT ON VIEW reporting.company_financials_latest IS '회사·회계기간마다 최신 공시 버전의 핵심 재무 한 행. PIT 조회에 쓰지 않는다.';
+  f.eps_diluted_gaap
+FROM fundamentals.financials f
+JOIN fundamentals.filings fl ON fl.accession_no = f.accession_no;
+COMMENT ON VIEW reporting.company_financials_latest IS '회사·회계 분기마다 지금 알고 있는 핵심 재무 한 행. filing_date는 값을 마지막으로 반영한 공시(정정이면 /A)의 날짜다. PIT 조회에 쓰지 않는다.';
 
 CREATE OR REPLACE VIEW reporting.earnings_schedule WITH (security_invoker = true) AS
 SELECT DISTINCT ON (v.security_id, v.target_fiscal_year, v.target_fiscal_period)
@@ -159,8 +157,16 @@ LEFT JOIN LATERAL (
            est.snapshot_date DESC, est.collected_at DESC,
            CASE est.snapshot_kind WHEN 'captured_live' THEN 0 ELSE 1 END
   LIMIT 1
-) e ON true;
-COMMENT ON VIEW reporting.earnings_surprise IS '실적 발표(8-K) 하나·상장 종목 하나 = 한 행. 발표 전에 수집한 컨센서스를 먼저 쓰고, 없으면 공급자 발표 이력 재구성값(estimate_kind=reconstructed)으로 채운다. *_surprise_ratio는 분수(0.05=+5%).';
+) e ON true
+-- 같은 분기를 알린 8-K가 여럿이면(재발행·보충 자료) 시장이 처음 받은 발표 하나만 쓴다.
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM fundamentals.earnings_results r2
+  JOIN fundamentals.filings f2 ON f2.accession_no = r2.accession_no
+  WHERE r2.cik = r.cik AND r2.fiscal_year = r.fiscal_year AND r2.fiscal_period = r.fiscal_period
+    AND (f2.filing_date, r2.accession_no) < (f.filing_date, r.accession_no)
+);
+COMMENT ON VIEW reporting.earnings_surprise IS '회계기간마다 첫 실적 발표(8-K) 하나·상장 종목 하나 = 한 행. 발표 전에 수집한 컨센서스를 먼저 쓰고, 없으면 공급자 발표 이력 재구성값(estimate_kind=reconstructed)으로 채운다. *_surprise_ratio는 분수(0.05=+5%).';
 
 CREATE OR REPLACE VIEW reporting.institutional_filings WITH (security_invoker = true) AS
 SELECT f.accession_no, f.manager_cik, f.period_end, f.form_type, f.report_type, f.filing_date, f.accepted_at,
@@ -430,78 +436,6 @@ COMMENT ON VIEW reporting.macro_release_summary IS '경제지표 발표 하나 =
 -- 컬럼 이름은 영문 snake_case, 뜻은 한국어 COMMENT로 적는다. 한국어 식별자는 SQL마다 따옴표가
 -- 필요해 직접 조회를 오히려 어렵게 만든다.
 
-CREATE OR REPLACE VIEW reporting.security_overview WITH (security_invoker = true) AS
-SELECT
-  s.ticker,
-  e.company_name,
-  e.company_name_ko,
-  e.sic_division_name,
-  s.exchange_code,
-  s.security_type,
-  s.is_active_listing,
-  EXISTS (
-    SELECT 1 FROM universe.index_memberships im
-    WHERE im.security_id = s.security_id AND im.index_code = 'SP500' AND im.valid_to IS NULL
-  ) AS is_sp500_member,
-  s.is_tracked,
-  s.is_identity_verified,
-  COALESCE(e.is_watchlisted, false) AS is_watchlisted,
-  s.security_id,
-  s.cik
-FROM universe.securities s
-LEFT JOIN universe.entities e ON e.cik = s.cik;
-COMMENT ON VIEW reporting.security_overview IS '[1. 종목] 종목 하나 = 한 행. 지금 무엇을 수집하고 있고 신원이 확인됐는지 본다.';
-COMMENT ON COLUMN reporting.security_overview.ticker IS '현재 티커.';
-COMMENT ON COLUMN reporting.security_overview.company_name IS '발행사 법인명.';
-COMMENT ON COLUMN reporting.security_overview.company_name_ko IS '발행사 한국어 이름.';
-COMMENT ON COLUMN reporting.security_overview.sic_division_name IS 'SIC 산업 대분류(GICS 섹터 아님).';
-COMMENT ON COLUMN reporting.security_overview.exchange_code IS '상장 거래소.';
-COMMENT ON COLUMN reporting.security_overview.security_type IS '증권 종류.';
-COMMENT ON COLUMN reporting.security_overview.is_active_listing IS '상장 중인가.';
-COMMENT ON COLUMN reporting.security_overview.is_sp500_member IS '지금 S&P 500에 편입돼 있는가.';
-COMMENT ON COLUMN reporting.security_overview.is_tracked IS '수집 대상인가.';
-COMMENT ON COLUMN reporting.security_overview.is_identity_verified IS 'SEC 거래소 목록으로 신원을 확인했는가.';
-COMMENT ON COLUMN reporting.security_overview.is_watchlisted IS '관심 기업인가.';
-COMMENT ON COLUMN reporting.security_overview.security_id IS '내부 종목 ID.';
-COMMENT ON COLUMN reporting.security_overview.cik IS '발행사 CIK.';
-
-CREATE OR REPLACE VIEW reporting.financial_statements WITH (security_invoker = true) AS
-SELECT
-  (SELECT string_agg(s.ticker, '/' ORDER BY s.ticker) FROM universe.securities s
-    WHERE s.cik = f.cik AND s.is_active_listing AND s.security_type = 'common_stock') AS tickers,
-  e.company_name,
-  f.fiscal_year,
-  f.fiscal_period,
-  f.period_end,
-  f.revenue,
-  f.operating_income_loss,
-  f.net_income,
-  f.eps_diluted_gaap,
-  f.net_cash_from_operating_activities,
-  f.capital_expenses,
-  f.filing_date,
-  f.form_type,
-  f.accession_no,
-  f.cik
-FROM fundamentals.financials f
-JOIN universe.entities e ON e.cik = f.cik;
-COMMENT ON VIEW reporting.financial_statements IS '[2. 재무] 회사·회계기간마다 최신 공시 기준 핵심 재무 한 행. 금액은 USD 원 단위.';
-COMMENT ON COLUMN reporting.financial_statements.tickers IS '이 회사의 상장 티커(여럿이면 /로 연결).';
-COMMENT ON COLUMN reporting.financial_statements.company_name IS '법인명.';
-COMMENT ON COLUMN reporting.financial_statements.fiscal_year IS '회사 회계연도.';
-COMMENT ON COLUMN reporting.financial_statements.fiscal_period IS 'FY 또는 Q1~Q4.';
-COMMENT ON COLUMN reporting.financial_statements.period_end IS '회계기간 말일.';
-COMMENT ON COLUMN reporting.financial_statements.revenue IS '매출(USD).';
-COMMENT ON COLUMN reporting.financial_statements.operating_income_loss IS '영업이익(USD).';
-COMMENT ON COLUMN reporting.financial_statements.net_income IS '순이익(USD).';
-COMMENT ON COLUMN reporting.financial_statements.eps_diluted_gaap IS 'GAAP 희석 EPS(USD/주).';
-COMMENT ON COLUMN reporting.financial_statements.net_cash_from_operating_activities IS '영업활동 현금흐름(USD).';
-COMMENT ON COLUMN reporting.financial_statements.capital_expenses IS '설비투자(USD).';
-COMMENT ON COLUMN reporting.financial_statements.filing_date IS '이 값을 보고한 공시의 제출일.';
-COMMENT ON COLUMN reporting.financial_statements.form_type IS '공시 양식.';
-COMMENT ON COLUMN reporting.financial_statements.accession_no IS '공시 접수번호(원문 연결).';
-COMMENT ON COLUMN reporting.financial_statements.cik IS '발행사 CIK.';
-
 CREATE OR REPLACE VIEW reporting.earnings_outlook WITH (security_invoker = true) AS
 SELECT
   s.ticker,
@@ -546,7 +480,7 @@ LEFT JOIN LATERAL (
   LIMIT 1
 ) sch ON true
 WHERE s.is_tracked;
-COMMENT ON VIEW reporting.earnings_outlook IS '[3. 실적 예상] 수집 중인 종목마다 아직 발표되지 않은 가장 가까운 분기의 현재 컨센서스와 발표 예정 한 행.';
+COMMENT ON VIEW reporting.earnings_outlook IS '[실적 예상] 수집 중인 종목마다 아직 발표되지 않은 가장 가까운 분기의 현재 컨센서스와 발표 예정 한 행.';
 COMMENT ON COLUMN reporting.earnings_outlook.ticker IS '티커.';
 COMMENT ON COLUMN reporting.earnings_outlook.company_name IS '법인명.';
 COMMENT ON COLUMN reporting.earnings_outlook.target_fiscal_year IS '예상 대상 회계연도.';
@@ -565,119 +499,5 @@ COMMENT ON COLUMN reporting.earnings_outlook.snapshot_kind IS '수집 성격(cap
 COMMENT ON COLUMN reporting.earnings_outlook.snapshot_date IS '이 예상 상태가 시작된 날짜.';
 COMMENT ON COLUMN reporting.earnings_outlook.last_seen_at IS '이 상태를 마지막으로 확인한 시각. 오래됐으면 수집이 멈춘 것이다.';
 COMMENT ON COLUMN reporting.earnings_outlook.security_id IS '내부 종목 ID.';
-
-CREATE OR REPLACE VIEW reporting.earnings_surprises WITH (security_invoker = true) AS
-SELECT
-  x.ticker,
-  x.fiscal_year,
-  x.fiscal_period,
-  x.filing_date,
-  x.eps_actual,
-  x.eps_estimate,
-  round((x.eps_surprise_ratio * 100)::numeric, 2) AS eps_surprise_percent,
-  x.eps_basis_match,
-  x.revenue_actual,
-  x.revenue_estimate,
-  round((x.revenue_surprise_ratio * 100)::numeric, 2) AS revenue_surprise_percent,
-  x.estimate_kind,
-  x.estimate_snapshot_date,
-  CASE
-    WHEN x.eps_estimate IS NULL AND x.revenue_estimate IS NULL THEN '발표 전 수집한 예상 없음'
-    WHEN x.eps_basis_match = 'mismatch' THEN 'EPS 정의 불일치로 EPS 비교 제외'
-    WHEN x.eps_basis_match = 'unknown' THEN 'EPS 정의 미확인'
-    WHEN x.estimate_kind = 'reconstructed' THEN '발표 이력에서 재구성한 예상(당시 값 보장 없음)'
-  END AS comparability_note,
-  x.accession_no,
-  x.security_id
-FROM reporting.earnings_surprise x;
-COMMENT ON VIEW reporting.earnings_surprises IS '[4. 실적 비교] 실적 발표 하나·종목 하나 = 한 행. 서프라이즈를 %로 보여 주고 비교할 수 없는 이유를 적는다.';
-COMMENT ON COLUMN reporting.earnings_surprises.ticker IS '티커.';
-COMMENT ON COLUMN reporting.earnings_surprises.fiscal_year IS '발표 대상 회계연도.';
-COMMENT ON COLUMN reporting.earnings_surprises.fiscal_period IS '발표 대상 기간.';
-COMMENT ON COLUMN reporting.earnings_surprises.filing_date IS '실적 8-K 제출일.';
-COMMENT ON COLUMN reporting.earnings_surprises.eps_actual IS '발표 EPS.';
-COMMENT ON COLUMN reporting.earnings_surprises.eps_estimate IS '발표 전 마지막 EPS 컨센서스. estimate_kind=reconstructed면 발표 이력의 그 분기 예상.';
-COMMENT ON COLUMN reporting.earnings_surprises.eps_surprise_percent IS 'EPS 서프라이즈(%). 정의가 다르면 NULL.';
-COMMENT ON COLUMN reporting.earnings_surprises.eps_basis_match IS 'match=같은 정의, unknown=한쪽 정의 미확인, mismatch=정의 다름.';
-COMMENT ON COLUMN reporting.earnings_surprises.revenue_actual IS '발표 매출.';
-COMMENT ON COLUMN reporting.earnings_surprises.revenue_estimate IS '발표 전 마지막 매출 컨센서스.';
-COMMENT ON COLUMN reporting.earnings_surprises.revenue_surprise_percent IS '매출 서프라이즈(%).';
-COMMENT ON COLUMN reporting.earnings_surprises.estimate_kind IS '비교에 쓴 예상의 수집 성격.';
-COMMENT ON COLUMN reporting.earnings_surprises.estimate_snapshot_date IS '비교에 쓴 예상 상태의 시작일.';
-COMMENT ON COLUMN reporting.earnings_surprises.comparability_note IS '비교할 수 없거나 조심해야 하는 이유. 문제 없으면 NULL.';
-COMMENT ON COLUMN reporting.earnings_surprises.accession_no IS '실적 8-K 접수번호.';
-COMMENT ON COLUMN reporting.earnings_surprises.security_id IS '내부 종목 ID.';
-
-CREATE OR REPLACE VIEW reporting.economic_calendar WITH (security_invoker = true) AS
-SELECT
-  x.scheduled_at AT TIME ZONE 'Asia/Seoul' AS scheduled_at_kst,
-  x.scheduled_at AT TIME ZONE 'America/New_York' AS scheduled_at_et,
-  x.series_name_ko,
-  x.ref_period,
-  x.status,
-  x.measure_name_ko,
-  x.unit,
-  x.first_actual_value,
-  x.closing_survey_value,
-  x.market_surprise,
-  x.closing_nowcast_value,
-  x.closing_own_model_value,
-  x.latest_actual_value,
-  x.revision,
-  x.series_id,
-  x.measure_id
-FROM reporting.macro_release_summary x;
-COMMENT ON VIEW reporting.economic_calendar IS '[5. 경제 일정] 경제지표 발표 하나 = 한 행. 모든 값은 비교 단위(measure) 기준이고 서프라이즈는 최초발표-시장예상이다.';
-COMMENT ON COLUMN reporting.economic_calendar.scheduled_at_kst IS '발표 예정 시각(한국 시간).';
-COMMENT ON COLUMN reporting.economic_calendar.scheduled_at_et IS '발표 예정 시각(미국 동부 시간).';
-COMMENT ON COLUMN reporting.economic_calendar.series_name_ko IS '지표 이름.';
-COMMENT ON COLUMN reporting.economic_calendar.ref_period IS '발표 대상 기간.';
-COMMENT ON COLUMN reporting.economic_calendar.status IS 'scheduled=예정, not_available_yet=시각이 지났으나 값 없음, released=발표됨, cancelled=취소.';
-COMMENT ON COLUMN reporting.economic_calendar.measure_name_ko IS '비교 단위 이름(전월비 등).';
-COMMENT ON COLUMN reporting.economic_calendar.unit IS '비교 단위의 단위.';
-COMMENT ON COLUMN reporting.economic_calendar.first_actual_value IS '최초 발표 값.';
-COMMENT ON COLUMN reporting.economic_calendar.closing_survey_value IS '발표 전 마지막 시장 컨센서스.';
-COMMENT ON COLUMN reporting.economic_calendar.market_surprise IS '최초 발표 값 - 시장 컨센서스.';
-COMMENT ON COLUMN reporting.economic_calendar.closing_nowcast_value IS '발표 전 마지막 나우캐스트(GDPNow 등).';
-COMMENT ON COLUMN reporting.economic_calendar.closing_own_model_value IS '발표 전 마지막 자체 모델 예상.';
-COMMENT ON COLUMN reporting.economic_calendar.latest_actual_value IS '개정이 반영된 현재 값.';
-COMMENT ON COLUMN reporting.economic_calendar.revision IS '현재 값 - 최초 발표 값.';
-COMMENT ON COLUMN reporting.economic_calendar.series_id IS '지표 코드.';
-COMMENT ON COLUMN reporting.economic_calendar.measure_id IS '비교 단위 ID.';
-
-CREATE OR REPLACE VIEW reporting.institutional_holdings WITH (security_invoker = true) AS
-SELECT
-  f.manager_cik,
-  f.period_end,
-  f.filing_date,
-  f.form_type,
-  p.ticker,
-  p.issuer_name,
-  p.cusip,
-  p.value_usd,
-  p.quantity,
-  p.quantity_type,
-  p.position_kind,
-  (p.security_id IS NOT NULL) AS is_security_mapped,
-  p.accession_no,
-  p.security_id
-FROM reporting.institutional_positions p
-JOIN institutional.filings f ON f.accession_no = p.accession_no;
-COMMENT ON VIEW reporting.institutional_holdings IS '[6. 기관 보유] 13F 보유 줄 하나 = 한 행. 종목 연결은 보고 분기말 기준이며 연결되지 않은 줄도 남긴다.';
-COMMENT ON COLUMN reporting.institutional_holdings.manager_cik IS '보고 운용사 CIK.';
-COMMENT ON COLUMN reporting.institutional_holdings.period_end IS '보고 분기말.';
-COMMENT ON COLUMN reporting.institutional_holdings.filing_date IS '제출일.';
-COMMENT ON COLUMN reporting.institutional_holdings.form_type IS '13F-HR 또는 정정 13F-HR/A.';
-COMMENT ON COLUMN reporting.institutional_holdings.ticker IS '분기말 기준으로 연결된 종목의 현재 티커. 연결 없으면 NULL.';
-COMMENT ON COLUMN reporting.institutional_holdings.issuer_name IS '원문 발행사명.';
-COMMENT ON COLUMN reporting.institutional_holdings.cusip IS '원문 CUSIP/CINS.';
-COMMENT ON COLUMN reporting.institutional_holdings.value_usd IS '보유 가치(USD, 원문 표 기준).';
-COMMENT ON COLUMN reporting.institutional_holdings.quantity IS '보유 수량.';
-COMMENT ON COLUMN reporting.institutional_holdings.quantity_type IS 'SH=주식, PRN=채권 원금.';
-COMMENT ON COLUMN reporting.institutional_holdings.position_kind IS 'SHARES=현물, PUT/CALL=옵션.';
-COMMENT ON COLUMN reporting.institutional_holdings.is_security_mapped IS '종목에 연결됐는가.';
-COMMENT ON COLUMN reporting.institutional_holdings.accession_no IS '13F 접수번호.';
-COMMENT ON COLUMN reporting.institutional_holdings.security_id IS '연결된 내부 종목 ID.';
-
 
 GRANT SELECT ON ALL TABLES IN SCHEMA reporting TO service_role;

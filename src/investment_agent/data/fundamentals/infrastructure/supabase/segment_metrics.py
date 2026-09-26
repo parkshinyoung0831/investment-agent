@@ -11,7 +11,6 @@ from investment_agent.platform.cli.runtime import utc_now_iso
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.db.postgres import chunk_values, sb, select_all_paged, select_paged_in_chunks
 from investment_agent.data.fundamentals.domain.services.assess_segment_quality import assess_rows
-from investment_agent.data.fundamentals.domain.taxonomy.segment_axes import SEGMENT_MAPPING_VERSION
 from investment_agent.data.fundamentals.infrastructure.supabase import company_financials
 
 # --- DB 식별자 (SSOT) ---------------------------------------------------
@@ -27,7 +26,6 @@ CONTENT_SEGMENTS = "segments"
 # ----------------------------------------------------------------------
 
 
-MAPPING_VERSION = SEGMENT_MAPPING_VERSION
 
 log = get_logger(__name__)
 
@@ -99,7 +97,7 @@ def filing_accessions(
     statuses: tuple[str, ...],
     forms: Iterable[str] | None = None,
 ) -> dict[str, set[str]]:
-    """현재 매핑 버전의 지정 상태 accession_no을 CIK별로 반환한다."""
+    """지정 상태로 처리한 accession_no을 CIK별로 반환한다."""
     wanted = tuple(forms or ())
 
     def builder():
@@ -107,7 +105,6 @@ def filing_accessions(
             sb.schema(_SCHEMA).table(_PROCESSING_TABLE)
             .select("accession_no,status")
             .eq("content_type", CONTENT_SEGMENTS)
-            .eq("mapping_version", MAPPING_VERSION)
         )
         query = query.in_("status", list(statuses))
         return query
@@ -278,11 +275,15 @@ def ciks_missing_segments(period_kind: str | None = None) -> set[str]:
     return tracked - present
 
 
-def _upsert_chunked(table: str, rows: list[dict], conflict: str) -> int:
+def _upsert_chunked(
+    table: str, rows: list[dict], conflict: str, *, ignore_duplicates: bool = False
+) -> int:
     n = 0
     for i in range(0, len(rows), _UPSERT_BATCH):
         chunk = rows[i : i + _UPSERT_BATCH]
-        sb.schema(_SCHEMA).table(table).upsert(chunk, on_conflict=conflict).execute()
+        sb.schema(_SCHEMA).table(table).upsert(
+            chunk, on_conflict=conflict, ignore_duplicates=ignore_duplicates
+        ).execute()
         n += len(chunk)
     return n
 
@@ -307,12 +308,13 @@ def upsert_filings(rows: list[dict]) -> int:
     ]
     if len(filings) != len(deduped):
         raise ValueError("segment filing rows require accession_no, cik, form_type, and filing_date")
-    _upsert_chunked(_FILINGS_TABLE, filings, "accession_no")
+    # 공시 행의 주인은 기업 재무 공시 경로다. FSDS 백필의 `period`는 월말로 반올림된
+    # 값이라 기간말을 덮어쓰면 안 된다 — 여기서는 FK 부모가 없을 때만 만든다.
+    _upsert_chunked(_FILINGS_TABLE, filings, "accession_no", ignore_duplicates=True)
     processing = [
         {
             "accession_no": row["accession_no"],
             "content_type": CONTENT_SEGMENTS,
-            "mapping_version": row.get("mapping_version") or MAPPING_VERSION,
             "status": row.get("status") or "empty",
             "facts_count": int(row.get("facts_count") or 0),
             "rows_count": int(row.get("rows_count") or 0),
@@ -323,7 +325,7 @@ def upsert_filings(rows: list[dict]) -> int:
     n = _upsert_chunked(
         _PROCESSING_TABLE,
         processing,
-        "accession_no,content_type,mapping_version",
+        "accession_no,content_type",
     )
     log.info("filings and segment processing states upserted: %d", n)
     return n
@@ -645,7 +647,6 @@ def segment_snapshots_as_of(tickers: Sequence[str], as_of_at: datetime) -> dict[
         lambda chunk: sb.schema(SCHEMA_FUNDAMENTALS).table(_PROCESSING_TABLE)
         .select("accession_no,status,updated_at")
         .eq("content_type", FILING_CONTENT_SEGMENTS)
-        .eq("mapping_version", MAPPING_VERSION)
         .eq("status", "parsed")
         .lte("updated_at", as_of_at.astimezone(timezone.utc).isoformat())
         .in_("accession_no", chunk),
@@ -717,7 +718,6 @@ def segment_snapshot_as_of(ticker: str, as_of_at: datetime) -> dict:
                 .table(_PROCESSING_TABLE)
                 .select("accession_no,status,updated_at")
                 .eq("content_type", FILING_CONTENT_SEGMENTS)
-                .eq("mapping_version", MAPPING_VERSION)
                 .eq("status", "parsed")
                 .lte("updated_at", as_of_at.astimezone(timezone.utc).isoformat())
                 .in_("accession_no", chunk),

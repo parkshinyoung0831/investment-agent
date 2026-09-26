@@ -119,6 +119,41 @@ class TableParserTest(unittest.TestCase):
         self.assertEqual(parsed["operating_income"], 9_383_000_000.0)
         self.assertEqual(parsed["net_income"], 6_529_000_000.0)
 
+    def test_the_quarter_column_is_read_even_when_a_cumulative_column_comes_first(self):
+        """반기 열이 앞에 있으면 첫 금액은 6개월 누적이다(BA·BAC 매출이 두 배로 저장된 모양)."""
+        parsed = extract_summary_financials(
+            """
+            <table>
+              <tr><th>(in millions)</th><th colspan='2'>Six Months Ended June 30</th>
+                  <th colspan='2'>Three Months Ended June 30</th></tr>
+              <tr><th></th><th>2026</th><th>2025</th><th>2026</th><th>2025</th></tr>
+              <tr><td>Total revenues</td><td>46,777</td><td>40,100</td><td>24,560</td><td>20,000</td></tr>
+            </table>
+            """
+        )
+        self.assertEqual(parsed["revenue"], 24_560_000_000.0)
+
+    def test_a_table_with_only_cumulative_periods_is_not_the_quarter(self):
+        parsed = extract_summary_financials(
+            """
+            <table>
+              <tr><th>(in millions)</th><th>Year Ended 2026</th><th>Year Ended 2025</th></tr>
+              <tr><td>Total revenues</td><td>9,700</td><td>9,100</td></tr>
+            </table>
+            """
+        )
+        self.assertNotIn("revenue", parsed)
+
+    def test_a_non_positive_revenue_is_not_revenue(self):
+        parsed = extract_summary_financials(
+            """
+            <table><caption>Three Months Ended (in millions)</caption>
+              <tr><td>Total revenues</td><td>(7)</td></tr>
+            </table>
+            """
+        )
+        self.assertNotIn("revenue", parsed)
+
     def test_accepts_operating_earnings_label(self):
         parsed = extract_summary_financials(
             """

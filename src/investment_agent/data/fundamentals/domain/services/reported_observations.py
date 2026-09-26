@@ -5,10 +5,16 @@ import calendar
 from datetime import date, timedelta
 
 from investment_agent.data.fundamentals.domain.services.balance_identity import (
+    COMMON,
+    STOCKHOLDERS,
+    STOCKHOLDERS_INCLUDING_NCI,
     non_liability_claims,
     source_scope,
 )
-from investment_agent.data.fundamentals.domain.policies import NON_NEGATIVE_FLOW_COLUMNS
+from investment_agent.data.fundamentals.domain.policies import (
+    NON_NEGATIVE_FLOW_COLUMNS,
+    PER_SHARE_COLUMNS,
+)
 from investment_agent.data.fundamentals.domain.taxonomy import gaap_concepts as concepts
 from investment_agent.data.fundamentals.domain.taxonomy.financial_columns import (
     BALANCE_COLUMNS,
@@ -746,6 +752,8 @@ def periodize(facts: list[dict]) -> list[dict]:
         qtrs = int(cur.get("qtrs") or 0)
         if fp not in ("Q2", "Q3") or qtrs not in (2, 3):
             continue
+        if cur["column_key"] in PER_SHARE_COLUMNS:
+            continue
 
         cur_end = _parse_date(cur.get("period_end"))
         if cur_end is None:
@@ -811,6 +819,8 @@ def periodize(facts: list[dict]) -> list[dict]:
     for fy in fy_rows:
         qtrs = int(fy.get("qtrs") or 0)
         if qtrs != 4 and not fy.get("period_start"):
+            continue
+        if fy["column_key"] in PER_SHARE_COLUMNS:
             continue
         fy_end = _parse_date(fy.get("period_end"))
         if fy_end is None:
@@ -918,8 +928,6 @@ def _pivot(rows: list[dict], columns: tuple[str, ...]) -> list[dict]:
                 "form_type": None,
                 "period_end": None,
                 "filed_at": None,
-                "mapping_version": concepts.SEMANTIC_POLICY_VERSION,
-                "common_equity_scope": "unknown",
                 "is_liabilities_derived": False,
                 "source_manifest": {},
                 **{name: None for name in columns},
@@ -948,6 +956,83 @@ def _pivot(rows: list[dict], columns: tuple[str, ...]) -> list[dict]:
     ]
 
 
+def _derived_manifest(row: dict, formula: str, sources: tuple[str, ...]) -> dict:
+    manifests = row.get("source_manifest") or {}
+    return {
+        "raw_tag": None,
+        "standard_tag": None,
+        "unit": None,
+        "accession_no": row.get("accession_no"),
+        "filed_at": row.get("filed_at"),
+        "period_start": None,
+        "period_end": row.get("period_end"),
+        "is_derived": True,
+        "derivation": {
+            "formula": formula,
+            "source_tags": [
+                (manifests.get(column) or {}).get("raw_tag") for column in sources
+            ],
+        },
+    }
+
+
+def _parent_net_income(rows: list[dict]) -> list[dict]:
+    """모회사 귀속 순이익이 없으면 연결 순이익 - 비지배지분 순이익으로 만든다.
+
+    연결 순이익은 이 계산의 입력일 뿐 저장하지 않는다. 비지배지분 순이익을 모르면 빼지 않고
+    비운다 — 연결 순이익을 그대로 두면 비지배지분이 큰 회사의 EPS·ROE가 부풀려진다.
+    """
+    for row in rows:
+        consolidated = row.pop("net_income_including_nci", None)
+        manifests = row.get("source_manifest") or {}
+        manifests.pop("net_income_including_nci", None)
+        minority = row.get("minority_interest_income")
+        if row.get("net_income") is not None or consolidated is None or minority is None:
+            continue
+        manifests["net_income"] = _derived_manifest(
+            row, "net_income_including_nci - minority_interest_income", ("minority_interest_income",)
+        )
+        row["net_income"] = consolidated - minority
+        row["source_manifest"] = manifests
+    return rows
+
+
+def _common_equity_from_scope(rows: list[dict]) -> list[dict]:
+    """`common_equity`를 보통주 자본(모회사 주주자본 - 우선주)으로 맞춘다.
+
+    회사마다 자본 총계를 다른 범위의 태그로 보고한다. 범위를 행에 적어 두고 읽는 쪽이
+    해석하게 하면 부채비율·ROE·장부가치가 회사마다 다른 뜻이 된다. 저장하기 전에 한 뜻으로
+    접는다. 비지배지분을 포함한 총계만 있는데 비지배지분 잔액을 모르면 뺄 수 없으므로 비운다.
+    """
+    for row in rows:
+        value = row.get("common_equity")
+        if value is None:
+            continue
+        scope = source_scope(row)
+        preferred = row.get("preferred_stock") or 0
+        minority = row.get("minority_interest_balance")
+        if scope == COMMON:
+            continue
+        if scope == STOCKHOLDERS:
+            common = value - preferred
+            formula = "stockholders_equity - preferred_stock"
+        elif scope == STOCKHOLDERS_INCLUDING_NCI and minority is not None:
+            common = value - minority - preferred
+            formula = "total_equity_including_nci - minority_interest_balance - preferred_stock"
+        else:
+            row["common_equity"] = None
+            (row.get("source_manifest") or {}).pop("common_equity", None)
+            continue
+        if common == value:
+            continue
+        row["common_equity"] = common
+        manifest = (row.get("source_manifest") or {}).get("common_equity")
+        if manifest is not None:
+            manifest["is_derived"] = True
+            manifest["derivation"] = {"formula": formula, "source_tag": manifest.get("raw_tag")}
+    return rows
+
+
 def _derive_missing_liabilities(rows: list[dict]) -> list[dict]:
     """정확한 총부채 태그가 없을 때만 회계항등식 잔여값을 채운다.
 
@@ -956,7 +1041,6 @@ def _derive_missing_liabilities(rows: list[dict]) -> list[dict]:
     manifest가 직접 보고값과 파생값을 구분한다.
     """
     for row in rows:
-        row["common_equity_scope"] = source_scope(row)
         row["is_liabilities_derived"] = False
         if row.get("liabilities") is not None:
             continue
@@ -975,6 +1059,7 @@ def _derive_missing_liabilities(rows: list[dict]) -> list[dict]:
             for column in (
                 "assets",
                 "common_equity",
+                "preferred_stock",
                 "minority_interest_balance",
                 "mezzanine_equity",
             )
@@ -991,8 +1076,7 @@ def _derive_missing_liabilities(rows: list[dict]) -> list[dict]:
             "period_end": row.get("period_end"),
             "is_derived": True,
             "derivation": {
-                "formula": "assets - non_liability_claims(common_equity_scope)",
-                "common_equity_scope": row["common_equity_scope"],
+                "formula": "assets - (common_equity + preferred_stock + minority_interest_balance + mezzanine_equity)",
                 "source_accessions": source_accessions,
             },
         }
@@ -1020,4 +1104,7 @@ def to_wide_tables(facts: list[dict]) -> tuple[list[dict], list[dict]]:
         row for row in periodize(selected)
         if str(row.get("fiscal_period") or "") != "FY"
     ]
-    return _derive_missing_liabilities(_pivot(quarters, CORE_COLUMNS)), anomalies
+    rows = _pivot(quarters, (*CORE_COLUMNS, "net_income_including_nci"))
+    rows = _parent_net_income(rows)
+    rows = _common_equity_from_scope(rows)
+    return _derive_missing_liabilities(rows), anomalies

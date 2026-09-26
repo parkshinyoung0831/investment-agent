@@ -27,7 +27,6 @@ T_EARNINGS_ESTIMATES = "earnings_estimates"
 T_EARNINGS_SCHEDULE = "earnings_schedule_versions"
 T_ANALYST_SNAPSHOTS = "analyst_consensus_snapshots"
 T_FINANCIALS = "financials"
-T_FINANCIAL_VERSIONS = "financial_versions"
 T_FILINGS = "filings"
 T_SECURITIES = "securities"
 # ----------------------------------------------------------------------
@@ -128,7 +127,7 @@ def _upsert(table: str, rows: list[dict], conflict: str) -> int:
 
 _ESTIMATE_KEY = ("security_id", "target_fiscal_year", "target_fiscal_period", "source", "snapshot_kind")
 _ESTIMATE_VALUES = (
-    "target_period_end", "eps_basis", "currency", "eps_avg", "eps_low", "eps_high", "eps_analysts",
+    "target_period_end", "eps_basis", "eps_avg", "eps_low", "eps_high", "eps_analysts",
     "revenue_avg", "revenue_low", "revenue_high", "revenue_analysts",
     "revisions_up_7d", "revisions_up_30d", "revisions_down_7d", "revisions_down_30d",
 )
@@ -176,7 +175,7 @@ def _write_versions(table: str, rows: list[dict], *, key: tuple, values: tuple, 
 def upsert_consensus(rows: list[dict]) -> int:
     """컨센서스 상태 버전. EPS 정의·통화를 원천이 말하지 않으면 unknown·NULL로 둔다."""
     return _write_versions(T_EARNINGS_ESTIMATES, rows, key=_ESTIMATE_KEY, values=_ESTIMATE_VALUES,
-                           pk=_ESTIMATE_PK, defaults={"eps_basis": "unknown", "currency": None})
+                           pk=_ESTIMATE_PK, defaults={"eps_basis": "unknown"})
 
 
 def upsert_schedules(rows: list[dict]) -> int:
@@ -219,19 +218,57 @@ def _utc_iso(value: datetime) -> str:
     return value.astimezone(timezone.utc).isoformat()
 
 
-_FILING_COLUMNS = "accession_no,filing_date,available_at,form_type"
+_FILING_COLUMNS = "accession_no,cik,filing_date,available_at,form_type,report_date"
+_PERIODIC_FORMS = ("10-Q", "10-Q/A", "10-K", "10-K/A")
 
 
-def _filings_for(versions: Sequence[dict]) -> dict[str, dict]:
-    accessions = sorted({str(row["accession_no"]) for row in versions})
-    if not accessions:
+def _disclosures_for(rows: Sequence[dict]) -> dict[tuple[str, str], dict]:
+    """(cik, 기간말)마다 그 기간을 처음 공개한 공시와 마지막으로 반영한 공시.
+
+    재무 행은 기간마다 하나이고 `accession_no`는 마지막으로 값을 덮은 공시(정정이면 /A)다.
+    과거 시점 조회는 그 기간이 **처음** 공개된 날로 잘라야 한다 — 정정일로 자르면 원본
+    공시일과 정정일 사이에 그 기간이 통째로 사라진다. 처음 공개한 공시는 같은 CIK에서
+    `report_date`가 기간말인 가장 이른 정기공시다.
+    """
+    if not rows:
         return {}
-    rows = select_paged_in_chunks(
+    accessions = sorted({str(row["accession_no"]) for row in rows})
+    own = select_paged_in_chunks(
         lambda chunk: sb.schema(SCHEMA_FUNDAMENTALS).table(T_FILINGS)
         .select(_FILING_COLUMNS).in_("accession_no", chunk),
         accessions, order_by="accession_no", paged_reader=select_all_paged,
     )
-    return {str(row["accession_no"]): row for row in rows}
+    periodic = select_paged_in_chunks(
+        lambda chunk: sb.schema(SCHEMA_FUNDAMENTALS).table(T_FILINGS)
+        .select(_FILING_COLUMNS).in_("cik", chunk).in_("form_type", list(_PERIODIC_FORMS)),
+        sorted({str(row["cik"]) for row in rows}), order_by="cik,filing_date,accession_no",
+        paged_reader=select_all_paged,
+    )
+    return disclosures_by_period(rows, [*own, *periodic])
+
+
+def disclosures_by_period(
+    rows: Sequence[dict], filings: Sequence[dict]
+) -> dict[tuple[str, str], dict]:
+    """`_disclosures_for`의 순수 부분. DB 없이 검증한다."""
+    by_accession = {str(row["accession_no"]): row for row in filings}
+    by_period: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    for filing in filings:
+        if filing.get("report_date") and str(filing.get("form_type")) in _PERIODIC_FORMS:
+            by_period[(str(filing["cik"]).zfill(10), str(filing["report_date"])[:10])].append(filing)
+    result: dict[tuple[str, str], dict] = {}
+    for row in rows:
+        latest = by_accession.get(str(row["accession_no"]))
+        if latest is None:
+            raise ValueError("financial row has no filing provenance")
+        key = (str(row["cik"]).zfill(10), str(row["period_end"])[:10])
+        candidates = [latest, *by_period.get(key, [])]
+        first = min(
+            (item for item in candidates if item.get("filing_date")),
+            key=lambda item: (str(item["filing_date"]), str(item.get("available_at") or "")),
+        )
+        result[key] = {"first": first, "latest": latest}
+    return result
 
 
 def _tickers_by_cik(securities: Sequence[Mapping[str, Any]]) -> dict[str, list[str]]:
@@ -246,11 +283,11 @@ def _tickers_by_cik(securities: Sequence[Mapping[str, Any]]) -> dict[str, list[s
     return tickers_by_cik
 
 
-def _version_rows(ciks: Sequence[str]) -> list[dict]:
+def _financial_rows(ciks: Sequence[str]) -> list[dict]:
     return select_paged_in_chunks(
-        lambda chunk: sb.schema(SCHEMA_FUNDAMENTALS).table(T_FINANCIAL_VERSIONS)
+        lambda chunk: sb.schema(SCHEMA_FUNDAMENTALS).table(T_FINANCIALS)
         .select("*").in_("cik", chunk),
-        sorted(ciks), order_by="cik,period_end,fiscal_period,accession_no,mapping_version",
+        sorted(ciks), order_by="cik,period_end",
         paged_reader=select_all_paged,
     )
 
@@ -272,60 +309,57 @@ def _fundamental_rows(
     if not securities:
         return []
     security = max(securities, key=lambda row: bool(row.get("is_active_listing")))
-    versions = _version_rows(list(with_predecessors([str(security["cik"])])))
+    rows = _financial_rows(list(with_predecessors([str(security["cik"])])))
     return _project_fundamental_rows(
-        ticker, versions, _filings_for(versions), as_of_at,
+        ticker, rows, _disclosures_for(rows), as_of_at,
         include_available_at=include_available_at, limit=limit,
     )
 
 
 def _project_fundamental_rows(
     ticker: str,
-    versions: Sequence[dict],
-    provenance: Mapping[str, dict],
+    rows: Sequence[dict],
+    disclosures: Mapping[tuple[str, str], dict],
     as_of_at: datetime,
     *,
     include_available_at: bool,
     limit: int,
 ) -> list[dict]:
-    """회계기간마다 cutoff 시점에 알 수 있던 가장 늦은 공시 버전 하나를 고른다.
+    """cutoff 시점에 이미 공개돼 있던 회계기간의 재무 행만 남긴다.
 
-    `include_available_at`이면 우리 수집기가 공시를 손에 넣은 시각과 버전 저장 시각까지
-    cutoff 이전이어야 한다(운영 재현). 아니면 SEC 제출일의 공개 규칙(`filing_available_at`)만
-    본다(원천 기준 연구).
-    정정 공시가 cutoff 뒤에 나왔으면 정정 전 값이 그대로 나온다.
+    기간의 공개 시점은 그 기간을 처음 보고한 공시다. `include_available_at`이면 우리
+    수집기가 그 공시를 손에 넣은 시각까지 cutoff 이전이어야 한다(운영 재현). 아니면 SEC
+    제출일의 공개 규칙(`filing_available_at`)만 본다(원천 기준 연구). 값은 정정이 반영된
+    현재 값이다 — 정정이 cutoff 뒤에 나왔어도 소급된다(스키마 머리주석 참고).
     """
     cutoff = _utc_iso(as_of_at)
     cutoff_date = as_of_at.date().isoformat()
-    chosen: dict[tuple, tuple[tuple, dict]] = {}
-    for row in versions:
-        filing = provenance.get(str(row["accession_no"]))
-        if filing is None:
-            raise ValueError("financial version row has no filing provenance")
-        filed_at = str(filing.get("filing_date") or "")
+    result: list[dict] = []
+    for row in rows:
+        disclosure = disclosures.get((str(row["cik"]).zfill(10), str(row["period_end"])[:10]))
+        if disclosure is None:
+            raise ValueError("financial row has no filing provenance")
+        first = disclosure["first"]
+        filed_at = str(first.get("filing_date") or "")[:10]
         if not filed_at or filed_at > cutoff_date:
             continue
         if not include_available_at and filing_available_at(filed_at) > as_of_at:
             # 원천 기준 재현에는 수집 시각이 없으므로 제출일의 공개 규칙만이 경계다.
             # 날짜만 비교하면 그날 장 마감 뒤 나온 공시를 그날 아침에 쓴다.
             continue
-        if include_available_at:
-            if not filing.get("available_at") or _utc_iso(parse_datetime(filing["available_at"])) > cutoff:
-                continue
-            if row.get("ingested_at") and _utc_iso(parse_datetime(row["ingested_at"])) > cutoff:
-                continue
-        period = (str(row["period_end"]), str(row["fiscal_period"]))
-        rank = (filed_at, str(row["accession_no"]), str(row.get("ingested_at") or ""))
-        if period not in chosen or rank > chosen[period][0]:
-            chosen[period] = (rank, {
-                **row,
-                "ticker": str(ticker).upper(),
-                "filed_at": filed_at,
-                "filing_date": filed_at,
-                "available_at": filing.get("available_at"),
-                "form_type": filing.get("form_type"),
-            })
-    result = [item for _rank, item in chosen.values()]
+        if include_available_at and (
+            not first.get("available_at")
+            or _utc_iso(parse_datetime(first["available_at"])) > cutoff
+        ):
+            continue
+        result.append({
+            **row,
+            "ticker": str(ticker).upper(),
+            "filed_at": filed_at,
+            "filing_date": filed_at,
+            "available_at": first.get("available_at"),
+            "form_type": disclosure["latest"].get("form_type"),
+        })
     result.sort(key=lambda row: (
         str(row.get("filed_at") or ""),
         str(row.get("period_end") or ""),
@@ -353,8 +387,8 @@ def securities_fundamentals_as_of(
     tickers_by_cik = _tickers_by_cik(securities)
     if not tickers_by_cik:
         return []
-    financials = _version_rows(list(tickers_by_cik))
-    provenance = _filings_for(financials)
+    financials = _financial_rows(list(tickers_by_cik))
+    disclosures = _disclosures_for(financials)
     # CIK 하나가 여러 ticker로 갈라질 수 있다 — 저장 identity는 CIK이고 fan-out은
     # 읽기 경계의 몫이다.
     by_ticker: dict[str, list[dict]] = defaultdict(list)
@@ -364,7 +398,7 @@ def securities_fundamentals_as_of(
     result: list[dict] = []
     for ticker, rows in by_ticker.items():
         result.extend(_project_fundamental_rows(
-            ticker, rows, provenance, as_of_at, include_available_at=True, limit=limit,
+            ticker, rows, disclosures, as_of_at, include_available_at=True, limit=limit,
         ))
     return result
 
@@ -384,17 +418,17 @@ def securities_fundamentals_filed_before(
     tickers_by_cik = _tickers_by_cik(securities)
     if not tickers_by_cik:
         return []
-    versions = _version_rows(list(tickers_by_cik))
-    provenance = _filings_for(versions)
+    financials = _financial_rows(list(tickers_by_cik))
+    disclosures = _disclosures_for(financials)
     by_ticker: dict[str, list[dict]] = defaultdict(list)
-    for row in versions:
+    for row in financials:
         for ticker in tickers_by_cik[str(row["cik"]).zfill(10)]:
             by_ticker[ticker].append(row)
     return [
         projected
         for ticker, rows in by_ticker.items()
         for projected in _project_fundamental_rows(
-            ticker, rows, provenance, as_of_at, include_available_at=False, limit=limit,
+            ticker, rows, disclosures, as_of_at, include_available_at=False, limit=limit,
         )
     ]
 

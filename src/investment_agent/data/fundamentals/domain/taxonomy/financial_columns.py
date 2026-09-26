@@ -25,7 +25,6 @@ CORE_COLUMNS: tuple[str, ...] = (
     "net_income_to_common_shareholders",
     "eps_basic_gaap",
     "eps_diluted_gaap",
-    "dividends_declared_per_share",
     "assets",
     "current_assets_total",
     "cash_and_cash_equivalents",
@@ -35,7 +34,6 @@ CORE_COLUMNS: tuple[str, ...] = (
     "property_plant_equipment_net",
     "goodwill",
     "intangible_assets_excluding_goodwill",
-    "operating_lease_right_of_use_asset",
     "liabilities",
     "current_liabilities_total",
     "trade_payables",
@@ -54,11 +52,8 @@ CORE_COLUMNS: tuple[str, ...] = (
     "depreciation_amortization_cf",
     "stock_based_compensation_cf",
     "capital_expenses",
-    "acquisitions_net_of_cash",
     "stock_repurchase_payments",
     "common_dividends_paid",
-    "long_term_debt_issued",
-    "long_term_debt_repaid",
     "operating_lease_current_debt_equivalent",
     "operating_lease_non_current_debt_equivalent",
     "shares_average",
@@ -79,7 +74,6 @@ BALANCE_COLUMNS: frozenset[str] = frozenset({
     "cash_and_cash_equivalents", "short_term_investments",
     "trade_receivables", "inventories",
     "property_plant_equipment_net", "goodwill", "intangible_assets_excluding_goodwill",
-    "operating_lease_right_of_use_asset",
     "liabilities", "current_liabilities_total", "trade_payables",
     "short_term_debt", "current_portion_of_long_term_debt", "long_term_debt",
     "total_debt_including_current",
@@ -96,6 +90,9 @@ ALL_WIDE_COLUMNS: frozenset[str] = frozenset(CORE_COLUMNS)
 # 복원하는 데 사용한다.
 TRANSFORMATION_ONLY_COLUMNS: frozenset[str] = frozenset({
     "assets_held_in_trust",
+    # 비지배지분 포함 연결 순이익. 모회사 귀속 순이익(net_income)이 없을 때 비지배지분
+    # 순이익을 빼서 그것을 만드는 데만 쓴다.
+    "net_income_including_nci",
 })
 
 COMPANYFACT_COLUMNS: frozenset[str] = (
@@ -105,6 +102,5 @@ COMPANYFACT_COLUMNS: frozenset[str] = (
 # XBRL 수치와 함께 영속화하는 품질 메타데이터. 수치 목록과 분리해야
 # 컬럼 충전율·TTM 집계가 boolean을 재무 계정으로 오인하지 않는다.
 PERSISTED_METADATA_COLUMNS: frozenset[str] = frozenset({
-    "common_equity_scope",
     "is_liabilities_derived",
 })

@@ -70,7 +70,9 @@ class CanonicalFilingFocusTest(unittest.TestCase):
             {"OLD-Q1"},
         )
 
-    def test_factless_amendment_does_not_replace_the_original_10k(self) -> None:
+    def test_an_amendment_is_merged_with_its_original_not_replacing_it(self) -> None:
+        """정정 공시와 원본은 같은 회계기간을 받는다. 어느 쪽도 대체(superseded)되지 않는다 —
+        정정이 보고하지 않은 컬럼은 원본 값이 남아야 한다(정정 하나로 매출·자산이 비던 결함)."""
         filings = [
             _filing("ORIGINAL", "2025-12-31", "10-K"),
             FilingRef(
@@ -96,12 +98,9 @@ class CanonicalFilingFocusTest(unittest.TestCase):
 
         self.assertEqual(
             filing_focus(document, filings),
-            {"ORIGINAL": (2025, "FY")},
+            {"ORIGINAL": (2025, "FY"), "AMENDMENT": (2025, "FY")},
         )
-        self.assertEqual(
-            superseded_filing_accessions(document, filings),
-            {"AMENDMENT"},
-        )
+        self.assertEqual(superseded_filing_accessions(document, filings), set())
 
     def test_current_quarters_use_the_previous_annual_anchor(self) -> None:
         filings = [

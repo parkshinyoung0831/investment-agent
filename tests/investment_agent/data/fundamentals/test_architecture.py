@@ -126,3 +126,63 @@ class FundamentalsArchitectureTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+_FILINGS_NAMES = {"T_FILINGS", "_FILINGS_TABLE"}
+# 공시 행(`filings`)의 값을 정하는 곳은 SEC submissions를 읽는 기업 재무 공시 경로 하나다.
+_FILINGS_OWNER = ROOT / "infrastructure/supabase/company_financials.py"
+
+
+def _writes_filings(call: ast.Call) -> bool:
+    """`...table(T_FILINGS).upsert(...)`나 `_upsert_chunked(_FILINGS_TABLE, ...)`인가."""
+    func = call.func
+    if isinstance(func, ast.Name) and func.id == "_upsert_chunked":
+        return bool(call.args) and isinstance(call.args[0], ast.Name) and call.args[0].id in _FILINGS_NAMES
+    if not (isinstance(func, ast.Attribute) and func.attr in {"upsert", "update"}):
+        return False
+    receiver = func.value
+    return (
+        isinstance(receiver, ast.Call)
+        and isinstance(receiver.func, ast.Attribute)
+        and receiver.func.attr == "table"
+        and any(isinstance(arg, ast.Name) and arg.id in _FILINGS_NAMES for arg in receiver.args)
+    )
+
+
+def _ignores_duplicates(call: ast.Call) -> bool:
+    return any(
+        keyword.arg == "ignore_duplicates"
+        and isinstance(keyword.value, ast.Constant) and keyword.value.value is True
+        for keyword in call.keywords
+    )
+
+
+def filings_overwriters(files: list[Path]) -> list[str]:
+    """주인이 아닌데 기존 공시 행을 덮어쓸 수 있는 호출 위치."""
+    found: list[str] = []
+    for path in files:
+        if path == _FILINGS_OWNER:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and _writes_filings(node) and not _ignores_duplicates(node):
+                found.append(f"{path}:{node.lineno}")
+    return found
+
+
+class FilingsOwnershipTest(unittest.TestCase):
+    """공시 행을 여러 곳이 다른 뜻으로 덮어쓰면 `report_date`가 조용히 바뀐다."""
+
+    def test_only_the_filing_path_overwrites_filings(self) -> None:
+        self.assertEqual([], filings_overwriters(sorted(ROOT.rglob("*.py"))))
+
+    def test_the_guard_catches_an_overwriting_upsert(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "writer.py"
+            path.write_text(
+                "sb.schema(S).table(T_FILINGS).upsert(rows, on_conflict='accession_no').execute()\n",
+                encoding="utf-8",
+            )
+            self.assertEqual([f"{path}:1"], filings_overwriters([path]))

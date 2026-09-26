@@ -69,14 +69,16 @@ class SemanticPolicyTest(unittest.TestCase):
             )
         )
 
-    def test_total_debt_prevents_component_double_counting(self):
+    def test_total_debt_is_the_same_definition_for_every_company(self):
+        """보고 총계(리스 제외)가 있든 없든 겹치지 않는 구성요소 합으로 센다."""
         row = {
             "total_debt_including_current": 100,
-            "short_term_debt": 20,
+            "short_term_debt": 10,
             "current_portion_of_long_term_debt": 10,
             "long_term_debt": 80,
+            "operating_lease_non_current_debt_equivalent": 5,
         }
-        self.assertEqual(metrics.total_debt(row), 100)
+        self.assertEqual(metrics.total_debt(row), 105)
 
 
 class ManifestTest(unittest.TestCase):
@@ -104,11 +106,11 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual(anomalies, [])
         self.assertEqual(core[0]["liabilities"], 640)
         self.assertTrue(core[0]["is_liabilities_derived"])
-        self.assertEqual(core[0]["common_equity_scope"], "common")
+        self.assertEqual(core[0]["common_equity"], 300)
         derivation = core[0]["source_manifest"]["liabilities"]["derivation"]
         self.assertEqual(
             derivation["formula"],
-            "assets - non_liability_claims(common_equity_scope)",
+            "assets - (common_equity + preferred_stock + minority_interest_balance + mezzanine_equity)",
         )
 
     def test_equity_including_nci_does_not_double_subtract_nci(self):
@@ -130,9 +132,8 @@ class ManifestTest(unittest.TestCase):
 
         self.assertEqual(anomalies, [])
         self.assertEqual(core[0]["liabilities"], 590)
-        self.assertEqual(
-            core[0]["common_equity_scope"], "stockholders_including_nci"
-        )
+        # 비지배지분 포함 총계에서 비지배지분을 뺀 것이 보통주 자본이다.
+        self.assertEqual(core[0]["common_equity"], 350)
 
     def test_direct_liabilities_are_never_overwritten(self):
         core, anomalies = wide.to_wide_tables([
@@ -155,7 +156,6 @@ class ManifestTest(unittest.TestCase):
 
         self.assertEqual(anomalies, [])
         self.assertEqual(core[0]["accession_no"], "ACC-1")
-        self.assertEqual(core[0]["mapping_version"], concepts.SEMANTIC_POLICY_VERSION)
         self.assertEqual(
             core[0]["source_manifest"]["revenue"],
             {
@@ -355,7 +355,8 @@ class ViewContractTest(unittest.TestCase):
         self.assertIn("fundamentals.is_finite_numbers", sql)
         self.assertIn("'unmapped_unlisted'", sql)
         self.assertIn("snapshot_date <= (collected_at AT TIME ZONE 'America/New_York')::date", sql)
-        self.assertIn("PRIMARY KEY (cik, period_end, fiscal_period, accession_no, mapping_version)", sql)
+        self.assertIn("PRIMARY KEY (cik, period_end)", sql)
+        self.assertIn("UNIQUE (cik, fiscal_year, fiscal_period)", sql)
         self.assertIn("PRIMARY KEY (cik, share_class_key, as_of_date, accession_no)", sql)
 
     def test_views_do_not_depend_on_every_core_column(self):
@@ -366,16 +367,12 @@ class ViewContractTest(unittest.TestCase):
     def test_view_names_say_whose_fact_they_carry(self):
         sql = Path("db/postgres/v1/30_fundamentals.sql").read_text(encoding="utf-8")
 
-        # fundamentals DDL은 writer-owned tables와, 버전 표에서 최신을 고르는 뷰 하나만 둔다.
-        # 계산 read model은 reporting 경계에서 소유한다.
-        for table in ("filings", "financial_versions", "share_class_snapshots",
+        # fundamentals DDL은 writer-owned tables만 둔다. 계산 read model은 reporting 경계에서 소유한다.
+        for table in ("filings", "financials", "share_class_snapshots",
                       "segment_metrics", "earnings_results", "earnings_estimates",
                       "earnings_schedule_versions", "analyst_consensus_snapshots"):
             self.assertIn(f"CREATE TABLE IF NOT EXISTS fundamentals.{table}", sql)
-        self.assertEqual(
-            ["fundamentals.financials"],
-            re.findall(r"CREATE OR REPLACE VIEW (fundamentals\.\w+)", sql),
-        )
+        self.assertEqual([], re.findall(r"CREATE OR REPLACE VIEW (fundamentals\.\w+)", sql))
 
 
 class SchemaContractTest(unittest.TestCase):
@@ -389,8 +386,8 @@ class SchemaContractTest(unittest.TestCase):
         sql = Path("db/postgres/v1/30_fundamentals.sql").read_text(encoding="utf-8")
 
         self.assertIn("is_liabilities_derived", sql)
-        self.assertIn("common_equity_scope", sql)
-        self.assertIn("PRIMARY KEY (cik, period_end, fiscal_period, accession_no, mapping_version)", sql)
+        # 자본은 보통주 자본 한 뜻으로 저장한다 — 범위를 행에 적어 읽는 쪽이 해석하게 하지 않는다.
+        self.assertNotIn("common_equity_scope", sql)
 
     def test_estimates_and_segments_tables_are_absorbed(self):
         sql = Path("db/postgres/v1/30_fundamentals.sql").read_text(encoding="utf-8")
@@ -406,14 +403,15 @@ class SchemaContractTest(unittest.TestCase):
         self.assertIn("CREATE TABLE IF NOT EXISTS fundamentals.earnings_schedule_versions", sql)
         self.assertIn("CREATE TABLE IF NOT EXISTS fundamentals.analyst_consensus_snapshots", sql)
 
-    def test_restatements_are_kept_and_latest_is_a_view(self):
-        """정정 공시는 새 버전 행이고, 최신 값은 저장이 아니라 뷰가 고른다."""
+    def test_a_period_is_one_row_and_restatements_overwrite_it(self):
+        """정정 공시는 같은 기간 행을 덮는다. 매핑 규칙이 바뀌면 전체를 다시 처리한다."""
         sql = Path("db/postgres/v1/30_fundamentals.sql").read_text(encoding="utf-8")
 
-        self.assertIn("PRIMARY KEY (cik, period_end, fiscal_period, accession_no, mapping_version)", sql)
+        self.assertIn("CREATE TABLE IF NOT EXISTS fundamentals.financials", sql)
+        self.assertIn("PRIMARY KEY (cik, period_end)", sql)
         self.assertIn("available_at timestamptz NOT NULL DEFAULT now()", sql)
-        self.assertIn("mapping_version text NOT NULL", sql)
-        self.assertIn("CREATE OR REPLACE VIEW fundamentals.financials", sql)
+        self.assertNotIn("mapping_version", sql)
+        self.assertNotIn("financial_versions", sql)
         self.assertNotIn("guard_canonical_financials", sql)
 
     def test_segment_integrity_rpc_is_private_and_covers_cross_table_contracts(self):
@@ -447,14 +445,15 @@ class PersistedPayloadTest(unittest.TestCase):
         schema.table.return_value.upsert.return_value.execute.return_value.data = [{}]
         client = mock.MagicMock()
         client.schema.return_value = schema
-        with mock.patch.object(repo, "sb", client):
+        with mock.patch.object(repo, "sb", client), mock.patch.object(
+            repo, "select_paged_in_chunks", return_value=[]
+        ):
             repo.upsert_core_wide([{
                 "cik": "0000000001",
                 "period_end": "2026-06-30",
                 "accession_no": "0000000001-26-000001",
                 "fiscal_year": 2026,
                 "fiscal_period": "Q2",
-                "mapping_version": "v1",
                 "revenue": 1.0,
                 "source_manifest": {"revenue": {"tag": "Revenues"}},
             }])
@@ -504,7 +503,7 @@ class ColumnDriftTest(unittest.TestCase):
         실제로 두 사고가 모두 있었다.
         """
         sql = Path("db/postgres/v1/30_fundamentals.sql").read_text(encoding="utf-8")
-        declared = self._numeric_columns(sql, "financial_versions") - self._CORE_NON_METRIC_NUMERIC
+        declared = self._numeric_columns(sql, "financials") - self._CORE_NON_METRIC_NUMERIC
 
         self.assertEqual(
             declared,

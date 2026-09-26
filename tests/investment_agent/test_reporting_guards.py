@@ -36,6 +36,7 @@ ALLOWED_IMPORTS = {
     "investment_agent.data.fundamentals.domain.taxonomy.segment_concepts",
     # total_debt 정의를 reporting과 research가 공유한다(감사 RR2-09) — 순수 계산 함수만 있다.
     "investment_agent.data.fundamentals.domain.services.leverage_metrics",
+    "investment_agent.data.fundamentals.domain.services.balance_identity",
     "investment_agent.research.strategies.catalog",
     "itertools",
     "investment_agent.reporting.readers.select_only",
@@ -150,10 +151,8 @@ def view_columns(sql):
 
 # 코드 계약(VIEWS)이 아닌 뷰. 다른 뷰가 조합해 쓰는 내부 뷰와, 사람이 직접 여는 6개 뷰다.
 _INTERNAL_VIEWS = {"macro_observation_history"}
-HUMAN_VIEWS = {
-    "security_overview", "financial_statements", "earnings_outlook",
-    "earnings_surprises", "economic_calendar", "institutional_holdings",
-}
+# 코드 계약 뷰와 같은 주제를 사람용으로 한 번 더 감싸지 않는다. 계약 뷰가 없는 주제만 둔다.
+HUMAN_VIEWS = {"earnings_outlook"}
 
 
 def assert_contract(specs, sql):

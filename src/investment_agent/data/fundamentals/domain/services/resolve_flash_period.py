@@ -5,7 +5,7 @@
 FY2026 Q3가 된다. 실측 23건 중 20건이 그렇게 어긋나 있었고, 그 결과 10-Q와
 대조하면 260일 차이나는 엉뚱한 분기끼리 붙었다.
 
-회사의 실제 회계력은 `financial_versions`의 (fiscal_year, fiscal_period, period_end)에
+회사의 실제 회계력은 `financials`의 (fiscal_year, fiscal_period, period_end)에
 있다. 아직 10-Q가 안 나온 최신 분기는 그 회계력에서 앞으로 밀어 만든다.
 """
 from __future__ import annotations
@@ -42,7 +42,7 @@ def _next_period(year: int, period: str) -> tuple[int, str]:
 
 
 def fiscal_calendar(rows: list[dict]) -> list[dict]:
-    """financial_versions 행을 period_end 순 회계력으로 정리한다."""
+    """financials 행을 period_end 순 회계력으로 정리한다."""
     calendar: dict[tuple[int, str], dict] = {}
     for row in rows:
         period = str(row.get("fiscal_period") or "")
@@ -67,7 +67,7 @@ def project_forward(
     """마지막 알려진 분기 뒤를 회계력 간격으로 밀어 만든다.
 
     8-K는 10-Q보다 먼저 나오므로, 속보가 가리키는 분기는 아직
-    `financial_versions`에 없는 것이 정상이다.
+    `financials`에 없는 것이 정상이다.
     """
     if not calendar:
         return []

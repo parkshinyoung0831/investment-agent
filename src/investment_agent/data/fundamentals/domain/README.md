@@ -155,7 +155,7 @@ NULL로 바꾸고 데이터 이슈 사유를 만들며, 자산과 부채+자본�
 - `build_segment_metrics.py`는 직접 공시값, YTD 후보, Q4/YTD 파생 후보를 만든다.
 - 실제 discrete 분기가 있으면 derived 분기보다 우선한다.
 - `revenue`와 `profit_loss`만 차감 가능한 flow다. `assets`는 instant라 파생하지 않는다.
-- `assess_segment_quality.py`는 같은 축 합계를 `financial_versions` 기준값과 대조한다.
+- `assess_segment_quality.py`는 같은 축 합계를 `financials` 기준값과 대조한다.
 - 매출·이익·자산 품질은 독립적으로 `verified`, `partial`, `unsafe`를 판정한다. 한 지표가
   unsafe여도 다른 검증 지표를 보존할 수 있다.
 - domain은 품질 사유까지 계산한다. 실제 DB compact projection에서 unsafe 값을 버리는
@@ -167,7 +167,7 @@ NULL로 바꾸고 데이터 이슈 사유를 만들며, 자산과 부채+자본�
 ## 예상치와 이벤트 규칙
 
 `map_fiscal_periods.py`는 Yahoo의 `q+0`, `q+1`, `fy+0`, `fy+1` 같은 상대 horizon을
-호출자가 `financial_versions`에서 읽어 전달한 회사 회계력에 맞춘다. 결과에는 절대
+호출자가 `financials`에서 읽어 전달한 회사 회계력에 맞춘다. 결과에는 절대
 `target_fiscal_year`, `target_fiscal_period`, `target_period_end`가 있어야 한다.
 매핑할 수 없는 행은 추정해서 저장하지 않고 issue로 반환한다.
 

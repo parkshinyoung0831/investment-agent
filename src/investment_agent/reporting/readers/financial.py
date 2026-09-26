@@ -49,7 +49,7 @@ VIEWS: Mapping[str, ViewSpec] = MappingProxyType({
         "security_id,trade_date", "trade_date", "ticker"),
     "company_financials_latest": ViewSpec(
         "cik,period_end,fiscal_year,fiscal_period,accession_no,filing_date,form_type,"
-        "available_at,revenue,operating_income_loss,net_income,eps_diluted_gaap,mapping_version",
+        "available_at,revenue,operating_income_loss,net_income,eps_diluted_gaap",
         "cik,period_end", "period_end", "cik"),
     "macro_latest": ViewSpec(
         "series_id,name_ko,domain,frequency,unit,ref_period,value,effective_at,collected_at",

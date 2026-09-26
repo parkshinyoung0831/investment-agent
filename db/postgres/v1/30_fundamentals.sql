@@ -6,10 +6,12 @@
 -- `period_end`는 숫자가 설명하는 회계기간의 끝이다. 섞으면 backtest가 제출 당일(또는 기간
 -- 말일)에 이미 알았다고 가정한다. 운영 재현(PIT)은 `available_at`으로 자른다.
 --
--- ## 재무는 공시 버전으로 쌓는다
+-- ## 재무는 회계기간마다 한 행이다
 --
--- 같은 회계기간을 정정 공시가 다시 보고하면 새 행을 더한다. "지금 최신 값"은
--- `fundamentals.financials` 뷰가, "그때 알 수 있던 값"은 버전 표를 cutoff로 잘라 답한다.
+-- 정정 공시는 자기가 보고한 컬럼만 원본 값 위에 덮어쓴다. 과거 시점 조회는 그 기간을 처음
+-- 공개한 공시의 날짜로 자르므로, 정정된 값이 원본 공시일로 소급된다. 정정은 드물고(기간의
+-- 0.5% 미만), 매매 판단이 당시 본 값은 판단 evidence가 따로 보관한다 — 기간별 버전을 쌓는
+-- 복잡도보다 이 소급이 작다.
 --
 -- ## 예상치·일정은 바뀔 때만 새 행이다
 --
@@ -76,12 +78,11 @@ COMMENT ON COLUMN fundamentals.filings.source IS '공시 목록을 알려 준 �
 CREATE TABLE IF NOT EXISTS fundamentals.filing_processing (
   accession_no    text NOT NULL REFERENCES fundamentals.filings(accession_no) ON DELETE CASCADE,
   content_type    text NOT NULL CHECK (content_type IN ('company', 'segments')),
-  mapping_version text NOT NULL,
   status          text NOT NULL CHECK (status IN ('parsed', 'empty', 'unsupported', 'superseded')),
   facts_count     int  NOT NULL DEFAULT 0 CHECK (facts_count >= 0),
   rows_count      int  NOT NULL DEFAULT 0 CHECK (rows_count >= 0),
   updated_at      timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (accession_no, content_type, mapping_version),
+  PRIMARY KEY (accession_no, content_type),
   CONSTRAINT filing_processing_shape_check CHECK (
     (status = 'parsed'      AND facts_count > 0 AND rows_count > 0)
     OR (status = 'empty'       AND facts_count = 0 AND rows_count = 0)
@@ -91,27 +92,26 @@ CREATE TABLE IF NOT EXISTS fundamentals.filing_processing (
 );
 
 CREATE INDEX IF NOT EXISTS filing_processing_status_idx
-  ON fundamentals.filing_processing (content_type, mapping_version, status);
+  ON fundamentals.filing_processing (content_type, status);
 
-COMMENT ON TABLE fundamentals.filing_processing IS '공시 하나를 내용 종류·매핑 버전별로 처리한 결과 = 한 행. 재처리 대상 선정은 이 표만 읽는다(중복 처리 방지 원장).';
+COMMENT ON TABLE fundamentals.filing_processing IS '공시 하나를 내용 종류별로 처리한 결과 = 한 행. 재처리 대상 선정은 이 표만 읽는다(중복 처리 방지 원장). 매핑 규칙이 바뀌면 전체를 다시 처리해 덮어쓴다.';
 COMMENT ON COLUMN fundamentals.filing_processing.accession_no IS '처리한 공시.';
 COMMENT ON COLUMN fundamentals.filing_processing.content_type IS 'company=기업 전체 재무, segments=세그먼트 재무.';
-COMMENT ON COLUMN fundamentals.filing_processing.mapping_version IS '적용한 XBRL 매핑 규칙 버전. 종류마다 어휘가 달라 섞어 읽지 않는다.';
-COMMENT ON COLUMN fundamentals.filing_processing.status IS 'parsed=행을 만듦, empty=허용 fact 없음, unsupported=fact는 있으나 규칙상 저장 안 함, superseded=다른 CIK의 같은 기간 공시가 대신함.';
+COMMENT ON COLUMN fundamentals.filing_processing.status IS 'parsed=행을 만듦, empty=허용 fact 없음, unsupported=fact는 있으나 규칙상 저장 안 함, superseded=같은 회계기간을 다른 공시가 대신 보고함(회계력 전환·CIK 승계). 같은 CIK의 정정 공시는 원본을 대신하지 않고 병합된다.';
 COMMENT ON COLUMN fundamentals.filing_processing.facts_count IS '공시에서 읽은 허용 XBRL fact 수.';
 COMMENT ON COLUMN fundamentals.filing_processing.rows_count IS '저장한 행 수.';
-COMMENT ON COLUMN fundamentals.filing_processing.updated_at IS '처리 결과를 마지막으로 기록한 시각.';
+COMMENT ON COLUMN fundamentals.filing_processing.updated_at IS '처리 결과를 마지막으로 기록한 시각. 전체 재처리 뒤 이보다 오래된 행이 남아 있으면 재처리가 끝나지 않은 것이다.';
 
 
--- ── 기업 전체 재무 (공시 버전) ───────────────────────────────────────────
--- SEC CompanyFacts는 등록인(CIK) 사실이다. ticker로 펼치는 것은 읽는 쪽이 한다.
-CREATE TABLE IF NOT EXISTS fundamentals.financial_versions (
+-- ── 기업 전체 재무 ────────────────────────────────────────────────────────
+-- SEC 재무는 등록인(CIK) 사실이다. ticker로 펼치는 것은 읽는 쪽이 한다.
+-- 연간(FY) 행은 두지 않는다. FY는 Q4 단독 값을 만드는 입력일 뿐이고, 연간 손익은 네 분기의 합이다.
+CREATE TABLE IF NOT EXISTS fundamentals.financials (
   cik           text NOT NULL REFERENCES universe.entities(cik),
   period_end    date NOT NULL,
   fiscal_year   int  NOT NULL CHECK (fiscal_year BETWEEN 1900 AND 2200),
-  fiscal_period text NOT NULL CHECK (fiscal_period IN ('FY','Q1','Q2','Q3','Q4')),
+  fiscal_period text NOT NULL CHECK (fiscal_period IN ('Q1','Q2','Q3','Q4')),
   accession_no  text NOT NULL REFERENCES fundamentals.filings(accession_no) ON DELETE RESTRICT,
-  mapping_version text NOT NULL,
   -- 손익계산서
   revenue                                      numeric,
   cost_of_goods_and_services_sold              numeric,
@@ -127,7 +127,6 @@ CREATE TABLE IF NOT EXISTS fundamentals.financial_versions (
   net_income_to_common_shareholders            numeric,
   eps_basic_gaap                               numeric,
   eps_diluted_gaap                             numeric,
-  dividends_declared_per_share                 numeric,
   -- 대차대조표 — 자산
   assets                                       numeric,
   current_assets_total                         numeric,
@@ -138,7 +137,6 @@ CREATE TABLE IF NOT EXISTS fundamentals.financial_versions (
   property_plant_equipment_net                 numeric,
   goodwill                                     numeric,
   intangible_assets_excluding_goodwill         numeric,
-  operating_lease_right_of_use_asset           numeric,
   -- 대차대조표 — 부채·자본
   liabilities                                  numeric,
   is_liabilities_derived                       boolean     NOT NULL DEFAULT false,
@@ -151,10 +149,6 @@ CREATE TABLE IF NOT EXISTS fundamentals.financial_versions (
   operating_lease_current_debt_equivalent      numeric,
   operating_lease_non_current_debt_equivalent  numeric,
   common_equity                                numeric,
-  common_equity_scope                          text        NOT NULL DEFAULT 'unknown'
-    CHECK (common_equity_scope IN (
-      'common', 'stockholders', 'stockholders_including_nci', 'unknown'
-    )),
   minority_interest_balance                    numeric,
   mezzanine_equity                             numeric,
   preferred_stock                              numeric,
@@ -166,11 +160,8 @@ CREATE TABLE IF NOT EXISTS fundamentals.financial_versions (
   depreciation_amortization_cf                 numeric,
   stock_based_compensation_cf                  numeric,
   capital_expenses                             numeric,
-  acquisitions_net_of_cash                     numeric,
   stock_repurchase_payments                    numeric,
   common_dividends_paid                        numeric,
-  long_term_debt_issued                        numeric,
-  long_term_debt_repaid                        numeric,
   -- 주식수
   shares_average                               numeric,
   shares_fully_diluted_average                 numeric,
@@ -180,92 +171,90 @@ CREATE TABLE IF NOT EXISTS fundamentals.financial_versions (
   net_loans_and_leases                         numeric,
   total_deposits                               numeric,
   ingested_at   timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (cik, period_end, fiscal_period, accession_no, mapping_version)
+  PRIMARY KEY (cik, period_end),
+  CONSTRAINT financials_fiscal_period_key UNIQUE (cik, fiscal_year, fiscal_period),
+  CONSTRAINT financials_finite_check CHECK (
+    fundamentals.is_finite_numbers(ARRAY[
+      revenue, cost_of_goods_and_services_sold, gross_profit, research_and_development_expenses,
+      selling_general_and_admin_expenses, operating_income_loss, interest_expense, pretax_income_loss,
+      income_taxes, net_income, minority_interest_income, net_income_to_common_shareholders,
+      eps_basic_gaap, eps_diluted_gaap, assets, current_assets_total,
+      cash_and_cash_equivalents, short_term_investments, trade_receivables, inventories,
+      property_plant_equipment_net, goodwill, intangible_assets_excluding_goodwill, liabilities,
+      current_liabilities_total, trade_payables, short_term_debt, current_portion_of_long_term_debt,
+      long_term_debt, total_debt_including_current, operating_lease_current_debt_equivalent, operating_lease_non_current_debt_equivalent,
+      common_equity, minority_interest_balance, mezzanine_equity, preferred_stock,
+      retained_earnings, net_cash_from_operating_activities, net_cash_from_investing_activities, net_cash_from_financing_activities,
+      depreciation_amortization_cf, stock_based_compensation_cf, capital_expenses, stock_repurchase_payments,
+      common_dividends_paid, shares_average, shares_fully_diluted_average, net_interest_income,
+      provision_for_credit_losses, net_loans_and_leases, total_deposits
+    ])
+  )
 );
 
-CREATE INDEX IF NOT EXISTS financial_versions_accession_idx
-  ON fundamentals.financial_versions (accession_no);
+CREATE INDEX IF NOT EXISTS financials_accession_idx
+  ON fundamentals.financials (accession_no);
 
-COMMENT ON TABLE fundamentals.financial_versions IS
-  '회사(CIK) 하나의 회계기간 하나를 공시 하나가 매핑 버전 하나로 보고한 재무 값 = 한 행. 정정 공시는 새 행이며 이전 수치를 지우지 않는다. 최신 값은 fundamentals.financials 뷰.';
-COMMENT ON COLUMN fundamentals.financial_versions.cik IS '보고 주체 CIK.';
-COMMENT ON COLUMN fundamentals.financial_versions.period_end IS '회계기간 말일.';
-COMMENT ON COLUMN fundamentals.financial_versions.fiscal_year IS '회사 회계연도(달력 연도가 아닐 수 있다).';
-COMMENT ON COLUMN fundamentals.financial_versions.fiscal_period IS 'FY=연간, Q1~Q4=분기. Q4는 FY에서 Q1~Q3를 뺀 값일 수 있다.';
-COMMENT ON COLUMN fundamentals.financial_versions.accession_no IS '이 값을 보고한 공시. 행의 대표 근거이며 항목별 채택 근거는 처리 manifest에 있다.';
-COMMENT ON COLUMN fundamentals.financial_versions.mapping_version IS 'XBRL 개념→컬럼 매핑 규칙 버전(gaap_concepts.SEMANTIC_POLICY_VERSION). 버전이 다른 행을 한 시계열에 섞지 않는다.';
-COMMENT ON COLUMN fundamentals.financial_versions.revenue IS '매출(USD). 모르면 NULL — 0으로 채우지 않는다. 아래 금액 컬럼은 모두 보고 통화(USD) 원 단위다.';
-COMMENT ON COLUMN fundamentals.financial_versions.eps_basic_gaap IS 'GAAP 기본 주당순이익(USD/주).';
-COMMENT ON COLUMN fundamentals.financial_versions.eps_diluted_gaap IS 'GAAP 희석 주당순이익(USD/주).';
-COMMENT ON COLUMN fundamentals.financial_versions.dividends_declared_per_share IS '주당 선언 배당(USD/주).';
-COMMENT ON COLUMN fundamentals.financial_versions.liabilities IS '총부채. is_liabilities_derived가 true면 자산-자본으로 계산한 값이다.';
-COMMENT ON COLUMN fundamentals.financial_versions.is_liabilities_derived IS 'liabilities를 공시가 직접 보고하지 않아 계산했는가.';
-COMMENT ON COLUMN fundamentals.financial_versions.common_equity IS '자본 총계. 범위는 common_equity_scope가 말한다.';
-COMMENT ON COLUMN fundamentals.financial_versions.common_equity_scope IS 'common=보통주 자본, stockholders=주주 자본, stockholders_including_nci=비지배지분 포함, unknown=범위 미상.';
-COMMENT ON COLUMN fundamentals.financial_versions.mezzanine_equity IS '메자닌(임시) 자본: 상환 가능 비지배지분·우선주. 부채도 영구 자본도 아니다.';
-COMMENT ON COLUMN fundamentals.financial_versions.capital_expenses IS '유형자산 취득 현금 지출(양수로 저장).';
-COMMENT ON COLUMN fundamentals.financial_versions.shares_average IS '기간 가중평균 기본 주식수(주). 특정일 발행주식수가 아니다.';
-COMMENT ON COLUMN fundamentals.financial_versions.shares_fully_diluted_average IS '기간 가중평균 희석 주식수(주).';
-COMMENT ON COLUMN fundamentals.financial_versions.cost_of_goods_and_services_sold IS '매출원가.';
-COMMENT ON COLUMN fundamentals.financial_versions.gross_profit IS '매출총이익(보고값). 매출-원가로 계산한 값과 다를 수 있다.';
-COMMENT ON COLUMN fundamentals.financial_versions.research_and_development_expenses IS '연구개발비.';
-COMMENT ON COLUMN fundamentals.financial_versions.selling_general_and_admin_expenses IS '판매관리비.';
-COMMENT ON COLUMN fundamentals.financial_versions.operating_income_loss IS '영업이익(손실은 음수).';
-COMMENT ON COLUMN fundamentals.financial_versions.interest_expense IS '이자비용.';
-COMMENT ON COLUMN fundamentals.financial_versions.pretax_income_loss IS '법인세차감전이익.';
-COMMENT ON COLUMN fundamentals.financial_versions.income_taxes IS '법인세비용.';
-COMMENT ON COLUMN fundamentals.financial_versions.net_income IS '당기순이익(비지배지분 포함 여부는 회사 보고 범위를 따른다).';
-COMMENT ON COLUMN fundamentals.financial_versions.minority_interest_income IS '비지배지분 귀속 순이익.';
-COMMENT ON COLUMN fundamentals.financial_versions.net_income_to_common_shareholders IS '보통주주 귀속 순이익. net_income과 귀속 범위가 다르다.';
-COMMENT ON COLUMN fundamentals.financial_versions.assets IS '총자산.';
-COMMENT ON COLUMN fundamentals.financial_versions.current_assets_total IS '유동자산.';
-COMMENT ON COLUMN fundamentals.financial_versions.cash_and_cash_equivalents IS '현금및현금성자산.';
-COMMENT ON COLUMN fundamentals.financial_versions.short_term_investments IS '단기투자자산. 현금과 합치지 않는다.';
-COMMENT ON COLUMN fundamentals.financial_versions.trade_receivables IS '매출채권.';
-COMMENT ON COLUMN fundamentals.financial_versions.inventories IS '재고자산.';
-COMMENT ON COLUMN fundamentals.financial_versions.property_plant_equipment_net IS '유형자산(순액).';
-COMMENT ON COLUMN fundamentals.financial_versions.goodwill IS '영업권.';
-COMMENT ON COLUMN fundamentals.financial_versions.intangible_assets_excluding_goodwill IS '영업권 제외 무형자산.';
-COMMENT ON COLUMN fundamentals.financial_versions.operating_lease_right_of_use_asset IS '운용리스 사용권자산.';
-COMMENT ON COLUMN fundamentals.financial_versions.current_liabilities_total IS '유동부채.';
-COMMENT ON COLUMN fundamentals.financial_versions.trade_payables IS '매입채무.';
-COMMENT ON COLUMN fundamentals.financial_versions.short_term_debt IS '단기차입금.';
-COMMENT ON COLUMN fundamentals.financial_versions.current_portion_of_long_term_debt IS '유동성 장기부채.';
-COMMENT ON COLUMN fundamentals.financial_versions.long_term_debt IS '장기부채(비유동).';
-COMMENT ON COLUMN fundamentals.financial_versions.total_debt_including_current IS '유동분 포함 총차입(보고값). 리스는 포함하지 않는다.';
-COMMENT ON COLUMN fundamentals.financial_versions.operating_lease_current_debt_equivalent IS '운용리스 부채(유동).';
-COMMENT ON COLUMN fundamentals.financial_versions.operating_lease_non_current_debt_equivalent IS '운용리스 부채(비유동).';
-COMMENT ON COLUMN fundamentals.financial_versions.minority_interest_balance IS '비지배지분(대차대조표 잔액).';
-COMMENT ON COLUMN fundamentals.financial_versions.preferred_stock IS '우선주 자본.';
-COMMENT ON COLUMN fundamentals.financial_versions.retained_earnings IS '이익잉여금.';
-COMMENT ON COLUMN fundamentals.financial_versions.net_cash_from_operating_activities IS '영업활동 현금흐름.';
-COMMENT ON COLUMN fundamentals.financial_versions.net_cash_from_investing_activities IS '투자활동 현금흐름.';
-COMMENT ON COLUMN fundamentals.financial_versions.net_cash_from_financing_activities IS '재무활동 현금흐름.';
-COMMENT ON COLUMN fundamentals.financial_versions.depreciation_amortization_cf IS '현금흐름표의 감가상각·상각비.';
-COMMENT ON COLUMN fundamentals.financial_versions.stock_based_compensation_cf IS '현금흐름표의 주식보상비용.';
-COMMENT ON COLUMN fundamentals.financial_versions.acquisitions_net_of_cash IS '인수 대가(취득 현금 차감). capex와 합치지 않는다.';
-COMMENT ON COLUMN fundamentals.financial_versions.stock_repurchase_payments IS '자사주 매입 지출.';
-COMMENT ON COLUMN fundamentals.financial_versions.common_dividends_paid IS '보통주 배당 지급액.';
-COMMENT ON COLUMN fundamentals.financial_versions.long_term_debt_issued IS '장기부채 발행 유입.';
-COMMENT ON COLUMN fundamentals.financial_versions.long_term_debt_repaid IS '장기부채 상환 지출.';
-COMMENT ON COLUMN fundamentals.financial_versions.net_interest_income IS '순이자이익(은행).';
-COMMENT ON COLUMN fundamentals.financial_versions.provision_for_credit_losses IS '신용손실 충당금 전입(은행).';
-COMMENT ON COLUMN fundamentals.financial_versions.net_loans_and_leases IS '순대출·리스 채권(은행).';
-COMMENT ON COLUMN fundamentals.financial_versions.total_deposits IS '총예금(은행).';
-COMMENT ON COLUMN fundamentals.financial_versions.ingested_at IS '이 버전 행을 처음 저장한 시각. 같은 공시를 새 매핑 버전으로 재처리하면 더 늦은 시각의 행이 생긴다.';
-
--- 기간마다 가장 최근 공시(같으면 가장 늦게 처리한 매핑)의 값. "지금 알고 있는 최신 재무"다.
--- 과거 시점에 알던 값이 필요하면 이 뷰가 아니라 financial_versions를 cutoff로 자른다.
-CREATE OR REPLACE VIEW fundamentals.financials WITH (security_invoker = true) AS
-SELECT DISTINCT ON (v.cik, v.period_end, v.fiscal_period)
-  v.*,
-  f.filing_date,
-  f.form_type,
-  f.available_at
-FROM fundamentals.financial_versions v
-JOIN fundamentals.filings f ON f.accession_no = v.accession_no
-ORDER BY v.cik, v.period_end, v.fiscal_period, f.filing_date DESC, v.accession_no DESC, v.ingested_at DESC;
-COMMENT ON VIEW fundamentals.financials IS '회계기간마다 최신 공시 버전 한 행. 정정이 반영된 현재 값이며 PIT 조회에 쓰지 않는다.';
+COMMENT ON TABLE fundamentals.financials IS
+  '회사(CIK) 하나의 회계 분기 하나에 대해 지금 알고 있는 재무 값 = 한 행. 정정 공시는 보고한 컬럼만 덮어쓴다. 과거 시점 조회는 그 기간을 처음 공개한 공시일로 자른다.';
+COMMENT ON COLUMN fundamentals.financials.cik IS '보고 주체 CIK.';
+COMMENT ON COLUMN fundamentals.financials.period_end IS '회계 분기 말일.';
+COMMENT ON COLUMN fundamentals.financials.fiscal_year IS '회사 회계연도(달력 연도가 아닐 수 있다).';
+COMMENT ON COLUMN fundamentals.financials.fiscal_period IS 'Q1~Q4. Q4는 대개 FY에서 Q1~Q3를 빼서 만든 값이다.';
+COMMENT ON COLUMN fundamentals.financials.accession_no IS '이 행에 값을 마지막으로 반영한 공시(정정 공시면 /A). 기간이 처음 공개된 날은 filings에서 같은 CIK·report_date의 가장 이른 정기공시다.';
+COMMENT ON COLUMN fundamentals.financials.revenue IS '매출(USD). 모르면 NULL — 0으로 채우지 않는다. 아래 금액 컬럼은 모두 USD 원 단위이고, 손익·현금흐름은 그 분기 단독 값이다.';
+COMMENT ON COLUMN fundamentals.financials.cost_of_goods_and_services_sold IS '매출원가.';
+COMMENT ON COLUMN fundamentals.financials.gross_profit IS '매출총이익(보고값). 매출-원가로 계산한 값과 다를 수 있다.';
+COMMENT ON COLUMN fundamentals.financials.research_and_development_expenses IS '연구개발비.';
+COMMENT ON COLUMN fundamentals.financials.selling_general_and_admin_expenses IS '판매관리비. 영업이익 구성 검증에도 쓴다.';
+COMMENT ON COLUMN fundamentals.financials.operating_income_loss IS '영업이익(손실은 음수).';
+COMMENT ON COLUMN fundamentals.financials.interest_expense IS '이자비용.';
+COMMENT ON COLUMN fundamentals.financials.pretax_income_loss IS '법인세차감전이익(연결 전체, 계속영업).';
+COMMENT ON COLUMN fundamentals.financials.income_taxes IS '법인세비용(당기+이연 총액).';
+COMMENT ON COLUMN fundamentals.financials.net_income IS '모회사 귀속 순이익(NetIncomeLoss). 비지배지분 몫은 포함하지 않는다. 보고가 없으면 연결 순이익-비지배지분 순이익으로 계산한다.';
+COMMENT ON COLUMN fundamentals.financials.minority_interest_income IS '비지배지분 귀속 순이익.';
+COMMENT ON COLUMN fundamentals.financials.net_income_to_common_shareholders IS '보통주주 귀속 순이익(우선주 배당·참가증권 몫 차감). 보고한 회사만 있다.';
+COMMENT ON COLUMN fundamentals.financials.eps_basic_gaap IS 'GAAP 기본 주당순이익(USD/주). 보고값이 없는 분기(대개 Q4)는 순이익÷기본 가중평균 주식수로 계산한다 — 뺄셈으로 만들지 않는다.';
+COMMENT ON COLUMN fundamentals.financials.eps_diluted_gaap IS 'GAAP 희석 주당순이익(USD/주). 보고값이 없으면 순이익÷희석 가중평균 주식수로 계산한다.';
+COMMENT ON COLUMN fundamentals.financials.assets IS '총자산.';
+COMMENT ON COLUMN fundamentals.financials.current_assets_total IS '유동자산.';
+COMMENT ON COLUMN fundamentals.financials.cash_and_cash_equivalents IS '현금및현금성자산.';
+COMMENT ON COLUMN fundamentals.financials.short_term_investments IS '단기투자자산. 현금과 합치지 않는다.';
+COMMENT ON COLUMN fundamentals.financials.trade_receivables IS '매출채권.';
+COMMENT ON COLUMN fundamentals.financials.inventories IS '재고자산.';
+COMMENT ON COLUMN fundamentals.financials.property_plant_equipment_net IS '유형자산(순액).';
+COMMENT ON COLUMN fundamentals.financials.goodwill IS '영업권.';
+COMMENT ON COLUMN fundamentals.financials.intangible_assets_excluding_goodwill IS '영업권 제외 무형자산.';
+COMMENT ON COLUMN fundamentals.financials.liabilities IS '총부채. is_liabilities_derived가 true면 자산-(보통주 자본+우선주+비지배지분+메자닌)으로 계산한 값이다.';
+COMMENT ON COLUMN fundamentals.financials.is_liabilities_derived IS 'liabilities를 공시가 직접 보고하지 않아 계산했는가.';
+COMMENT ON COLUMN fundamentals.financials.current_liabilities_total IS '유동부채.';
+COMMENT ON COLUMN fundamentals.financials.trade_payables IS '매입채무.';
+COMMENT ON COLUMN fundamentals.financials.short_term_debt IS '단기차입금. 유동성 장기부채와 리스부채는 포함하지 않는다 — 셋은 서로 겹치지 않아 더할 수 있다.';
+COMMENT ON COLUMN fundamentals.financials.current_portion_of_long_term_debt IS '유동성 장기부채.';
+COMMENT ON COLUMN fundamentals.financials.long_term_debt IS '장기부채(비유동분만). 유동성 장기부채를 포함한 태그는 받지 않는다.';
+COMMENT ON COLUMN fundamentals.financials.total_debt_including_current IS '회사가 보고한 총차입(리스 제외). 총차입 계산에는 쓰지 않고 구성요소 합계의 검증에만 쓴다.';
+COMMENT ON COLUMN fundamentals.financials.operating_lease_current_debt_equivalent IS '운용리스 부채(유동).';
+COMMENT ON COLUMN fundamentals.financials.operating_lease_non_current_debt_equivalent IS '운용리스 부채(비유동).';
+COMMENT ON COLUMN fundamentals.financials.common_equity IS '보통주 자본 = 모회사 주주자본 - 우선주. 비지배지분을 포함한 총계만 보고됐으면 비지배지분을 빼서 만들고, 뺄 수 없으면 NULL이다.';
+COMMENT ON COLUMN fundamentals.financials.minority_interest_balance IS '비지배지분(대차대조표 잔액).';
+COMMENT ON COLUMN fundamentals.financials.mezzanine_equity IS '메자닌(임시) 자본: 상환 가능 비지배지분·우선주. 부채도 영구 자본도 아니다.';
+COMMENT ON COLUMN fundamentals.financials.preferred_stock IS '우선주 자본(영구 자본에 속한 것).';
+COMMENT ON COLUMN fundamentals.financials.retained_earnings IS '이익잉여금.';
+COMMENT ON COLUMN fundamentals.financials.net_cash_from_operating_activities IS '영업활동 현금흐름.';
+COMMENT ON COLUMN fundamentals.financials.net_cash_from_investing_activities IS '투자활동 현금흐름.';
+COMMENT ON COLUMN fundamentals.financials.net_cash_from_financing_activities IS '재무활동 현금흐름.';
+COMMENT ON COLUMN fundamentals.financials.depreciation_amortization_cf IS '현금흐름표의 감가상각·상각비.';
+COMMENT ON COLUMN fundamentals.financials.stock_based_compensation_cf IS '현금흐름표의 주식보상비용.';
+COMMENT ON COLUMN fundamentals.financials.capital_expenses IS '유형자산 취득 현금 지출(유출을 양수로 저장).';
+COMMENT ON COLUMN fundamentals.financials.stock_repurchase_payments IS '보통주 자사주 매입 지출(양수).';
+COMMENT ON COLUMN fundamentals.financials.common_dividends_paid IS '보통주 배당 지급액(양수).';
+COMMENT ON COLUMN fundamentals.financials.shares_average IS '기간 가중평균 기본 주식수(주). 특정일 발행주식수가 아니다.';
+COMMENT ON COLUMN fundamentals.financials.shares_fully_diluted_average IS '기간 가중평균 희석 주식수(주).';
+COMMENT ON COLUMN fundamentals.financials.net_interest_income IS '순이자이익(은행).';
+COMMENT ON COLUMN fundamentals.financials.provision_for_credit_losses IS '신용손실 충당금 전입(은행).';
+COMMENT ON COLUMN fundamentals.financials.net_loans_and_leases IS '순대출·리스 채권(은행).';
+COMMENT ON COLUMN fundamentals.financials.total_deposits IS '총예금(은행).';
+COMMENT ON COLUMN fundamentals.financials.ingested_at IS '이 행을 마지막으로 쓴 시각. 전체 재처리 뒤 이보다 오래된 행은 새 규칙이 더 이상 만들지 않는 기간이라 지운다.';
 
 
 -- ── 주식수 스냅샷 ─────────────────────────────────────────────────────────
@@ -407,7 +396,6 @@ CREATE TABLE IF NOT EXISTS fundamentals.earnings_results (
   eps_actual              numeric,
   eps_basis               text NOT NULL DEFAULT 'unknown'
                           CHECK (eps_basis IN ('gaap_diluted', 'gaap_basic', 'adjusted', 'unknown')),
-  currency                text CHECK (currency IS NULL OR currency ~ '^[A-Z]{3}$'),
   operating_income_actual numeric,
   net_income_actual       numeric,
   guidance_summary        text,
@@ -436,15 +424,14 @@ COMMENT ON COLUMN fundamentals.earnings_results.accession_no IS '보도자료가
 COMMENT ON COLUMN fundamentals.earnings_results.fiscal_year IS '회사 회계연도.';
 COMMENT ON COLUMN fundamentals.earnings_results.fiscal_period IS '발표 대상 기간.';
 COMMENT ON COLUMN fundamentals.earnings_results.period_end IS '대상 기간 말일.';
-COMMENT ON COLUMN fundamentals.earnings_results.revenue_actual IS '발표 매출(currency 원 단위).';
-COMMENT ON COLUMN fundamentals.earnings_results.eps_actual IS '발표 EPS(currency/주). 어떤 EPS인지는 eps_basis.';
+COMMENT ON COLUMN fundamentals.earnings_results.revenue_actual IS '보도자료 표의 이번 분기(3개월) 열에서 읽은 매출(USD). 열을 확정하지 못하면 NULL이다.';
+COMMENT ON COLUMN fundamentals.earnings_results.eps_actual IS '발표 EPS(USD/주). 8-K 제출일과 맞는 공급자(yfinance) 발표 실적에서 가져온다 — 정의는 eps_basis.';
 COMMENT ON COLUMN fundamentals.earnings_results.eps_basis IS 'EPS 정의: gaap_diluted/gaap_basic/adjusted, 보도자료에서 확정 못 하면 unknown. 서프라이즈는 같은 정의끼리만 비교한다.';
-COMMENT ON COLUMN fundamentals.earnings_results.currency IS '보고 통화(ISO 4217). 확인 못 하면 NULL.';
 COMMENT ON COLUMN fundamentals.earnings_results.operating_income_actual IS '발표 영업이익.';
 COMMENT ON COLUMN fundamentals.earnings_results.net_income_actual IS '발표 순이익.';
 COMMENT ON COLUMN fundamentals.earnings_results.guidance_summary IS '보도자료의 가이던스 한 줄 원문. 해석하지 않은 문장이다.';
 COMMENT ON COLUMN fundamentals.earnings_results.press_release_url IS '보도자료 원문 URL.';
-COMMENT ON COLUMN fundamentals.earnings_results.source IS '추출 원천(sec_8k).';
+COMMENT ON COLUMN fundamentals.earnings_results.source IS '행의 원천 공시(sec_8k). 매출·영업이익·순이익·가이던스는 그 보도자료에서, EPS는 eps_actual 설명의 공급자에서 온다.';
 COMMENT ON COLUMN fundamentals.earnings_results.collected_at IS '추출해 저장한 시각.';
 
 
@@ -462,7 +449,6 @@ CREATE TABLE IF NOT EXISTS fundamentals.earnings_estimates (
   snapshot_date        date NOT NULL,
   eps_basis            text NOT NULL DEFAULT 'unknown'
                        CHECK (eps_basis IN ('gaap_diluted', 'gaap_basic', 'adjusted', 'unknown')),
-  currency             text CHECK (currency IS NULL OR currency ~ '^[A-Z]{3}$'),
   eps_avg              numeric,
   eps_low              numeric,
   eps_high             numeric,
@@ -508,12 +494,11 @@ COMMENT ON COLUMN fundamentals.earnings_estimates.source IS '예상치 공급자
 COMMENT ON COLUMN fundamentals.earnings_estimates.snapshot_kind IS 'captured_live=그날 우리가 직접 수집, vendor_pit=공급자가 당시 값임을 보장한 과거 자료, reconstructed=현재 API의 발표 이력에서 되살린 값(발표 전 비교에 쓰지 않음), latest_history=당시 값 보장이 없는 과거 요약. 섞어 읽으면 PIT가 깨진다.';
 COMMENT ON COLUMN fundamentals.earnings_estimates.snapshot_date IS '이 상태가 유효해진 날짜(ET): captured_live는 처음 관측한 날, 과거 자료는 원천이 말하는 날.';
 COMMENT ON COLUMN fundamentals.earnings_estimates.eps_basis IS 'EPS 예상의 정의. 공급자가 밝히지 않으면 unknown.';
-COMMENT ON COLUMN fundamentals.earnings_estimates.currency IS '예상치 통화(ISO 4217). 모르면 NULL.';
-COMMENT ON COLUMN fundamentals.earnings_estimates.eps_avg IS '애널리스트 EPS 예상 평균(currency/주).';
+COMMENT ON COLUMN fundamentals.earnings_estimates.eps_avg IS '애널리스트 EPS 예상 평균(USD/주).';
 COMMENT ON COLUMN fundamentals.earnings_estimates.eps_low IS 'EPS 예상 최저.';
 COMMENT ON COLUMN fundamentals.earnings_estimates.eps_high IS 'EPS 예상 최고.';
 COMMENT ON COLUMN fundamentals.earnings_estimates.eps_analysts IS 'EPS 예상에 참여한 애널리스트 수. 매출 참여자와 다를 수 있다.';
-COMMENT ON COLUMN fundamentals.earnings_estimates.revenue_avg IS '매출 예상 평균(currency 원 단위).';
+COMMENT ON COLUMN fundamentals.earnings_estimates.revenue_avg IS '매출 예상 평균(USD).';
 COMMENT ON COLUMN fundamentals.earnings_estimates.revenue_low IS '매출 예상 최저.';
 COMMENT ON COLUMN fundamentals.earnings_estimates.revenue_high IS '매출 예상 최고.';
 COMMENT ON COLUMN fundamentals.earnings_estimates.revenue_analysts IS '매출 예상 애널리스트 수.';
@@ -626,7 +611,7 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA fundamentals TO service_role;
 
 ALTER TABLE fundamentals.filings                     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE fundamentals.filing_processing           ENABLE ROW LEVEL SECURITY;
-ALTER TABLE fundamentals.financial_versions          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE fundamentals.financials                  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE fundamentals.share_class_snapshots       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE fundamentals.segment_metrics             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE fundamentals.earnings_results            ENABLE ROW LEVEL SECURITY;

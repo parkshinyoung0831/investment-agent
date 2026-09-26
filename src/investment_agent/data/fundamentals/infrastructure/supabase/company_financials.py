@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import date
+from datetime import date, datetime
 
 from investment_agent.data.universe.watchlists import db as alerts_db
 from investment_agent.platform.logging import get_logger
@@ -13,14 +13,13 @@ from investment_agent.platform.db.postgres import (
     select_paged_in_chunks,
 )
 from investment_agent.data.fundamentals.domain.filings import filing_row
-from investment_agent.data.fundamentals.domain.taxonomy import gaap_concepts as concepts
 from investment_agent.data.fundamentals.domain.taxonomy.financial_columns import ALL_WIDE_COLUMNS
+from investment_agent.platform.clock import utc_now
 
 # --- DB 식별자 (SSOT) ---------------------------------------------------
 SCHEMA_FUNDAMENTALS = "fundamentals"
 SCHEMA_UNIVERSE = "universe"
-T_FINANCIALS = "financials"  # 뷰: 기간별 최신 공시 버전
-T_FINANCIAL_VERSIONS = "financial_versions"
+T_FINANCIALS = "financials"
 T_FILINGS = "filings"
 T_FILING_PROCESSING = "filing_processing"
 T_EARNINGS_SCHEDULE = "earnings_schedule_versions"
@@ -164,13 +163,12 @@ def last_filed_map() -> dict[str, str]:
 
 
 def filing_accessions(statuses: tuple[str, ...]) -> dict[str, set[str]]:
-    """현재 매핑 버전의 지정 상태 accession_no을 source CIK별로 반환한다."""
+    """지정 상태로 처리한 accession_no을 source CIK별로 반환한다."""
     rows = select_all_paged(
         lambda: sb.schema(SCHEMA_FUNDAMENTALS)
         .table(T_FILING_PROCESSING)
         .select("accession_no,status")
         .eq("content_type", "company")
-        .eq("mapping_version", concepts.SEMANTIC_POLICY_VERSION)
         .in_("status", list(statuses)),
         order_by="accession_no",
     )
@@ -212,9 +210,10 @@ def _filing_state_row(
         "accession_no": filing.accession_no,
         "content_type": "company",
         "status": status,
-        "mapping_version": concepts.SEMANTIC_POLICY_VERSION,
         "facts_count": facts_count,
         "rows_count": rows_count,
+        # 재처리가 끝났는지를 이 시각으로 판정한다. 보내지 않으면 갱신 때 옛 시각이 남는다.
+        "updated_at": utc_now().isoformat(),
     }
 
 
@@ -236,7 +235,7 @@ def _upsert_filing_states(rows: list[dict]) -> int:
         chunk = rows[i:i + _UPSERT_BATCH]
         sb.schema(SCHEMA_FUNDAMENTALS).table(T_FILING_PROCESSING).upsert(
             chunk,
-            on_conflict="accession_no,content_type,mapping_version",
+            on_conflict="accession_no,content_type",
         ).execute()
         total += len(chunk)
     return total
@@ -301,12 +300,13 @@ def mark_processed_filing_targets(
     return _upsert_filing_states(rows)
 
 
-def reconcile_wide_history(cik_ceiling: dict[str, str], floor: date) -> int:
-    """전체 재처리 뒤 현재 매핑 버전이 아닌 행과 보관 기간 밖의 행을 제거한다.
+def reconcile_wide_history(
+    cik_ceiling: dict[str, str], floor: date, *, written_since: datetime
+) -> int:
+    """전체 재처리한 CIK에서 이번 실행이 다시 쓰지 않은 행과 보관 기간 밖의 행을 지운다.
 
-    같은 공시를 현재 매핑 버전으로 다시 처리했을 때만 부른다. 옛 매핑 버전 행을 남기면
-    최신 뷰가 처리 시각으로 고르긴 하지만, 재처리 범위 밖 기간과 섞여 한 시계열에 두 규칙이
-    공존한다. 정정 공시(다른 accession)의 이전 버전은 지우지 않는다.
+    재처리는 그 CIK의 모든 기간을 다시 쓰므로 `ingested_at`이 `written_since`보다 오래된 행은
+    새 규칙이 더 이상 만들지 않는 기간이다. 남겨 두면 두 규칙의 값이 한 시계열에 섞인다.
     """
     if not cik_ceiling:
         return 0
@@ -315,10 +315,10 @@ def reconcile_wide_history(cik_ceiling: dict[str, str], floor: date) -> int:
     for cik, ceiling in cik_ceiling.items():
         stale = (
             sb.schema(SCHEMA_FUNDAMENTALS)
-            .table(T_FINANCIAL_VERSIONS)
+            .table(T_FINANCIALS)
             .delete()
             .eq("cik", cik)
-            .neq("mapping_version", concepts.SEMANTIC_POLICY_VERSION)
+            .lt("ingested_at", written_since.isoformat())
             .lte("period_end", ceiling)
             .execute()
             .data
@@ -328,7 +328,7 @@ def reconcile_wide_history(cik_ceiling: dict[str, str], floor: date) -> int:
     for chunk in chunk_values(ciks, _UPSERT_BATCH):
         expired = (
             sb.schema(SCHEMA_FUNDAMENTALS)
-            .table(T_FINANCIAL_VERSIONS)
+            .table(T_FINANCIALS)
             .delete()
             .in_("cik", chunk)
             .lt("period_end", floor.isoformat())
@@ -356,12 +356,11 @@ def ciks_missing_financials() -> list[str]:
 
 
 def upsert_core_wide(rows: list[dict]) -> int:
-    """공시별 재무 버전을 저장한다.
+    """회계기간별 재무 행을 저장한다.
 
-    키는 (cik, period_end, fiscal_period, accession_no, mapping_version)이다. 정정 공시는
-    새 행이 되어 정정 전 숫자가 남고, 같은 공시를 같은 매핑 버전으로 다시 처리하면 같은
-    행을 갱신한다. `source_manifest`는 컬럼별 채택 근거를 담은 메모리 전용 값이라 떼어 낸다
-    — 남기면 PostgREST가 payload 전체를 PGRST204로 거절한다.
+    키는 (cik, period_end)다. 같은 기간을 다시 처리하면(정정 공시·재처리) 그 행을 덮어쓰고
+    `ingested_at`을 이번 시각으로 옮긴다. `source_manifest`는 컬럼별 채택 근거를 담은 메모리
+    전용 값이라 떼어 낸다 — 남기면 PostgREST가 payload 전체를 PGRST204로 거절한다.
     """
     if not rows:
         return 0
@@ -376,33 +375,65 @@ def upsert_core_wide(rows: list[dict]) -> int:
     ]
     if invalid:
         raise ValueError(
-            "financial version rows require cik, period_end, accession_no and no ticker"
+            "financial rows require cik, period_end, accession_no and no ticker"
         )
     persisted = {
         "cik", "period_end", "accession_no", "fiscal_year", "fiscal_period",
-        "mapping_version", "common_equity_scope", "is_liabilities_derived",
-        *ALL_WIDE_COLUMNS,
+        "is_liabilities_derived", "ingested_at", *ALL_WIDE_COLUMNS,
     }
+    written_at = utc_now().isoformat()
     payload = [
         {
             key: value
-            for key, value in {
-                **row,
-                "mapping_version": row.get("mapping_version") or concepts.SEMANTIC_POLICY_VERSION,
-            }.items()
+            for key, value in {**row, "ingested_at": written_at}.items()
             if key not in _MEMORY_ONLY_KEYS and key in persisted
         }
         for row in rows
     ]
+    _delete_relabeled_periods(payload)
     upserted = 0
     for start in range(0, len(payload), _UPSERT_BATCH):
         chunk = payload[start:start + _UPSERT_BATCH]
-        sb.schema(SCHEMA_FUNDAMENTALS).table(T_FINANCIAL_VERSIONS).upsert(
-            chunk, on_conflict="cik,period_end,fiscal_period,accession_no,mapping_version"
+        sb.schema(SCHEMA_FUNDAMENTALS).table(T_FINANCIALS).upsert(
+            chunk, on_conflict="cik,period_end"
         ).execute()
         upserted += len(chunk)
-    log.info("financial versions upserted: written=%d", upserted)
+    log.info("financials upserted: written=%d", upserted)
     return upserted
+
+
+def _delete_relabeled_periods(rows: list[dict]) -> int:
+    """같은 (cik, 회계연도, 분기) 라벨이 저장소에서는 다른 기간말을 가리키면 그 옛 행을 지운다.
+
+    회계력 판정이 고쳐지면 라벨이 다른 기간말로 옮겨 간다. 옛 행을 두면
+    `UNIQUE (cik, fiscal_year, fiscal_period)`가 새 행을 거절해 묶음 전체가 실패한다.
+    """
+    incoming = {
+        (str(row["cik"]), int(row["fiscal_year"]), str(row["fiscal_period"])): str(row["period_end"])
+        for row in rows
+    }
+    if not incoming:
+        return 0
+    existing = select_paged_in_chunks(
+        lambda chunk: sb.schema(SCHEMA_FUNDAMENTALS).table(T_FINANCIALS)
+        .select("cik,period_end,fiscal_year,fiscal_period").in_("cik", chunk),
+        sorted({cik for cik, _, _ in incoming}),
+        order_by="cik,period_end",
+        paged_reader=select_all_paged,
+    )
+    stale = [
+        (str(row["cik"]), str(row["period_end"]))
+        for row in existing
+        if incoming.get((str(row["cik"]), int(row["fiscal_year"]), str(row["fiscal_period"])))
+        not in (None, str(row["period_end"]))
+    ]
+    for cik, period_end in stale:
+        sb.schema(SCHEMA_FUNDAMENTALS).table(T_FINANCIALS).delete().eq("cik", cik).eq(
+            "period_end", period_end
+        ).execute()
+    if stale:
+        log.warning("relabeled financial periods removed: %d", len(stale))
+    return len(stale)
 
 
 def _issue_key(row: dict) -> str:

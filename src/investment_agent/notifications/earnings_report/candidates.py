@@ -42,7 +42,7 @@ def _cutoff() -> str:
 def row_accession_no(row: dict) -> str:
     """wide 행의 대표 accession_no. 원본 근거는 Storage에 보관하므로 DB JSON을 읽지 않는다.
 
-    `financial_versions.accession_no`는 NOT NULL이라 빈 값이 올 수 없다.
+    `financials.accession_no`는 NOT NULL이라 빈 값이 올 수 없다.
     """
     return str(row["accession_no"]).strip()
 
@@ -154,7 +154,7 @@ def load_ready_filings(tickers: set[str] | None = None) -> list[dict]:
     """관심종목의 최근 공시 중 카드로 보낼 준비가 된 것.
 
     각 항목: {
-      "row":            헤드라인 financial_versions 행(_has_anomaly·accession_no 부착),
+      "row":            헤드라인 financials 행(_has_anomaly·accession_no 부착),
       "prev":           전년 동기 행 or None (YoY·비교 막대용),
       "history":        최근 분기 이력(매출·EPS·현금흐름 추세 차트용),
       "sector_*":       업종 특화 지표의 같은 네 가지,

@@ -3,7 +3,7 @@
 트리거: 펀더멘탈·세그먼트 ETL 이후 실행 — 관심종목의 미발송 신규 공시만 추려 알린다.
 대상:   Supabase universe.entities의 활성 관심 기업(대표 종목 표기).
 
-데이터:   reporting/notifications/earnings_report.py — financial_versions에서
+데이터:   reporting/notifications/earnings_report.py — financials에서
                          '헤드라인 1행 + 전년 동기 1행' 조회,
                          accession_no으로 세그먼트 상태·주축을 연결하고
                          이미 보냈는지는 알림 원장(notifications.notices)이 가른다

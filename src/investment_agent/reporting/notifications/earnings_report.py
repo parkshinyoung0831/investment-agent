@@ -17,10 +17,17 @@ from investment_agent.config import load_config
 from investment_agent.platform.db.postgres import Database
 from investment_agent.platform.logging import get_logger
 from investment_agent.data.fundamentals.domain.periods import are_consecutive_quarters
+from investment_agent.data.fundamentals.domain.services.balance_identity import non_liability_claims
 from investment_agent.data.market.domain.actions import merge_corporate_actions
 from investment_agent.data.market.repository import MarketRepository
 from investment_agent.data.universe.repository import UniverseRepository
-from investment_agent.reporting.services.financial_row import f, net_debt, total_debt
+from investment_agent.reporting.services.financial_row import (
+    consolidated_net_income,
+    f,
+    net_debt,
+    total_book_equity,
+    total_debt,
+)
 from investment_agent.data.fundamentals.domain.services.classify_dimensions import display_member_name
 
 # --- DB 식별자 (SSOT) ---------------------------------------------------
@@ -85,15 +92,15 @@ def watchlist_members() -> list[dict]:
 
 
 _FINANCIAL_COLUMNS = (
-    "cik,period_end,accession_no,filing_date,fiscal_year,fiscal_period,revenue,"
-    "operating_income_loss,net_income,eps_diluted_gaap,assets,liabilities,"
-    "is_liabilities_derived,common_equity,common_equity_scope,minority_interest_balance,"
+    "cik,period_end,accession_no,fiscal_year,fiscal_period,revenue,"
+    "operating_income_loss,net_income,minority_interest_income,eps_diluted_gaap,assets,liabilities,"
+    "is_liabilities_derived,common_equity,minority_interest_balance,"
     "mezzanine_equity,preferred_stock,net_cash_from_operating_activities,"
     "net_cash_from_investing_activities,net_cash_from_financing_activities,"
     "capital_expenses,cash_and_cash_equivalents,total_debt_including_current,"
     "short_term_debt,current_portion_of_long_term_debt,long_term_debt,"
     "operating_lease_current_debt_equivalent,operating_lease_non_current_debt_equivalent,"
-    "common_dividends_paid,shares_fully_diluted_average,shares_average,mapping_version,"
+    "common_dividends_paid,shares_fully_diluted_average,shares_average,"
     # 손익 구조의 매출총이익·세전이익, 현금흐름 브릿지의 감가상각·주식보상,
     # 유동성 차트의 유동자산/유동부채, 운전자본 회전의 매출채권·재고·매입채무,
     # Altman Z의 이익잉여금. 전부 financials가 선언·적재하고 있는데 읽지 않아
@@ -164,21 +171,19 @@ def anomaly_keys(tickers: list[str]) -> set[tuple[str, int, str]]:
     for row in rows:
         assets = f(row.get("assets"))
         liabilities = f(row.get("liabilities"))
-        equity = f(row.get("common_equity"))
-        scope = str(row.get("common_equity_scope") or "unknown")
+        claims_without_liabilities = non_liability_claims({
+            name: f(row.get(name))
+            for name in ("common_equity", "preferred_stock", "minority_interest_balance",
+                         "mezzanine_equity")
+        })
         if (
             assets in (None, 0.0)
             or liabilities is None
-            or equity is None
-            or scope == "unknown"
+            or claims_without_liabilities is None
             or bool(row.get("is_liabilities_derived"))
         ):
             continue
-        claims = liabilities + equity + (f(row.get("mezzanine_equity")) or 0.0)
-        if scope != "stockholders_including_nci":
-            claims += f(row.get("minority_interest_balance")) or 0.0
-        if scope == "common":
-            claims += f(row.get("preferred_stock")) or 0.0
+        claims = liabilities + claims_without_liabilities
         if abs(assets - claims) / abs(assets) <= 0.01:
             continue
         try:
@@ -423,7 +428,7 @@ def load_segment_highlights(
             filter_column="accession_no",
             values=accessions,
             configure=lambda query: query.eq("content_type", "segments"),
-            order_by="accession_no,mapping_version",
+            order_by="accession_no",
         ):
             for ticker in tickers:
                 states[(ticker, str(state["accession_no"]))] = state
@@ -614,11 +619,15 @@ def load_earnings_quality(tickers: list[str]) -> dict[str, dict]:
     """이익의 질(TTM) — OCF/순이익·FCF/순이익·발생액.
 
     발생액은 (순이익 − 영업현금흐름) / 총자산이다. 이익이 현금으로 뒷받침되는지
-    보는 값이라 분모는 매출이 아니라 자산이다.
+    보는 값이라 분모는 매출이 아니라 자산이다. 순이익은 연결(비지배지분 포함)이다 —
+    영업현금흐름이 연결 순이익에서 출발하므로 범위를 맞춰야 비지배지분 몫이 발생액이 되지 않는다.
     """
     out: dict[str, dict] = {}
     for ticker, rows in _quarterly_by_ticker(tickers).items():
-        net_income = _ttm(rows, "net_income")
+        net_income = _ttm(
+            [{**row, "consolidated_net_income": consolidated_net_income(row)} for row in rows],
+            "consolidated_net_income",
+        )
         operating = _ttm(rows, "net_cash_from_operating_activities")
         if net_income is None or operating is None:
             continue
@@ -652,7 +661,8 @@ def _altman_z(row: dict, *, operating_ttm: float | None) -> float | None:
         # EBIT은 TTM이다. 분기 영업이익을 연간 자산과 견주면 항이 1/4로 줄어
         # 우량 기업이 위험 구간으로 내려앉는다.
         operating_ttm,
-        f(row.get("common_equity")),
+        # 자본/부채 항의 자본은 장부상 자본 총계다(보통주 몫만이 아니다).
+        total_book_equity(row),
     ]
     if any(part is None for part in parts):
         return None

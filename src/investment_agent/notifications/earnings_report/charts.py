@@ -13,6 +13,7 @@ from typing import Any
 from investment_agent.notifications.earnings_report import format as fmt
 from investment_agent.notifications.earnings_report import palette
 from investment_agent.reporting.services.earnings import metrics
+from investment_agent.reporting.services.financial_row import consolidated_net_income
 
 def _num(v: Any) -> float | None:
     if v is None:
@@ -569,7 +570,7 @@ def eps_trend(
         {"y": top + plot_h, "left": f"{elo:.2f}"},
     ]
     # 아래 숫자 줄은 **이번 분기** 쌍이어야 한다. points의 마지막을 그냥 집으면
-    # financial_versions가 아직 이번 분기의 조정 EPS를 못 받았을 때 직전 분기 값이 올라와,
+    # financials가 아직 이번 분기의 조정 EPS를 못 받았을 때 직전 분기 값이 올라와,
     # 헤더의 기간말과 다른 분기를 말하게 된다.
     latest = _match_quarter(str(qs[-1].get("period_end") or ""), points)
     surprise = (
@@ -597,7 +598,7 @@ def cashflow_quarters(history: list[dict], *, w: int = 440, h: int = 150) -> dic
     """최근 13분기 영업·투자·재무 현금흐름 선 차트.
 
     연 단위로 그리면 점이 다섯 개뿐이라 계절성도, 이번 분기가 흐름의 어디인지도 안 보인다.
-    financial_versions의 분기 현금흐름은 누적(YTD)이 아니라 분기별 실제값이라 그대로 이을 수 있다.
+    financials의 분기 현금흐름은 누적(YTD)이 아니라 분기별 실제값이라 그대로 이을 수 있다.
     """
     rows = [
         r for r in history
@@ -666,10 +667,14 @@ def cashflow_quarters(history: list[dict], *, w: int = 440, h: int = 150) -> dic
 
 
 def _bridge_parts(row: dict | None) -> dict[str, float] | None:
-    """브릿지 한 기간분 — 순이익에서 FCF까지의 단계값."""
+    """브릿지 한 기간분 — 순이익에서 FCF까지의 단계값.
+
+    출발점은 연결 순이익이다. 영업현금흐름이 거기서 출발하므로, 모회사 귀속분에서 시작하면
+    비지배지분 몫이 '운전자본/기타'로 섞인다.
+    """
     if not row:
         return None
-    ni = _num(row.get("net_income"))
+    ni = consolidated_net_income(row)
     ocf = _num(row.get("net_cash_from_operating_activities"))
     if ni is None or ocf is None:
         return None

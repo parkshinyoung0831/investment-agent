@@ -26,7 +26,6 @@
 | `metric_value` | 원문 단위의 값 |
 | `unit` | USD 등 단위 |
 | `quality_status` | verified / partial / rejected |
-| `mapping_version` | 정규화 규칙 버전 |
 | `ingested_at` | 저장 시각 |
 
 ## 처리 상태

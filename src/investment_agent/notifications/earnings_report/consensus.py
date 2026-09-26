@@ -19,7 +19,7 @@ reporting/notifications/earnings_report.py가 읽어 온 estimates 행만 받아
 
 ## EPS를 카드의 GAAP 값과 비교하지 않는 이유
 
-카드의 희석 EPS는 `financial_versions` 순이익÷희석주식수, 즉 **GAAP**이다. 컨센서스 EPS는 보통
+카드의 희석 EPS는 `financials` 순이익÷희석주식수, 즉 **GAAP**이다. 컨센서스 EPS는 보통
 **조정(non-GAAP)**이라 기준이 다르다. 실측 괴리는 정상 분기에도 TSLA 기준 21~66%였고,
 회계 Q4 행은 파생 과정 탓에 부호까지 뒤집혔다(AAPL·NVDA·KO가 흑자 분기에 음수 EPS).
 그대로 빼면 없는 서프라이즈를 만들어낸다.

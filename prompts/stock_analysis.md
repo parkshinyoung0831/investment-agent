@@ -85,8 +85,8 @@
 - universe.entities / universe.securities        회사·증권 identity (cik ↔ security_id ↔ 현재 ticker)
 - universe.security_identifiers                  과거 ticker·CUSIP의 기간별 연결(verified만 쓴다)
 - fundamentals.filings / fundamentals.filing_processing   공시 접수와 처리 상태
-- fundamentals.financial_versions                공시별 재무 버전(원장 진실, 정정 전 값도 남는다)
-- fundamentals.financials                        (뷰) 회계기간마다 최신 공시 버전 한 행
+- fundamentals.financials                        회계 분기마다 지금 알고 있는 재무 한 행(정정 공시가 보고한 컬럼은 덮인다).
+                                                 net_income은 모회사 귀속, common_equity는 보통주 자본(우선주·비지배지분 제외)
 - fundamentals.share_class_snapshots             종류주별 발행주식수
 - fundamentals.segment_metrics                   세그먼트 축별 값
 - fundamentals.earnings_results / earnings_estimates      실적 결과·시장 예상(snapshot_kind가 captured_live·vendor_pit인 것만 발표 전 값)
@@ -317,8 +317,9 @@ N. 기관투자자
 사용할 원천:
 - market.prices_daily                 거래일 종가
 - fundamentals.share_class_snapshots  그 시점의 발행주식수(종류주 합산)
-- fundamentals.financial_versions     그 시점에 공개돼 있던 재무 버전(기간마다 cutoff 이전 최신 공시 하나)
-- fundamentals.filings                각 재무 버전의 접수일(`filing_date`)과 우리가 받은 시각(`available_at`)
+- fundamentals.financials             분기별 재무(정정이 반영된 현재 값)
+- fundamentals.filings                기간이 처음 공개된 날: 같은 cik에서 report_date = period_end인
+                                      정기공시(10-Q/10-K) 중 가장 이른 `filing_date`. 이 날짜로 cutoff를 자른다
 
 역사적 밸류에이션 계산 시 반드시 look-ahead bias를 방지한다.
 
@@ -648,8 +649,7 @@ G. REITs·부동산
 표:
 | 객체 | 종류 | 용도 | 사용 여부 |
 |---|---|---|---|
-| fundamentals.financial_versions | 원본 테이블 | 공시별 재무제표 버전 |  |
-| fundamentals.financials | 뷰 | 회계기간별 최신 재무 |  |
+| fundamentals.financials | 원본 테이블 | 회계 분기별 재무 |  |
 | fundamentals.filings | 원본 테이블 | 공시 접수일(시점정합의 기준) |  |
 | reporting.company_financials_latest | 뷰 | cik별 최신 재무 |  |
 | reporting.earnings_surprise | 뷰 | 실적 서프라이즈 |  |

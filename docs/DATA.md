@@ -71,9 +71,9 @@ backtest는 반드시 membership snapshot을 사용한다. 자세한 데이터 �
 | 일정·예상 | 수집·발표·개정 시각이 있는 snapshot | 최신 일정/actual view |
 | 기관 | SEC accepted time이 있는 filing/position | 최신 13F 요약 |
 
-`financial_versions`와 `filings`가 기업 재무의 원장 진실 공급원이다. 같은 회계기간의
-정정 공시는 별도 version으로 upsert하며, 과거 조회는 `filed_at`, `available_at`,
-`ingested_at` cutoff를 함께 적용한다.
+`financials`와 `filings`가 기업 재무의 원장 진실 공급원이다. 재무는 회계 분기마다 한 행이고
+정정 공시는 보고한 컬럼만 덮는다. 과거 조회는 그 기간을 처음 공개한 정기공시의 `filing_date`·
+`available_at`으로 자른다(정정 값은 소급된다).
 
 ## PIT의 핵심 시각
 

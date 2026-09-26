@@ -14,7 +14,9 @@ class MissingIsNotZeroTest(unittest.TestCase):
 
     def test_total_debt_sums_only_known_components(self) -> None:
         self.assertEqual(total_debt({"long_term_debt": 5, "short_term_debt": 2}), 7.0)
-        self.assertEqual(total_debt({"total_debt_including_current": 9, "long_term_debt": 1}), 9.0)
+        # 보고 총계는 구성요소 합의 검증용일 뿐 총차입 정의에 쓰지 않는다.
+        self.assertEqual(total_debt({"total_debt_including_current": 9, "long_term_debt": 1}), 1.0)
+        self.assertIsNone(total_debt({"total_debt_including_current": 9}))
 
     def test_net_debt_is_unknown_when_debt_is_unknown(self) -> None:
         self.assertIsNone(net_debt({"cash_and_cash_equivalents": 100}))

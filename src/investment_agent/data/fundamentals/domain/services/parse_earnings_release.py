@@ -78,13 +78,21 @@ def _first_table_amount(cells) -> float | None:
     return None
 
 
-def _html_table_priority(table) -> int:
-    """현재 분기 표를 연간·누적 표보다 먼저 읽는다."""
-    text = _normalize_text(table.get_text(" ", strip=True)).lower()
-    if any(term in text for term in _TABLE_QUARTERLY_TERMS):
+def _html_table_priority(table) -> int | None:
+    """표 머리(앞 세 행)가 말하는 기간으로 우선순위를 정한다. 쓰면 안 되는 표는 None.
+
+    이 보완 경로는 열 격자가 없어 첫 금액을 읽는다. 누적 기간(반기·연간) 열이 있는 표에서는
+    첫 금액이 이번 분기라는 보장이 없으므로 읽지 않는다 — 분기·누적 열을 함께 둔 표는 열 위치를
+    아는 EX-99 표 파서가 맡는다. 표 전체 글자를 보면 각주의 "quarter"가 누적 표를 분기 표로 만든다.
+    """
+    header = " ".join(
+        _normalize_text(row.get_text(" ", strip=True)).lower()
+        for row in table.find_all("tr")[:3]
+    )
+    if any(term in header for term in _TABLE_CUMULATIVE_TERMS):
+        return None
+    if any(term in header for term in _TABLE_QUARTERLY_TERMS):
         return 2
-    if any(term in text for term in _TABLE_CUMULATIVE_TERMS):
-        return 0
     return 1
 
 
@@ -103,10 +111,11 @@ def _revenue_from_tables(soup) -> float | None:
             label = _normalized_label(cells[0].get_text(" ", strip=True))
             if label not in _TABLE_REVENUE_LABELS:
                 continue
+            priority = _html_table_priority(table)
             amount = _first_table_amount(cells[1:])
-            if amount is not None and amount > 0:
+            if priority is not None and amount is not None and amount > 0:
                 candidates.append((
-                    _html_table_priority(table),
+                    priority,
                     -table_index,
                     amount * multiplier,
                 ))
@@ -129,7 +138,14 @@ def parse_earnings_release(html: str | bytes | None) -> tuple[float | None, str 
     document_text = _normalize_text(soup.get_text(" ", strip=True))
 
     revenue_actual = _revenue_from_tables(soup)
-    match = _REVENUE_PATTERN.search(document_text)
+    match = next(
+        (
+            found for found in _REVENUE_PATTERN.finditer(document_text)
+            # "first six months revenue was $X"는 이번 분기 매출이 아니다.
+            if not any(term in found.group(0).lower() for term in _TABLE_CUMULATIVE_TERMS)
+        ),
+        None,
+    )
     if revenue_actual is None and match:
         value = float(match.group(1).replace(",", ""))
         multiplier = 1e9 if match.group(2).lower().startswith("b") else 1e6

@@ -83,7 +83,8 @@ class ConsolidatedEquityScope(unittest.TestCase):
             + row["mezzanine_equity"],
         )
 
-    def test_total_equity_fallback_records_that_nci_is_already_included(self):
+    def test_total_equity_without_a_known_nci_cannot_be_common_equity(self):
+        """비지배지분 포함 총계만 있고 비지배지분을 모르면 보통주 자본을 만들 수 없다 — 비운다."""
         facts = [
             _fact("Assets", "assets", 100),
             _fact("Liabilities", "liabilities", 60),
@@ -97,8 +98,22 @@ class ConsolidatedEquityScope(unittest.TestCase):
         rows, anomalies = to_wide_tables(facts)
 
         self.assertEqual(anomalies, [])
-        self.assertEqual(rows[0]["common_equity_scope"], "stockholders_including_nci")
+        self.assertIsNone(rows[0]["common_equity"])
         self.assertIsNone(rows[0]["minority_interest_balance"])
+
+    def test_stockholders_equity_excludes_preferred_stock(self):
+        """StockholdersEquity는 우선주를 포함한다. 보통주 자본은 그것을 뺀 값이다."""
+        facts = [
+            _fact("Assets", "assets", 100),
+            _fact("Liabilities", "liabilities", 60),
+            _fact("StockholdersEquity", "common_equity", 40),
+            _fact("PreferredStockValue", "preferred_stock", 5),
+        ]
+
+        rows, _anomalies = to_wide_tables(facts)
+
+        self.assertEqual(35, rows[0]["common_equity"])
+        self.assertTrue(rows[0]["source_manifest"]["common_equity"]["is_derived"])
 
     def test_inconsistent_total_equity_does_not_invent_nci(self):
         facts = [

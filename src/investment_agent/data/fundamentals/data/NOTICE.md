@@ -88,7 +88,7 @@ python -c "import json; from pathlib import Path; p=Path('src/investment_agent/d
 3. 이전 파일과 semantic diff를 만든다. 추가·삭제·변경 tag 수와 `standard_tags`, confidence, `is_total`, company count 변화를 따로 검토한다.
 4. 프로젝트 override·column policy·제외 목록이 참조하는 중요 tag를 표본 검증한다. 사전 값이 바뀌어도 프로젝트 정책 우선순위가 의도대로인지 확인한다.
 5. 이 문서의 release, commit, source link, byte size, entry count, SHA-256, verification date를 새 값으로 갱신한다.
-6. mapping 변경이 영구 wide 결과를 바꿀 수 있으면 `SEMANTIC_POLICY_VERSION`을 올리고 `filing_processing.mapping_version` 기반 재처리·백필 범위를 결정한다.
+6. mapping 변경이 영구 wide 결과를 바꿀 수 있으면 `backfill_history --content company --scope all`로 전체를 다시 처리한다(행에 규칙 버전을 남기지 않는다 — 재처리가 이번 실행 전에 쓰인 행을 지운다).
 7. 다음 회귀 테스트와 전체 오프라인 suite를 실행한다.
 
 ```bash

@@ -61,19 +61,20 @@ backfill 명령으로 받았다는 이유로 과거 시점 신뢰도가 생기�
 
 기업 재무는 ticker가 아니라 CIK와 accession을 저장 identity로 사용한다. ticker와 CIK
 승계는 `universe`에서 읽어 fan-out하고, 표시용 reporting view가 이를 투영한다.
-동일 기간의 정정 공시는 기존 값을 덮어쓰지 않고 별도 `financial_versions` 행으로
-보존한다.
+재무는 회계 분기마다 한 행(`financials`)이다. 같은 기간의 정정 공시는 자기가 보고한 컬럼만
+덮어쓰고, 나머지는 원본 값이 남는다.
 
 ## 읽기 규칙
 
 - 최신 화면은 `reporting.*` view 또는 해당 도메인의 paged reader를 사용한다.
-- historical replay와 trading evidence는 `filed_at`/`available_at`와
-  `financial_versions.ingested_at`를 cutoff에 적용한다.
+- historical replay와 trading evidence는 그 기간을 **처음 공개한** 정기공시의
+  `filing_date`/`available_at`으로 자른다(정정 공시일이 아니다). 정정 값은 소급된다.
 - 대량 조회는 `select_all_paged()`와 안정적인 primary-key order를 사용한다.
 - 계산 가능한 TTM·margin·surprise·valuation은 원장 행을 application/reporting에서
   계산하며 별도 materialized-view refresh 계약을 두지 않는다.
 - 공시·처리 상태·재무 행의 부모 순서를 지킨다. `filings`가 먼저 존재해야
-  `filing_processing`, `financial_versions`, `segment_metrics`를 기록할 수 있다.
+  `filing_processing`, `financials`, `segment_metrics`를 기록할 수 있다. `filings`의 값을
+  정하는 곳은 기업 재무 공시 경로 하나이고, 다른 경로는 없는 부모 행만 만든다.
 
 ## 실행 진입점
 

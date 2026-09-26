@@ -21,17 +21,7 @@ _DATA = Path(__file__).resolve().parents[2] / "data" / "gaap_mappings.json"
 _MIN_CONFIDENCE = 0.20
 
 # 사전은 폭넓은 후보군을 제공하고, 아래 정책은 투자 지표에 사용할 회계적
-# 의미를 고정한다. 정책 버전은 영속 wide row에 남긴다.
-#
-# 값을 바꾸면 그 이전 정책으로 만든 행은 낡은 것이 되고 재처리 대상이 된다.
-# 그래서 날짜가 아니라 세대 번호다 — 정책이 실제로 달라질 때만 올린다.
-#
-# v2(리츠·보험·은행 매출 태그 우선순위 수정, 2026-09-21)를 --scope all로 전 종목
-# 재처리한 뒤 "v1"로 되돌렸다 — 재처리가 끝나면 옛 v1 행은 upsert로 새 값으로 덮이고
-# 낡은 v2 행은 reconcile_wide_history가 지워, 저장소에는 한 세대만 남는다. 계속
-# 올리기보다(v2, v3, ...) 재처리가 끝난 시점의 단일 세대를 "v1"이라 부르기로 한
-# 사용자 결정이다. 다음에 정책이 또 바뀌면 다시 "v2"로 올린다.
-SEMANTIC_POLICY_VERSION = "v1"
+# 의미를 고정한다. 정책을 바꾸면 전체를 다시 처리해 덮어쓴다(버전을 행에 남기지 않는다).
 
 
 @dataclass(frozen=True)
@@ -203,23 +193,6 @@ COLUMN_POLICIES: dict[str, ColumnPolicy] = {
         "PaymentsToExploreAndDevelopOilAndGasProperties": 80,
         "PaymentsForSoftware": 90,
     }),
-    # 인수 현금유출. 유기적 성장과 인수 성장을 가르고, 진짜 FCF에서 뺀다.
-    "acquisitions_net_of_cash": ColumnPolicy({
-        "PaymentsToAcquireBusinessesNetOfCashAcquired": 10,
-        "PaymentsToAcquireBusinessesAndInterestInAffiliatesNetOfCashAcquired": 20,
-        "PaymentsToAcquireBusinessesGross": 30,
-    }),
-    # 장기차입 조달·상환. 자본배분(차입 vs 자사주 vs 배당) 분해에 쓴다.
-    "long_term_debt_issued": ColumnPolicy({
-        "ProceedsFromIssuanceOfLongTermDebt": 10,
-        "ProceedsFromNotesPayable": 20,
-        "ProceedsFromIssuanceOfSeniorLongTermDebt": 30,
-    }),
-    "long_term_debt_repaid": ColumnPolicy({
-        "RepaymentsOfLongTermDebt": 10,
-        "RepaymentsOfNotesPayable": 20,
-        "RepaymentsOfSeniorDebt": 30,
-    }),
     # 판관비. 매출총이익에서 영업이익으로 내려가는 핵심 라인이라 영업레버리지의
     # 분모다. G&A·판매비 부분항목은 총계를 대체하지 못하므로 제외한다.
     "selling_general_and_admin_expenses": ColumnPolicy({
@@ -260,10 +233,6 @@ COLUMN_POLICIES: dict[str, ColumnPolicy] = {
         "IntangibleAssetsNetExcludingGoodwill": 10,
         "FiniteLivedIntangibleAssetsNet": 20,
     }),
-    # 운용리스 사용권자산. 부채(operating_lease_*_debt_equivalent)의 자산 쪽 짝이다.
-    "operating_lease_right_of_use_asset": ColumnPolicy({
-        "OperatingLeaseRightOfUseAsset": 10,
-    }),
     # 메자닌(임시) 자본. 명시적으로 상환가능한 비지배지분·우선주는 부채도
     # 영구자본도 아닌 중간 계층이다. 저장하지 않으면
     # 회계항등식이 구조적으로 깨지고(실측 35개 종목), EV에서도 보통주보다 앞선
@@ -288,21 +257,7 @@ COLUMN_POLICIES: dict[str, ColumnPolicy] = {
         "AssetsHeldInTrust": 10,
         "AssetsHeldInTrustNoncurrent": 20,
     }),
-    # 주당 선언 배당금. 지급 총액(common_dividends_paid)과 달리 주당 기준이라
-    # 배당성향·배당성장률에 쓴다. FSDS는 uom=USD, companyfacts는 USD/shares로 준다.
-    "dividends_declared_per_share": ColumnPolicy({
-        "CommonStockDividendsPerShareDeclared": 10,
-        "CommonStockDividendsPerShareCashPaid": 20,
-    }, units=frozenset({"USD/shares", "USD"})),
 
-    # mapping_conflict 해결을 위한 우선순위 정책:
-    # is_total(총계 여부) → confidence → company_count(학습 표본에서 그 태그를 쓴 회사 수)
-    # 순으로 정렬하고, 대조계정·처분전 총액·주석 공시성 항목(감가상각누계액, 대손충당금 등)을
-    # 제외하여 변별력을 확보한다. 정책이 정의되지 않은 컬럼은 동률 시 값을 버린다.
-    "real_estate_investments": ColumnPolicy({
-        "RealEstateInvestmentPropertyNet": 10,
-        "RealEstateInvestmentPropertyAtCost": 20,
-    }),
     "net_loans_and_leases": ColumnPolicy({
         "LoansAndLeasesReceivableNetReportedAmount": 10,
         "FinancingReceivableExcludingAccruedInterestAfterAllowanceForCreditLoss": 20,
@@ -315,213 +270,91 @@ COLUMN_POLICIES: dict[str, ColumnPolicy] = {
     "total_deposits": ColumnPolicy({
         "Deposits": 10,
     }),
+    # 매출채권 총계만. 미청구 채권·보험료 채권·계약 채권 같은 구성항목을 총계 자리에 두면
+    # 운전자본 회전이 조용히 틀린다 — 총계 태그가 없으면 비운다.
     "trade_receivables": ColumnPolicy({
         "AccountsReceivableNetCurrent": 10,
         "ReceivablesNetCurrent": 20,
-        "TradeAndOtherCurrentReceivables": 30,
-        "AccountsAndOtherReceivablesNetCurrent": 40,
-        "AccountsReceivableNet": 50,
-        "NotesAndLoansReceivableNetCurrent": 60,
-        "LoansReceivableHeldForSaleAmount": 70,
-        "UnbilledReceivablesCurrent": 80,
-        "AccountsNotesAndLoansReceivableNetCurrent": 90,
-        "AccountsAndNotesReceivableNet": 100,
-        "PremiumsReceivableAtCarryingValue": 110,
-        "ReceivablesFromCustomers": 120,
-        "TradeReceivables": 130,
-        "UnbilledContractsReceivable": 140,
-        "FinancingReceivableExcludingAccruedInterestAfterAllowanceForCreditLossCurrent": 150,
-        "ReceivablesLongTermContractsOrPrograms": 160,
-        "OilAndGasJointInterestBillingReceivablesCurrent": 170,
-        "AccountsReceivableGross": 180,
-        "BilledContractReceivables": 190,
-        "ContractsReceivableClaimsAndUncertainAmounts": 200,
-        "AccountsReceivableBilledForLongTermContractsOrPrograms": 210,
-        "ContractReceivableRetainage": 220,
-        "GovernmentContractReceivable": 230,
-        "GovernmentContractReceivableProgessPaymentsOffset": 240,
+        "AccountsAndOtherReceivablesNetCurrent": 30,
+        "AccountsNotesAndLoansReceivableNetCurrent": 40,
     }),
+    # 재고 총계만. 원재료·재공품·제품 같은 구성항목 하나를 총계로 쓰지 않는다.
     "inventories": ColumnPolicy({
         "InventoryNet": 10,
-        "Inventories": 20,
-        "InventoryGross": 30,
-        "InventoryFinishedGoodsNetOfReserves": 40,
-        "InventoryRawMaterialsAndSupplies": 50,
-        "InventoryFinishedGoods": 60,
-        "InventoryWorkInProcess": 70,
-        "OtherInventorySupplies": 80,
-        "EnergyRelatedInventory": 90,
-        "InventoryRawMaterials": 100,
-        "FIFOInventoryAmount": 110,
-        "InventoryNetOfAllowancesCustomerAdvancesAndProgressBillings": 120,
-        "RetailRelatedInventoryMerchandise": 130,
-        "OtherInventoryNetOfReserves": 140,
-        "InventoryFinishedGoodsAndWorkInProcess": 150,
-        "InventoryFinishedGoodsAndWorkInProcessNetOfReserves": 160,
-        "EnergyRelatedInventoryCoal": 170,
-        "InventoryCrudeOilProductsAndMerchandise": 180,
-        "InventoryForLongTermContractsOrPrograms": 190,
-        "InventoryWorkInProcessAndRawMaterials": 200,
-        "RetailRelatedInventory": 210,
-        "AgriculturalRelatedInventory": 220,
-        "InventoryOreStockpilesOnLeachPads": 230,
-        "InventoryWorkInProcessAndRawMaterialsNetOfReserves": 240,
-        "InventoryWorkInProcessNetOfReserves": 250,
-        "InventoryRawMaterialsNetOfReserves": 260,
-        "InventoryRawMaterialsAndSuppliesNetOfReserves": 270,
-        "EnergyRelatedInventoryNaturalGasInStorage": 280,
-        "EnergyRelatedInventoryGasStoredUnderground": 290,
-        "EnergyRelatedInventoryOtherFossilFuel": 300,
-        "OtherInventory": 310,
-        "InventoryAdjustments": 320,
-        "InventoryPartsAndComponentsNetOfReserves": 330,
-        "OtherInventoryInTransit": 340,
-        "CrudeOilAndNaturalGasLiquids": 350,
-        "EnergyRelatedInventoryPropaneGas": 360,
-        "InventorySuppliesNetOfReserves": 370,
-        "AirlineRelatedInventory": 380,
-        "AirlineRelatedInventoryAircraftFuel": 390,
-        "AirlineRelatedInventoryAircraftParts": 400,
-        "EnergyRelatedInventoryChemicals": 410,
-        "EnergyRelatedInventoryPetroleum": 420,
-        "InventoryRawMaterialsAndPurchasedPartsNetOfReserves": 430,
-        "OtherInventoriesSpareParts": 440,
-        "OtherInventoryCapitalizedCosts": 450,
-        "AgriculturalRelatedInventoryFeedAndSupplies": 460,
-        "AgriculturalRelatedInventoryGrowingCrops": 470,
-        "AgriculturalRelatedInventoryPlantMaterial": 480,
-        "EnergyRelatedInventoryNaturalGasLiquids": 490,
-        "OtherInventoryDemo": 500,
-        "OtherInventoryInventoryAtOffSitePremises": 510,
-        "OtherInventoryMaterialsSuppliesAndMerchandiseUnderConsignment": 520,
-        "OtherInventoryPurchasedGoods": 530,
-        "OtherInventoryScrap": 540,
-        "OtherInventoryWarehouse": 550,
-        "RetailRelatedInventoryPackagingAndOtherSupplies": 560,
+        "InventoryNetOfAllowancesCustomerAdvancesAndProgressBillings": 20,
+        "RetailRelatedInventoryMerchandise": 30,
     }),
+    # 비유동 장기부채만. 유동분을 포함한 태그(LongTermDebt·DebtInstrumentCarryingAmount)나
+    # 리스부채만인 태그를 받으면 유동성 장기부채·리스와 겹쳐 총차입이 이중계상된다.
     "long_term_debt": ColumnPolicy({
         "LongTermDebtNoncurrent": 10,
-        "FinanceLeaseLiabilityNoncurrent": 20,
+        "LongTermDebtAndCapitalLeaseObligations": 20,
         "LongTermNotesPayable": 30,
-        "LongTermDebt": 40,
-        "LongTermDebtAndCapitalLeaseObligations": 50,
-        "LongtermBorrowings": 60,
-        "ConvertibleLongTermNotesPayable": 70,
-        "NotesPayable": 80,
-        "LongTermLoansPayable": 90,
-        "LongTermLineOfCredit": 100,
-        "NotesPayableRelatedPartiesNoncurrent": 110,
-        "OtherLongTermDebtNoncurrent": 120,
-        "SecuredLongTermDebt": 130,
-        "LongTermLoansFromBank": 140,
-        "UnsecuredDebt": 150,
-        "SeniorNotes": 160,
-        "OtherLongTermDebt": 170,
-        "SeniorLongTermNotes": 180,
-        "JuniorSubordinatedNotes": 190,
-        "UnsecuredLongTermDebt": 200,
-        "LongTermNotesAndLoans": 210,
-        "SubordinatedLongTermDebt": 220,
-        "NotesPayableToBank": 230,
-        "MediumTermNotes": 240,
-        "TransfersAccountedForAsSecuredBorrowingsAssociatedLiabilitiesCarryingAmount": 250,
-        "LongtermFederalHomeLoanBankAdvancesNoncurrent": 260,
-        "OtherLongTermNotesPayable": 270,
-        "CapitalLeaseObligationsNoncurrent": 280,
-        "NotesPayableToBankNoncurrent": 290,
-        "OtherLoansPayableLongTerm": 300,
-        "ConvertibleSubordinatedDebtNoncurrent": 310,
-        "ConstructionLoanNoncurrent": 320,
-        "JuniorSubordinatedLongTermNotes": 330,
-        "LongTermTransitionBond": 340,
-        "MediumtermNotesNoncurrent": 350,
-        "CommercialPaperNoncurrent": 360,
-        "SpecialAssessmentBondNoncurrent": 370,
-        "UnamortizedLossReacquiredDebtNoncurrent": 380,
-        "JuniorSubordinatedDebentureOwedToUnconsolidatedSubsidiaryTrustNoncurrent": 390,
-        "LongTermPollutionControlBond": 400,
-        "NoncurrentBorrowings": 410,
+        "LongTermLoansPayable": 40,
     }),
+    # 단기차입금만. 유동성 장기부채를 포함한 DebtCurrent나 총차입 태그를 받으면
+    # current_portion_of_long_term_debt와 같은 금액이 두 번 더해진다(운영 DB 1,371행).
     "short_term_debt": ColumnPolicy({
-        "NotesPayableCurrent": 10,
-        "ConvertibleNotesPayableCurrent": 20,
-        "ShortTermBorrowings": 30,
-        "FinanceLeaseLiabilityCurrent": 40,
-        "NotesPayableRelatedPartiesClassifiedCurrent": 50,
+        "ShortTermBorrowings": 10,
+        "CommercialPaper": 20,
+        "NotesPayableCurrent": 30,
+        "LinesOfCreditCurrent": 40,
+        "ShortTermBankLoansAndNotesPayable": 50,
         "LoansPayableCurrent": 60,
-        "LinesOfCreditCurrent": 70,
-        "ConvertibleDebtCurrent": 80,
-        "DebtCurrent": 90,
-        "LineOfCredit": 100,
-        "ShorttermBorrowings": 110,
-        "OtherNotesPayableCurrent": 120,
-        "LoansPayable": 130,
-        "ConvertibleNotesPayable": 140,
-        "OtherShortTermBorrowings": 150,
-        "SecuredDebtCurrent": 160,
-        "OtherLoansPayableCurrent": 170,
-        "ConvertibleDebt": 180,
-        "DebtLongtermAndShorttermCombinedAmount": 190,
-        "NotesAndLoansPayableCurrent": 200,
-        "OtherNotesPayable": 210,
-        "NotesAndLoansPayable": 220,
-        "SeniorNotesCurrent": 230,
-        "DebtInstrumentCarryingAmount": 240,
-        "UnsecuredDebtCurrent": 250,
-        "WarehouseAgreementBorrowings": 260,
-        "LongTermDebtAndCapitalLeaseObligationsIncludingCurrentMaturities": 270,
-        "CapitalLeaseObligations": 280,
-        "ShortTermBankLoansAndNotesPayable": 290,
-        "LoansPayableToBankCurrent": 300,
-        "OtherLongTermDebtCurrent": 310,
-        "BankOverdrafts": 320,
-        "NotesPayableToBankCurrent": 330,
-        "CapitalLeaseObligationsCurrent": 340,
-        "ShortTermNonBankLoansAndNotesPayable": 350,
-        "CommercialPaper": 360,
-        "BridgeLoan": 370,
-        "BankLoans": 380,
-        "ConvertibleSubordinatedDebtCurrent": 390,
-        "SubordinatedDebtCurrent": 400,
-        "FederalHomeLoanBankAdvancesCurrent": 410,
-        "ConstructionLoan": 420,
-        "LongTermConstructionLoanCurrent": 430,
-        "BorrowingsUnderGuaranteedInvestmentAgreements": 440,
-        "LongtermTransitionBondCurrent": 450,
-        "JuniorSubordinatedNotesCurrent": 460,
-        "LongTermCommercialPaperCurrent": 470,
-        "LongtermCommercialPaperCurrentAndNoncurrent": 480,
-        "LongtermPollutionControlBondCurrent": 490,
-        "MediumtermNotesCurrent": 500,
-        "CurrentBorrowings": 510,
-        "JuniorSubordinatedDebentureOwedToUnconsolidatedSubsidiaryTrustCurrent": 520,
-        "SpecialAssessmentBondCurrent": 530,
+        "OtherShortTermBorrowings": 70,
     }),
     # "AndAccruedLiabilities" 계열은 confidence·company_count가 더 높지만 매입채무
     # 외 발생비용까지 섞인 넓은 개념이라, 이 컬럼의 한글 정의(COLUMNS.md: 공급업체
     # 매입대금)에 정확히 맞는 "Trade"·순수 AccountsPayable 태그를 실측 순위보다 앞에 둔다.
+    # 매입채무. 발생비용을 섞은 넓은 태그는 순수 매입채무 태그가 없을 때만 쓴다.
     "trade_payables": ColumnPolicy({
         "AccountsPayableCurrent": 10,
         "AccountsPayableTradeCurrent": 20,
-        "TradeAndOtherCurrentPayables": 30,
-        "AccountsPayableAndAccruedLiabilitiesCurrent": 40,
-        "AccountsPayableAndOtherAccruedLiabilitiesCurrent": 50,
-        "AccountsPayableAndAccruedLiabilitiesCurrentAndNoncurrent": 60,
-        "AccountsPayableRelatedPartiesCurrent": 70,
-        "AccountsPayableCurrentAndNoncurrent": 80,
-        "AccountsPayableAndOtherAccruedLiabilities": 90,
-        "AccountsPayableOtherCurrent": 100,
-        "AccountsPayableTradeCurrentAndNoncurrent": 110,
-        "TradeAndOtherCurrentPayablesToTradeSuppliers": 120,
-        "AccountsPayableUnderwritersPromotersAndEmployeesOtherThanSalariesAndWagesCurrent": 130,
-        "ProgramRightsObligationsCurrent": 140,
-        "OilAndGasSalesPayableCurrent": 150,
-        "AccruedParticipationLiabilitiesDueInNextOperatingCycle": 160,
-        "EnergyMarketingAccountsPayable": 170,
-        "GasImbalancePayableCurrent": 180,
-        "GasPurchasePayableCurrent": 190,
-        "SupplierFinanceProgramObligationCurrent": 200,
-        "OilAndGasSalesPayableCurrentAndNoncurrent": 210,
+        "AccountsPayableAndAccruedLiabilitiesCurrent": 30,
+    }),
+    # 아래는 사전 순위에 맡겼던 컬럼들이다. 사전은 부분 항목(SalesAndMarketingExpense→영업이익,
+    # 할인차금→유동성 장기부채, 이자수익 총액→순이자이익, 총 운용리스부채→유동분)까지 같은
+    # 컬럼으로 보낸다. 컬럼마다 그 개념의 총계 태그만 허용하고, 없으면 비운다.
+    "gross_profit": ColumnPolicy({"GrossProfit": 10}),
+    "research_and_development_expenses": ColumnPolicy({
+        "ResearchAndDevelopmentExpense": 10,
+        "ResearchAndDevelopmentExpenseExcludingAcquiredInProcessCost": 20,
+    }),
+    "operating_income_loss": ColumnPolicy({"OperatingIncomeLoss": 10}),
+    "pretax_income_loss": ColumnPolicy({
+        "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest": 10,
+        "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments": 20,
+    }),
+    # 모회사 귀속 순이익. 비지배지분 포함 연결 순이익(ProfitLoss)은 따로 받아, 이 값이 없을 때
+    # 비지배지분 순이익을 빼서 만드는 데만 쓴다.
+    "net_income": ColumnPolicy({"NetIncomeLoss": 10}),
+    "net_income_including_nci": ColumnPolicy({"ProfitLoss": 10}),
+    "current_assets_total": ColumnPolicy({"AssetsCurrent": 10}),
+    "current_liabilities_total": ColumnPolicy({"LiabilitiesCurrent": 10}),
+    "current_portion_of_long_term_debt": ColumnPolicy({
+        "LongTermDebtCurrent": 10,
+        "LongTermDebtAndCapitalLeaseObligationsCurrent": 20,
+    }),
+    "preferred_stock": ColumnPolicy({
+        "PreferredStockValue": 10,
+        "PreferredStockValueOutstanding": 20,
+    }),
+    "retained_earnings": ColumnPolicy({"RetainedEarningsAccumulatedDeficit": 10}),
+    "stock_based_compensation_cf": ColumnPolicy({
+        "ShareBasedCompensation": 10,
+        "AllocatedShareBasedCompensationExpense": 20,
+    }),
+    "operating_lease_current_debt_equivalent": ColumnPolicy({"OperatingLeaseLiabilityCurrent": 10}),
+    "operating_lease_non_current_debt_equivalent": ColumnPolicy({"OperatingLeaseLiabilityNoncurrent": 10}),
+    "shares_average": ColumnPolicy(
+        {"WeightedAverageNumberOfSharesOutstandingBasic": 10},
+        units=frozenset({"shares"}),
+    ),
+    "net_interest_income": ColumnPolicy({"InterestIncomeExpenseNet": 10}),
+    "provision_for_credit_losses": ColumnPolicy({
+        "ProvisionForLoanLeaseAndOtherLosses": 10,
+        "ProvisionForCreditLosses": 20,
+        "ProvisionForLoanAndLeaseLosses": 30,
     }),
 }
 # longterm_investments는 정책을 만들지 않는다 — CORE_COLUMNS에 없는 column_key라
@@ -553,7 +386,7 @@ def _snake(name: str) -> str:
 
 # 분석 뷰가 특정 컬럼을 요구하는 스키마 수준의 예외만 최소한으로 둔다.
 CORE_OVERRIDES: dict[str, str] = {
-    "ProfitLoss": "net_income",
+    "ProfitLoss": "net_income_including_nci",
     "StockholdersEquity": "common_equity",
     "CommonStockholdersEquity": "common_equity",
     "DebtAndCapitalLeaseObligations": "total_debt_including_current",
@@ -582,7 +415,6 @@ CORE_OVERRIDES: dict[str, str] = {
     "IntangibleAssetsNetExcludingGoodwill": "intangible_assets_excluding_goodwill",  # 266
     "FiniteLivedIntangibleAssetsNet": "intangible_assets_excluding_goodwill",
     "PropertyPlantAndEquipmentNet": "property_plant_equipment_net",  # 325
-    "OperatingLeaseRightOfUseAsset": "operating_lease_right_of_use_asset",  # 226
     "NetIncomeLossAttributableToNoncontrollingInterest": "minority_interest_income",  # 234
     "ProfitLossAttributableToNoncontrollingInterest": "minority_interest_income",
     # 사전은 앞의 둘을 투자활동 총계·무형자산 취득으로, 뒤의 둘을 스키마에 없는
@@ -591,15 +423,6 @@ CORE_OVERRIDES: dict[str, str] = {
     "PaymentsForSoftware": "capital_expenses",
     "PaymentsForConstructionInProcess": "capital_expenses",
     "PaymentsToExploreAndDevelopOilAndGasProperties": "capital_expenses",
-    "PaymentsToAcquireBusinessesNetOfCashAcquired": "acquisitions_net_of_cash",  # 253
-    "PaymentsToAcquireBusinessesAndInterestInAffiliatesNetOfCashAcquired": "acquisitions_net_of_cash",
-    "PaymentsToAcquireBusinessesGross": "acquisitions_net_of_cash",
-    "ProceedsFromIssuanceOfLongTermDebt": "long_term_debt_issued",  # 190
-    "ProceedsFromNotesPayable": "long_term_debt_issued",
-    "ProceedsFromIssuanceOfSeniorLongTermDebt": "long_term_debt_issued",
-    "RepaymentsOfLongTermDebt": "long_term_debt_repaid",  # 210
-    "RepaymentsOfNotesPayable": "long_term_debt_repaid",
-    "RepaymentsOfSeniorDebt": "long_term_debt_repaid",
     # 메자닌 자본 — 사전 목적지가 temporary_and_mezzanine_financing 등 스키마에
     # 없는 키라 전량 폐기되던 명시적 temporary/redeemable 태그를 보존한다.
     "RedeemableNoncontrollingInterestEquityCarryingAmount": "mezzanine_equity",
@@ -623,8 +446,6 @@ CORE_OVERRIDES: dict[str, str] = {
     "MinorityInterestInJointVentures": "minority_interest_balance",
     "MinorityInterestInOperatingPartnerships": "minority_interest_balance",
     "MinorityInterestInLimitedPartnerships": "minority_interest_balance",
-    "CommonStockDividendsPerShareDeclared": "dividends_declared_per_share",  # 234
-    "CommonStockDividendsPerShareCashPaid": "dividends_declared_per_share",
     "EarningsPerShareBasic": "eps_basic_gaap",
     "EarningsPerShareDiluted": "eps_diluted_gaap",
 }
@@ -698,9 +519,27 @@ def to_standard_tag(tag: str) -> str | None:
     return STANDARD_TAG_MAP.get(tag)
 
 
+def _policy_routes() -> dict[str, str]:
+    """정책이 허용한 태그는 그 정책의 컬럼으로 보낸다.
+
+    사전이 같은 태그를 다른 컬럼으로 보내면 정책의 허용 목록은 죽은 줄이 된다
+    (ProvisionForLoanLeaseAndOtherLosses가 영업현금흐름으로 가서 대손충당금이 비던 것처럼).
+    한 태그가 두 정책에 있으면 어느 컬럼인지 정할 수 없으므로 거절한다.
+    """
+    routes: dict[str, str] = {}
+    for column, policy in COLUMN_POLICIES.items():
+        for tag in policy.priority:
+            if routes.setdefault(tag, column) != column:
+                raise ValueError(f"{tag} is allowed by two column policies: {routes[tag]}, {column}")
+    return routes
+
+
+_POLICY_ROUTES = _policy_routes()
+
+
 def to_column_key(tag: str) -> str:
     """원시 us-gaap 태그에 대응하는 프로젝트 컬럼명을 반환한다."""
-    return CONCEPT_MAP.get(tag) or _snake(tag)
+    return _POLICY_ROUTES.get(tag) or CONCEPT_MAP.get(tag) or _snake(tag)
 
 
 def is_excluded_tag(tag: str) -> bool:

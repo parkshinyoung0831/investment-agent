@@ -64,10 +64,6 @@ CHECKS: tuple[tuple[str, str, int], ...] = (
      "select count(*) from universe.entities"
      " where is_watchlisted and watch_from is null", 0),
 
-    # 최신 뷰는 회계기간마다 한 행이어야 한다. 둘이면 화면이 같은 분기를 두 번 센다.
-    ("fundamentals.latest_view_one_row_per_period",
-     "select count(*) from (select cik, period_end, fiscal_period"
-     " from fundamentals.financials group by 1, 2, 3 having count(*) > 1) d", 0),
     ("fundamentals.segment_cik_exists",
      "select count(*) from fundamentals.segment_metrics m"
      " left join universe.entities e using (cik) where e.cik is null", 0),
@@ -121,20 +117,21 @@ CHECKS: tuple[tuple[str, str, int], ...] = (
      "select count(*) from market.actions_daily where (dividend_amount is null) <> (dividend_currency is null)", 0),
 
     # ── fundamentals ──
-    ("fundamentals.version_cik_matches_filing",
-     "select count(*) from fundamentals.financial_versions v join fundamentals.filings f using (accession_no)"
+    ("fundamentals.financial_cik_matches_filing",
+     "select count(*) from fundamentals.financials v join fundamentals.filings f using (accession_no)"
      " where f.cik <> v.cik", 0),
-    ("fundamentals.single_mapping_version_per_filing_period",
-     "select count(*) from (select cik, period_end, fiscal_period, accession_no from fundamentals.financial_versions"
-     " group by 1, 2, 3, 4 having count(distinct mapping_version) > 1) d", 0),
+    # 공시 행의 기간말은 공시 경로만 쓴다. 다른 경로가 덮어쓰면 PIT의 최초 공개일 판정이 틀린다.
+    ("fundamentals.filing_report_date_is_period_end",
+     "select count(*) from fundamentals.financials v join fundamentals.filings f using (accession_no)"
+     " where f.form_type in ('10-Q', '10-K') and f.report_date is distinct from v.period_end", 0),
     ("fundamentals.estimate_kinds_known",
      "select count(*) from fundamentals.earnings_estimates where snapshot_kind not in"
      " ('captured_live', 'vendor_pit', 'reconstructed', 'latest_history')", 0),
     # 연속된 두 버전이 같은 상태면 변경분 저장이 깨진 것이다.
     ("fundamentals.estimate_versions_are_changes",
-     "select count(*) from (select *, lag(row(target_period_end, eps_basis, currency, eps_avg, eps_low, eps_high,"
+     "select count(*) from (select *, lag(row(target_period_end, eps_basis, eps_avg, eps_low, eps_high,"
      " eps_analysts, revenue_avg, revenue_low, revenue_high, revenue_analysts, revisions_up_7d, revisions_up_30d,"
-     " revisions_down_7d, revisions_down_30d)) over w as prev, row(target_period_end, eps_basis, currency, eps_avg,"
+     " revisions_down_7d, revisions_down_30d)) over w as prev, row(target_period_end, eps_basis, eps_avg,"
      " eps_low, eps_high, eps_analysts, revenue_avg, revenue_low, revenue_high, revenue_analysts, revisions_up_7d,"
      " revisions_up_30d, revisions_down_7d, revisions_down_30d) as cur from fundamentals.earnings_estimates"
      " window w as (partition by security_id, target_fiscal_year, target_fiscal_period, source, snapshot_kind"
