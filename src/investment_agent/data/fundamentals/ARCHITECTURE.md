@@ -46,14 +46,17 @@ retention은 자식 metric과 해당 content type의 processing 상태를 순서
 
 ## 시점 정합성
 
-`financial_versions`는 period end와 accession을 함께 보존한다. PIT reader는
-다음 조건을 모두 적용한다.
+`financials`는 (cik, period_end)마다 한 행이고 `accession_no`는 값을 마지막으로 반영한
+공시다. PIT reader는 그 기간을 처음 공개한 정기공시(같은 CIK·`report_date`의 가장 이른
+10-Q/10-K)로 자른다.
 
 ```text
-filings.filing_date <= cutoff date
-filings.available_at <= as_of_at
-financial_versions.ingested_at <= as_of_at
+first_disclosure.filing_date <= cutoff date          (filed_before: 제출일 공개 규칙)
+first_disclosure.available_at <= as_of_at            (as_of: 우리가 받은 시각)
 ```
+
+정정 값은 원본 공시일로 소급된다. 정정은 기간의 0.5% 미만이고, 매매 판단이 당시 본 값은
+판단 evidence가 보관한다.
 
 `security_fundamentals_filed_before`는 공시일 기준 비교용이고,
 `security_fundamentals_as_of`는 실제 당시 사용 가능했던 데이터만 반환한다.
