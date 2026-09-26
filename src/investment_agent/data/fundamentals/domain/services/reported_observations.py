@@ -11,7 +11,10 @@ from investment_agent.data.fundamentals.domain.services.balance_identity import 
     non_liability_claims,
     source_scope,
 )
-from investment_agent.data.fundamentals.domain.policies import NON_NEGATIVE_FLOW_COLUMNS
+from investment_agent.data.fundamentals.domain.policies import (
+    NON_NEGATIVE_FLOW_COLUMNS,
+    PER_SHARE_COLUMNS,
+)
 from investment_agent.data.fundamentals.domain.taxonomy import gaap_concepts as concepts
 from investment_agent.data.fundamentals.domain.taxonomy.financial_columns import (
     BALANCE_COLUMNS,
@@ -749,6 +752,8 @@ def periodize(facts: list[dict]) -> list[dict]:
         qtrs = int(cur.get("qtrs") or 0)
         if fp not in ("Q2", "Q3") or qtrs not in (2, 3):
             continue
+        if cur["column_key"] in PER_SHARE_COLUMNS:
+            continue
 
         cur_end = _parse_date(cur.get("period_end"))
         if cur_end is None:
@@ -814,6 +819,8 @@ def periodize(facts: list[dict]) -> list[dict]:
     for fy in fy_rows:
         qtrs = int(fy.get("qtrs") or 0)
         if qtrs != 4 and not fy.get("period_start"):
+            continue
+        if fy["column_key"] in PER_SHARE_COLUMNS:
             continue
         fy_end = _parse_date(fy.get("period_end"))
         if fy_end is None:
@@ -949,6 +956,75 @@ def _pivot(rows: list[dict], columns: tuple[str, ...]) -> list[dict]:
     ]
 
 
+def _derived_manifest(row: dict, formula: str, sources: tuple[str, ...]) -> dict:
+    manifests = row.get("source_manifest") or {}
+    return {
+        "raw_tag": None,
+        "standard_tag": None,
+        "unit": None,
+        "accession_no": row.get("accession_no"),
+        "filed_at": row.get("filed_at"),
+        "period_start": None,
+        "period_end": row.get("period_end"),
+        "is_derived": True,
+        "derivation": {
+            "formula": formula,
+            "source_tags": [
+                (manifests.get(column) or {}).get("raw_tag") for column in sources
+            ],
+        },
+    }
+
+
+def _parent_net_income(rows: list[dict]) -> list[dict]:
+    """모회사 귀속 순이익이 없으면 연결 순이익 - 비지배지분 순이익으로 만든다.
+
+    연결 순이익은 이 계산의 입력일 뿐 저장하지 않는다. 비지배지분 순이익을 모르면 빼지 않고
+    비운다 — 연결 순이익을 그대로 두면 비지배지분이 큰 회사의 EPS·ROE가 부풀려진다.
+    """
+    for row in rows:
+        consolidated = row.pop("net_income_including_nci", None)
+        manifests = row.get("source_manifest") or {}
+        manifests.pop("net_income_including_nci", None)
+        minority = row.get("minority_interest_income")
+        if row.get("net_income") is not None or consolidated is None or minority is None:
+            continue
+        manifests["net_income"] = _derived_manifest(
+            row, "net_income_including_nci - minority_interest_income", ("minority_interest_income",)
+        )
+        row["net_income"] = consolidated - minority
+        row["source_manifest"] = manifests
+    return rows
+
+
+def _per_share_from_income(rows: list[dict]) -> list[dict]:
+    """보고된 EPS가 없는 분기는 순이익÷같은 분기 가중평균 주식수로 만든다.
+
+    분자는 보통주 귀속 순이익(우선주 배당 차감)이 있으면 그것, 없으면 모회사 귀속 순이익이다.
+    """
+    for row in rows:
+        numerator_column = (
+            "net_income_to_common_shareholders"
+            if row.get("net_income_to_common_shareholders") is not None
+            else "net_income"
+        )
+        numerator = row.get(numerator_column)
+        for eps_column, shares_column in (
+            ("eps_basic_gaap", "shares_average"),
+            ("eps_diluted_gaap", "shares_fully_diluted_average"),
+        ):
+            shares = row.get(shares_column)
+            if row.get(eps_column) is not None or numerator is None or not shares or shares <= 0:
+                continue
+            row[eps_column] = numerator / shares
+            manifests = row.get("source_manifest") or {}
+            manifests[eps_column] = _derived_manifest(
+                row, f"{numerator_column} / {shares_column}", (numerator_column, shares_column)
+            )
+            row["source_manifest"] = manifests
+    return rows
+
+
 def _common_equity_from_scope(rows: list[dict]) -> list[dict]:
     """`common_equity`를 보통주 자본(모회사 주주자본 - 우선주)으로 맞춘다.
 
@@ -1056,5 +1132,7 @@ def to_wide_tables(facts: list[dict]) -> tuple[list[dict], list[dict]]:
         row for row in periodize(selected)
         if str(row.get("fiscal_period") or "") != "FY"
     ]
-    rows = _common_equity_from_scope(_pivot(quarters, CORE_COLUMNS))
+    rows = _pivot(quarters, (*CORE_COLUMNS, "net_income_including_nci"))
+    rows = _per_share_from_income(_parent_net_income(rows))
+    rows = _common_equity_from_scope(rows)
     return _derive_missing_liabilities(rows), anomalies

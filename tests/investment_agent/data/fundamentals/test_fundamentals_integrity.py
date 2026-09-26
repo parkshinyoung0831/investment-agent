@@ -69,14 +69,16 @@ class SemanticPolicyTest(unittest.TestCase):
             )
         )
 
-    def test_total_debt_prevents_component_double_counting(self):
+    def test_total_debt_is_the_same_definition_for_every_company(self):
+        """보고 총계(리스 제외)가 있든 없든 겹치지 않는 구성요소 합으로 센다."""
         row = {
             "total_debt_including_current": 100,
-            "short_term_debt": 20,
+            "short_term_debt": 10,
             "current_portion_of_long_term_debt": 10,
             "long_term_debt": 80,
+            "operating_lease_non_current_debt_equivalent": 5,
         }
-        self.assertEqual(metrics.total_debt(row), 100)
+        self.assertEqual(metrics.total_debt(row), 105)
 
 
 class ManifestTest(unittest.TestCase):

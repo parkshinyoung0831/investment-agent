@@ -54,7 +54,7 @@ def fundamental_statistics(rows_desc: Iterable[Mapping[str, Any]]) -> dict[str, 
     net_income = _finite(latest.get("net_income"))
     operating_income = _finite(latest.get("operating_income_loss"))
     cash = _finite(latest.get("cash_and_cash_equivalents"))
-    debt = _finite(latest.get("total_debt_including_current"))
+    debt = _total_debt(latest)
     output: dict[str, Any] = {
         "fiscal_year": latest.get("fiscal_year"),
         "fiscal_period": latest.get("fiscal_period"),

@@ -90,6 +90,9 @@ ALL_WIDE_COLUMNS: frozenset[str] = frozenset(CORE_COLUMNS)
 # 복원하는 데 사용한다.
 TRANSFORMATION_ONLY_COLUMNS: frozenset[str] = frozenset({
     "assets_held_in_trust",
+    # 비지배지분 포함 연결 순이익. 모회사 귀속 순이익(net_income)이 없을 때 비지배지분
+    # 순이익을 빼서 그것을 만드는 데만 쓴다.
+    "net_income_including_nci",
 })
 
 COMPANYFACT_COLUMNS: frozenset[str] = (

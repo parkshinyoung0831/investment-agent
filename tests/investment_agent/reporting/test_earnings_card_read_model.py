@@ -35,7 +35,7 @@ def _quarters() -> list[dict]:
             "current_liabilities_total": 1200.0,
             "retained_earnings": 900.0,
             "cash_and_cash_equivalents": 400.0,
-            "total_debt_including_current": 1000.0,
+            "long_term_debt": 1000.0,
             "interest_expense": 20.0,
         })
     return rows

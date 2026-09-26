@@ -7,7 +7,9 @@ from investment_agent.platform.logging import get_logger
 from investment_agent.data.fundamentals.domain.policies import (
     AVERAGE_SHARES_SCALE_FACTOR,
     BALANCE_TOLERANCE,
+    NON_NEGATIVE_FLOW_COLUMNS,
     PROFIT_OVER_REVENUE_TOLERANCE,
+    REVENUE_TO_ASSETS_FLOOR,
     UNIT_SCALE_LOG_TOLERANCE,
 )
 from investment_agent.data.fundamentals.domain.services.balance_identity import non_liability_claims
@@ -125,6 +127,36 @@ def check_core_wide(rows: list[dict]) -> tuple[list[dict], list[dict]]:
             })
             for column in cleared:
                 row[column] = None
+
+        # 정의상 음수가 될 수 없는 유량이 음수면 부호 규칙이 다른 태그가 잡힌 것이다.
+        for column in sorted(NON_NEGATIVE_FLOW_COLUMNS):
+            value = row.get(column)
+            if value is None or value >= 0:
+                continue
+            anomalies.append({
+                "cik": cik,
+                "fiscal_year": row["fiscal_year"],
+                "fiscal_period": row["fiscal_period"],
+                "reason": "negative_nonnegative_flow",
+                "detail": {"column": column, "value": value, "cleared": [column]},
+                "filed_at": row.get("filed_at"),
+            })
+            row[column] = None
+
+        # 매출이 총자산에 비해 턱없이 작으면 총매출이 아니라 하위 매출 항목이다(정책 상수 주석 참고).
+        revenue, assets_value = row.get("revenue"), row.get("assets")
+        if revenue is not None and assets_value and assets_value > 0 and (
+            revenue / assets_value < REVENUE_TO_ASSETS_FLOOR
+        ):
+            anomalies.append({
+                "cik": cik,
+                "fiscal_year": row["fiscal_year"],
+                "fiscal_period": row["fiscal_period"],
+                "reason": "revenue_below_asset_floor",
+                "detail": {"revenue": revenue, "assets": assets_value, "cleared": ["revenue"]},
+                "filed_at": row.get("filed_at"),
+            })
+            row["revenue"] = None
 
         # 매출이 총이익·영업이익보다 작으면 매출이 총계가 아니다. 이익 쪽은 다른 태그에서 오므로
         # 맞는 값으로 보고 매출만 비운다 — 총매출의 0.4~30%인 하위 항목이 카드 마진·성장률에 나가는 것보다 빈칸이 낫다.

@@ -24,13 +24,11 @@ def _f(value: Any) -> float | None:
 def total_debt(row: Mapping[str, Any]) -> float | None:
     """단기차입·유동성 장기부채·장기부채·운용리스 부채(유동/비유동) 합계.
 
-    총계 태그(`total_debt_including_current`)가 있으면 그것을 우선한다. 구성요소가
-    하나도 없으면 모른다(None) — 0으로 접으면 부채 없는 회사처럼 보여 순부채·부채비율이
-    좋게 나온다.
+    세 차입 컬럼은 서로 겹치지 않게 정의돼 있어 더할 수 있다. 회사가 보고한 총계
+    (`total_debt_including_current`)는 쓰지 않는다 — 리스를 빼고 세는 값이라, 그것이 있는
+    회사와 없는 회사의 부채비율이 다른 정의로 계산된다. 구성요소가 하나도 없으면
+    모른다(None) — 0으로 접으면 부채 없는 회사처럼 보여 순부채·부채비율이 좋게 나온다.
     """
-    total = _f(row.get("total_debt_including_current"))
-    if total is not None:
-        return total
     parts = (
         _f(row.get("short_term_debt")),
         _f(row.get("current_portion_of_long_term_debt")),

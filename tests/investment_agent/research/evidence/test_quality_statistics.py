@@ -12,7 +12,7 @@ def _quarter(year: int, period: int, **values) -> dict:
     base = {"fiscal_year": year, "fiscal_period": f"Q{period}", "period_end": f"{year}-{month}-30",
             "revenue": 100.0, "net_income": 10.0, "operating_income_loss": 15.0, "gross_profit": 40.0,
             "net_cash_from_operating_activities": 14.0, "capital_expenses": 4.0, "interest_expense": 1.0,
-            "common_equity": 200.0, "assets": 400.0, "total_debt_including_current": 100.0}
+            "common_equity": 200.0, "assets": 400.0, "long_term_debt": 100.0}
     base.update(values)
     return base
 
@@ -63,12 +63,11 @@ class QualityStatisticsTest(unittest.TestCase):
     def test_negative_equity_does_not_produce_roe(self):
         self.assertNotIn("roe_ttm", quality_statistics(_eight_quarters(common_equity=-5.0)))
 
-    def test_gross_profit_and_debt_fall_back_to_components(self):
+    def test_gross_profit_falls_back_to_components_and_debt_sums_components(self):
         rows = _eight_quarters()
         for row in rows:
             row.pop("gross_profit")
             row["cost_of_goods_and_services_sold"] = 70.0 if row["revenue"] == 100.0 else 50.0
-        rows[0].pop("total_debt_including_current")
         rows[0].update(short_term_debt=10.0, long_term_debt=50.0)
         stats = quality_statistics(rows)
         self.assertAlmostEqual(stats["gross_margin_ttm"], 120 / 400)
@@ -77,7 +76,6 @@ class QualityStatisticsTest(unittest.TestCase):
     def test_debt_to_equity_includes_operating_lease_liabilities(self):
         """카드(reporting)와 같은 정의를 써야 한다 — 예전엔 research만 운용리스를 빠뜨렸다(감사 RR2-09)."""
         rows = _eight_quarters()
-        rows[0].pop("total_debt_including_current")
         rows[0].update(
             short_term_debt=10.0, long_term_debt=50.0,
             operating_lease_current_debt_equivalent=5.0,

@@ -29,6 +29,14 @@ NON_NEGATIVE_FLOW_COLUMNS = frozenset({
     "capital_expenses",
     "stock_repurchase_payments",
     "common_dividends_paid",
-    "long_term_debt_issued",
-    "long_term_debt_repaid",
 })
+
+# 주당 값은 기간끼리 더하거나 뺄 수 없다 — 분기마다 분모(가중평균 주식수)가 다르다.
+# FY-(Q1+Q2+Q3)로 만든 Q4 EPS는 실측 18%가 순이익÷주식수와 5% 넘게 어긋났다(Q1~Q3는 8%).
+# 보고값이 없는 분기는 누적값을 빼지 않고 같은 분기의 순이익÷가중평균 주식수로 만든다.
+PER_SHARE_COLUMNS = frozenset({"eps_basic_gaap", "eps_diluted_gaap"})
+
+# 분기 매출이 총자산의 이 비율보다 작으면 매출이 총계가 아니라 하위 항목이다. 자산이 가장 무거운
+# 업종(은행·보험)도 분기 매출이 총자산의 0.6% 이상이고(BHF 0.60%, BAC·GS 0.80%), 태그가 잘못 잡힌
+# 종목은 모두 0.3% 밑이었다(CPT 0.02%, FITB 0.07%, HBAN 0.18%, MTB 0.20%, 2023년 이후 분기 중앙값).
+REVENUE_TO_ASSETS_FLOOR = 0.004

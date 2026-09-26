@@ -52,6 +52,7 @@ UP = _COLORS.up
 DOWN = _COLORS.down
 from investment_agent.reporting.services.earnings import schedule as calendar_schedule
 from investment_agent.reporting.services.earnings.guidance import format_guidance_headline
+from investment_agent.reporting.services import financial_row
 from investment_agent.reporting.services.earnings import metrics as discord_metrics
 from investment_agent.reporting.services.earnings import valuation_history as discord_history
 from investment_agent.reporting.services.earnings.thresholds import grade as discord_grade
@@ -123,26 +124,8 @@ def _safe_discord_derived(
     ):
         derived["fcf"] = None
 
-    cash_parts = [
-        _number(row.get("cash_and_cash_equivalents")),
-        _number(row.get("short_term_investments")),
-    ]
-    present = [v for v in cash_parts if v is not None]
-    cash = sum(present) if present else None
-    total_debt = _number(row.get("total_debt_including_current"))
-    if total_debt is None:
-        debt_parts = [
-            _number(row.get(column))
-            for column in (
-                "short_term_debt",
-                "current_portion_of_long_term_debt",
-                "long_term_debt",
-                "operating_lease_current_debt_equivalent",
-                "operating_lease_non_current_debt_equivalent",
-            )
-        ]
-        present_parts = [value for value in debt_parts if value is not None]
-        total_debt = sum(present_parts) if present_parts else None
+    cash = financial_row.cash_and_equivalents(row)
+    total_debt = financial_row.total_debt(row)
     if cash is None or total_debt is None:
         derived["net_debt"] = None
     return derived
