@@ -336,6 +336,18 @@ def ytd_flow_rows(
     return _build_wide(cik, filing, candidates, concept_registry)
 
 
+def _residual(total: float, parts: list[float], column: str) -> float | None:
+    """누적값에서 앞 분기들을 뺀 나머지. 매출이 음수로 뒤집히면 입력이 서로 맞지 않는다.
+
+    연간·분기 매출이 모두 양수인데 차감 결과가 음수라면 분기와 연간이 같은 세그먼트를
+    가리키지 않는다(멤버 이름 뒤섞임·재분류). 그 값을 분기 매출로 저장하지 않는다.
+    """
+    value = total - sum(parts)
+    if column == "revenue" and value < 0 and total > 0 and all(part > 0 for part in parts):
+        return None
+    return value
+
+
 def derive_q4_rows(annual: list[dict], q1: list[dict], q2: list[dict], q3: list[dict]) -> list[dict]:
     """FY 핵심 지표에서 Q4 유량 지표를 파생한다.
 
@@ -387,8 +399,10 @@ def derive_q4_rows(annual: list[dict], q1: list[dict], q2: list[dict], q3: list[
             if annual_value is None or any(value is None for value in quarter_values):
                 out[column] = None
                 continue
-            out[column] = float(annual_value) - sum(float(value) for value in quarter_values)
-            any_value = True
+            out[column] = _residual(
+                float(annual_value), [float(value) for value in quarter_values], column
+            )
+            any_value = any_value or out[column] is not None
 
         if any_value:
             derived.append(out)
@@ -463,8 +477,10 @@ def derive_ytd_quarters(
             if ytd_value is None or any(value is None for value in prior_values):
                 out[column] = None
                 continue
-            out[column] = float(ytd_value) - sum(float(value) for value in prior_values)
-            any_value = True
+            out[column] = _residual(
+                float(ytd_value), [float(value) for value in prior_values], column
+            )
+            any_value = any_value or out[column] is not None
 
         if any_value:
             derived.append(out)

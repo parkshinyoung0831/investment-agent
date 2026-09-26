@@ -732,5 +732,58 @@ class DerivedQuartersCarryNoBalances(unittest.TestCase):
             self.assertIsNone(row[column], f"{column} must not be derived")
 
 
+class DerivedQuarterRevenueConsistency(unittest.TestCase):
+    """연간·분기 매출이 모두 양수인데 차감한 분기 매출이 음수면 저장하지 않는다.
+
+    분기 공시와 연간 공시의 멤버 이름이 뒤섞이면(값은 맞고 라벨만 바뀜) FY − ΣQ가
+    음수가 된다. 그 값이 파생 Q4 매출로 남으면 카드·전년비가 음수 매출을 보여준다.
+    """
+
+    def _seg(self, fiscal_period: str, revenue: float, profit: float | None = None) -> dict:
+        row = DerivedQuartersCarryNoBalances._seg(None, fiscal_period, revenue, None)
+        row["profit_loss"] = profit
+        row["profit_measure_kind"] = "operating"
+        return row
+
+    def test_negative_residual_from_positive_inputs_is_dropped(self) -> None:
+        derived = wide.derive_q4_rows(
+            annual=[self._seg("FY", 7054.0, 500.0)],
+            q1=[self._seg("Q1", 2337.0, 100.0)],
+            q2=[self._seg("Q2", 2834.0, 100.0)],
+            q3=[self._seg("Q3", 3549.0, 100.0)],
+        )
+        self.assertEqual(1, len(derived))
+        self.assertIsNone(derived[0]["revenue"])
+        self.assertAlmostEqual(200.0, derived[0]["profit_loss"])
+
+    def test_row_without_any_value_is_not_emitted(self) -> None:
+        derived = wide.derive_q4_rows(
+            annual=[self._seg("FY", 100.0)],
+            q1=[self._seg("Q1", 50.0)],
+            q2=[self._seg("Q2", 50.0)],
+            q3=[self._seg("Q3", 50.0)],
+        )
+        self.assertEqual([], derived)
+
+    def test_negative_profit_is_still_derived(self) -> None:
+        derived = wide.derive_q4_rows(
+            annual=[self._seg("FY", 400.0, 10.0)],
+            q1=[self._seg("Q1", 100.0, 20.0)],
+            q2=[self._seg("Q2", 100.0, 20.0)],
+            q3=[self._seg("Q3", 100.0, 20.0)],
+        )
+        self.assertAlmostEqual(100.0, derived[0]["revenue"])
+        self.assertAlmostEqual(-50.0, derived[0]["profit_loss"])
+
+    def test_elimination_member_with_negative_inputs_keeps_its_residual(self) -> None:
+        derived = wide.derive_q4_rows(
+            annual=[self._seg("FY", -400.0)],
+            q1=[self._seg("Q1", -100.0)],
+            q2=[self._seg("Q2", -100.0)],
+            q3=[self._seg("Q3", -100.0)],
+        )
+        self.assertAlmostEqual(-100.0, derived[0]["revenue"])
+
+
 if __name__ == "__main__":
     unittest.main()

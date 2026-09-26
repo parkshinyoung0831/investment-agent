@@ -11,6 +11,7 @@ import random
 import unittest
 
 from investment_agent.data.fundamentals.infrastructure.supabase.segment_metrics import (
+    _SNAPSHOT_METRIC_COLUMNS,
     _SNAPSHOT_METRICS,
     _select_snapshot,
 )
@@ -45,6 +46,30 @@ class SegmentSnapshotOrderTest(unittest.TestCase):
 
     def test_the_cut_keeps_the_declared_size(self) -> None:
         self.assertEqual(_SNAPSHOT_METRICS, len(self._members(_metrics())))
+
+
+class SegmentSnapshotScopeTest(unittest.TestCase):
+    """스냅샷은 공시가 직접 보고한 1차원 행만 담는다.
+
+    10-K accession에는 FY와 그것에서 파생한 Q4가 함께 있고, 교차표 행은 주 축 이름을
+    공유한다. 섞이면 같은 매출이 두 번 세어져 매매 후보의 집중도(HHI)가 틀린다.
+    """
+
+    def test_derived_and_cross_tab_rows_are_left_out(self) -> None:
+        rows = [
+            {"accession_no": "a1", "axis": "BusinessSegments", "member": "A",
+             "secondary_axis": None, "secondary_member": None, "is_derived": False, "revenue": 800},
+            {"accession_no": "a1", "axis": "BusinessSegments", "member": "A",
+             "secondary_axis": None, "secondary_member": None, "is_derived": True, "revenue": 200},
+            {"accession_no": "a1", "axis": "BusinessSegments", "member": "A",
+             "secondary_axis": "Geographical", "secondary_member": "US",
+             "is_derived": False, "revenue": 500},
+        ]
+        snapshot = _select_snapshot("AMD", FILINGS, rows)
+        self.assertEqual([800], [row["revenue"] for row in snapshot["metrics"]])
+
+    def test_snapshot_reads_the_derivation_flag(self) -> None:
+        self.assertIn("is_derived", _SNAPSHOT_METRIC_COLUMNS.split(","))
 
 
 if __name__ == "__main__":

@@ -557,7 +557,7 @@ FILING_CONTENT_SEGMENTS = "segments"
 #: 때와 묶어서 물었을 때가 달라지지 않는다.
 _SNAPSHOT_METRIC_COLUMNS = (
     "cik,fiscal_year,fiscal_period,period_end,accession_no,segment_type,"
-    "axis,member,secondary_axis,secondary_member,"
+    "axis,member,secondary_axis,secondary_member,is_derived,"
     "revenue,quality_status,coverage_ratio,"
     "profit_loss,profit_quality_status,assets,assets_quality_status"
 )
@@ -593,9 +593,15 @@ def _select_snapshot(ticker: str, filings: list[dict], metrics: list[dict]) -> d
     if not chosen:
         return {"filings": [], "metrics": []}
     accessions = {str(row["accession_no"]) for row in chosen}
+    # 공시가 직접 보고한 1차원 행만 담는다. 10-K accession에는 FY와 그것으로 파생한
+    # Q4가, 10-Q에는 주 축×보조 축 교차표가 같은 축 이름으로 함께 있어, 섞으면 같은
+    # 매출이 두 번 세어져 비중·집중도가 틀리고 상위 N개 자르기에서 1차원 행이 밀려난다.
     rows = [
         {**row, "ticker": str(ticker).upper()}
-        for row in metrics if str(row.get("accession_no")) in accessions
+        for row in metrics
+        if str(row.get("accession_no")) in accessions
+        and not row.get("is_derived")
+        and not row.get("secondary_axis")
     ]
     # 매출이 없는 행은 서로 동점이다. 순서를 매출 하나로만 정하면 상위 N개를
     # 자르는 자리에서 **조회 순서가 결과를 정한다** — 같은 종목을 따로 물었을
