@@ -210,10 +210,11 @@ class BackfillScopeTest(unittest.TestCase):
             [(filing, "0000000001")],
             source="backfill_companyfacts",
         )
-        repository.reconcile_wide_history.assert_called_once_with(
-            {"0000000001": "2026-06-30"},
-            date(2018, 1, 1),
-        )
+        repository.reconcile_wide_history.assert_called_once()
+        call = repository.reconcile_wide_history.call_args
+        self.assertEqual(({"0000000001": "2026-06-30"}, date(2018, 1, 1)), call.args)
+        # 이번 실행이 다시 쓰지 않은 행만 지우도록, 적재 직전 시각을 기준으로 넘긴다.
+        self.assertIsNotNone(call.kwargs["written_since"].tzinfo)
 
     def test_explicit_ticker_scope_never_scans_other_ciks(self) -> None:
         filing = FilingRef(
@@ -309,18 +310,19 @@ class FilingSchemaContractTest(unittest.TestCase):
 
         self.assertIn("CREATE TABLE IF NOT EXISTS fundamentals.filings", sql)
         self.assertIn("CREATE TABLE IF NOT EXISTS fundamentals.filing_processing", sql)
-        for column in ("status", "mapping_version", "source", "content_type"):
+        for column in ("status", "source", "content_type"):
             self.assertIn(column, sql)
         declaration = sql.split("CREATE TABLE IF NOT EXISTS fundamentals.filing_processing", 1)[1].split(");", 1)[0]
         self.assertNotIn("error_reason", declaration)
         self.assertIn("status IN ('parsed', 'empty', 'unsupported', 'superseded')", declaration)
-        self.assertIn("PRIMARY KEY (accession_no, content_type, mapping_version)", sql)
+        self.assertIn("PRIMARY KEY (accession_no, content_type)", sql)
+        self.assertNotIn("mapping_version", sql)
         self.assertNotIn("DROP COLUMN IF EXISTS error_reason", sql)
 
     def test_security_filing_view_does_not_reintroduce_operational_error_columns(self) -> None:
         sql = Path("db/postgres/v1/30_fundamentals.sql").read_text(encoding="utf-8")
-        # fundamentals에 둔 뷰는 버전 표에서 최신을 고르는 financials 하나뿐이다.
-        self.assertEqual(1, sql.count("CREATE OR REPLACE VIEW fundamentals."))
+        # 재무는 기간마다 한 행이라 fundamentals에는 최신을 고르는 뷰가 필요 없다.
+        self.assertEqual(0, sql.count("CREATE OR REPLACE VIEW fundamentals."))
         self.assertNotIn("error_reason", sql)
         self.assertIn("available_at timestamptz NOT NULL DEFAULT now()", sql)
         self.assertIn("updated_at      timestamptz NOT NULL DEFAULT now()", sql)

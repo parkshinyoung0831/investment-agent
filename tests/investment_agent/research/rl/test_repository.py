@@ -153,7 +153,7 @@ class RLRepositoryTest(unittest.TestCase):
         }]
         fake = _Supabase(rows={
             ("universe", "securities"): [{"ticker": "AAPL", "cik": "0000320193", "is_active_listing": True}],
-            ("fundamentals", "financial_versions"): versions,
+            ("fundamentals", "financials"): versions,
             ("fundamentals", "filings"): [{
                 "accession_no": "0000320193-26-000001",
                 "filing_date": "2026-07-30",
@@ -176,7 +176,7 @@ class RLRepositoryTest(unittest.TestCase):
             "available_at": "2026-07-30T20:00:00+00:00",
         }])
         self.assertIn(
-            ("fundamentals", "financial_versions", "in", ("cik", ["0000320193"]), {}),
+            ("fundamentals", "financials", "in", ("cik", ["0000320193"]), {}),
             fake.calls,
         )
 

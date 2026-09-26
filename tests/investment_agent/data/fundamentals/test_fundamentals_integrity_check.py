@@ -25,8 +25,6 @@ HEALTHY = {
     "last_filed_at": date(2026, 8, 25),
     "latest_financial_period_end": date(2026, 8, 2),
     "row_count": 18998,
-    "current_mapping_version": "test-current",
-    "stale_mapping_rows": 0,
     "missing_financial_tickers": [],
     "balance_checkable_rows": 13218,
     "balance_mismatch_rows": 319,
@@ -45,12 +43,10 @@ HEALTHY = {
         "eps_diluted_gaap": 70.0,
     },
     "derived_liability_rows": 5740,
-    "unknown_equity_scope_rows": 0,
     "segment_integrity": {
         "metric_rows": 105554,
         "metric_tickers": 498,
         "filing_rows": 15171,
-        "stale_mapping_filing_rows": 0,
         "tracked_without_filing_rows": 0,
         "valueless_metric_rows": 0,
         "unknown_classification_rows": 0,
@@ -98,15 +94,6 @@ class SchemaDrift(unittest.TestCase):
 
 
 class MappingRegression(unittest.TestCase):
-    def test_stale_policy_rows_are_an_error(self):
-        check = _run(stale_mapping_rows=12)["mapping_policy_current"]
-        self.assertEqual(check["severity"], ERROR)
-        self.assertEqual(check["detail"]["stale_rows"], 12)
-
-    def test_unknown_equity_scope_is_an_error(self):
-        check = _run(unknown_equity_scope_rows=1)["equity_scope"]
-        self.assertEqual(check["severity"], ERROR)
-
     def test_non_monotonic_fiscal_sequence_is_an_error(self):
         check = _run(fiscal_sequence={
             "non_monotonic_rows": 1,
@@ -139,10 +126,6 @@ class SegmentIntegrity(unittest.TestCase):
             _run(segment_integrity=None)["segment_integrity_available"]["severity"],
             ERROR,
         )
-
-    def test_stale_segment_mapping_provenance_is_an_error(self):
-        check = self._with_segment_error("stale_mapping_filing_rows")["segment_filing_state"]
-        self.assertEqual(check["severity"], ERROR)
 
     def test_tracked_ticker_without_state_is_an_error(self):
         check = self._with_segment_error("tracked_without_filing_rows")[
@@ -210,10 +193,10 @@ class StalenessChecks(unittest.TestCase):
     def test_empty_table_is_an_error(self):
         self.assertEqual(_run(last_filed_at=None)["collection_stalled"]["severity"], ERROR)
 
-    def test_frozen_financial_versions_is_an_error(self):
+    def test_frozen_financials_is_an_error(self):
         """원장 최신 기간이 멈추면 화면 파생값만으로는 알 수 없다."""
         self.assertEqual(
-            _run(latest_financial_period_end=date(2026, 1, 31))["financial_versions_stale"]["severity"], ERROR)
+            _run(latest_financial_period_end=date(2026, 1, 31))["financials_stale"]["severity"], ERROR)
 
 
 class BalanceIdentityBaseline(unittest.TestCase):

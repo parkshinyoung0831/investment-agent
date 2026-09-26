@@ -118,8 +118,6 @@ def segment_filing_row(
     source: str = "daily_xbrl",
 ) -> dict:
     """세그먼트 공시 처리 상태를 저장소 행으로 만든다."""
-    from investment_agent.data.fundamentals.domain.taxonomy.segment_axes import SEGMENT_MAPPING_VERSION
-
     return {
         "cik": str(cik).zfill(10),
         "accession_no": filing["accession_no"],
@@ -129,7 +127,6 @@ def segment_filing_row(
         "status": status or (
             "parsed" if segment_rows_count else "unsupported" if facts_count else "empty"
         ),
-        "mapping_version": SEGMENT_MAPPING_VERSION,
         "source": source,
         "facts_count": facts_count,
         "rows_count": segment_rows_count,

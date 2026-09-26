@@ -6,7 +6,6 @@ from datetime import date
 from investment_agent.platform.clock import us_market_today
 from investment_agent.platform.logging import get_logger
 from investment_agent.platform.db.postgres import sb, select_all_paged, select_paged_in_chunks
-from investment_agent.data.fundamentals.domain.taxonomy import gaap_concepts, segment_axes
 from investment_agent.data.fundamentals.domain.taxonomy.financial_columns import (
     CORE_COLUMNS,
     PERSISTED_METADATA_COLUMNS,
@@ -80,12 +79,6 @@ def collect_integrity_facts() -> dict:
         sb.schema(SCHEMA_FUNDAMENTALS).table(T_FINANCIALS)
         .select("cik", count="exact").limit(1).execute().count or 0
     )
-    current_mapping_rows = (
-        sb.schema(SCHEMA_FUNDAMENTALS).table(T_FINANCIALS)
-        .select("cik", count="exact")
-        .eq("mapping_version", gaap_concepts.SEMANTIC_POLICY_VERSION)
-        .limit(1).execute().count or 0
-    )
     securities = select_all_paged(
         lambda: sb.schema(SCHEMA_UNIVERSE).table(T_SECURITIES)
         .select("security_id,ticker,cik").eq("is_tracked", True).not_.is_("cik", "null"),
@@ -124,21 +117,11 @@ def collect_integrity_facts() -> dict:
             .limit(1).execute().count or 0
         )
 
-    unknown_equity_scope_rows = 0
-    if "common_equity_scope" in db_columns:
-        unknown_equity_scope_rows = (
-            sb.schema(SCHEMA_FUNDAMENTALS).table(T_FINANCIALS)
-            .select("cik", count="exact")
-            .not_.is_("common_equity", "null")
-            .eq("common_equity_scope", "unknown")
-            .limit(1).execute().count or 0
-        )
-
     financial_rows = select_all_paged(
         lambda: sb.schema(SCHEMA_FUNDAMENTALS).table(T_FINANCIALS)
         .select("cik,accession_no,period_end,fiscal_year,fiscal_period,assets,liabilities,common_equity,"
                 "minority_interest_balance,mezzanine_equity,preferred_stock,"
-                "common_equity_scope,is_liabilities_derived,mapping_version"),
+                "is_liabilities_derived"),
         order_by="cik,period_end,accession_no",
     )
     checkable = mismatch = 0
@@ -193,8 +176,8 @@ def collect_integrity_facts() -> dict:
     )
     processing_rows = select_all_paged(
         lambda: sb.schema(SCHEMA_FUNDAMENTALS).table(T_FILING_PROCESSING)
-        .select("accession_no,content_type,mapping_version,status"),
-        order_by="accession_no,content_type,mapping_version",
+        .select("accession_no,content_type,status"),
+        order_by="accession_no,content_type",
     )
     processing_accessions = sorted({
         str(row.get("accession_no") or "") for row in processing_rows
@@ -214,7 +197,6 @@ def collect_integrity_facts() -> dict:
     segment_processing = {
         str(row["accession_no"]): row for row in processing_rows
         if row.get("content_type") == "segments"
-        and row.get("mapping_version") == segment_axes.SEGMENT_MAPPING_VERSION
     }
     metric_ciks = {
         str(row.get("cik") or "").zfill(10) for row in segment_rows
@@ -224,7 +206,6 @@ def collect_integrity_facts() -> dict:
         filing_cik_by_accession[str(row["accession_no"])]
         for row in processing_rows
         if row.get("content_type") == "segments"
-        and row.get("mapping_version") == segment_axes.SEGMENT_MAPPING_VERSION
         and row.get("status") in {"parsed", "empty", "unsupported"}
         and str(row.get("accession_no") or "") in filing_cik_by_accession
     }
@@ -255,11 +236,6 @@ def collect_integrity_facts() -> dict:
     segment_integrity = {
         "metric_rows": len(segment_rows),
         "filing_rows": len(segment_processing),
-        "stale_mapping_filing_rows": sum(
-            1 for row in processing_rows
-            if row.get("content_type") == "segments"
-            and row.get("mapping_version") != segment_axes.SEGMENT_MAPPING_VERSION
-        ),
         "tracked_without_filing_rows": len(missing_segment_state_tickers),
         "tracked_without_segment_state_tickers": missing_segment_state_tickers,
         # 처방이 다른 두 묶음. 합은 위 목록과 같다.
@@ -319,8 +295,6 @@ def collect_integrity_facts() -> dict:
         "last_filed_at": _as_date(newest_filing[0]["filing_date"]) if newest_filing else None,
         "latest_financial_period_end": _as_date(mv_latest[0]["period_end"]) if mv_latest else None,
         "row_count": total,
-        "current_mapping_version": gaap_concepts.SEMANTIC_POLICY_VERSION,
-        "stale_mapping_rows": max(total - current_mapping_rows, 0),
         "missing_financial_tickers": missing_financial_tickers,
         "balance_checkable_rows": checkable,
         "balance_mismatch_rows": mismatch,
@@ -328,7 +302,6 @@ def collect_integrity_facts() -> dict:
         "fill_rates": fill_rates,
         "fill_floors": FILL_FLOORS,
         "derived_liability_rows": derived_liability_rows,
-        "unknown_equity_scope_rows": unknown_equity_scope_rows,
         "segment_integrity": segment_integrity,
         "schedule_rows": len(schedules),
         "schedule_unknown_session": unknown,

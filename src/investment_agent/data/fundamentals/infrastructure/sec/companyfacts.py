@@ -569,6 +569,11 @@ def _filing_focus_plan(
         report_date = str(filing.report_date or "")
         if focus is None or not report_date:
             continue
+        if str(filing.form_type or "").endswith("/A"):
+            # 정정 공시는 원본을 대신하지 않고 같은 회계기간에 병합된다. 컬럼 선택이
+            # 최신 공시의 값을 고르므로 정정이 보고한 컬럼만 덮이고 나머지는 원본 값이 남는다.
+            accepted[filing.accession_no] = focus
+            continue
         if focus in used_fiscal_keys or report_date in used_period_ends:
             superseded.add(filing.accession_no)
             continue
@@ -590,7 +595,10 @@ def superseded_filing_accessions(
     document: dict[str, Any],
     filings: list[Filing],
 ) -> set[str]:
-    """같은 CIK 안의 새 회계력이 대체하는 이전 accession을 반환한다."""
+    """같은 CIK 안에서 같은 회계기간을 다른 정기공시가 대신 보고하는 accession을 반환한다.
+
+    정정 공시(/A)와 그 원본은 서로를 대신하지 않는다 — 둘은 한 기간으로 병합된다.
+    """
     return _filing_focus_plan(document, filings)[1]
 
 

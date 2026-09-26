@@ -1,4 +1,4 @@
-"""정정이 원본을 덮지 않고, as-of 조회가 그때의 값을 준다."""
+"""재무는 기간마다 한 행이고, 과거 시점 조회는 그 기간을 처음 공개한 공시일로 자른다."""
 from __future__ import annotations
 
 import unittest
@@ -6,6 +6,7 @@ from datetime import date, datetime, timezone
 
 from investment_agent.data.fundamentals.infrastructure.supabase.expectations import (
     _project_fundamental_rows,
+    disclosures_by_period,
 )
 from investment_agent.data.fundamentals.repository import (
     SCHEMA,
@@ -19,79 +20,57 @@ CIK = "0000320193"
 ORIGINAL = "0000320193-25-000001"
 RESTATED = "0000320193-25-000009"
 
-
-def _version(accession: str, revenue: float, *, ingested_at: str) -> dict:
-    return {"cik": CIK, "period_end": "2025-12-31", "fiscal_period": "Q4", "fiscal_year": 2025,
-            "accession_no": accession, "mapping_version": "v1", "revenue": revenue,
-            "ingested_at": ingested_at}
-
-
-PROVENANCE = {
-    ORIGINAL: {"accession_no": ORIGINAL, "filing_date": "2026-02-01", "form_type": "10-K",
-               "available_at": "2026-02-02T00:00:00+00:00"},
-    RESTATED: {"accession_no": RESTATED, "filing_date": "2026-06-01", "form_type": "10-K/A",
-               "available_at": "2026-06-03T00:00:00+00:00"},
-}
-VERSIONS = [
-    _version(ORIGINAL, 100.0, ingested_at="2026-02-02T00:00:00+00:00"),
-    _version(RESTATED, 95.0, ingested_at="2026-06-03T00:00:00+00:00"),
+FILINGS = [
+    {"accession_no": ORIGINAL, "cik": CIK, "filing_date": "2026-02-01", "form_type": "10-K",
+     "report_date": "2025-12-31", "available_at": "2026-02-02T00:00:00+00:00"},
+    {"accession_no": RESTATED, "cik": CIK, "filing_date": "2026-06-01", "form_type": "10-K/A",
+     "report_date": "2025-12-31", "available_at": "2026-06-03T00:00:00+00:00"},
 ]
+# 정정 공시가 값을 덮어쓴 뒤의 한 행.
+ROW = {"cik": CIK, "period_end": "2025-12-31", "fiscal_period": "Q4", "fiscal_year": 2025,
+       "accession_no": RESTATED, "revenue": 95.0, "ingested_at": "2026-06-03T00:00:00+00:00"}
 
 
-def _as_of(when: datetime, *, include_available_at: bool = True) -> list[dict]:
-    return _project_fundamental_rows("AAPL", VERSIONS, PROVENANCE, when,
-                                     include_available_at=include_available_at, limit=12)
+def _as_of(when: datetime, *, include_available_at: bool = True, filings=FILINGS) -> list[dict]:
+    return _project_fundamental_rows(
+        "AAPL", [ROW], disclosures_by_period([ROW], filings), when,
+        include_available_at=include_available_at, limit=12,
+    )
 
 
-class VersionSelectionTest(unittest.TestCase):
-    """정정 공시가 원본을 지우지 않고, cutoff마다 그때 알 수 있던 버전 하나를 고른다."""
+class PeriodDisclosureTest(unittest.TestCase):
+    """정정 전후 어느 시점이든 기간은 사라지지 않고, 처음 공개된 날부터 보인다."""
 
-    def test_before_the_restatement_the_original_value_is_returned(self) -> None:
+    def test_between_the_original_and_the_restatement_the_period_is_visible(self) -> None:
         rows = _as_of(datetime(2026, 3, 1, tzinfo=timezone.utc))
-        self.assertEqual([(ORIGINAL, 100.0)], [(row["accession_no"], row["revenue"]) for row in rows])
+        self.assertEqual([(RESTATED, 95.0, "2026-02-01")],
+                         [(row["accession_no"], row["revenue"], row["filed_at"]) for row in rows])
 
-    def test_after_the_restatement_only_the_restated_value_is_returned(self) -> None:
-        rows = _as_of(datetime(2026, 7, 1, tzinfo=timezone.utc))
-        self.assertEqual([(RESTATED, 95.0)], [(row["accession_no"], row["revenue"]) for row in rows])
+    def test_the_latest_filing_names_the_form_type(self) -> None:
+        self.assertEqual("10-K/A", _as_of(datetime(2026, 7, 1, tzinfo=timezone.utc))[0]["form_type"])
 
-    def test_before_anything_arrived_is_empty(self) -> None:
+    def test_before_the_first_disclosure_is_empty(self) -> None:
         self.assertEqual([], _as_of(datetime(2026, 1, 1, tzinfo=timezone.utc)))
 
-    def test_operational_replay_waits_until_we_actually_had_the_filing(self) -> None:
-        """SEC 제출일(6/1)이 지났어도 우리가 받은 것은 6/3이다 — 운영 재현은 원본을 쓴다."""
-        versions = [VERSIONS[0], {**VERSIONS[1], "ingested_at": None}]
-        when = datetime(2026, 6, 2, 12, tzinfo=timezone.utc)
-
-        def pick(include: bool) -> list[str]:
-            return [row["accession_no"] for row in _project_fundamental_rows(
-                "AAPL", versions, PROVENANCE, when, include_available_at=include, limit=12)]
-
-        self.assertEqual([ORIGINAL], pick(True))
-        self.assertEqual([RESTATED], pick(False))
+    def test_operational_replay_waits_until_we_actually_had_the_first_filing(self) -> None:
+        """SEC 제출일(2/1)이 지났어도 우리가 받은 것은 2/2다."""
+        when = datetime(2026, 2, 1, 12, tzinfo=timezone.utc)
+        self.assertEqual([], _as_of(when, include_available_at=True))
 
     def test_source_replay_waits_for_the_end_of_the_filing_day_in_new_york(self) -> None:
-        """6/1 제출 공시는 6/2 00:00 UTC(뉴욕 6/1 저녁)에는 아직 쓰지 않는다 — 장 마감 뒤 공시일 수 있다."""
-        versions = [VERSIONS[0], {**VERSIONS[1], "ingested_at": None}]
+        """2/1 제출 공시는 2/2 05:00 UTC(뉴욕 2/2 0시) 전에는 쓰지 않는다 — 장 마감 뒤 공시일 수 있다."""
+        self.assertEqual([], _as_of(datetime(2026, 2, 2, 4, 59, tzinfo=timezone.utc),
+                                    include_available_at=False))
+        self.assertEqual(1, len(_as_of(datetime(2026, 2, 2, 5, 0, tzinfo=timezone.utc),
+                                       include_available_at=False)))
 
-        def pick(when: datetime) -> list[str]:
-            return [row["accession_no"] for row in _project_fundamental_rows(
-                "AAPL", versions, PROVENANCE, when, include_available_at=False, limit=12)]
+    def test_without_the_original_filing_the_restatement_date_bounds_the_period(self) -> None:
+        rows = _as_of(datetime(2026, 3, 1, tzinfo=timezone.utc), filings=[FILINGS[1]])
+        self.assertEqual([], rows)
 
-        self.assertEqual([ORIGINAL], pick(datetime(2026, 6, 2, 3, 59, tzinfo=timezone.utc)))
-        self.assertEqual([RESTATED], pick(datetime(2026, 6, 2, 4, 0, tzinfo=timezone.utc)))
-
-    def test_operational_replay_also_waits_until_the_version_was_stored(self) -> None:
-        """공시는 받았어도 재처리한 버전 행이 cutoff 뒤에 생겼으면 그때는 몰랐던 값이다."""
-        provenance = {**PROVENANCE, RESTATED: {**PROVENANCE[RESTATED], "available_at": "2026-06-01T12:00:00+00:00"}}
-        when = datetime(2026, 6, 2, tzinfo=timezone.utc)
-        rows = _project_fundamental_rows("AAPL", VERSIONS, provenance, when, include_available_at=True, limit=12)
-        self.assertEqual([ORIGINAL], [row["accession_no"] for row in rows])
-
-    def test_a_version_without_its_filing_is_an_error(self) -> None:
+    def test_a_row_without_its_filing_is_an_error(self) -> None:
         with self.assertRaises(ValueError):
-            _project_fundamental_rows("AAPL", VERSIONS, {ORIGINAL: PROVENANCE[ORIGINAL]},
-                                      datetime(2026, 7, 1, tzinfo=timezone.utc),
-                                      include_available_at=True, limit=12)
+            disclosures_by_period([ROW], [FILINGS[0]])
 
 
 class ScheduleSnapshotsTest(unittest.TestCase):

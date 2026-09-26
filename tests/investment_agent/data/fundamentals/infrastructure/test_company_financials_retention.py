@@ -26,7 +26,7 @@ class OperationalRetentionTest(unittest.TestCase):
         self.assertEqual(log.warning.call_count, 3)
 
     def test_core_upsert_carries_source_provenance_without_memory_manifest(self):
-        """버전 행은 공시(accession_no)를 키로 갖는다. 제출일은 filings가 소유하므로 싣지 않는다."""
+        """제출일은 filings가 소유하므로 싣지 않는다. 쓴 시각(ingested_at)은 매번 싣는다."""
         row = {
             "cik": "0000000001",
             "period_end": "2026-03-31",
@@ -34,7 +34,6 @@ class OperationalRetentionTest(unittest.TestCase):
             "filing_date": "2026-05-01",
             "fiscal_year": 2026,
             "fiscal_period": "Q1",
-            "mapping_version": "v1",
             "revenue": 100,
             "source_manifest": {"revenue": {"raw_tag": "Revenues"}},
         }
@@ -43,10 +42,13 @@ class OperationalRetentionTest(unittest.TestCase):
         client = mock.MagicMock()
         client.schema.return_value = schema
 
-        with mock.patch.object(company_financials, "sb", client):
+        with mock.patch.object(company_financials, "sb", client), mock.patch.object(
+            company_financials, "select_paged_in_chunks", return_value=[]
+        ):
             self.assertEqual(company_financials.upsert_core_wide([row]), 1)
 
         payload = schema.table.return_value.upsert.call_args.args[0]
+        self.assertTrue(payload[0].pop("ingested_at"))
         self.assertEqual(
             payload,
             [{
@@ -55,7 +57,6 @@ class OperationalRetentionTest(unittest.TestCase):
                 "accession_no": "0000000001-26-000001",
                 "fiscal_year": 2026,
                 "fiscal_period": "Q1",
-                "mapping_version": "v1",
                 "revenue": 100,
             }],
         )

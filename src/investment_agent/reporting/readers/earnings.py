@@ -122,29 +122,28 @@ def _attach_entity_profiles(gateway: Any, rows: list[dict[str, Any]]) -> list[di
 
 
 _FINANCIAL_COLUMNS = (
-    "cik,fiscal_year,fiscal_period,accession_no,filing_date,period_end,"
+    "cik,fiscal_year,fiscal_period,accession_no,period_end,"
     "revenue,cost_of_goods_and_services_sold,gross_profit,"
     "research_and_development_expenses,selling_general_and_admin_expenses,"
     "operating_income_loss,interest_expense,"
     "pretax_income_loss,income_taxes,net_income,minority_interest_income,"
     "net_income_to_common_shareholders,"
-    "eps_basic_gaap,eps_diluted_gaap,dividends_declared_per_share,"
+    "eps_basic_gaap,eps_diluted_gaap,"
     "assets,current_assets_total,cash_and_cash_equivalents,short_term_investments,"
     "trade_receivables,inventories,property_plant_equipment_net,goodwill,"
-    "intangible_assets_excluding_goodwill,operating_lease_right_of_use_asset,"
+    "intangible_assets_excluding_goodwill,"
     "liabilities,current_liabilities_total,"
     "trade_payables,short_term_debt,current_portion_of_long_term_debt,long_term_debt,"
     "total_debt_including_current,common_equity,minority_interest_balance,"
     "preferred_stock,retained_earnings,net_cash_from_operating_activities,"
     "net_cash_from_investing_activities,net_cash_from_financing_activities,"
     "depreciation_amortization_cf,stock_based_compensation_cf,"
-    "capital_expenses,acquisitions_net_of_cash,stock_repurchase_payments,"
-    "common_dividends_paid,long_term_debt_issued,long_term_debt_repaid,"
+    "capital_expenses,stock_repurchase_payments,common_dividends_paid,"
     "operating_lease_current_debt_equivalent,"
     "operating_lease_non_current_debt_equivalent,shares_average,"
     "shares_fully_diluted_average,net_interest_income,provision_for_credit_losses,"
-    "net_loans_and_leases,total_deposits,common_equity_scope,is_liabilities_derived,"
-    "mezzanine_equity,preferred_stock,mapping_version,ingested_at"
+    "net_loans_and_leases,total_deposits,is_liabilities_derived,"
+    "mezzanine_equity,ingested_at"
 )
 
 
@@ -157,7 +156,7 @@ _CONSENSUS_COLUMNS = (
 
 
 _FILING_PROCESSING_COLUMNS = (
-    "accession_no,content_type,mapping_version,status,facts_count,rows_count,updated_at"
+    "accession_no,content_type,status,facts_count,rows_count,updated_at"
 )
 
 

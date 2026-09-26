@@ -13,6 +13,7 @@ from investment_agent.platform.db.postgres import Database
 
 SCHEMA = "fundamentals"
 
+T_FILINGS = "filings"
 T_FINANCIALS = "financials"
 T_ESTIMATES = "earnings_estimates"
 T_SCHEDULE = "earnings_schedule_versions"
@@ -78,18 +79,30 @@ class FundamentalsRepository:
         """재무 기간과 제출일을 ticker reader가 작년 비교에 사용할 모양으로 돌려준다."""
         if not ciks:
             return []
-        versions = self._db.select_in_chunks(
+        periods = self._db.select_in_chunks(
             schema=SCHEMA,
             table=T_FINANCIALS,
-            columns="cik,fiscal_year,fiscal_period,period_end,accession_no,filing_date",
+            columns="cik,fiscal_year,fiscal_period,period_end,accession_no",
             filter_column="cik",
             values=list(ciks),
             order_by="cik,period_end",
         )
+        accessions = sorted({str(row["accession_no"]) for row in periods})
+        filed = {
+            str(row["accession_no"]): row.get("filing_date")
+            for row in self._db.select_in_chunks(
+                schema=SCHEMA,
+                table=T_FILINGS,
+                columns="accession_no,filing_date",
+                filter_column="accession_no",
+                values=accessions,
+                order_by="accession_no",
+            )
+        } if accessions else {}
         return [
-            {**row, "filed_at": row.get("filing_date")}
-            for row in versions
-            if row.get("filing_date")
+            {**row, "filing_date": filed[key], "filed_at": filed[key]}
+            for row in periods
+            if filed.get(key := str(row["accession_no"]))
         ]
 
 
@@ -97,6 +110,7 @@ __all__ = [
     "FundamentalsRepository",
     "SCHEMA",
     "T_ESTIMATES",
+    "T_FILINGS",
     "T_FINANCIALS",
     "T_SCHEDULE",
 ]

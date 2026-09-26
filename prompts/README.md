@@ -31,7 +31,7 @@ grep -rn "<옛_컬럼명>\|<옛_테이블명>" prompts/
 
 특히 이런 변경이 프롬프트를 조용히 깨뜨립니다:
 
-- 테이블 이름 변경 (`fundamentals.financial_versions`, `macro.market_observations` …)
+- 테이블 이름 변경 (`fundamentals.financials`, `macro.market_observations` …)
 - 컬럼 이름 변경 (예: `macro.market_observations.obs_date`)
 - 저장소 이동 — Supabase에 있던 것이 로컬 SQLite·DuckDB로 옮겨가면 이름이 남아 있어도
   그 대화에서는 **조회 자체가 불가능**해진다

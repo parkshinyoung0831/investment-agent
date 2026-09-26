@@ -1,4 +1,4 @@
-"""financial_versions 한 행에서 값을 읽는 순수 함수.
+"""financials 한 행에서 값을 읽는 순수 함수.
 
 DB에 접근하지 않으므로 read model 계산과 카드 계산 양쪽에서 같이 쓴다. 계산의 owner는
 reporting이고 알림 카드는 이것을 소비한다. `net_debt`·`cash_and_equivalents`도 여기가

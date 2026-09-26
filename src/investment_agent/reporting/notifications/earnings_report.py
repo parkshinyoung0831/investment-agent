@@ -17,6 +17,7 @@ from investment_agent.config import load_config
 from investment_agent.platform.db.postgres import Database
 from investment_agent.platform.logging import get_logger
 from investment_agent.data.fundamentals.domain.periods import are_consecutive_quarters
+from investment_agent.data.fundamentals.domain.services.balance_identity import non_liability_claims
 from investment_agent.data.market.domain.actions import merge_corporate_actions
 from investment_agent.data.market.repository import MarketRepository
 from investment_agent.data.universe.repository import UniverseRepository
@@ -85,15 +86,15 @@ def watchlist_members() -> list[dict]:
 
 
 _FINANCIAL_COLUMNS = (
-    "cik,period_end,accession_no,filing_date,fiscal_year,fiscal_period,revenue,"
+    "cik,period_end,accession_no,fiscal_year,fiscal_period,revenue,"
     "operating_income_loss,net_income,eps_diluted_gaap,assets,liabilities,"
-    "is_liabilities_derived,common_equity,common_equity_scope,minority_interest_balance,"
+    "is_liabilities_derived,common_equity,minority_interest_balance,"
     "mezzanine_equity,preferred_stock,net_cash_from_operating_activities,"
     "net_cash_from_investing_activities,net_cash_from_financing_activities,"
     "capital_expenses,cash_and_cash_equivalents,total_debt_including_current,"
     "short_term_debt,current_portion_of_long_term_debt,long_term_debt,"
     "operating_lease_current_debt_equivalent,operating_lease_non_current_debt_equivalent,"
-    "common_dividends_paid,shares_fully_diluted_average,shares_average,mapping_version,"
+    "common_dividends_paid,shares_fully_diluted_average,shares_average,"
     # 손익 구조의 매출총이익·세전이익, 현금흐름 브릿지의 감가상각·주식보상,
     # 유동성 차트의 유동자산/유동부채, 운전자본 회전의 매출채권·재고·매입채무,
     # Altman Z의 이익잉여금. 전부 financials가 선언·적재하고 있는데 읽지 않아
@@ -164,21 +165,19 @@ def anomaly_keys(tickers: list[str]) -> set[tuple[str, int, str]]:
     for row in rows:
         assets = f(row.get("assets"))
         liabilities = f(row.get("liabilities"))
-        equity = f(row.get("common_equity"))
-        scope = str(row.get("common_equity_scope") or "unknown")
+        claims_without_liabilities = non_liability_claims({
+            name: f(row.get(name))
+            for name in ("common_equity", "preferred_stock", "minority_interest_balance",
+                         "mezzanine_equity")
+        })
         if (
             assets in (None, 0.0)
             or liabilities is None
-            or equity is None
-            or scope == "unknown"
+            or claims_without_liabilities is None
             or bool(row.get("is_liabilities_derived"))
         ):
             continue
-        claims = liabilities + equity + (f(row.get("mezzanine_equity")) or 0.0)
-        if scope != "stockholders_including_nci":
-            claims += f(row.get("minority_interest_balance")) or 0.0
-        if scope == "common":
-            claims += f(row.get("preferred_stock")) or 0.0
+        claims = liabilities + claims_without_liabilities
         if abs(assets - claims) / abs(assets) <= 0.01:
             continue
         try:
@@ -423,7 +422,7 @@ def load_segment_highlights(
             filter_column="accession_no",
             values=accessions,
             configure=lambda query: query.eq("content_type", "segments"),
-            order_by="accession_no,mapping_version",
+            order_by="accession_no",
         ):
             for ticker in tickers:
                 states[(ticker, str(state["accession_no"]))] = state

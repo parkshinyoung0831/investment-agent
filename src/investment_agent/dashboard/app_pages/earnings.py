@@ -177,7 +177,7 @@ def _historical_valuation(
 ) -> dict[str, Any] | None:
     """Discord와 같은 available-date as-of 규칙으로 역사 밸류를 계산한다.
 
-    한 분기 스냅샷은 financial_versions와 market 원장에서 모인다. TTM·배수는
+    한 분기 스냅샷은 financials와 market 원장에서 모인다. TTM·배수는
     현재 v1 reporting view에 없으므로 추정하지 않고 비워 둔다.
     공시일(`filed_at`)을 모르는 분기는 as-of 기준이 없으므로 건너뛴다.
     """
@@ -371,7 +371,7 @@ def _render_discord_full(
         reverse=True,
     )
     if not ticker_core:
-        st.info(f"{ticker}의 Discord 카드 기준 financial_versions 행이 없습니다.")
+        st.info(f"{ticker}의 Discord 카드 기준 financials 행이 없습니다.")
         return
 
     event_index = st.selectbox(
@@ -954,7 +954,6 @@ def _render_discord_full(
         filing_state = filing_states.get((ticker, accession_no), {})
         st.caption(
             f"segment filing · {segment_state.get('status') or filing_state.get('status') or '상태 없음'} · "
-            f"mapping {filing_state.get('mapping_version') or '—'} · "
             f"updated {filing_state.get('updated_at') or '—'}"
         )
         axes = list(segment_state.get("axes") or [])
@@ -1040,7 +1039,7 @@ def _render_growth(rows: list[dict[str, Any]], *, ticker: str) -> None:
 
     quarters = quarter_growth(rows)
     if not quarters:
-        st.info(f"{ticker}의 분기 financial_versions 행이 없습니다.")
+        st.info(f"{ticker}의 분기 financials 행이 없습니다.")
         return
     latest = quarters[-1]
     with st.container(horizontal=True, gap="small"):
@@ -1060,7 +1059,7 @@ def _render_growth(rows: list[dict[str, Any]], *, ticker: str) -> None:
         SOURCE_DB,
         SOURCE_CALC,
         observed_at=latest.get("period_end"),
-        detail="fundamentals.financial_versions 전년 동기 대비 · 전년 행이 없으면 —로 남긴다",
+        detail="fundamentals.financials 전년 동기 대비 · 전년 행이 없으면 —로 남긴다",
     )
 
     metric_labels = {
@@ -1106,12 +1105,12 @@ def _render_growth(rows: list[dict[str, Any]], *, ticker: str) -> None:
 
 
 def _render_industry_specific(rows: list[dict[str, Any]], *, ticker: str) -> None:
-    """financial_versions에 저장된 업종 특수 계정. Discord 카드에는 아예 없는 데이터다."""
+    """financials에 저장된 업종 특수 계정. Discord 카드에는 아예 없는 데이터다."""
 
     identity = ("ticker", "fiscal_year", "fiscal_period", "accession_no", "form_type",
-                "period_end", "filed_at", "mapping_version", "ingested_at")
+                "period_end", "filed_at", "ingested_at")
     if not rows:
-        st.info(f"{ticker}의 fundamentals.financial_versions 행이 없습니다.")
+        st.info(f"{ticker}의 fundamentals.financials 행이 없습니다.")
         return
     columns = _non_empty_columns(rows, identity)
     if not columns:
@@ -1162,7 +1161,7 @@ def _render_industry_specific(rows: list[dict[str, Any]], *, ticker: str) -> Non
     source_note(
         SOURCE_DB,
         observed_at=ordered[-1].get("ingested_at") or ordered[-1].get("filed_at"),
-        detail="fundamentals.financial_versions · 종목이 실제로 보고한 계정만 컬럼으로 남김",
+        detail="fundamentals.financials · 종목이 실제로 보고한 계정만 컬럼으로 남김",
     )
 
 
@@ -1381,7 +1380,6 @@ def _render_all_segment_axes(
             state = filing_status.get(accession_no, {})
             st.caption(
                 f"accession_no {accession_no or '—'} · 상태 {state.get('status') or '기록 없음'} · "
-                f"mapping {state.get('mapping_version') or '—'} · "
                 f"updated {state.get('updated_at') or '—'}"
             )
         revenue_points = [
@@ -1564,7 +1562,6 @@ def _render_collection_audit(
                     "accession_no": row.get("accession_no"),
                     "facts": row.get("facts_count"),
                     "rows": row.get("rows_count"),
-                    "mapping": row.get("mapping_version"),
                     "Discord 발송": "예" if str(row.get("accession_no")) in sent_accessions else "아니오",
                     "updated": row.get("updated_at"),
                 }
@@ -2050,7 +2047,7 @@ elif view == "발표 예정":
                 SOURCE_CALC,
                 observed_at=selected.get("snapshot_date"),
                 detail=(
-                    "earnings_estimates(최신 관측) + financial_versions + universe entities/securities · "
+                    "earnings_estimates(최신 관측) + financials + universe entities/securities · "
                     "발표 예정일 표는 현재 스키마에 없음"
                 ),
             )
@@ -2159,11 +2156,11 @@ elif view == "발표 결과":
                 )
                 if not matching_core and core_candidates:
                     st.warning(
-                        "데이터 연결 실패 · 같은 회계기간의 financial_versions 행은 있지만 공시일이 정확히 "
+                        "데이터 연결 실패 · 같은 회계기간의 financials 행은 있지만 공시일이 정확히 "
                         "일치하지 않아 매출·provenance를 결합하지 않았습니다."
                     )
                 elif not matching_core:
-                    st.warning("데이터 없음 · ticker/FY/period/period_end/filed_at가 모두 일치하는 financial_versions 행이 없습니다.")
+                    st.warning("데이터 없음 · ticker/FY/period/period_end/filed_at가 모두 일치하는 financials 행이 없습니다.")
                 if snapshot_age is None:
                     st.warning("데이터 품질 · 컨센서스 기준일과 공시일의 시점 차이를 확인할 수 없습니다.")
                 elif snapshot_age <= 0:
@@ -2179,7 +2176,7 @@ elif view == "발표 결과":
                     st.caption(
                         f"데이터 품질 · 공시 {snapshot_age}일 전의 컨센서스 스냅샷으로 매출을 대조"
                     )
-                source_note(SOURCE_DB, SOURCE_CALC, observed_at=selected.get("filed_at"), detail="earnings_estimates(snapshot_date < filed_at) + financial_versions")
+                source_note(SOURCE_DB, SOURCE_CALC, observed_at=selected.get("filed_at"), detail="earnings_estimates(snapshot_date < filed_at) + financials")
 
             # 분기별 어닝 서프라이즈 트랙 레코드 (과거 분기 추이)
             st.space("medium")
@@ -2260,7 +2257,7 @@ elif view == "발표 결과":
                 source_note(
                     SOURCE_DB,
                     SOURCE_CALC,
-                    detail="earnings_estimates(공시일 이전) + financial_versions 분기별 결합",
+                    detail="earnings_estimates(공시일 이전) + financials 분기별 결합",
                 )
 
 elif view == "재무 추이":
@@ -2268,7 +2265,7 @@ elif view == "재무 추이":
     if ticker:
         ticker_core = _ticker_rows(core_rows, ticker)
         if not ticker_core:
-            st.info(f"{ticker}의 실제 financial_versions 재무 데이터가 없습니다.")
+            st.info(f"{ticker}의 실제 financials 재무 데이터가 없습니다.")
         else:
             history = pd.DataFrame(ticker_core)
             if "period_end" in history:
@@ -2383,7 +2380,7 @@ elif view == "재무 추이":
                 detail=(
                     "FCF=영업현금흐름-자본적지출; 두 값 모두 있을 때만 계산"
                     if category == "핵심 추이"
-                    else "financial_versions 실제 저장 필드 · 결측은 —/빈 셀로 유지"
+                    else "financials 실제 저장 필드 · 결측은 —/빈 셀로 유지"
                 ),
             )
 
@@ -2431,7 +2428,7 @@ elif view == "공시 근거":
                     f"{filing.get('rows_count') if filing.get('rows_count') is not None else '—'}"
                 )
                 st.caption(
-                    f"데이터 품질 · mapping {filing.get('mapping_version') or core.get('mapping_version') or '—'} · "
+                    "데이터 품질 · "
                     f"updated {filing.get('updated_at') or core.get('ingested_at') or '—'}"
                 )
             with st.container(horizontal=True):
@@ -2449,7 +2446,7 @@ elif view == "공시 근거":
                     f"SEC GAAP EPS(기본/희석) · {display_number(core.get('eps_basic_gaap'))} / "
                     f"{display_number(core.get('eps_diluted_gaap'))}"
                 )
-                source_note(SOURCE_DB, SOURCE_CALC, observed_at=filing.get("filing_date"), detail="filing_processing 장부 + financial_versions exact accession_no")
+                source_note(SOURCE_DB, SOURCE_CALC, observed_at=filing.get("filing_date"), detail="filing_processing 장부 + financials exact accession_no")
 
 elif view == "Discord 카드 전체":
     _render_discord_full(

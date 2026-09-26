@@ -140,17 +140,10 @@ def check_core_wide(rows: list[dict]) -> tuple[list[dict], list[dict]]:
             })
             row["revenue"] = None
 
-        # 회계항등식 A = L + 자본. liabilities_and_equity 컬럼은 두지 않는다 —
-        # assets와 실측 23,849/23,851행이 동일한 순수 중복이었다.
-        #
-        # 우선주는 더하지 않는다. `preferred_stock`은 이미 `common_equity`
-        # (StockholdersEquity) 안에 들어 있어 또 더하면 이중계상이다 — 실측 PSA는
-        # A 20.21 = L 10.87 + E 9.25 + MI 0.09로 정확히 닫히는데, 우선주 4.35를
-        # 더하는 바람에 21.5% 불일치로 잡히고 있었다.
-        #
-        # 메자닌 자본은 반대로 반드시 더한다. 명시적으로 상환가능한 지분은
-        # 부채에도 영구자본에도 없는 중간 계층이라, 빼면 DVA·UDR·SPGI 같은 종목이
-        # 구조적으로 어긋난다.
+        # 회계항등식 A = L + 보통주 자본 + 우선주 + 비지배지분 + 메자닌. liabilities_and_equity
+        # 컬럼은 두지 않는다 — assets와 실측 23,849/23,851행이 동일한 순수 중복이었다.
+        # 메자닌은 반드시 더한다. 명시적으로 상환가능한 지분은 부채에도 영구자본에도 없는
+        # 중간 계층이라, 빼면 DVA·UDR·SPGI 같은 종목이 구조적으로 어긋난다.
         assets = row.get("assets")
         liabilities = row.get("liabilities")
         equity_side = None
@@ -177,6 +170,39 @@ def check_core_wide(rows: list[dict]) -> tuple[list[dict], list[dict]]:
             })
         clean_rows.append(row)
 
+    clean_rows, collisions = _reject_period_collisions(clean_rows)
+    anomalies.extend(collisions)
     if anomalies:
         log.warning("fundamentals anomalies recorded: %d", len(anomalies))
     return clean_rows, anomalies
+
+
+def _reject_period_collisions(rows: list[dict]) -> tuple[list[dict], list[dict]]:
+    """같은 회계기간말에 서로 다른 분기 라벨이 붙은 행을 모두 뺀다.
+
+    한 기간말은 한 분기다. 둘이면 회계력 판정이 어긋난 것이고, 어느 라벨이 맞는지는
+    알 수 없으므로 어느 쪽도 저장하지 않는다(저장소 키가 `(cik, period_end)`다).
+    """
+    labels: dict[tuple[str, str], set[tuple[int, str]]] = {}
+    for row in rows:
+        key = (str(row["cik"]), str(row.get("period_end")))
+        labels.setdefault(key, set()).add((int(row["fiscal_year"]), str(row["fiscal_period"])))
+    colliding = {key for key, found in labels.items() if len(found) > 1}
+    if not colliding:
+        return rows, []
+    kept: list[dict] = []
+    anomalies: list[dict] = []
+    for row in rows:
+        key = (str(row["cik"]), str(row.get("period_end")))
+        if key not in colliding:
+            kept.append(row)
+            continue
+        anomalies.append({
+            "cik": key[0],
+            "fiscal_year": row["fiscal_year"],
+            "fiscal_period": row["fiscal_period"],
+            "reason": "period_label_conflict",
+            "detail": {"period_end": key[1], "labels": sorted(labels[key])},
+            "filed_at": row.get("filed_at"),
+        })
+    return kept, anomalies

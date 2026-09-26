@@ -120,7 +120,7 @@ class ContextPointInTimeTest(unittest.TestCase):
         self.assertEqual(repository.macro_calls, 1)
         self.assertIn("macro", bundle.domains)
 
-    def test_historical_replay_uses_financial_versions_cutoff_evidence(self):
+    def test_historical_replay_uses_financials_cutoff_evidence(self):
         bundle = ContextBuilder(_Repository()).build(
             "AAPL",
             datetime(2025, 1, 3, tzinfo=timezone.utc),

@@ -569,7 +569,7 @@ def eps_trend(
         {"y": top + plot_h, "left": f"{elo:.2f}"},
     ]
     # 아래 숫자 줄은 **이번 분기** 쌍이어야 한다. points의 마지막을 그냥 집으면
-    # financial_versions가 아직 이번 분기의 조정 EPS를 못 받았을 때 직전 분기 값이 올라와,
+    # financials가 아직 이번 분기의 조정 EPS를 못 받았을 때 직전 분기 값이 올라와,
     # 헤더의 기간말과 다른 분기를 말하게 된다.
     latest = _match_quarter(str(qs[-1].get("period_end") or ""), points)
     surprise = (
@@ -597,7 +597,7 @@ def cashflow_quarters(history: list[dict], *, w: int = 440, h: int = 150) -> dic
     """최근 13분기 영업·투자·재무 현금흐름 선 차트.
 
     연 단위로 그리면 점이 다섯 개뿐이라 계절성도, 이번 분기가 흐름의 어디인지도 안 보인다.
-    financial_versions의 분기 현금흐름은 누적(YTD)이 아니라 분기별 실제값이라 그대로 이을 수 있다.
+    financials의 분기 현금흐름은 누적(YTD)이 아니라 분기별 실제값이라 그대로 이을 수 있다.
     """
     rows = [
         r for r in history

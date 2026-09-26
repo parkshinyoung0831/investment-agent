@@ -221,13 +221,16 @@ class ExpectationsRepositoryPagingTest(unittest.TestCase):
             },
         ]
         filings = [
-            {"accession_no": "0001", "filing_date": "2026-08-01", "available_at": "2026-08-01T12:00:00+00:00", "form_type": "10-Q"},
-            {"accession_no": "0002", "filing_date": "2026-07-01", "available_at": "2026-09-01T12:00:00+00:00", "form_type": "10-Q"},
+            {"accession_no": "0001", "cik": "0000000001", "filing_date": "2026-08-01",
+             "available_at": "2026-08-01T12:00:00+00:00", "form_type": "10-Q", "report_date": "2026-06-30"},
+            {"accession_no": "0002", "cik": "0000000001", "filing_date": "2026-07-01",
+             "available_at": "2026-09-01T12:00:00+00:00", "form_type": "10-Q", "report_date": "2026-03-31"},
         ]
         with patch.object(
             db_expectations,
             "select_all_paged",
-            side_effect=[[{"ticker": "AAA", "cik": "0000000001"}], versions, filings],
+            # 증권 → 재무 → 공시(행의 accession) → 같은 CIK의 정기공시
+            side_effect=[[{"ticker": "AAA", "cik": "0000000001"}], versions, filings, filings],
         ):
             rows = db_expectations.security_fundamentals_as_of("AAA", as_of_at)
 
